@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.23.0] - 2026-03-02
+
+### Features
+
+- **dashboard**: add sync button for document connectors
+
+
 ## [0.22.0] - 2026-03-02
 
 ### Features
