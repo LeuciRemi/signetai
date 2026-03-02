@@ -2,6 +2,18 @@
 
 All notable changes to Signet are documented here.
 
+## [0.15.1] - 2026-03-02
+
+### Features
+
+- **dashboard**: add Cmd/Ctrl+S keyboard shortcut to save settings
+- **dashboard**: show total/filtered memory count above grid
+
+### Performance
+
+- **dashboard**: cache skills catalog in localStorage for instant repeat loads
+
+
 ## [0.15.0] - 2026-03-02
 
 ### Bug Fixes
