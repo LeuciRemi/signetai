@@ -2,6 +2,14 @@
 
 All notable changes to Signet are documented here.
 
+## [0.22.0] - 2026-03-02
+
+### Features
+
+- **dashboard**: add keyboard shortcuts for tasks tab
+- **dashboard**: add minimap for large embedding graphs
+
+
 ## [0.21.0] - 2026-03-02
 
 ### Features
