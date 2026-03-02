@@ -23,8 +23,6 @@ import { tick } from "svelte";
 import { onMount } from "svelte";
 // biome-ignore lint/style/useImportType: Svelte component tags need value imports.
 import EmbeddingCanvas2D from "../embeddings/EmbeddingCanvas2D.svelte";
-// biome-ignore lint/style/useImportType: Svelte component tags need value imports.
-import EmbeddingCanvas3D from "../embeddings/EmbeddingCanvas3D.svelte";
 import EmbeddingInspector from "../embeddings/EmbeddingInspector.svelte";
 import {
 	DEFAULT_EMBEDDING_LIMIT,
@@ -152,7 +150,10 @@ let cachedRegionRect: DOMRect | null = null;
 // biome-ignore lint/style/useConst: Mutated by bind:this.
 let canvas2d = $state<EmbeddingCanvas2D | null>(null);
 // biome-ignore lint/style/useConst: Mutated by bind:this.
-let canvas3d = $state<EmbeddingCanvas3D | null>(null);
+let canvas3d = $state<any>(null);
+let Canvas3D = $state<any>(null);
+let canvas3dLoading = $state(false);
+let graphRegionVisible = $state(false);
 
 let healthReport = $state<EmbeddingHealthReport | null>(null);
 // biome-ignore lint/style/useConst: Mutated from template callback.
@@ -818,18 +819,32 @@ async function switchGraphMode(mode: "2d" | "3d"): Promise<void> {
 		canvas2d?.stopRendering();
 		if (!graphInitialized || embeddings.length === 0) return;
 
+		canvas3dLoading = true;
+		graphStatus = "Loading 3D...";
+
+		if (!Canvas3D) {
+			const mod = await import("../embeddings/EmbeddingCanvas3D.svelte");
+			Canvas3D = mod.default;
+		}
+
 		graphStatus = "Loading 3D projection...";
 		const loadId = ++graphLoadId;
 		const requestOptions = buildProjectionQueryOptions();
 		let projection = await getProjection(3, requestOptions);
 
 		while (projection.status === "computing") {
-			if (loadId !== graphLoadId) return;
+			if (loadId !== graphLoadId) {
+				canvas3dLoading = false;
+				return;
+			}
 			await new Promise<void>((resolve) => setTimeout(resolve, 2000));
 			projection = await getProjection(3, requestOptions);
 		}
 
-		if (loadId !== graphLoadId) return;
+		if (loadId !== graphLoadId) {
+			canvas3dLoading = false;
+			return;
+		}
 
 		const projNodes = projection.nodes ?? [];
 		const nodeMap = new Map(projNodes.map((n) => [n.id, n]));
@@ -840,6 +855,7 @@ async function switchGraphMode(mode: "2d" | "3d"): Promise<void> {
 		});
 
 		graphStatus = "";
+		canvas3dLoading = false;
 		await tick();
 		await canvas3d?.init();
 		canvas3d?.refreshAppearance();
@@ -1208,9 +1224,20 @@ $effect(() => {
 });
 
 $effect(() => {
-	if (!graphInitialized) {
-		initGraph();
-	}
+	if (!graphRegion) return;
+
+	const observer = new IntersectionObserver(
+		(entries) => {
+			if (entries[0].isIntersecting && !graphInitialized && !graphRegionVisible) {
+				graphRegionVisible = true;
+				initGraph();
+			}
+		},
+		{ threshold: 0.1 },
+	);
+
+	observer.observe(graphRegion);
+	return () => observer.disconnect();
 });
 
 $effect(() => {
@@ -1409,43 +1436,60 @@ $effect(() => {
 		{/if}
 
 		<div style:display={graphMode === "2d" ? "contents" : "none"}>
-			<EmbeddingCanvas2D
-				bind:this={canvas2d}
-				{nodes}
-				{edges}
-				{graphPhysics}
-				{graphSelected}
-				graphHovered={previewHovered}
-				{embeddingFilterIds}
-				relationLookup={effectiveRelationLookup}
-				{pinnedIds}
-				{lensIds}
-				clusterLensMode={clusterLensMode && lensIds.size > 0}
-				onselectnode={(e) => {
-					if (e) selectEmbeddingById(e.id);
-					else graphSelected = null;
-				}}
-				onhovernode={updateGraphHover}
-			/>
+			{#if graphInitialized}
+				<EmbeddingCanvas2D
+					bind:this={canvas2d}
+					{nodes}
+					{edges}
+					{graphPhysics}
+					{graphSelected}
+					graphHovered={previewHovered}
+					{embeddingFilterIds}
+					relationLookup={effectiveRelationLookup}
+					{pinnedIds}
+					{lensIds}
+					clusterLensMode={clusterLensMode && lensIds.size > 0}
+					onselectnode={(e) => {
+						if (e) selectEmbeddingById(e.id);
+						else graphSelected = null;
+					}}
+					onhovernode={updateGraphHover}
+				/>
+			{:else if graphStatus}
+				<div class="absolute inset-0 flex items-center justify-center bg-[#050505]">
+					<span class="text-[var(--sig-text-muted)] font-[family-name:var(--font-mono)] text-[11px]">{graphStatus}</span>
+				</div>
+			{:else if graphError}
+				<div class="absolute inset-0 flex items-center justify-center bg-[#050505]">
+					<span class="text-[var(--sig-danger)] font-[family-name:var(--font-mono)] text-[11px]">{graphError}</span>
+				</div>
+			{/if}
 		</div>
 		<div style:display={graphMode === "3d" ? "contents" : "none"}>
-			<EmbeddingCanvas3D
-				bind:this={canvas3d}
-				{embeddings}
-				projected3d={projected3dCoords}
-				{graphSelected}
-				{embeddingFilterIds}
-				relationLookup={effectiveRelationLookup}
-				{pinnedIds}
-				{lensIds}
-				clusterLensMode={clusterLensMode && lensIds.size > 0}
-				{embeddingById}
-				onselectnode={(e) => {
-					if (e) selectEmbeddingById(e.id);
-					else graphSelected = null;
-				}}
-				onhovernode={updateGraphHover}
-			/>
+			{#if Canvas3D && !canvas3dLoading}
+				<svelte:component
+					this={Canvas3D}
+					bind:this={canvas3d}
+					{embeddings}
+					projected3d={projected3dCoords}
+					{graphSelected}
+					{embeddingFilterIds}
+					relationLookup={effectiveRelationLookup}
+					{pinnedIds}
+					{lensIds}
+					clusterLensMode={clusterLensMode && lensIds.size > 0}
+					{embeddingById}
+					onselectnode={(e) => {
+						if (e) selectEmbeddingById(e.id);
+						else graphSelected = null;
+					}}
+					onhovernode={updateGraphHover}
+				/>
+			{:else if canvas3dLoading}
+				<div class="absolute inset-0 flex items-center justify-center bg-[#050505]">
+					<span class="text-[var(--sig-text-muted)] font-[family-name:var(--font-mono)] text-[11px]">{graphStatus || "Loading 3D..."}</span>
+				</div>
+			{/if}
 		</div>
 		</div>
 
