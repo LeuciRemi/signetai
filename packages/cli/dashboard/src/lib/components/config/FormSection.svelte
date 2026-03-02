@@ -8,9 +8,10 @@ interface Props {
 	description?: string;
 	children: Snippet;
 	defaultOpen?: boolean;
+	dirty?: boolean;
 }
 
-const { title, description, children, defaultOpen = true }: Props = $props();
+const { title, description, children, defaultOpen = true, dirty = false }: Props = $props();
 let open = $state(defaultOpen);
 </script>
 
@@ -22,7 +23,7 @@ let open = $state(defaultOpen);
 			text-[11px] font-semibold uppercase tracking-[0.1em]
 			hover:bg-[var(--sig-surface-raised)]"
 	>
-		<span>{title}</span>
+		<span>{title}{#if dirty}<span class="text-[var(--sig-accent)] ml-1">•</span>{/if}</span>
 		<ChevronDown
 			class="text-[var(--sig-text-muted)] transition-transform duration-200
 				{open ? 'rotate-180' : ''}"

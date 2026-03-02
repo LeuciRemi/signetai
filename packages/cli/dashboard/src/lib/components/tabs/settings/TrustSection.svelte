@@ -11,6 +11,11 @@ const selectContentClass =
 	"font-[family-name:var(--font-mono)] text-[11px] bg-[var(--sig-bg)] text-[var(--sig-text)] border-[var(--sig-border-strong)] rounded-none";
 const selectItemClass = "font-[family-name:var(--font-mono)] text-[11px] rounded-none";
 
+const TRUST_PATHS: string[][] = [
+	["trust", "verification"],
+	["trust", "registry"],
+];
+
 function setSelect(path: string[]) {
 	return (v: string | undefined) => {
 		st.aSetStr(path, v ?? "");
@@ -22,10 +27,12 @@ function setStr(path: string[]) {
 		st.aSetStr(path, (e.currentTarget as HTMLInputElement).value);
 	};
 }
+
+let isDirty = $derived(st.isAnyPathDirty("agent", TRUST_PATHS));
 </script>
 
 {#if st.agentFile}
-	<FormSection title="Trust" defaultOpen={false} description="Identity verification method. Controls how the agent proves its identity to peers and registries.">
+	<FormSection title="Trust" defaultOpen={false} description="Identity verification method. Controls how the agent proves its identity to peers and registries." dirty={isDirty}>
 		<FormField label="Verification" description="none = local only. erc8128 = wallet-based (recommended). gpg/did = alternative signing. registry = contract-based lookup.">
 			<Select.Root
 				type="single"

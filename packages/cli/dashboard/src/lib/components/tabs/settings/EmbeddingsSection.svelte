@@ -14,10 +14,20 @@ const selectItemClass = "font-[family-name:var(--font-mono)] text-[11px] rounded
 function handleProviderChange(v: string | undefined) {
 	st.sSetStr([...st.embPath(), "provider"], v ?? "");
 }
+
+let embeddingPaths = $derived([
+	[...st.embPath(), "provider"],
+	[...st.embPath(), "model"],
+	[...st.embPath(), "dimensions"],
+	[...st.embPath(), "base_url"],
+	[...st.embPath(), "api_key"],
+]);
+
+let isDirty = $derived(st.isAnyPathDirty(st.settingsIsSameAsAgent ? "agent" : "config", embeddingPaths));
 </script>
 
 {#if st.settingsFileName}
-	<FormSection title="Embeddings" defaultOpen={false} description="Vector embedding configuration for semantic memory search. Embeddings power the vector half of hybrid recall.">
+	<FormSection title="Embeddings" defaultOpen={false} description="Vector embedding configuration for semantic memory search. Embeddings power the vector half of hybrid recall." dirty={isDirty}>
 		<FormField label="Provider" description="Embedding backend. Ollama runs locally, OpenAI requires an API key.">
 			<Select.Root
 				type="single"

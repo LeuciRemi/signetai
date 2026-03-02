@@ -6,6 +6,12 @@ import { Input } from "$lib/components/ui/input/index.js";
 import { Textarea } from "$lib/components/ui/textarea/index.js";
 import { KNOWN_HARNESSES, st } from "$lib/stores/settings.svelte";
 
+const AGENT_PATHS: string[][] = [
+	["agent", "name"],
+	["agent", "description"],
+	["harnesses"],
+];
+
 function formatDate(raw: unknown): string {
 	if (!raw) return "";
 	try {
@@ -33,10 +39,12 @@ function toggleHarness(h: string) {
 		st.toggleHarness(h, !!v);
 	};
 }
+
+let isDirty = $derived(st.isAnyPathDirty("agent", AGENT_PATHS));
 </script>
 
 {#if st.agentFile}
-	<FormSection title="Agent" description="Core identity metadata. Created by signet setup, synced to all harnesses on change.">
+	<FormSection title="Agent" description="Core identity metadata. Created by signet setup, synced to all harnesses on change." dirty={isDirty}>
 		<FormField label="Name" description="Display name shown in harness configs and session context.">
 			<Input value={st.aStr(["agent", "name"])} oninput={setStr(["agent", "name"])} />
 		</FormField>
@@ -51,7 +59,7 @@ function toggleHarness(h: string) {
 		</FormField>
 	</FormSection>
 
-	<FormSection title="Harnesses" defaultOpen={false} description="AI platforms to integrate with. The daemon syncs identity files and installs hooks for each active harness.">
+	<FormSection title="Harnesses" defaultOpen={false} description="AI platforms to integrate with. The daemon syncs identity files and installs hooks for each active harness." dirty={isDirty}>
 		<FormField label="Active harnesses" description="Supported: claude-code, openclaw, opencode. Cursor, windsurf, chatgpt, and gemini are planned.">
 			<div class="flex flex-col gap-1.5">
 				{#each KNOWN_HARNESSES as h (h)}

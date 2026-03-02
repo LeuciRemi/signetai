@@ -268,6 +268,21 @@ class SettingsStore {
 		);
 	}
 
+	isPathDirty(obj: "agent" | "config", path: string[]): boolean {
+		const current = obj === "agent" ? this.agent : this.config;
+		const snapshot = obj === "agent"
+			? JSON.parse(this.agentSnapshot)
+			: JSON.parse(this.configSnapshot);
+
+		const currentVal = JSON.stringify(this.get(current, ...path));
+		const snapshotVal = JSON.stringify(this.get(snapshot, ...path));
+		return currentVal !== snapshotVal;
+	}
+
+	isAnyPathDirty(obj: "agent" | "config", paths: string[][]): boolean {
+		return paths.some((p) => this.isPathDirty(obj, p));
+	}
+
 	async save(): Promise<void> {
 		if (!this.isDirty) {
 			this.lastSaveFeedback = "No changes to save";
