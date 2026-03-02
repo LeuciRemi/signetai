@@ -574,6 +574,36 @@ export async function getConnectors(): Promise<DocumentConnector[]> {
 	}
 }
 
+export interface SyncResult {
+	status: string;
+	error?: string;
+	message?: string;
+}
+
+export async function syncConnector(id: string): Promise<SyncResult> {
+	try {
+		const response = await fetch(
+			`${API_BASE}/api/connectors/${encodeURIComponent(id)}/sync`,
+			{ method: "POST" },
+		);
+		return await response.json();
+	} catch (e) {
+		return { status: "error", error: e instanceof Error ? e.message : String(e) };
+	}
+}
+
+export async function syncConnectorFull(id: string): Promise<SyncResult> {
+	try {
+		const response = await fetch(
+			`${API_BASE}/api/connectors/${encodeURIComponent(id)}/sync/full?confirm=true`,
+			{ method: "POST" },
+		);
+		return await response.json();
+	} catch (e) {
+		return { status: "error", error: e instanceof Error ? e.message : String(e) };
+	}
+}
+
 export async function regenerateHarnesses(): Promise<{
 	success: boolean;
 	message?: string;

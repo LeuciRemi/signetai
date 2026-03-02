@@ -1,16 +1,22 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { Badge } from "$lib/components/ui/badge/index.js";
+	import * as Popover from "$lib/components/ui/popover/index.js";
 	import {
 		getHarnesses,
 		getConnectors,
+		syncConnector,
+		syncConnectorFull,
 		type Harness,
 		type DocumentConnector,
 	} from "$lib/api";
+	import { toast } from "$lib/stores/toast.svelte";
 
 	let harnesses = $state<Harness[]>([]);
 	let connectors = $state<DocumentConnector[]>([]);
 	let loading = $state(true);
+	let syncingId = $state<string | null>(null);
+	let syncMenuOpen = $state<string | null>(null);
 
 	function relativeTime(iso: string | null): string {
 		if (!iso) return "never";
@@ -38,6 +44,50 @@
 		harnesses = h;
 		connectors = c;
 		loading = false;
+	}
+
+	async function triggerSync(conn: DocumentConnector): Promise<void> {
+		const name = conn.display_name ?? conn.id;
+		syncMenuOpen = null;
+		syncingId = conn.id;
+		try {
+			const result = await syncConnector(conn.id);
+			if (result.error) {
+				toast(`Sync failed: ${result.error}`, "error");
+			} else {
+				toast(`Sync started for ${name}`, "success");
+				await load();
+			}
+		} catch (e) {
+			toast(`Sync failed: ${e instanceof Error ? e.message : String(e)}`, "error");
+		} finally {
+			syncingId = null;
+		}
+	}
+
+	async function triggerFullSync(conn: DocumentConnector): Promise<void> {
+		const name = conn.display_name ?? conn.id;
+		syncMenuOpen = null;
+
+		const confirmed = window.confirm(
+			`Full resync will clear all documents from "${name}" and reindex everything. This may take a while.\n\nContinue?`,
+		);
+		if (!confirmed) return;
+
+		syncingId = conn.id;
+		try {
+			const result = await syncConnectorFull(conn.id);
+			if (result.error) {
+				toast(`Full resync failed: ${result.error}`, "error");
+			} else {
+				toast(`Full resync started for ${name}`, "success");
+				await load();
+			}
+		} catch (e) {
+			toast(`Full resync failed: ${e instanceof Error ? e.message : String(e)}`, "error");
+		} finally {
+			syncingId = null;
+		}
 	}
 
 	onMount(() => {
@@ -158,16 +208,69 @@
 								</span>
 							</div>
 							<div class="flex flex-col items-end gap-0.5 shrink-0">
-								<span
-									class="text-[10px] text-[var(--sig-text-muted)]
-										font-[family-name:var(--font-mono)]"
-								>
-									{#if conn.last_sync_at}
-										synced {relativeTime(conn.last_sync_at)}
-									{:else}
-										never synced
-									{/if}
-								</span>
+								<div class="flex items-center gap-2">
+									<span
+										class="text-[10px] text-[var(--sig-text-muted)]
+											font-[family-name:var(--font-mono)]"
+									>
+										{#if conn.status === "syncing" || syncingId === conn.id}
+											syncing...
+										{:else if conn.last_sync_at}
+											synced {relativeTime(conn.last_sync_at)}
+										{:else}
+											never synced
+										{/if}
+									</span>
+									<Popover.Root open={syncMenuOpen === conn.id} onOpenChange={(open) => { syncMenuOpen = open ? conn.id : null; }}>
+										<Popover.Trigger>
+											{#snippet child({ props })}
+												<button
+													{...props}
+													type="button"
+													disabled={conn.status === "syncing" || syncingId === conn.id}
+													class="px-2 py-0.5 text-[9px] uppercase tracking-[0.08em]
+														font-[family-name:var(--font-mono)] border
+														border-[var(--sig-border)] text-[var(--sig-text-muted)]
+														hover:text-[var(--sig-text)] hover:border-[var(--sig-border-strong)]
+														disabled:opacity-50 disabled:cursor-not-allowed"
+												>
+													Sync ▾
+												</button>
+											{/snippet}
+										</Popover.Trigger>
+										<Popover.Content
+											align="end"
+											side="bottom"
+											class="w-[140px] p-1 bg-[var(--sig-surface-raised)]
+												border-[var(--sig-border-strong)] rounded-none"
+										>
+											<div class="flex flex-col gap-1">
+												<button
+													type="button"
+													class="w-full text-left px-2 py-1 text-[10px]
+														uppercase tracking-[0.08em]
+														font-[family-name:var(--font-mono)] border
+														border-[var(--sig-border)] text-[var(--sig-text-muted)]
+														hover:text-[var(--sig-text)] hover:border-[var(--sig-border-strong)]"
+													onclick={() => triggerSync(conn)}
+												>
+													Sync
+												</button>
+												<button
+													type="button"
+													class="w-full text-left px-2 py-1 text-[10px]
+														uppercase tracking-[0.08em]
+														font-[family-name:var(--font-mono)] border
+														border-[var(--sig-border)] text-[var(--sig-danger)]
+														hover:text-[var(--sig-text-bright)] hover:border-[var(--sig-danger)]"
+													onclick={() => triggerFullSync(conn)}
+												>
+													Full Resync
+												</button>
+											</div>
+										</Popover.Content>
+									</Popover.Root>
+								</div>
 								{#if conn.last_error}
 									<span
 										class="text-[10px] text-[var(--sig-danger)]
