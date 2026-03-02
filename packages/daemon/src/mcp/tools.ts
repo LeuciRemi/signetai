@@ -18,6 +18,31 @@ interface McpServerOptions {
 	readonly daemonUrl?: string;
 	/** Server version string */
 	readonly version?: string;
+	/** Register installed marketplace MCP tools as first-class MCP tools */
+	readonly enableMarketplaceProxyTools?: boolean;
+}
+
+interface MarketplaceRoutedTool {
+	readonly id: string;
+	readonly serverId: string;
+	readonly serverName: string;
+	readonly toolName: string;
+	readonly description: string;
+	readonly readOnly: boolean;
+	readonly inputSchema: unknown;
+}
+
+interface MarketplaceToolsResponse {
+	readonly tools: ReadonlyArray<MarketplaceRoutedTool>;
+	readonly servers: ReadonlyArray<unknown>;
+	readonly count: number;
+}
+
+interface MarketplaceProxyState {
+	baseUrl: string;
+	enabled: boolean;
+	names: Set<string>;
+	signature: string;
 }
 
 interface DaemonResponse<T> {
@@ -32,6 +57,21 @@ interface DaemonError {
 }
 
 type FetchResult<T> = DaemonResponse<T> | DaemonError;
+
+const BASE_TOOL_NAMES = new Set<string>([
+	"memory_search",
+	"memory_store",
+	"memory_get",
+	"memory_list",
+	"memory_modify",
+	"memory_forget",
+	"secret_list",
+	"secret_exec",
+	"mcp_server_list",
+	"mcp_server_call",
+]);
+
+const marketplaceProxyState = new WeakMap<McpServer, MarketplaceProxyState>();
 
 // ---------------------------------------------------------------------------
 // Internal HTTP helper
@@ -77,7 +117,7 @@ async function daemonFetch<T>(
 	}
 }
 
-function textResult(value: unknown): { content: ReadonlyArray<{ readonly type: "text"; readonly text: string }> } {
+function textResult(value: unknown): { content: Array<{ type: "text"; text: string }> } {
 	return {
 		content: [
 			{
@@ -89,7 +129,7 @@ function textResult(value: unknown): { content: ReadonlyArray<{ readonly type: "
 }
 
 function errorResult(msg: string): {
-	content: ReadonlyArray<{ readonly type: "text"; readonly text: string }>;
+	content: Array<{ type: "text"; text: string }>;
 	isError: true;
 } {
 	return {
@@ -98,17 +138,173 @@ function errorResult(msg: string): {
 	};
 }
 
+function sanitizeToolSegment(value: string): string {
+	const normalized = value
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "_")
+		.replace(/^_+|_+$/g, "");
+	return normalized.length > 0 ? normalized : "tool";
+}
+
+function buildProxyToolName(used: Set<string>, serverId: string, toolName: string): string {
+	const base = `signet_${sanitizeToolSegment(serverId)}_${sanitizeToolSegment(toolName)}`;
+	if (!used.has(base)) {
+		used.add(base);
+		return base;
+	}
+
+	let suffix = 2;
+	while (used.has(`${base}_${suffix}`)) {
+		suffix += 1;
+	}
+	const uniqueName = `${base}_${suffix}`;
+	used.add(uniqueName);
+	return uniqueName;
+}
+
+function getRegisteredToolsMap(server: McpServer): Record<string, unknown> | null {
+	const internal = server as unknown as {
+		_registeredTools?: Record<string, unknown>;
+	};
+	return internal._registeredTools ?? null;
+}
+
+function buildToolsSignature(tools: ReadonlyArray<MarketplaceRoutedTool>): string {
+	return tools
+		.map((tool) => `${tool.serverId}:${tool.toolName}:${tool.readOnly ? "ro" : "rw"}`)
+		.sort()
+		.join("|");
+}
+
+export async function refreshMarketplaceProxyTools(
+	server: McpServer,
+	options?: {
+		readonly notify?: boolean;
+	},
+): Promise<{ changed: boolean; count: number; error?: string }> {
+	const state = marketplaceProxyState.get(server);
+	if (!state || !state.enabled) {
+		return { changed: false, count: 0 };
+	}
+
+	const notify = options?.notify ?? true;
+	const registeredTools = getRegisteredToolsMap(server);
+
+	const routed = await daemonFetch<MarketplaceToolsResponse>(state.baseUrl, "/api/marketplace/mcp/tools?refresh=1", {
+		timeout: 3_000,
+	});
+
+	if (!routed.ok) {
+		return { changed: false, count: state.names.size, error: routed.error };
+	}
+
+	const tools = [...routed.data.tools].sort((a, b) =>
+		`${a.serverId}:${a.toolName}`.localeCompare(`${b.serverId}:${b.toolName}`),
+	);
+	const signature = buildToolsSignature(tools);
+	if (signature === state.signature) {
+		return { changed: false, count: tools.length };
+	}
+
+	if (registeredTools) {
+		for (const name of state.names) {
+			delete registeredTools[name];
+		}
+	}
+
+	const usedNames = new Set<string>(BASE_TOOL_NAMES);
+	if (registeredTools) {
+		for (const name of Object.keys(registeredTools)) {
+			usedNames.add(name);
+		}
+	}
+
+	const nextNames = new Set<string>();
+
+	for (const tool of tools) {
+		if (!tool.serverId || !tool.toolName) {
+			continue;
+		}
+
+		const proxyName = buildProxyToolName(usedNames, tool.serverId, tool.toolName);
+		const title = `Signet • ${tool.serverName} • ${tool.toolName}`;
+		const description =
+			tool.description && tool.description.trim().length > 0
+				? tool.description
+				: `Proxy tool ${tool.toolName} from MCP server ${tool.serverName}`;
+
+		nextNames.add(proxyName);
+
+		server.registerTool(
+			proxyName,
+			{
+				title,
+				description,
+				inputSchema: z.object({}).passthrough(),
+				annotations: { readOnlyHint: tool.readOnly },
+			},
+			async (args) => {
+				const callResult = await daemonFetch<{
+					success: boolean;
+					result?: unknown;
+					error?: string;
+				}>(state.baseUrl, "/api/marketplace/mcp/call", {
+					method: "POST",
+					body: {
+						serverId: tool.serverId,
+						toolName: tool.toolName,
+						args,
+					},
+					timeout: 60_000,
+				});
+
+				if (!callResult.ok) {
+					return errorResult(`Tool server call failed: ${callResult.error}`);
+				}
+
+				if (!callResult.data.success) {
+					return errorResult(`Tool server call failed: ${callResult.data.error ?? "unknown error"}`);
+				}
+
+				return textResult(callResult.data.result ?? { success: true });
+			},
+		);
+	}
+
+	state.names = nextNames;
+	state.signature = signature;
+
+	if (notify) {
+		try {
+			server.sendToolListChanged();
+		} catch {
+			// ignore notification errors for transports that do not support it yet
+		}
+	}
+
+	return { changed: true, count: tools.length };
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createMcpServer(opts?: McpServerOptions): McpServer {
+export async function createMcpServer(opts?: McpServerOptions): Promise<McpServer> {
 	const baseUrl = opts?.daemonUrl ?? "http://localhost:3850";
 	const version = opts?.version ?? "0.1.0";
+	const enableMarketplaceProxyTools = opts?.enableMarketplaceProxyTools ?? true;
 
 	const server = new McpServer({
 		name: "signet",
 		version,
+	});
+
+	marketplaceProxyState.set(server, {
+		baseUrl,
+		enabled: enableMarketplaceProxyTools,
+		names: new Set<string>(),
+		signature: "",
 	});
 
 	// ------------------------------------------------------------------
@@ -373,6 +569,10 @@ export function createMcpServer(opts?: McpServerOptions): McpServer {
 			}),
 		},
 		async ({ refresh }) => {
+			if (refresh && enableMarketplaceProxyTools) {
+				await refreshMarketplaceProxyTools(server, { notify: true });
+			}
+
 			const path = refresh ? "/api/marketplace/mcp/tools?refresh=1" : "/api/marketplace/mcp/tools";
 			const result = await daemonFetch<{
 				count: number;
@@ -431,6 +631,10 @@ export function createMcpServer(opts?: McpServerOptions): McpServer {
 			return textResult(result.data.result ?? { success: true });
 		},
 	);
+
+	if (enableMarketplaceProxyTools) {
+		await refreshMarketplaceProxyTools(server, { notify: false });
+	}
 
 	return server;
 }

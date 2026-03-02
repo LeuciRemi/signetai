@@ -6,8 +6,8 @@
  * each request gets a fresh server + transport instance.
  */
 
-import type { Hono } from "hono";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import type { Hono } from "hono";
 import { createMcpServer } from "./tools.js";
 
 export function mountMcpRoute(app: Hono): void {
@@ -20,7 +20,7 @@ export function mountMcpRoute(app: Hono): void {
 			enableJsonResponse: true,
 		});
 
-		const server = createMcpServer();
+		const server = await createMcpServer();
 		await server.connect(transport);
 
 		try {

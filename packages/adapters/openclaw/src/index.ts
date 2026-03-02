@@ -192,6 +192,31 @@ interface MarketplaceToolCatalog {
 	}>;
 }
 
+function sanitizeToolSegment(value: string): string {
+	const normalized = value
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "_")
+		.replace(/^_+|_+$/g, "");
+	return normalized.length > 0 ? normalized : "tool";
+}
+
+function buildProxyToolName(used: Set<string>, serverId: string, toolName: string): string {
+	const base = `signet_${sanitizeToolSegment(serverId)}_${sanitizeToolSegment(toolName)}`;
+	if (!used.has(base)) {
+		used.add(base);
+		return base;
+	}
+
+	let suffix = 2;
+	while (used.has(`${base}_${suffix}`)) {
+		suffix += 1;
+	}
+	const uniqueName = `${base}_${suffix}`;
+	used.add(uniqueName);
+	return uniqueName;
+}
+
 // ============================================================================
 // Shared fetch helper
 // ============================================================================
@@ -596,6 +621,77 @@ function textResult(text: string, details?: Record<string, unknown>): OpenClawTo
 	};
 }
 
+async function registerMarketplaceProxyTools(
+	api: OpenClawPluginApi,
+	options: { daemonUrl?: string },
+	knownNames: Set<string>,
+): Promise<{ registeredNow: number; total: number }> {
+	const catalog = await marketplaceToolList({ ...options, refresh: true });
+	if (!catalog || catalog.tools.length === 0) {
+		return { registeredNow: 0, total: knownNames.size };
+	}
+
+	const usedNames = new Set<string>([
+		"memory_search",
+		"memory_store",
+		"memory_get",
+		"memory_list",
+		"memory_modify",
+		"memory_forget",
+		"mcp_server_list",
+		"mcp_server_call",
+	]);
+	for (const name of knownNames) {
+		usedNames.add(name);
+	}
+
+	let registeredNow = 0;
+	for (const tool of [...catalog.tools].sort((a, b) =>
+		`${a.serverId}:${a.toolName}`.localeCompare(`${b.serverId}:${b.toolName}`),
+	)) {
+		const proxyName = buildProxyToolName(usedNames, tool.serverId, tool.toolName);
+		if (knownNames.has(proxyName)) {
+			continue;
+		}
+
+		api.registerTool(
+			{
+				name: proxyName,
+				label: `Signet ${tool.serverName} • ${tool.toolName}`,
+				description:
+					tool.description && tool.description.trim().length > 0
+						? tool.description
+						: `Proxy tool ${tool.toolName} from MCP server ${tool.serverName}`,
+				parameters: Type.Object({}, { additionalProperties: true }),
+				async execute(_toolCallId, params) {
+					const args = typeof params === "object" && params !== null ? (params as Record<string, unknown>) : {};
+
+					try {
+						const result = await marketplaceToolCall(tool.serverId, tool.toolName, args, options);
+						if (!result?.success) {
+							return textResult(`Tool server call failed: ${result?.error ?? "unknown error"}`, {
+								error: result?.error ?? "unknown",
+							});
+						}
+
+						const text = typeof result.result === "string" ? result.result : JSON.stringify(result.result, null, 2);
+						return textResult(text, { result: result.result });
+					} catch (err) {
+						return textResult(`Tool server call failed: ${String(err)}`, {
+							error: String(err),
+						});
+					}
+				},
+			},
+			{ name: proxyName },
+		);
+		knownNames.add(proxyName);
+		registeredNow += 1;
+	}
+
+	return { registeredNow, total: knownNames.size };
+}
+
 // ============================================================================
 // Plugin definition (OpenClaw register(api) pattern)
 // ============================================================================
@@ -615,6 +711,8 @@ const signetPlugin = {
 		// Instance-scoped health state (safe for multi-register)
 		let daemonReachable = true;
 		let healthTimer: ReturnType<typeof setInterval> | null = null;
+		let marketplaceProxyTimer: ReturnType<typeof setInterval> | null = null;
+		const marketplaceProxyNames = new Set<string>();
 
 		api.logger.info(`signet-memory: registered (daemon: ${daemonUrl})`);
 
@@ -990,6 +1088,24 @@ const signetPlugin = {
 			{ name: "mcp_server_call" },
 		);
 
+		const refreshMarketplaceProxyTools = (): Promise<void> =>
+			registerMarketplaceProxyTools(api, opts, marketplaceProxyNames)
+				.then((result) => {
+					if (result.registeredNow > 0) {
+						api.logger.info(
+							`signet-memory: registered ${result.registeredNow} marketplace proxy tools (${result.total} total)`,
+						);
+					}
+				})
+				.catch((error) => {
+					api.logger.warn(`signet-memory: failed to register marketplace proxy tools: ${String(error)}`);
+				});
+
+		void refreshMarketplaceProxyTools();
+		marketplaceProxyTimer = setInterval(() => {
+			void refreshMarketplaceProxyTools();
+		}, 15_000);
+
 		// ==================================================================
 		// Lifecycle hooks
 		// ==================================================================
@@ -1059,6 +1175,10 @@ const signetPlugin = {
 				if (healthTimer) {
 					clearInterval(healthTimer);
 					healthTimer = null;
+				}
+				if (marketplaceProxyTimer) {
+					clearInterval(marketplaceProxyTimer);
+					marketplaceProxyTimer = null;
 				}
 			},
 		});

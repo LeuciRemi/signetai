@@ -6,7 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { createMcpServer } from "./tools.js";
+import { createMcpServer, refreshMarketplaceProxyTools } from "./tools.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -17,17 +17,22 @@ interface RegisteredTool {
 	enabled: boolean;
 }
 
-type InternalMcpServer = McpServer & {
-	_registeredTools: Record<string, RegisteredTool>;
-};
+function getRegisteredTools(server: McpServer): Record<string, RegisteredTool> {
+	const internal = server as unknown as {
+		readonly _registeredTools?: Record<string, RegisteredTool>;
+	};
+	if (!internal._registeredTools) {
+		throw new Error("MCP server internals unavailable in test");
+	}
+	return internal._registeredTools;
+}
 
 async function callTool(
 	server: McpServer,
 	name: string,
 	args: Record<string, unknown>,
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
-	const internal = server as unknown as InternalMcpServer;
-	const tool = internal._registeredTools[name];
+	const tool = getRegisteredTools(server)[name];
 	if (!tool) {
 		throw new Error(`Tool ${name} not found`);
 	}
@@ -38,8 +43,7 @@ async function callTool(
 }
 
 function getToolNames(server: McpServer): string[] {
-	const internal = server as unknown as InternalMcpServer;
-	return Object.keys(internal._registeredTools);
+	return Object.keys(getRegisteredTools(server));
 }
 
 function mockFetch(status: number, body: unknown, capture?: { url?: string; method?: string; body?: string }): void {
@@ -53,7 +57,7 @@ function mockFetch(status: number, body: unknown, capture?: { url?: string; meth
 			status,
 			headers: { "Content-Type": "application/json" },
 		});
-	}) as typeof fetch;
+	}) as unknown as typeof fetch;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,10 +68,11 @@ describe("createMcpServer", () => {
 	let server: McpServer;
 	const originalFetch = globalThis.fetch;
 
-	beforeEach(() => {
-		server = createMcpServer({
+	beforeEach(async () => {
+		server = await createMcpServer({
 			daemonUrl: "http://localhost:3850",
 			version: "0.0.1-test",
+			enableMarketplaceProxyTools: false,
 		});
 	});
 
@@ -248,6 +253,174 @@ describe("createMcpServer", () => {
 			expect(body.serverId).toBe("playwright");
 			expect(body.toolName).toBe("navigate");
 			expect(body.args.url).toBe("https://example.com");
+		});
+	});
+
+	describe("marketplace proxy tools", () => {
+		it("registers dynamic proxy tools for installed MCP tools", async () => {
+			globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+				const url = typeof input === "string" ? input : input.toString();
+
+				if (url.endsWith("/api/marketplace/mcp/tools?refresh=1")) {
+					return new Response(
+						JSON.stringify({
+							count: 1,
+							servers: [
+								{
+									serverId: "dogfood-everything",
+									serverName: "dogfood-everything",
+									ok: true,
+									toolCount: 1,
+								},
+							],
+							tools: [
+								{
+									id: "dogfood-everything:echo",
+									serverId: "dogfood-everything",
+									serverName: "dogfood-everything",
+									toolName: "echo",
+									description: "Echo input text",
+									readOnly: false,
+									inputSchema: {},
+								},
+							],
+						}),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					);
+				}
+
+				if (url.endsWith("/api/marketplace/mcp/call")) {
+					const rawBody = typeof init?.body === "string" ? init.body : "{}";
+					const body = JSON.parse(rawBody) as Record<string, unknown>;
+					return new Response(
+						JSON.stringify({
+							success: true,
+							result: {
+								serverId: body.serverId,
+								toolName: body.toolName,
+								args: body.args,
+							},
+						}),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					);
+				}
+
+				return new Response(JSON.stringify({ error: "unexpected" }), {
+					status: 404,
+					headers: { "Content-Type": "application/json" },
+				});
+			}) as unknown as typeof fetch;
+
+			const dynamicServer = await createMcpServer({
+				daemonUrl: "http://localhost:3850",
+				version: "0.0.1-test",
+				enableMarketplaceProxyTools: true,
+			});
+
+			const names = getToolNames(dynamicServer);
+			expect(names).toContain("signet_dogfood_everything_echo");
+
+			const result = await callTool(dynamicServer, "signet_dogfood_everything_echo", {
+				message: "hello",
+			});
+			expect(result.isError).toBeUndefined();
+			expect(result.content[0]?.text).toContain("dogfood-everything");
+			expect(result.content[0]?.text).toContain("echo");
+		});
+
+		it("refreshes proxy tools and reports changes", async () => {
+			let stage: "initial" | "updated" = "initial";
+
+			globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+				const url = typeof input === "string" ? input : input.toString();
+
+				if (url.endsWith("/api/marketplace/mcp/tools?refresh=1")) {
+					const tools =
+						stage === "initial"
+							? [
+									{
+										id: "dogfood-everything:echo",
+										serverId: "dogfood-everything",
+										serverName: "dogfood-everything",
+										toolName: "echo",
+										description: "Echo input text",
+										readOnly: false,
+										inputSchema: {},
+									},
+								]
+							: [
+									{
+										id: "dogfood-everything:echo",
+										serverId: "dogfood-everything",
+										serverName: "dogfood-everything",
+										toolName: "echo",
+										description: "Echo input text",
+										readOnly: false,
+										inputSchema: {},
+									},
+									{
+										id: "dogfood-everything:get-sum",
+										serverId: "dogfood-everything",
+										serverName: "dogfood-everything",
+										toolName: "get-sum",
+										description: "Calculate a sum",
+										readOnly: false,
+										inputSchema: {},
+									},
+								];
+
+					return new Response(
+						JSON.stringify({
+							count: tools.length,
+							servers: [
+								{
+									serverId: "dogfood-everything",
+									serverName: "dogfood-everything",
+									ok: true,
+									toolCount: tools.length,
+								},
+							],
+							tools,
+						}),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					);
+				}
+
+				if (url.endsWith("/api/marketplace/mcp/call")) {
+					const rawBody = typeof init?.body === "string" ? init.body : "{}";
+					const body = JSON.parse(rawBody) as Record<string, unknown>;
+					return new Response(
+						JSON.stringify({
+							success: true,
+							result: {
+								serverId: body.serverId,
+								toolName: body.toolName,
+								args: body.args,
+							},
+						}),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					);
+				}
+
+				return new Response(JSON.stringify({ error: "unexpected" }), {
+					status: 404,
+					headers: { "Content-Type": "application/json" },
+				});
+			}) as unknown as typeof fetch;
+
+			const dynamicServer = await createMcpServer({
+				daemonUrl: "http://localhost:3850",
+				version: "0.0.1-test",
+				enableMarketplaceProxyTools: true,
+			});
+
+			expect(getToolNames(dynamicServer)).toContain("signet_dogfood_everything_echo");
+			expect(getToolNames(dynamicServer)).not.toContain("signet_dogfood_everything_get_sum");
+
+			stage = "updated";
+			const refresh = await refreshMarketplaceProxyTools(dynamicServer, { notify: false });
+			expect(refresh.changed).toBe(true);
+			expect(getToolNames(dynamicServer)).toContain("signet_dogfood_everything_get_sum");
 		});
 	});
 });

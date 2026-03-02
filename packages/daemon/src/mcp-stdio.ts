@@ -9,15 +9,30 @@
  */
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { createMcpServer } from "./mcp/tools.js";
+import { createMcpServer, refreshMarketplaceProxyTools } from "./mcp/tools.js";
 
-const DAEMON_URL = process.env.SIGNET_DAEMON_URL
-	?? `http://${process.env.SIGNET_HOST ?? "localhost"}:${process.env.SIGNET_PORT ?? "3850"}`;
+const DAEMON_URL =
+	process.env.SIGNET_DAEMON_URL ??
+	`http://${process.env.SIGNET_HOST ?? "localhost"}:${process.env.SIGNET_PORT ?? "3850"}`;
 
-const server = createMcpServer({
+const server = await createMcpServer({
 	daemonUrl: DAEMON_URL,
 	version: "0.1.0",
 });
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
+
+const refreshMsRaw = Number(process.env.SIGNET_MCP_PROXY_REFRESH_MS ?? "15000");
+const refreshMs = Number.isFinite(refreshMsRaw) && refreshMsRaw >= 1000 ? refreshMsRaw : 15000;
+
+const refreshTimer = setInterval(() => {
+	void refreshMarketplaceProxyTools(server, { notify: true });
+}, refreshMs);
+
+const shutdown = () => {
+	clearInterval(refreshTimer);
+};
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
