@@ -144,7 +144,11 @@ function formatIsoDate(value: string): string {
 	<label class="flex items-center gap-2 px-3 py-1.5
 		border border-[var(--sig-border-strong)]
 		bg-[var(--sig-surface-raised)]">
-		<span class="text-[var(--sig-accent)] text-[11px]">&#9671;</span>
+		{#if mem.debouncing || mem.searching}
+			<span class="text-[var(--sig-accent)] text-[11px] animate-pulse">◐</span>
+		{:else}
+			<span class="text-[var(--sig-accent)] text-[11px]">◇</span>
+		{/if}
 		<input
 			type="text"
 			class="flex-1 text-[12px] font-[family-name:var(--font-mono)]

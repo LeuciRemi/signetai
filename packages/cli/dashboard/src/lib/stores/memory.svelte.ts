@@ -19,6 +19,7 @@ export const mem = $state({
 	results: [] as Memory[],
 	searched: false,
 	searching: false,
+	debouncing: false,
 
 	filtersOpen: false,
 	filterType: "",
@@ -68,11 +69,13 @@ export function clearSearchTimer(): void {
 
 export function queueMemorySearch(): void {
 	if (searchTimer) clearTimeout(searchTimer);
+	mem.debouncing = true;
 	searchTimer = setTimeout(() => doSearch(), 150);
 }
 
 export async function doSearch(): Promise<void> {
 	clearSearchTimer();
+	mem.debouncing = false;
 
 	const query = mem.query.trim();
 	if (!query && !hasActiveFilters()) {
@@ -137,6 +140,7 @@ export function clearAll(): void {
 	mem.query = "";
 	mem.results = [];
 	mem.searched = false;
+	mem.debouncing = false;
 	mem.filterType = "";
 	mem.filterTags = "";
 	mem.filterWho = "";
