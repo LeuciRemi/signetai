@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.24.0] - 2026-03-02
+
+### Features
+
+- **mcp**: live refresh marketplace proxy tools
+
+
 ## [0.23.0] - 2026-03-02
 
 ### Features
