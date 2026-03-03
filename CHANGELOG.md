@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.25.0] - 2026-03-03
+
+### Bug Fixes
+
+- use file:// URL for ESM dynamic import on Windows
+
+
 ## [0.24.0] - 2026-03-02
 
 ### Features
