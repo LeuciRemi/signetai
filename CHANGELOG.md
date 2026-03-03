@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.35.1] - 2026-03-03
+
+### Docs
+
+- update Patchy's credit link to Substack
+
+
 ## [0.35.0] - 2026-03-03
 
 ### Docs
