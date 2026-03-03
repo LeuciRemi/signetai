@@ -1,0 +1,116 @@
+version: 1
+updated_at: "2026-03-03"
+
+specs:
+  - id: memory-pipeline-v2
+    status: complete
+    path: docs/specs/complete/memory-pipeline-plan.md
+    hard_depends_on: []
+    soft_depends_on: []
+    blocks:
+      - session-continuity-protocol
+      - procedural-memory-plan
+      - knowledge-architecture-schema
+      - predictive-memory-scorer
+
+  - id: session-continuity-protocol
+    status: approved
+    path: docs/specs/approved/session-continuity-protocol.md
+    hard_depends_on:
+      - memory-pipeline-v2
+    soft_depends_on: []
+    blocks:
+      - knowledge-architecture-schema
+      - predictive-memory-scorer
+
+  - id: procedural-memory-plan
+    status: approved
+    path: docs/specs/approved/procedural-memory-plan.md
+    hard_depends_on:
+      - memory-pipeline-v2
+    soft_depends_on: []
+    blocks:
+      - knowledge-architecture-schema
+
+  - id: knowledge-architecture-schema
+    status: planning
+    path: docs/specs/planning/knowledge-architecture-schema.md
+    hard_depends_on:
+      - memory-pipeline-v2
+      - session-continuity-protocol
+      - procedural-memory-plan
+    soft_depends_on: []
+    blocks:
+      - predictive-memory-scorer
+
+  - id: predictive-memory-scorer
+    status: planning
+    path: docs/specs/planning/predictive-memory-scorer.md
+    hard_depends_on:
+      - memory-pipeline-v2
+      - knowledge-architecture-schema
+      - session-continuity-protocol
+    soft_depends_on: []
+    blocks: []
+
+  - id: daemon-refactor
+    status: approved
+    path: docs/specs/approved/daemon-refactor.md
+    hard_depends_on: []
+    soft_depends_on: []
+    blocks:
+      - daemon-refactor-plan
+
+  - id: daemon-refactor-plan
+    status: planning
+    path: docs/specs/planning/daemon-refactor-plan.md
+    hard_depends_on:
+      - daemon-refactor
+    soft_depends_on: []
+    blocks: []
+
+  - id: daemon-rust-rewrite
+    status: planning
+    path: docs/specs/planning/daemon-rust-rewrite.md
+    hard_depends_on:
+      - memory-pipeline-v2
+    soft_depends_on: []
+    blocks: []
+
+  - id: multi-agent-support
+    status: approved
+    path: docs/specs/approved/multi-agent-support.md
+    hard_depends_on:
+      - memory-pipeline-v2
+    soft_depends_on: []
+    blocks: []
+
+  - id: signet-roadmap-spec
+    status: planning
+    path: docs/specs/planning/signet-roadmap-spec.md
+    hard_depends_on: []
+    soft_depends_on: []
+    blocks: []
+
+  - id: openclaw-integration-strategy
+    status: complete
+    path: docs/specs/complete/openclaw-integration-strategy.md
+    hard_depends_on: []
+    soft_depends_on: []
+    blocks:
+      - openclaw-importance-scoring-pr
+
+  - id: openclaw-importance-scoring-pr
+    status: complete
+    path: docs/specs/complete/openclaw-importance-scoring-pr.md
+    hard_depends_on:
+      - openclaw-integration-strategy
+    soft_depends_on: []
+    blocks: []
+
+  - id: notebook-dump-2026-02-25
+    status: reference
+    path: docs/specs/planning/notebook-dump-2026-02-25.md
+    hard_depends_on: []
+    soft_depends_on: []
+    blocks: []

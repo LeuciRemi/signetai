@@ -229,9 +229,10 @@ Small. Dense. Connected. Correct.
 
 ---
 
-*This document describes the architectural concepts. For the schema
-specification, see the planned migration spec. For the extraction pipeline
-implementation, see [Memory Pipeline](./PIPELINE.md).*
+*This document describes the architectural concepts. For the implementation
+contract, see [Knowledge Architecture Schema and Traversal Spec](./specs/planning/knowledge-architecture-schema.md).
+For predictive ranking integration, see [Signet Predictive Memory Scorer](./specs/planning/predictive-memory-scorer.md).
+For extraction pipeline behavior, see [Memory Pipeline](./PIPELINE.md).*
 
 ---
 

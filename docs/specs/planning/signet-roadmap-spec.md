@@ -7,6 +7,7 @@ title: "Signet Roadmap & Technical Spec"
 **Date:** 2026-02-25
 **Status:** Living document
 **Source:** Notebook review, install observations, user feedback
+**Spec Registry:** `docs/specs/INDEX.md`
 
 This is the honest state of things. What's broken, what's missing, what
 we're building toward. Each section covers the why, then the what, then
@@ -330,9 +331,11 @@ No detailed spec here yet -- this is ongoing directional work.
 
 ## 3.3 Predictive Memory Scorer
 
-Already designed in `docs/wip/predictive-memory-scorer.md`. ~1.11M
-parameter model for memory importance scoring. Replaces heuristic
-scoring with learned predictions.
+Already designed in `docs/specs/planning/predictive-memory-scorer.md`
+and now paired with
+`docs/specs/planning/knowledge-architecture-schema.md`. ~1.11M
+parameter model for memory importance scoring, running on top of
+structural traversal candidates instead of a flat fact pool.
 
 Needs implementation. This is a medium-priority project that improves
 memory quality over time.

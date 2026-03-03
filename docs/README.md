@@ -380,6 +380,7 @@ Documentation
 - [API Reference](./docs/API.md)
 - [Self-Hosting](./docs/SELF-HOSTING.md)
 - [Architecture](./docs/ARCHITECTURE.md)
+- [Specs Index](./docs/specs/INDEX.md)
 
 Development
 ===

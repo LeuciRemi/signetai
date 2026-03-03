@@ -4,6 +4,13 @@ title: "Signet Predictive Memory Scorer"
 
 # Signet Predictive Memory Scorer
 
+Spec metadata:
+- ID: `predictive-memory-scorer`
+- Status: `planning`
+- Hard depends on: `memory-pipeline-v2`, `knowledge-architecture-schema`,
+  `session-continuity-protocol`
+- Registry: `docs/specs/INDEX.md`
+
 ## The North Star
 
 Signet isn't just a memory database with search. It's a prediction
@@ -38,6 +45,28 @@ back into future scoring. Meanwhile, recent research (ACAN, Memory-R1) shows
 that learned memory retrieval dramatically outperforms heuristic approaches -
 but nobody is training a per-user model that progressively improves on their
 personal memory corpus. That's what we're building.
+
+## Knowledge Architecture Coupling
+
+This spec now depends on
+`docs/specs/planning/knowledge-architecture-schema.md`.
+
+The predictor is still a ranking layer, but the candidate floor is no longer
+"flat facts only." Structural retrieval (entity -> aspect ->
+attribute/constraint + dependencies) defines the first-pass candidate pool,
+then the predictor ranks within that coherent set.
+
+Integration contracts:
+
+1. Candidate pre-filter includes traversal candidates from structural graph
+   walking in addition to effective score and embedding similarity.
+2. Predictor feature payload includes structural signals (`entity_slot`,
+   `aspect_slot`, `is_constraint`) so the model can learn aspect-level
+   relevance patterns.
+3. Comparison reporting includes structural slices (per-project and
+   per-entity), not only global EMA.
+4. Constraints remain non-negotiable surfaced context. The predictor may rank
+   them, but cannot suppress required constraints.
 
 ## Research Foundation
 
