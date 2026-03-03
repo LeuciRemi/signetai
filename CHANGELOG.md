@@ -2,6 +2,23 @@
 
 All notable changes to Signet are documented here.
 
+## [0.34.1] - 2026-03-03
+
+### Features
+
+- **web**: add constraint confidence, bounded context, and set-and-forget sections to blog post
+
+### Bug Fixes
+
+- **docs**: repair attribution formatting in knowledge architecture doc
+
+### Docs
+
+- update Patchy's credit to full name — Micheal Luigi Pacitto
+- credit Michael (PatchyToes) for entity/aspect/attribute framework contributions
+- constraint confidence, bounded context, and set-and-forget principle
+
+
 ## [0.34.0] - 2026-03-03
 
 ### Bug Fixes
