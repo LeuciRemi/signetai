@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.35.0] - 2026-03-03
+
+### Docs
+
+- add hyperlinks to author credits
+
+
 ## [0.34.1] - 2026-03-03
 
 ### Features
