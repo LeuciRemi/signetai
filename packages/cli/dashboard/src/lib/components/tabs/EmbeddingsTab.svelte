@@ -1410,7 +1410,7 @@ $effect(() => {
 							<span class="inline-flex items-center gap-1"><span class="inline-block w-[8px] h-[8px] rounded-full" style={`background:${newnessLegendColor(5 * 60 * 1000, 0.95)}`}></span>last few minutes</span>
 							<span class="inline-flex items-center gap-1"><span class="inline-block w-[8px] h-[8px] rounded-full" style={`background:${newnessLegendColor(3 * 60 * 60 * 1000, 0.9)}`}></span>last few hours</span>
 							<span class="inline-flex items-center gap-1"><span class="inline-block w-[8px] h-[8px] rounded-full" style={`background:${newnessLegendColor(3 * 24 * 60 * 60 * 1000, 0.85)}`}></span>last week</span>
-							<span class="inline-flex items-center gap-1"><span class="inline-block w-[8px] h-[8px] rounded-full" style={`background:${newnessLegendColor(30 * 24 * 60 * 60 * 1000, 0.8)}`}></span>older</span>
+							<span class="inline-flex items-center gap-1"><span class="inline-block w-[8px] h-[8px] rounded-full border border-[rgba(255,255,255,0.28)]" style={`background:${sourceColorRgba('unknown', 0.95)}`}></span>older (source)</span>
 						</div>
 						<div class="flex flex-wrap gap-1 mb-1.5">
 							{#each legendSourceCounts as source}

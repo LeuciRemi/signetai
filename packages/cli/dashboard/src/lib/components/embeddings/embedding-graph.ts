@@ -167,11 +167,15 @@ function newnessBucketFromIntensity(intensity: number): NewnessBucket {
 	return "older";
 }
 
+export function newnessBucket(createdAt: string | undefined, nowMs: number): NewnessBucket {
+	return newnessBucketFromIntensity(newnessIntensity(createdAt, nowMs));
+}
+
 export function newnessFillStyle(intensity: number, alpha: number): string {
 	const bucket = newnessBucketFromIntensity(intensity);
-	if (bucket === "minutes") return `rgba(255, 246, 150, ${alpha})`;
-	if (bucket === "hours") return `rgba(255, 198, 96, ${alpha})`;
-	if (bucket === "week") return `rgba(244, 146, 78, ${alpha})`;
+	if (bucket === "minutes") return `rgba(255, 255, 255, ${alpha})`;
+	if (bucket === "hours") return `rgba(168, 34, 98, ${alpha})`;
+	if (bucket === "week") return `rgba(76, 34, 122, ${alpha})`;
 	return `rgba(118, 111, 102, ${alpha})`;
 }
 
@@ -418,6 +422,7 @@ export function nodeFillStyle(
 	if (isPinned) return dimmed ? "rgba(220, 220, 220, 0.42)" : "rgba(235, 235, 235, 0.95)";
 	if (dimmed) return "rgba(120, 120, 120, 0.2)";
 	if (colorMode === "newness") {
+		if (newnessBucket(node.data.createdAt, nowMs) === "older") return sourceColorRgba(node.data.who, 0.85);
 		const intensity = newnessIntensity(node.data.createdAt, nowMs);
 		return newnessFillStyle(intensity, 0.9);
 	}
@@ -471,7 +476,10 @@ export function nodeColor3D(
 	const dimmed = filterIds !== null && !filterIds.has(id);
 	if (dimmed) return "#5b5b5b";
 	if (showNewSinceLastSeen && isNewSinceLastSeen(createdAt, lastSeenMs)) return "#f6c26b";
-	if (colorMode === "newness") return newnessFillStyle(newnessIntensity(createdAt, nowMs), 1);
+	if (colorMode === "newness") {
+		if (newnessBucket(createdAt, nowMs) === "older") return sourceColors[who] ?? sourceColors["unknown"];
+		return newnessFillStyle(newnessIntensity(createdAt, nowMs), 1);
+	}
 	return sourceColors[who] ?? sourceColors["unknown"];
 }
 
