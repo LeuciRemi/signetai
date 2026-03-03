@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.28.0] - 2026-03-03
+
+### Features
+
+- **web**: update vision blog post - "It Learns Now"
+
+
 ## [0.27.1] - 2026-03-03
 
 ### Features
