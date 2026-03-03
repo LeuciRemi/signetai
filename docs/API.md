@@ -1387,8 +1387,10 @@ Returns `404` if the secret does not exist.
 ### POST /api/secrets/exec
 
 Execute a shell command with multiple secrets injected into the subprocess
-environment. Callers pass a map of env var names to secret names — never
-actual values. The daemon resolves and injects all values before spawning.
+environment. Callers pass a map of env var names to secret references —
+never actual values. References can be Signet secret names or direct
+1Password refs (`op://vault/item/field`). The daemon resolves and injects
+all values before spawning.
 
 **Request body**
 
@@ -1435,6 +1437,45 @@ from the URL path is injected under its own name.
 
 ```json
 { "code": 0, "stdout": "...", "stderr": "" }
+```
+
+### GET /api/secrets/1password/status
+
+Return 1Password integration status, including whether a service account
+token is configured and (when available) accessible vaults.
+
+### POST /api/secrets/1password/connect
+
+Validate and store a 1Password service account token.
+
+**Request body**
+
+```json
+{ "token": "ops_..." }
+```
+
+### DELETE /api/secrets/1password/connect
+
+Disconnect 1Password integration by removing the stored service account
+token secret.
+
+### GET /api/secrets/1password/vaults
+
+List accessible vaults for the connected service account.
+
+### POST /api/secrets/1password/import
+
+Import password-like fields from 1Password vault items into Signet
+secrets.
+
+**Request body**
+
+```json
+{
+  "vaults": ["Engineering"],
+  "prefix": "OP",
+  "overwrite": false
+}
 ```
 
 

@@ -719,13 +719,15 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 			title: "Execute with Secrets",
 			description:
 				"Run a shell command with secrets injected as environment variables. " +
-				"Provide a secrets map where keys are env var names and values are secret names. " +
+				"Provide a secrets map where keys are env var names and values are Signet secret names or 1Password references (op://vault/item/field). " +
 				"Output is automatically redacted — secret values never appear in results.",
 			inputSchema: z.object({
 				command: z.string().describe("Shell command to execute"),
 				secrets: z
 					.record(z.string(), z.string())
-					.describe('Map of env var name → secret name, e.g. { "OPENAI_API_KEY": "OPENAI_API_KEY" }'),
+					.describe(
+						'Map of env var name → secret ref, e.g. { "OPENAI_API_KEY": "OPENAI_API_KEY" } or { "DB_PASSWORD": "op://vault/item/password" }',
+					),
 			}),
 			annotations: { readOnlyHint: false },
 		},

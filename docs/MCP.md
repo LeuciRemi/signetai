@@ -240,7 +240,7 @@ is automatically redacted — secret values never appear in results.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `command` | string | yes | Shell command to execute |
-| `secrets` | object | yes | Map of env var name to secret name (at least one entry required) |
+| `secrets` | object | yes | Map of env var name to secret reference (Signet name or `op://...`) |
 
 **Returns:** Object with `stdout`, `stderr`, and `code` (exit code).
 Secret values in output are replaced with `[REDACTED]`.

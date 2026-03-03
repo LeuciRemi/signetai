@@ -3878,6 +3878,228 @@ secretCmd
 		}
 	});
 
+function appendCliString(value: string, previous: string[]): string[] {
+	return [...previous, value];
+}
+
+const onePasswordCmd = secretCmd
+	.command("onepassword")
+	.alias("op")
+	.description("Manage 1Password integration");
+
+onePasswordCmd
+	.command("connect [token]")
+	.description("Connect 1Password using a service account token")
+	.action(async (rawToken?: string) => {
+		if (!(await ensureDaemonForSecrets())) return;
+
+		const token =
+			rawToken ??
+			(await password({
+				message: "1Password service account token:",
+				mask: "•",
+			}));
+
+		if (!token) {
+			console.error(chalk.red("  Token cannot be empty"));
+			process.exit(1);
+		}
+
+		const spinner = ora("Connecting to 1Password...").start();
+		try {
+			const { ok, data } = await secretApiCall("POST", "/api/secrets/1password/connect", {
+				token,
+			});
+
+			if (!ok) {
+				spinner.fail(chalk.red(`Failed: ${(data as { error: string }).error}`));
+				process.exit(1);
+			}
+
+			const vaultCount =
+				typeof (data as { vaultCount?: unknown }).vaultCount === "number"
+					? (data as { vaultCount: number }).vaultCount
+					: 0;
+
+			spinner.succeed(
+				chalk.green(`Connected to 1Password (${vaultCount} vaults accessible)`),
+			);
+		} catch (e) {
+			spinner.fail(chalk.red(`Error: ${(e as Error).message}`));
+			process.exit(1);
+		}
+	});
+
+onePasswordCmd
+	.command("status")
+	.description("Show 1Password connection status")
+	.action(async () => {
+		if (!(await ensureDaemonForSecrets())) return;
+
+		try {
+			const { ok, data } = await secretApiCall("GET", "/api/secrets/1password/status");
+			if (!ok) {
+				console.error(chalk.red(`  Error: ${(data as { error: string }).error}`));
+				process.exit(1);
+			}
+
+			const payload = data as {
+				configured?: boolean;
+				connected?: boolean;
+				vaultCount?: number;
+				error?: string;
+			};
+
+			if (!payload.configured) {
+				console.log(chalk.dim("  1Password is not connected."));
+				console.log(chalk.dim("  Run: signet secret onepassword connect"));
+				return;
+			}
+
+			if (payload.connected) {
+				console.log(chalk.green("  Connected to 1Password"));
+				console.log(chalk.dim(`  Accessible vaults: ${payload.vaultCount ?? 0}`));
+				return;
+			}
+
+			console.log(chalk.yellow("  1Password token is configured but not usable."));
+			if (payload.error) {
+				console.log(chalk.dim(`  ${payload.error}`));
+			}
+		} catch (e) {
+			console.error(chalk.red(`  Error: ${(e as Error).message}`));
+			process.exit(1);
+		}
+	});
+
+onePasswordCmd
+	.command("vaults")
+	.description("List accessible 1Password vaults")
+	.action(async () => {
+		if (!(await ensureDaemonForSecrets())) return;
+
+		try {
+			const { ok, data } = await secretApiCall("GET", "/api/secrets/1password/vaults");
+			if (!ok) {
+				console.error(chalk.red(`  Error: ${(data as { error: string }).error}`));
+				process.exit(1);
+			}
+
+			const vaults = (data as { vaults?: Array<{ id: string; name: string }> }).vaults ?? [];
+			if (vaults.length === 0) {
+				console.log(chalk.dim("  No vaults available."));
+				return;
+			}
+
+			for (const vault of vaults) {
+				console.log(`  ${chalk.cyan("◈")} ${vault.name} ${chalk.dim(`(${vault.id})`)}`);
+			}
+		} catch (e) {
+			console.error(chalk.red(`  Error: ${(e as Error).message}`));
+			process.exit(1);
+		}
+	});
+
+onePasswordCmd
+	.command("import")
+	.description("Import password-like fields from 1Password into Signet secrets")
+	.option(
+		"-v, --vault <vault>",
+		"Vault ID or exact name (repeatable)",
+		appendCliString,
+		[] as string[],
+	)
+	.option("--prefix <prefix>", "Prefix for imported secret names", "OP")
+	.option(
+		"--overwrite",
+		"Overwrite existing Signet secrets with the same name",
+		false,
+	)
+	.option("--token <token>", "Use token for this import without saving it")
+	.action(
+		async (options: {
+			vault: string[];
+			prefix: string;
+			overwrite: boolean;
+			token?: string;
+		}) => {
+			if (!(await ensureDaemonForSecrets())) return;
+
+			const spinner = ora("Importing from 1Password...").start();
+			try {
+				const { ok, data } = await secretApiCall("POST", "/api/secrets/1password/import", {
+					token: options.token,
+					vaults: options.vault.length > 0 ? options.vault : undefined,
+					prefix: options.prefix,
+					overwrite: options.overwrite,
+				});
+
+				if (!ok) {
+					spinner.fail(chalk.red(`Failed: ${(data as { error: string }).error}`));
+					process.exit(1);
+				}
+
+				const result = data as {
+					importedCount?: number;
+					skippedCount?: number;
+					errorCount?: number;
+					errors?: Array<{ itemTitle: string; error: string }>;
+				};
+
+				spinner.succeed(
+					chalk.green(
+						`Imported ${result.importedCount ?? 0} secrets` +
+							` (skipped ${result.skippedCount ?? 0}, errors ${result.errorCount ?? 0})`,
+					),
+				);
+
+				if ((result.errorCount ?? 0) > 0 && result.errors) {
+					const maxPreview = Math.min(3, result.errors.length);
+					for (let index = 0; index < maxPreview; index += 1) {
+						const item = result.errors[index];
+						console.log(chalk.dim(`  - ${item.itemTitle}: ${item.error}`));
+					}
+					if (result.errors.length > maxPreview) {
+						console.log(
+							chalk.dim(
+								`  ...and ${result.errors.length - maxPreview} more`,
+							),
+						);
+					}
+				}
+			} catch (e) {
+				spinner.fail(chalk.red(`Error: ${(e as Error).message}`));
+				process.exit(1);
+			}
+		},
+	);
+
+onePasswordCmd
+	.command("disconnect")
+	.description("Disconnect 1Password and remove stored service account token")
+	.action(async () => {
+		if (!(await ensureDaemonForSecrets())) return;
+
+		const confirmed = await confirm({
+			message: "Disconnect 1Password integration?",
+			default: false,
+		});
+		if (!confirmed) return;
+
+		const spinner = ora("Disconnecting 1Password...").start();
+		try {
+			const { ok, data } = await secretApiCall("DELETE", "/api/secrets/1password/connect");
+			if (!ok) {
+				spinner.fail(chalk.red(`Failed: ${(data as { error: string }).error}`));
+				process.exit(1);
+			}
+			spinner.succeed(chalk.green("1Password disconnected"));
+		} catch (e) {
+			spinner.fail(chalk.red(`Error: ${(e as Error).message}`));
+			process.exit(1);
+		}
+	});
+
 // ============================================================================
 // Skills Commands
 // ============================================================================

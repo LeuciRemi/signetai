@@ -10,11 +10,12 @@
  * subprocess environment that the agent cannot inspect.
  */
 
+import { execSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir, hostname } from "node:os";
+import { join } from "node:path";
 import sodium from "libsodium-wrappers";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { homedir, hostname } from "os";
-import { join } from "path";
-import { execSync, spawn } from "child_process";
+import { ONEPASSWORD_SERVICE_ACCOUNT_SECRET, isOnePasswordReference, readOnePasswordReference } from "./onepassword.js";
 
 // ---------------------------------------------------------------------------
 // Storage layout
@@ -66,10 +67,9 @@ function getMachineId(): string {
 
 	// macOS fallback
 	try {
-		const out = execSync(
-			"ioreg -rd1 -c IOPlatformExpertDevice | grep IOPlatformUUID | awk '{print $3}'",
-			{ timeout: 2000 },
-		)
+		const out = execSync("ioreg -rd1 -c IOPlatformExpertDevice | grep IOPlatformUUID | awk '{print $3}'", {
+			timeout: 2000,
+		})
 			.toString()
 			.trim()
 			.replace(/"/g, "");
@@ -123,16 +123,12 @@ async function decrypt(ciphertext: string): Promise<string> {
 	await sodium.ready;
 	const key = await getMasterKey();
 
-	const combined = sodium.from_base64(
-		ciphertext,
-		sodium.base64_variants.ORIGINAL,
-	);
+	const combined = sodium.from_base64(ciphertext, sodium.base64_variants.ORIGINAL);
 	const nonce = combined.slice(0, sodium.crypto_secretbox_NONCEBYTES);
 	const box = combined.slice(sodium.crypto_secretbox_NONCEBYTES);
 
 	const message = sodium.crypto_secretbox_open_easy(box, nonce, key);
-	if (!message)
-		throw new Error("Decryption failed - key mismatch or corrupted data");
+	if (!message) throw new Error("Decryption failed - key mismatch or corrupted data");
 
 	return new TextDecoder().decode(message);
 }
@@ -176,11 +172,20 @@ export async function putSecret(name: string, value: string): Promise<void> {
 	saveStore(store);
 }
 
-export async function getSecret(name: string): Promise<string> {
+async function getStoredSecret(name: string): Promise<string> {
 	const store = loadStore();
 	const entry = store.secrets[name];
 	if (!entry) throw new Error(`Secret '${name}' not found`);
 	return decrypt(entry.ciphertext);
+}
+
+export async function getSecret(name: string): Promise<string> {
+	if (isOnePasswordReference(name)) {
+		const token = await getStoredSecret(ONEPASSWORD_SERVICE_ACCOUNT_SECRET);
+		return readOnePasswordReference(name, token);
+	}
+
+	return getStoredSecret(name);
 }
 
 export function hasSecret(name: string): boolean {
@@ -208,10 +213,7 @@ export function deleteSecret(name: string): boolean {
  * @param command  Shell command string to execute
  * @param secretRefs  Map of env var name → secret name, e.g. { OPENAI_API_KEY: "OPENAI_API_KEY" }
  */
-export async function execWithSecrets(
-	command: string,
-	secretRefs: Record<string, string>,
-): Promise<ExecResult> {
+export async function execWithSecrets(command: string, secretRefs: Record<string, string>): Promise<ExecResult> {
 	// Resolve all secret values up front so we can redact them from output
 	const resolved: Record<string, string> = {};
 	for (const [envVar, secretName] of Object.entries(secretRefs)) {
@@ -230,39 +232,27 @@ export async function execWithSecrets(
 		return out;
 	}
 
-	return new Promise((resolve, reject) => {
-		const proc = spawn("sh", ["-c", command], {
+	try {
+		const result = spawnSync("sh", ["-c", command], {
 			env: { ...process.env, ...resolved },
-			stdio: ["ignore", "pipe", "pipe"],
+			encoding: "utf-8",
 		});
 
-		let stdout = "";
-		let stderr = "";
+		if (result.error) {
+			throw result.error;
+		}
 
-		proc.stdout.on("data", (d: Buffer) => {
-			stdout += d.toString();
-		});
-		proc.stderr.on("data", (d: Buffer) => {
-			stderr += d.toString();
-		});
-
-		proc.on("close", (code) => {
-			// Zero out resolved values from memory (best-effort in JS)
-			for (const key of Object.keys(resolved)) {
-				resolved[key] = "";
-			}
-
-			resolve({
-				stdout: redact(stdout),
-				stderr: redact(stderr),
-				code: code ?? 1,
-			});
-		});
-
-		proc.on("error", (err) => {
-			reject(err);
-		});
-	});
+		return {
+			stdout: redact(result.stdout),
+			stderr: redact(result.stderr),
+			code: result.status ?? 1,
+		};
+	} finally {
+		// Zero out resolved values from memory (best-effort in JS)
+		for (const key of Object.keys(resolved)) {
+			resolved[key] = "";
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -273,8 +263,6 @@ const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 function validateName(name: string): void {
 	if (!NAME_RE.test(name)) {
-		throw new Error(
-			`Invalid secret name '${name}'. Use letters, digits, and underscores only.`,
-		);
+		throw new Error(`Invalid secret name '${name}'. Use letters, digits, and underscores only.`);
 	}
 }

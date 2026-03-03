@@ -78,6 +78,27 @@ signet secret delete GITHUB_TOKEN
 # ✓ Secret GITHUB_TOKEN deleted
 ```
 
+### 1Password integration
+
+```bash
+# Connect using a service account token (prompted if omitted)
+signet secret onepassword connect
+
+# Check status and list vaults
+signet secret onepassword status
+signet secret onepassword vaults
+
+# Import password-like fields from selected vaults
+signet secret onepassword import --vault Engineering --prefix OP
+
+# Disconnect and remove stored service account token
+signet secret onepassword disconnect
+```
+
+Imported values are stored as regular Signet secrets with generated names,
+and `secret_exec` can also reference 1Password secrets directly via
+`op://vault/item/field` when connected.
+
 ### Export / import (planned)
 
 ```bash
@@ -121,19 +142,21 @@ The daemon can spawn a subprocess with secrets injected into its environment. Th
 **HTTP API:**
 
 ```http
-POST /api/secrets/OPENAI_API_KEY/exec
+POST /api/secrets/exec
 Content-Type: application/json
 
 {
   "command": "curl https://api.openai.com/v1/models",
   "secrets": {
-    "OPENAI_API_KEY": "OPENAI_API_KEY"
+    "OPENAI_API_KEY": "OPENAI_API_KEY",
+    "DB_PASSWORD": "op://Engineering/Prod DB/password"
   }
 }
 ```
 
-The map is `{ env_var_name: secret_name }`. The daemon:
-1. Resolves each secret name to its decrypted value
+The map is `{ env_var_name: secret_reference }` where a reference can be a
+stored Signet secret name or a 1Password `op://...` reference. The daemon:
+1. Resolves each secret reference to its value
 2. Spawns the subprocess with the resolved values in the environment
 3. Returns stdout/stderr with any secret values redacted from the output
 
@@ -182,7 +205,13 @@ The full secrets API is documented in [API.md](./API.md#secrets-api). Summary:
 | `/api/secrets` | GET | List secret names |
 | `/api/secrets/:name` | POST | Store a secret |
 | `/api/secrets/:name` | DELETE | Delete a secret |
-| `/api/secrets/:name/exec` | POST | Execute command with secret injected |
+| `/api/secrets/exec` | POST | Execute command with one or more secrets injected |
+| `/api/secrets/:name/exec` | POST | Legacy single-secret exec |
+| `/api/secrets/1password/status` | GET | 1Password integration status |
+| `/api/secrets/1password/connect` | POST | Connect/save service account token |
+| `/api/secrets/1password/connect` | DELETE | Disconnect/remove stored token |
+| `/api/secrets/1password/vaults` | GET | List accessible 1Password vaults |
+| `/api/secrets/1password/import` | POST | Import vault secrets into Signet |
 
 ---
 

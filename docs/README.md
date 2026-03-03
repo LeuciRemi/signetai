@@ -314,7 +314,7 @@ The daemon exposes a REST API organized into these domains:
 | Timeline | event replay, incident reconstruction |
 | Repair | available actions, execute, dry-run |
 | Skills | list, install, remove |
-| Secrets | list, set, delete, exec |
+| Secrets | list, set, delete, exec, 1Password connect/import |
 | Harnesses | list, sync |
 | Hooks | session-start, prompt-submit, session-end, synthesis |
 | Logs | tail, search |
