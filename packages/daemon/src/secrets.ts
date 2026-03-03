@@ -10,7 +10,7 @@
  * subprocess environment that the agent cannot inspect.
  */
 
-import { execSync, spawnSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
@@ -232,27 +232,42 @@ export async function execWithSecrets(command: string, secretRefs: Record<string
 		return out;
 	}
 
-	try {
-		const result = spawnSync("sh", ["-c", command], {
+	return new Promise((resolve, reject) => {
+		const proc = spawn("sh", ["-c", command], {
 			env: { ...process.env, ...resolved },
-			encoding: "utf-8",
+			stdio: "pipe",
 		});
 
-		if (result.error) {
-			throw result.error;
-		}
+		let stdout = "";
+		let stderr = "";
 
-		return {
-			stdout: redact(result.stdout),
-			stderr: redact(result.stderr),
-			code: result.status ?? 1,
-		};
-	} finally {
-		// Zero out resolved values from memory (best-effort in JS)
-		for (const key of Object.keys(resolved)) {
-			resolved[key] = "";
-		}
-	}
+		proc.stdout?.on("data", (d) => {
+			stdout += d.toString();
+		});
+		proc.stderr?.on("data", (d) => {
+			stderr += d.toString();
+		});
+
+		proc.on("close", (code) => {
+			// Zero out resolved values from memory (best-effort in JS)
+			for (const key of Object.keys(resolved)) {
+				resolved[key] = "";
+			}
+
+			resolve({
+				stdout: redact(stdout),
+				stderr: redact(stderr),
+				code: code ?? 1,
+			});
+		});
+
+		proc.on("error", (err) => {
+			for (const key of Object.keys(resolved)) {
+				resolved[key] = "";
+			}
+			reject(err);
+		});
+	});
 }
 
 // ---------------------------------------------------------------------------
