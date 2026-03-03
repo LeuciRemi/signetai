@@ -6420,6 +6420,7 @@ function startFileWatcher() {
 		{
 			persistent: true,
 			ignoreInitial: true,
+			ignored: [/\.db-wal$/, /\.db-shm$/, /\.db-journal$/],
 		},
 	);
 
