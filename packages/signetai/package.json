@@ -18,7 +18,7 @@
   "scripts": {
     "build": "bun run build:cli && bun run build:daemon && bun run build:dashboard",
     "build:cli": "bun build ../cli/src/cli.ts --outfile ./dist/cli.js --target node --external better-sqlite3",
-    "build:daemon": "bun build ../daemon/src/daemon.ts --outfile ./dist/daemon.js --target bun && bun build ../daemon/src/mcp-stdio.ts --outfile ./dist/mcp-stdio.js --target bun",
+    "build:daemon": "bun build ../daemon/src/daemon.ts --outfile ./dist/daemon.js --target bun --external @1password/sdk --external onnxruntime-node && bun build ../daemon/src/mcp-stdio.ts --outfile ./dist/mcp-stdio.js --target bun --external @1password/sdk --external onnxruntime-node",
     "build:dashboard": "rm -rf ./dashboard && cp -r ../cli/dashboard/build ./dashboard 2>/dev/null || echo 'Dashboard not built yet'",
     "prepublishOnly": "bun run build",
     "postinstall": "node ./bin/postinstall.cjs || true"
@@ -62,9 +62,11 @@
     "libsodium-wrappers": "^0.8.2",
     "open": "^10.0.0",
     "ora": "^8.0.0",
-    "sqlite-vec": "^0.1.7-alpha.2"
+    "sqlite-vec": "^0.1.7-alpha.2",
+    "onnxruntime-node": "1.21.0"
   },
   "optionalDependencies": {
+    "@1password/sdk": "^0.3.0",
     "better-sqlite3": "^12.0.0"
   },
   "devDependencies": {
