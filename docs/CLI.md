@@ -501,7 +501,8 @@ signet sync
 `signet secret`
 ---
 
-Manage encrypted secrets stored via the daemon.
+Manage encrypted secrets stored via the daemon, including 1Password
+service-account integration.
 
 ```bash
 signet secret put OPENAI_API_KEY
@@ -509,6 +510,13 @@ signet secret put GITHUB_TOKEN ghp_...   # value inline
 signet secret list
 signet secret delete GITHUB_TOKEN
 signet secret has OPENAI_API_KEY
+
+# 1Password integration
+signet secret onepassword connect
+signet secret onepassword status
+signet secret onepassword vaults
+signet secret onepassword import --vault Engineering --prefix OP
+signet secret onepassword disconnect
 ```
 
 Subcommands:
@@ -519,6 +527,11 @@ Subcommands:
 | `signet secret list` | List all secret names (never values) |
 | `signet secret delete <name>` | Delete a secret (prompts for confirmation) |
 | `signet secret has <name>` | Check existence; exits 0 if found, 1 if not |
+| `signet secret onepassword connect [token]` | Save/validate a 1Password service account token |
+| `signet secret onepassword status` | Show 1Password connection and vault access status |
+| `signet secret onepassword vaults` | List accessible 1Password vaults |
+| `signet secret onepassword import` | Import password-like fields from 1Password into Signet secrets |
+| `signet secret onepassword disconnect` | Remove stored 1Password service account token |
 
 A `GITHUB_TOKEN` secret is used by `signet git` to authenticate pushes to
 a remote repository.

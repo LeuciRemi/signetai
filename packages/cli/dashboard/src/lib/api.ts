@@ -582,10 +582,7 @@ export interface SyncResult {
 
 export async function syncConnector(id: string): Promise<SyncResult> {
 	try {
-		const response = await fetch(
-			`${API_BASE}/api/connectors/${encodeURIComponent(id)}/sync`,
-			{ method: "POST" },
-		);
+		const response = await fetch(`${API_BASE}/api/connectors/${encodeURIComponent(id)}/sync`, { method: "POST" });
 		return await response.json();
 	} catch (e) {
 		return { status: "error", error: e instanceof Error ? e.message : String(e) };
@@ -594,10 +591,9 @@ export async function syncConnector(id: string): Promise<SyncResult> {
 
 export async function syncConnectorFull(id: string): Promise<SyncResult> {
 	try {
-		const response = await fetch(
-			`${API_BASE}/api/connectors/${encodeURIComponent(id)}/sync/full?confirm=true`,
-			{ method: "POST" },
-		);
+		const response = await fetch(`${API_BASE}/api/connectors/${encodeURIComponent(id)}/sync/full?confirm=true`, {
+			method: "POST",
+		});
 		return await response.json();
 	} catch (e) {
 		return { status: "error", error: e instanceof Error ? e.message : String(e) };
@@ -661,6 +657,157 @@ export async function deleteSecret(name: string): Promise<boolean> {
 		return response.ok;
 	} catch {
 		return false;
+	}
+}
+
+export interface OnePasswordVault {
+	readonly id: string;
+	readonly name: string;
+}
+
+export interface OnePasswordStatus {
+	readonly configured: boolean;
+	readonly connected: boolean;
+	readonly vaultCount?: number;
+	readonly vaults: readonly OnePasswordVault[];
+	readonly error?: string;
+}
+
+export interface OnePasswordImportResult {
+	readonly success: boolean;
+	readonly importedCount?: number;
+	readonly skippedCount?: number;
+	readonly errorCount?: number;
+	readonly itemsScanned?: number;
+	readonly vaultsScanned?: number;
+	readonly error?: string;
+}
+
+export async function getOnePasswordStatus(): Promise<OnePasswordStatus> {
+	try {
+		const response = await fetch(`${API_BASE}/api/secrets/1password/status`);
+		if (!response.ok) {
+			return {
+				configured: false,
+				connected: false,
+				vaults: [],
+			};
+		}
+		const data = await response.json();
+		return {
+			configured: data.configured === true,
+			connected: data.connected === true,
+			vaultCount: typeof data.vaultCount === "number" ? data.vaultCount : undefined,
+			vaults: Array.isArray(data.vaults) ? data.vaults : [],
+			error: typeof data.error === "string" ? data.error : undefined,
+		};
+	} catch {
+		return {
+			configured: false,
+			connected: false,
+			vaults: [],
+		};
+	}
+}
+
+export async function connectOnePassword(token: string): Promise<{
+	readonly success: boolean;
+	readonly error?: string;
+	readonly vaultCount?: number;
+	readonly vaults?: readonly OnePasswordVault[];
+}> {
+	try {
+		const response = await fetch(`${API_BASE}/api/secrets/1password/connect`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ token }),
+		});
+		const data = await response.json();
+		if (!response.ok) {
+			return {
+				success: false,
+				error: typeof data.error === "string" ? data.error : "Failed to connect 1Password",
+			};
+		}
+
+		return {
+			success: true,
+			vaultCount: typeof data.vaultCount === "number" ? data.vaultCount : undefined,
+			vaults: Array.isArray(data.vaults) ? data.vaults : [],
+		};
+	} catch {
+		return { success: false, error: "Failed to connect 1Password" };
+	}
+}
+
+export async function disconnectOnePassword(): Promise<{
+	readonly success: boolean;
+	readonly error?: string;
+}> {
+	try {
+		const response = await fetch(`${API_BASE}/api/secrets/1password/connect`, {
+			method: "DELETE",
+		});
+		const data = await response.json();
+		if (!response.ok) {
+			return {
+				success: false,
+				error: typeof data.error === "string" ? data.error : "Failed to disconnect 1Password",
+			};
+		}
+		return { success: true };
+	} catch {
+		return { success: false, error: "Failed to disconnect 1Password" };
+	}
+}
+
+export async function listOnePasswordVaults(): Promise<readonly OnePasswordVault[]> {
+	try {
+		const response = await fetch(`${API_BASE}/api/secrets/1password/vaults`);
+		if (!response.ok) return [];
+		const data = await response.json();
+		return Array.isArray(data.vaults) ? data.vaults : [];
+	} catch {
+		return [];
+	}
+}
+
+export async function importOnePasswordSecrets(params: {
+	readonly token?: string;
+	readonly vaults?: readonly string[];
+	readonly prefix?: string;
+	readonly overwrite?: boolean;
+}): Promise<OnePasswordImportResult> {
+	try {
+		const response = await fetch(`${API_BASE}/api/secrets/1password/import`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				token: params.token,
+				vaults: params.vaults,
+				prefix: params.prefix,
+				overwrite: params.overwrite,
+			}),
+		});
+
+		const data = await response.json();
+		if (!response.ok) {
+			return {
+				success: false,
+				error: typeof data.error === "string" ? data.error : "Failed to import from 1Password",
+			};
+		}
+
+		return {
+			success: true,
+			importedCount: typeof data.importedCount === "number" ? data.importedCount : undefined,
+			skippedCount: typeof data.skippedCount === "number" ? data.skippedCount : undefined,
+			errorCount: typeof data.errorCount === "number" ? data.errorCount : undefined,
+			itemsScanned: typeof data.itemsScanned === "number" ? data.itemsScanned : undefined,
+			vaultsScanned: typeof data.vaultsScanned === "number" ? data.vaultsScanned : undefined,
+		};
+	} catch {
+		return { success: false, error: "Failed to import from 1Password" };
 	}
 }
 
