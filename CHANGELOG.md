@@ -2,6 +2,14 @@
 
 All notable changes to Signet are documented here.
 
+## [0.35.3] - 2026-03-03
+
+### Bug Fixes
+
+- **embedding**: log ollama fallback failures for observability
+- **embedding**: resolve native embedding regression and restore ollama support
+
+
 ## [0.35.2] - 2026-03-03
 
 ### Bug Fixes
