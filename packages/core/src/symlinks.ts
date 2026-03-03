@@ -16,6 +16,12 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 
+/** Create a directory symlink, using junctions on Windows (no admin required) */
+function linkDirSync(target: string, path: string): void {
+	const type = process.platform === "win32" ? "junction" : "dir";
+	symlinkSync(target, path, type);
+}
+
 export interface SymlinkOptions {
 	/** If true, don't actually create symlinks, just report what would happen */
 	dryRun?: boolean;
@@ -123,7 +129,7 @@ export function symlinkSkills(
 			result.created.push(`${destPath} (dry-run)`);
 		} else {
 			try {
-				symlinkSync(srcPath, destPath);
+				linkDirSync(srcPath, destPath);
 				result.created.push(destPath);
 			} catch (e) {
 				result.errors.push({
@@ -176,7 +182,7 @@ export function symlinkDir(
 	}
 
 	try {
-		symlinkSync(src, dest);
+		linkDirSync(src, dest);
 		return true;
 	} catch {
 		return false;

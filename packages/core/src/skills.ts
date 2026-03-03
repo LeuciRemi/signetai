@@ -7,16 +7,14 @@
 
 import {
 	existsSync,
-	lstatSync,
 	mkdirSync,
 	readFileSync,
 	readdirSync,
 	statSync,
-	symlinkSync,
-	unlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { symlinkDir } from "./symlinks.js";
 
 /**
  * Metadata for a unified skill
@@ -151,25 +149,8 @@ export function symlinkClaudeSkills(basePath: string): {
 				continue;
 			}
 
-			// Check if dest exists
-			try {
-				const destStat = lstatSync(dest);
-				if (destStat.isSymbolicLink()) {
-					// Remove existing symlink to recreate
-					unlinkSync(dest);
-				} else {
-					// It's a real directory - skip to avoid data loss
-					continue;
-				}
-			} catch {
-				// dest doesn't exist, that's fine
-			}
-
-			try {
-				symlinkSync(src, dest);
+			if (symlinkDir(src, dest)) {
 				symlinkedSkills.push(skill);
-			} catch {
-				// Symlinks might fail on some systems
 			}
 		}
 	} catch {
@@ -326,22 +307,7 @@ export async function unifySkills(
 							mkdirSync(join(basePath, "skills"), { recursive: true });
 						}
 
-						// Remove existing symlink if present
-						try {
-							const existing = lstatSync(targetPath);
-							if (existing.isSymbolicLink()) {
-								unlinkSync(targetPath);
-							} else {
-								// Real directory - skip
-								skipped++;
-								continue;
-							}
-						} catch {
-							// Doesn't exist, proceed
-						}
-
-						try {
-							symlinkSync(entryPath, targetPath);
+						if (symlinkDir(entryPath, targetPath)) {
 							registry.skills[entry] = {
 								name: entry,
 								source: reg.harness as SkillMeta["source"],
@@ -349,7 +315,7 @@ export async function unifySkills(
 								path: targetPath,
 							};
 							symlinked++;
-						} catch {
+						} else {
 							skipped++;
 						}
 					} else {
