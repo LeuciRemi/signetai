@@ -32,7 +32,7 @@ for (const sqlitePath of HOMEBREW_SQLITE_PATHS) {
 			// Log so users can diagnose extension-loading failures.
 			console.warn(
 				`[db-accessor] setCustomSQLite(${sqlitePath}) skipped:`,
-				(e as Error).message ?? e,
+				e instanceof Error ? e.message : String(e),
 			);
 		}
 		break;
@@ -104,7 +104,7 @@ function loadVecExtension(db: Database): void {
 		} catch (e) {
 			console.warn(
 				"[db-accessor] loadExtension failed:",
-				(e as Error).message ?? e,
+				e instanceof Error ? e.message : String(e),
 			);
 		}
 	}
