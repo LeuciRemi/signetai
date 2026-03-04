@@ -70,7 +70,7 @@ import { fetchEmbedding, resolveEmbeddingBaseUrl, resolveEmbeddingApiKey, setNat
 import { buildEmbeddingHealth } from "./embedding-health";
 import { type EmbeddingTrackerHandle, startEmbeddingTracker } from "./embedding-tracker";
 import { getAllFeatureFlags, initFeatureFlags } from "./feature-flags";
-import { closeLlmProvider, initLlmProvider } from "./llm";
+import { closeLlmProvider, getLlmProvider, initLlmProvider } from "./llm";
 import { closeSynthesisProvider, initSynthesisProvider } from "./synthesis-llm";
 import { type LogEntry, logger } from "./logger";
 import {
@@ -174,6 +174,7 @@ const repairLimiter = createRateLimiter();
 // Telemetry — assigned in main(), read by cleanup()
 let telemetryRef: TelemetryCollector | undefined;
 let embeddingTrackerHandle: EmbeddingTrackerHandle | null = null;
+let skillReconcilerHandle: ReconcilerHandle | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 let checkpointPruneTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -3963,8 +3964,10 @@ app.get("/api/connectors/:id/health", (c) => {
 });
 
 // Skills routes (extracted to routes/skills.ts)
-import { mountSkillsRoutes } from "./routes/skills.js";
+import { mountSkillsRoutes, setFetchEmbedding } from "./routes/skills.js";
+import { startReconciler, type ReconcilerHandle } from "./pipeline/skill-reconciler.js";
 mountSkillsRoutes(app);
+setFetchEmbedding(fetchEmbedding);
 
 // Marketplace routes (MCP servers catalog + routing)
 import { mountMarketplaceRoutes } from "./routes/marketplace.js";
@@ -7193,6 +7196,12 @@ async function cleanup() {
 		telemetryRef = undefined;
 	}
 
+	// Stop skill reconciler
+	if (skillReconcilerHandle) {
+		skillReconcilerHandle.stop();
+		skillReconcilerHandle = null;
+	}
+
 	// Stop embedding tracker before pipeline/DB teardown
 	if (embeddingTrackerHandle) {
 		try {
@@ -7503,6 +7512,20 @@ async function main() {
 			fetchEmbedding,
 			checkEmbeddingProvider,
 		);
+	}
+
+	// Start skill reconciler if procedural memory is enabled
+	if (memoryCfg.pipelineV2.procedural.enabled) {
+		skillReconcilerHandle = startReconciler({
+			accessor: getDbAccessor(),
+			pipelineConfig: memoryCfg.pipelineV2,
+			embeddingConfig: memoryCfg.embedding,
+			fetchEmbedding,
+			getProvider: () => {
+				try { return getLlmProvider(); } catch { return null; }
+			},
+			agentsDir: AGENTS_DIR,
+		});
 	}
 
 	// Initialize checkpoint flush queue for continuity protocol
