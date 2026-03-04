@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.38.0] - 2026-03-04
+
+### Bug Fixes
+
+- **daemon**: replace self-fetch in search endpoint, add vec0 error logging
+
+
 ## [0.37.2] - 2026-03-04
 
 ### Features
