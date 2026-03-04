@@ -660,6 +660,7 @@ async function removeFromDetail(serverId: string): Promise<void> {
 		font-size: 10px;
 		line-height: 1.45;
 		color: var(--sig-text-muted);
+		line-clamp: 4;
 		display: -webkit-box;
 		-webkit-line-clamp: 4;
 		-webkit-box-orient: vertical;

@@ -65,10 +65,7 @@ function isSkill(item: Skill | SkillSearchResult): item is Skill {
 			</div>
 
 			<!-- Right side: badges / counts / actions -->
-			<div
-				class="flex items-center gap-[6px] shrink-0"
-				onclick={(e) => e.stopPropagation()}
-			>
+			<div class="flex items-center gap-[6px] shrink-0">
 				{#if mode === "search" && isSearchResult(item)}
 					<span class="skill-count">{item.installs}</span>
 					{#if item.installed}

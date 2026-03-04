@@ -383,6 +383,7 @@ let isInstalled = $derived(
 		line-height: 1.5;
 		margin: 0;
 		flex: 1;
+		line-clamp: 3;
 		display: -webkit-box;
 		-webkit-line-clamp: 3;
 		-webkit-box-orient: vertical;
