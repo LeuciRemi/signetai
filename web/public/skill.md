@@ -535,9 +535,11 @@ both memory systems may be running simultaneously. Signs of this:
 - Context feels bloated with redundant information
 
 To diagnose and fix:
-
-```bash
 # 1. Find your OpenClaw config
+find ~/.openclaw ~/.clawdbot ~/.moltbot \
+  ~/.config/openclaw ~/.config/clawdbot ~/.config/moltbot \
+  ~/.local/state/openclaw ~/.local/state/clawdbot ~/.local/state/moltbot \
+  -name "*.json" -o -name "*.json5" 2>/dev/null
 find ~/.openclaw ~/.clawdbot ~/.moltbot ~/.config/openclaw \
   -name "*.json" -o -name "*.json5" 2>/dev/null
 
