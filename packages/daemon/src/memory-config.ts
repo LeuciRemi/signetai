@@ -36,7 +36,7 @@ export const DEFAULT_PIPELINE_V2: PipelineV2Config = {
 	extraction: {
 		provider: "claude-code",
 		model: "haiku",
-		timeout: 45000,
+		timeout: 90000,
 		minConfidence: 0.7,
 	},
 	worker: {

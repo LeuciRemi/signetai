@@ -7280,16 +7280,16 @@ async function main() {
 		effectiveExtractionProvider === "opencode"
 			? createOpenCodeProvider({
 					model: memoryCfg.pipelineV2.extraction.model || "anthropic/claude-haiku-4-5-20251001",
-					defaultTimeoutMs: memoryCfg.pipelineV2.extraction.timeout || 60000,
+					defaultTimeoutMs: memoryCfg.pipelineV2.extraction.timeout,
 				})
 			: effectiveExtractionProvider === "claude-code"
 				? createClaudeCodeProvider({
 						model: memoryCfg.pipelineV2.extraction.model || "haiku",
-						defaultTimeoutMs: memoryCfg.pipelineV2.extraction.timeout || 60000,
+						defaultTimeoutMs: memoryCfg.pipelineV2.extraction.timeout,
 					})
 				: createOllamaProvider({
 						model: memoryCfg.pipelineV2.extraction.model || "qwen3:4b",
-						defaultTimeoutMs: memoryCfg.pipelineV2.extraction.timeout || 90000,
+						defaultTimeoutMs: memoryCfg.pipelineV2.extraction.timeout,
 					});
 	initLlmProvider(llmProvider);
 

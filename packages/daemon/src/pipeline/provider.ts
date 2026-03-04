@@ -42,7 +42,7 @@ export interface OllamaProviderConfig {
 const DEFAULT_OLLAMA_CONFIG: OllamaProviderConfig = {
 	model: "qwen3:4b",
 	baseUrl: "http://localhost:11434",
-	defaultTimeoutMs: 45000,
+	defaultTimeoutMs: 90000,
 };
 
 interface OllamaGenerateResponse {
