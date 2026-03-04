@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.37.2] - 2026-03-04
+
+### Features
+
+- prompt to restart OpenClaw after daemon restart
+
+
 ## [0.37.1] - 2026-03-04
 
 ### Bug Fixes
