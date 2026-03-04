@@ -639,6 +639,42 @@ curl -s http://localhost:3850/api/hooks/synthesis/config
 If the daemon isn't running, suggest `signet restart`. If synthesis
 hasn't run recently, suggest triggering it manually.
 
+### OpenClaw Integration Check
+
+If the user has OpenClaw (or Clawdbot/Moltbot) installed, check
+that Signet is the sole memory provider. Both systems running
+simultaneously causes token burn and duplicate context.
+
+```bash
+# Find OpenClaw configs
+# Find OpenClaw configs
+find ~/.openclaw ~/.clawdbot ~/.moltbot \
+  ~/.config/openclaw ~/.config/clawdbot ~/.config/moltbot \
+  ~/.local/state/openclaw ~/.local/state/clawdbot ~/.local/state/moltbot \
+  -name "*.json" -o -name "*.json5" 2>/dev/null
+```
+
+For each config found, verify:
+
+1. **`memorySearch.enabled` is `false`** — If true or missing,
+   OpenClaw's native memory is still active alongside Signet.
+2. **`signet-memory-openclaw` plugin is registered** — Check
+   `plugins.entries["signet-memory-openclaw"].enabled` is `true`.
+3. **No dual runtime paths** — Either the plugin path OR legacy
+   hooks should be active, not both.
+
+If any check fails, fix with:
+```bash
+signet setup --harness openclaw
+```
+
+Report the OpenClaw integration status in the audit summary:
+```
+openclaw integration: [healthy/dual-system detected/not installed]
+memorySearch disabled: [yes/no/n/a]
+runtime path: [plugin/legacy/n/a]
+```
+
 ### Report
 
 After the audit, provide a summary:

@@ -237,6 +237,115 @@ Use `--non-interactive` when the agent needs to complete setup without
 waiting for terminal prompts. Ask the user for provider choices first,
 then pass both provider flags explicitly.
 
+## OpenClaw Coexistence & Self-Healing
+
+Signet replaces OpenClaw's memory layer — it does NOT replace OpenClaw
+itself. After installation, OpenClaw continues to handle the harness
+(tool routing, session management, MCP servers, extensions) while
+Signet handles identity, memory, and personality.
+
+### How It Should Work
+
+The OpenClaw connector patches `openclaw.json` to:
+1. Register `signet-memory-openclaw` as the memory plugin
+2. Set `agents.defaults.memorySearch.enabled: false` (disables
+   OpenClaw's built-in memory)
+3. Set `agents.defaults.workspace` to `~/.agents/`
+
+When this is working correctly, only Signet injects memory context.
+OpenClaw's native memory system is fully disabled.
+
+### Detecting the Dual-System Problem
+
+If the user reports high token burn, duplicate memories, or bloated
+context after installing Signet, both memory systems may be active.
+Run these checks:
+
+```bash
+# Find all OpenClaw config files
+find ~/.openclaw ~/.clawdbot ~/.moltbot \
+  ~/.config/openclaw ~/.config/clawdbot ~/.config/moltbot \
+  ~/.local/state/openclaw ~/.local/state/clawdbot ~/.local/state/moltbot \
+  -name "*.json" -o -name "*.json5" 2>/dev/null
+  -name "*.json" -o -name "*.json5" 2>/dev/null
+
+# For each config found, check these fields:
+cat <config_path>
+```
+
+**Check 1: Is OpenClaw's native memory disabled?**
+Look for `agents.defaults.memorySearch.enabled`. It MUST be `false`.
+If it's `true` or missing, OpenClaw is still running its own memory
+search alongside Signet.
+
+**Check 2: Is the Signet plugin registered?**
+Look for `plugins.entries["signet-memory-openclaw"]`. It should exist
+with `enabled: true`. If missing, the connector patch didn't land.
+
+**Check 3: Which runtime path is active?**
+- **Plugin path** (preferred): `plugins.slots.memory` is set to
+  `"signet-memory-openclaw"`. Automatic memory on every prompt.
+- **Legacy path**: `hooks.internal.entries["signet-memory"]` is
+  enabled. Manual — requires `/remember` and `/recall` commands.
+- **Both active**: This shouldn't happen (the daemon enforces a mutex),
+  but if both are configured, the plugin path takes priority. Clean
+  up by disabling the legacy hook entry.
+
+### Fixing the Problem
+
+**Option 1: Re-run setup** (preferred)
+```bash
+signet setup --harness openclaw
+```
+This re-discovers configs and re-patches them. Safe to run multiple
+times — the connector is idempotent.
+
+**Option 2: Manual patch** (if setup can't find the config)
+
+Find the config file and ensure it contains:
+```json
+{
+  "plugins": {
+    "slots": { "memory": "signet-memory-openclaw" },
+    "entries": {
+      "signet-memory-openclaw": {
+        "enabled": true,
+        "config": { "daemonUrl": "http://localhost:3850" }
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "memorySearch": { "enabled": false }
+    }
+  }
+}
+```
+
+**Option 3: Verify the fix**
+```bash
+# Restart the daemon to pick up changes
+signet daemon restart
+
+# Check daemon health
+curl -s http://localhost:3850/health
+
+# Check that Signet is the active memory provider
+signet status
+```
+
+After fixing, run a test conversation and verify that token usage
+has decreased and memory context isn't duplicated.
+
+### Why This Breaks
+
+OpenClaw ships frequent updates (the upstream has 40k+ commits in
+recent months). Any upstream change to how plugins are loaded, how
+`memorySearch` is respected, or where config files are stored can
+break the connector's patch. The connector works on tested versions,
+but it cannot guarantee compatibility with every future OpenClaw
+release. When in doubt, check the config manually.
+
 ## Commands Reference
 
 ```bash

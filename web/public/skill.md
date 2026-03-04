@@ -463,6 +463,101 @@ automatically.
 - If migration fails or you want to start fresh, you can re-run
   `signet setup` and choose "Start fresh" instead.
 
+### OpenClaw-Specific Migration
+
+OpenClaw (also known as Clawdbot and Moltbot — same platform, different
+names) has its own built-in memory system. When Signet installs the
+OpenClaw connector, it **must** disable OpenClaw's native memory to
+prevent both systems running simultaneously. If both are active, you
+get duplicate context injection and increased token burn — the opposite
+of what Signet is supposed to fix.
+
+**What `signet setup` does automatically:**
+
+1. Discovers OpenClaw config files. The connector searches these
+   locations in order:
+   - `$OPENCLAW_CONFIG_PATH` (if set, colon-separated)
+   - `$OPENCLAW_HOME/openclaw.json`
+   - `~/.openclaw/openclaw.json`
+   - `~/.clawdbot/clawdbot.json` (old name)
+   - `~/.moltbot/moltbot.json` (oldest name)
+   - `$XDG_CONFIG_HOME/openclaw/openclaw.json`
+   - `$XDG_STATE_HOME/openclaw/openclaw.json`
+   - (same pattern for clawdbot/moltbot under XDG paths)
+
+2. Patches the config to register Signet's memory plugin:
+   ```json
+   {
+     "plugins": {
+       "slots": { "memory": "signet-memory-openclaw" },
+       "entries": {
+         "signet-memory-openclaw": {
+           "enabled": true,
+           "config": { "daemonUrl": "http://localhost:3850" }
+         }
+       }
+     },
+     "agents": {
+       "defaults": {
+         "workspace": "/home/user/.agents",
+         "memorySearch": { "enabled": false }
+       }
+     }
+   }
+   ```
+
+3. Sets `memorySearch.enabled: false` — this is the critical line
+   that disables OpenClaw's built-in memory search.
+
+4. Sets the workspace to `~/.agents/` so OpenClaw reads identity
+   files directly (no generated output file needed).
+
+**Two runtime paths:**
+
+- **Plugin path** (preferred): `signet-memory-openclaw` runs as a
+  native OpenClaw plugin. Automatic memory injection on every prompt,
+  automatic extraction on session end. Full tool suite registered.
+- **Legacy path**: Hook-based. Uses `/remember`, `/recall`, `/context`
+  slash commands. Manual — the user has to explicitly invoke commands.
+
+The plugin path is preferred because it's fully automatic. The legacy
+path exists for backward compatibility with older OpenClaw versions
+that don't support the plugin API.
+
+**If migration didn't work (both systems still active):**
+
+OpenClaw ships frequent updates. If the connector's config patch
+didn't land correctly (schema change, different config location, etc.),
+both memory systems may be running simultaneously. Signs of this:
+
+- Token burn didn't decrease after installing Signet
+- Duplicate memory entries appearing
+- Context feels bloated with redundant information
+
+To diagnose and fix:
+# 1. Find your OpenClaw config
+find ~/.openclaw ~/.clawdbot ~/.moltbot \
+  ~/.config/openclaw ~/.config/clawdbot ~/.config/moltbot \
+  ~/.local/state/openclaw ~/.local/state/clawdbot ~/.local/state/moltbot \
+  -name "*.json" -o -name "*.json5" 2>/dev/null
+find ~/.openclaw ~/.clawdbot ~/.moltbot ~/.config/openclaw \
+  -name "*.json" -o -name "*.json5" 2>/dev/null
+
+# 2. Check if memorySearch is disabled (should be false)
+cat <config_path> | grep -A1 memorySearch
+
+# 3. Check if the plugin is registered
+cat <config_path> | grep -A3 signet-memory-openclaw
+
+# 4. If either check fails, re-run setup
+signet setup --harness openclaw
+```
+
+If `signet setup` can't find the config, you may need to manually
+patch `openclaw.json` with the JSON shown above. The critical fields
+are `plugins.entries["signet-memory-openclaw"].enabled: true` and
+`agents.defaults.memorySearch.enabled: false`.
+
 ---
 
 ## Platform-Specific Details
