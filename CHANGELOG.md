@@ -2,6 +2,19 @@
 
 All notable changes to Signet are documented here.
 
+## [0.37.1] - 2026-03-04
+
+### Bug Fixes
+
+- resolve vec_embeddings desync causing constellation crash
+
+### Docs
+
+- add OpenClaw migration guidance and self-healing checks
+- the ideal signet
+- reorganize specs, add integration contract and sprint brief
+
+
 ## [0.37.0] - 2026-03-04
 
 ### Bug Fixes
