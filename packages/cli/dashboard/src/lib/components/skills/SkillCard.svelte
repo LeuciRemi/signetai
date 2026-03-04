@@ -49,13 +49,18 @@ function formatStat(n: number | undefined): string {
 }
 
 const MONOGRAM_COLORS = [
-	"#1e3448", "#341e48", "#48321e", "#1e4832", "#481e1e", "#1e2448"
+	"var(--sig-icon-bg-1)",
+	"var(--sig-icon-bg-2)",
+	"var(--sig-icon-bg-3)",
+	"var(--sig-icon-bg-4)",
+	"var(--sig-icon-bg-5)",
+	"var(--sig-icon-bg-6)",
 ];
 
 function getMonogramBg(name: string): string {
 	let hash = 0;
 	for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff;
-	return MONOGRAM_COLORS[hash % MONOGRAM_COLORS.length];
+	return MONOGRAM_COLORS[Math.abs(hash) % MONOGRAM_COLORS.length] ?? MONOGRAM_COLORS[0];
 }
 
 function getMonogram(name: string): string {
@@ -124,9 +129,6 @@ let isInstalled = $derived(
 								{item.provider}
 							</span>
 						{/if}
-						{#if isInstalled && mode === "browse"}
-							<span class="installed-badge">INSTALLED</span>
-						{/if}
 					</div>
 				</div>
 			</div>
@@ -179,12 +181,13 @@ let isInstalled = $derived(
 
 		<!-- Action button (browse only) -->
 		{#if mode === "browse" && isSearchResult(item)}
-			<div class="card-action" onclick={(e) => e.stopPropagation()}>
+			<div class="card-action">
+				<div class="action-row">
 				{#if item.installed}
 					<Button
 						variant="outline"
 						size="sm"
-						class="w-full h-auto rounded-lg font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.08em] px-2 py-1 border-[var(--sig-danger)] text-[var(--sig-danger)] hover:bg-[var(--sig-danger)] hover:text-[var(--sig-text-bright)]"
+						class="flex-1 h-auto rounded-lg font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.08em] px-2 py-1 border-[var(--sig-danger)] text-[var(--sig-danger)] hover:bg-[var(--sig-danger)] hover:text-[var(--sig-text-bright)]"
 						onclick={(e: MouseEvent) => { e.stopPropagation(); onuninstall?.(); }}
 						disabled={uninstalling}
 					>
@@ -194,13 +197,14 @@ let isInstalled = $derived(
 					<Button
 						variant="outline"
 						size="sm"
-						class="w-full h-auto rounded-lg font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.08em] px-2 py-1 bg-[var(--sig-accent)] border-[var(--sig-accent)] text-[var(--sig-bg)] hover:bg-[var(--sig-accent-hover,var(--sig-accent))] hover:border-[var(--sig-accent)]"
+						class="flex-1 h-auto rounded-lg font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.08em] px-2 py-1 border-[var(--sig-border-strong)] text-[var(--sig-text-bright)]"
 						onclick={(e: MouseEvent) => { e.stopPropagation(); oninstall?.(); }}
 						disabled={installing}
 					>
 						{installing ? "..." : "INSTALL"}
 					</Button>
 				{/if}
+				</div>
 			</div>
 		{/if}
 	</button>
@@ -234,7 +238,9 @@ let isInstalled = $derived(
 		flex-direction: column;
 		gap: 8px;
 		padding: var(--space-sm);
-		background: var(--sig-surface-raised);
+		background:
+			radial-gradient(circle at 12% -24%, color-mix(in srgb, var(--sig-accent) 8%, transparent), transparent 52%),
+			linear-gradient(220deg, color-mix(in srgb, var(--sig-surface-raised) 92%, black) 0%, var(--sig-surface-raised) 72%);
 		border: 1px solid var(--sig-border);
 		cursor: pointer;
 		transition: border-color 0.15s;
@@ -245,9 +251,17 @@ let isInstalled = $derived(
 	.card:hover {
 		border-color: var(--sig-accent);
 	}
+
+	.action-row {
+		display: flex;
+		gap: 6px;
+		width: 100%;
+	}
 	.card-wrap.selected > .card {
 		border-color: var(--sig-accent);
-		background: var(--sig-surface);
+		background:
+			radial-gradient(circle at 12% -24%, color-mix(in srgb, var(--sig-accent) 10%, transparent), transparent 54%),
+			linear-gradient(220deg, color-mix(in srgb, var(--sig-surface) 90%, black) 0%, var(--sig-surface) 74%);
 	}
 	.card-wrap.featured > .card {
 		min-height: 160px;
@@ -289,22 +303,25 @@ let isInstalled = $derived(
 
 	.monogram {
 		flex-shrink: 0;
-		width: 32px;
-		height: 32px;
+		width: 28px;
+		height: 28px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-family: var(--font-display);
-		font-size: 11px;
+		border-radius: 0.45rem;
+		border: 1px solid var(--sig-icon-border);
+		font-family: var(--font-mono);
+		font-size: 10px;
 		font-weight: 700;
-		color: var(--sig-text-bright);
-		letter-spacing: 0.04em;
+		color: var(--sig-icon-fg);
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
 		user-select: none;
 	}
 	.monogram.monogram-featured {
-		width: 40px;
-		height: 40px;
-		font-size: 13px;
+		width: 34px;
+		height: 34px;
+		font-size: 11px;
 	}
 
 	.card-header-content {
@@ -357,17 +374,6 @@ let isInstalled = $derived(
 	.provider-badge.clawhub {
 		border-color: var(--sig-accent);
 		color: var(--sig-accent);
-	}
-
-	.installed-badge {
-		flex-shrink: 0;
-		font-family: var(--font-mono);
-		font-size: 9px;
-		padding: 1px 5px;
-		border: 1px solid var(--sig-success);
-		color: var(--sig-success);
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
 	}
 
 	.card-desc {

@@ -69,6 +69,17 @@ export interface DaemonStatus {
 	host: string;
 	agentsDir: string;
 	memoryDb: boolean;
+	update?: {
+		currentVersion: string;
+		latestVersion: string | null;
+		updateAvailable: boolean;
+		pendingRestart: string | null;
+		autoInstall: boolean;
+		checkInterval: number;
+		lastCheckAt: string | null;
+		lastError: string | null;
+		timerActive: boolean;
+	};
 }
 
 export interface EmbeddingPoint {
@@ -1218,6 +1229,141 @@ export async function testMarketplaceMcpConfig(input: {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(input),
 		});
+		return await response.json();
+	} catch (e) {
+		return { success: false, error: String(e) };
+	}
+}
+
+export type MarketplaceReviewTargetType = "skill" | "mcp";
+
+export interface MarketplaceReview {
+	id: string;
+	targetType: MarketplaceReviewTargetType;
+	targetId: string;
+	displayName: string;
+	rating: number;
+	title: string;
+	body: string;
+	source: "local" | "synced";
+	createdAt: string;
+	updatedAt: string;
+	syncedAt: string | null;
+}
+
+export interface MarketplaceReviewConfig {
+	enabled: boolean;
+	endpointUrl: string;
+	lastSyncAt: string | null;
+	lastSyncError: string | null;
+	pending: number;
+}
+
+export async function getMarketplaceReviews(params: {
+	targetType?: MarketplaceReviewTargetType;
+	targetId?: string;
+	limit?: number;
+	offset?: number;
+}): Promise<{
+	reviews: MarketplaceReview[];
+	total: number;
+	limit: number;
+	offset: number;
+	summary: { count: number; avgRating: number };
+}> {
+	try {
+		const search = new URLSearchParams();
+		if (params.targetType) search.set("type", params.targetType);
+		if (params.targetId) search.set("id", params.targetId);
+		if (typeof params.limit === "number") search.set("limit", String(params.limit));
+		if (typeof params.offset === "number") search.set("offset", String(params.offset));
+		const query = search.toString();
+		const response = await fetch(`${API_BASE}/api/marketplace/reviews${query ? `?${query}` : ""}`);
+		if (!response.ok) throw new Error("Failed to fetch marketplace reviews");
+		return await response.json();
+	} catch {
+		return {
+			reviews: [],
+			total: 0,
+			limit: params.limit ?? 20,
+			offset: params.offset ?? 0,
+			summary: { count: 0, avgRating: 0 },
+		};
+	}
+}
+
+export async function createMarketplaceReview(input: {
+	targetType: MarketplaceReviewTargetType;
+	targetId: string;
+	displayName: string;
+	rating: number;
+	title: string;
+	body: string;
+}): Promise<{ success: boolean; review?: MarketplaceReview; error?: string }> {
+	try {
+		const response = await fetch(`${API_BASE}/api/marketplace/reviews`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(input),
+		});
+		return await response.json();
+	} catch (e) {
+		return { success: false, error: String(e) };
+	}
+}
+
+export async function deleteMarketplaceReview(id: string): Promise<{ success: boolean; id?: string; error?: string }> {
+	try {
+		const response = await fetch(`${API_BASE}/api/marketplace/reviews/${encodeURIComponent(id)}`, {
+			method: "DELETE",
+		});
+		return await response.json();
+	} catch (e) {
+		return { success: false, error: String(e) };
+	}
+}
+
+export async function getMarketplaceReviewConfig(): Promise<MarketplaceReviewConfig> {
+	try {
+		const response = await fetch(`${API_BASE}/api/marketplace/reviews/config`);
+		if (!response.ok) throw new Error("Failed to fetch review config");
+		return await response.json();
+	} catch {
+		return {
+			enabled: false,
+			endpointUrl: "",
+			lastSyncAt: null,
+			lastSyncError: null,
+			pending: 0,
+		};
+	}
+}
+
+export async function updateMarketplaceReviewConfig(input: {
+	enabled?: boolean;
+	endpointUrl?: string;
+}): Promise<{ success: boolean; config?: MarketplaceReviewConfig; error?: string }> {
+	try {
+		const response = await fetch(`${API_BASE}/api/marketplace/reviews/config`, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(input),
+		});
+		return await response.json();
+	} catch (e) {
+		return { success: false, error: String(e) };
+	}
+}
+
+export async function syncMarketplaceReviews(): Promise<{
+	success: boolean;
+	error?: string;
+	sent?: number;
+	synced?: number;
+	message?: string;
+}> {
+	try {
+		const response = await fetch(`${API_BASE}/api/marketplace/reviews/sync`, { method: "POST" });
 		return await response.json();
 	} catch (e) {
 		return { success: false, error: String(e) };

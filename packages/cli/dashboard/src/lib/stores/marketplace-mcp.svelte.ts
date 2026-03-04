@@ -15,6 +15,7 @@ import { toast } from "$lib/stores/toast.svelte";
 
 export type McpCatalogSort = "popularity" | "name" | "official";
 export type McpCatalogSourceFilter = "all" | "mcpservers.org" | "modelcontextprotocol/servers";
+export type McpMarketView = "browse" | "installed";
 
 export const mcpMarket = $state({
 	installed: [] as MarketplaceMcpServer[],
@@ -26,6 +27,7 @@ export const mcpMarket = $state({
 	catalogLoading: false,
 
 	query: "",
+	view: "browse" as McpMarketView,
 	category: "all",
 	source: "all" as McpCatalogSourceFilter,
 	sortBy: "popularity" as McpCatalogSort,

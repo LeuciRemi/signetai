@@ -3891,6 +3891,10 @@ mountSkillsRoutes(app);
 import { mountMarketplaceRoutes } from "./routes/marketplace.js";
 mountMarketplaceRoutes(app);
 
+// Marketplace review routes (Signet Reviews scaffold)
+import { mountMarketplaceReviewsRoutes } from "./routes/marketplace-reviews.js";
+mountMarketplaceReviewsRoutes(app);
+
 // ============================================================================
 // Harnesses API
 // ============================================================================

@@ -26,9 +26,15 @@ import { onMount } from "svelte";
 
 interface Props {
 	embedded?: boolean;
+	showViewTabs?: boolean;
+	onreviewrequest?: (payload: {
+		targetType: "skill";
+		targetId: string;
+		targetLabel: string;
+	}) => void | Promise<void>;
 }
 
-const { embedded = false }: Props = $props();
+const { embedded = false, showViewTabs = true, onreviewrequest }: Props = $props();
 
 const searchInputId = "skills-search-input";
 
@@ -55,9 +61,19 @@ function parseSort(value: string): SkillsSort {
 	return "popularity";
 }
 
+function parseProvider(value: string): ProviderFilter {
+	if (value === "skills.sh" || value === "clawhub") return value;
+	return "all";
+}
+
 const activeSortLabel = $derived.by(() => {
 	const match = sortOptions.find((option) => option.value === sk.sortBy);
 	return match?.label ?? "Popularity";
+});
+
+const activeProviderLabel = $derived.by(() => {
+	const match = providerOptions.find((option) => option.value === sk.providerFilter);
+	return match?.label ?? "All";
 });
 
 function switchView(v: SkillsView) {
@@ -232,6 +248,7 @@ onMount(() => {
 	{/if}
 
 	<!-- Tabs bar + controls -->
+	{#if showViewTabs}
 	<Tabs.Root value={sk.view} onValueChange={(v) => switchView(v as SkillsView)}>
 		<div class="flex items-center shrink-0 border-b border-[var(--sig-border)] gap-2">
 			<Tabs.List class="bg-transparent h-auto gap-0 rounded-none border-none">
@@ -250,6 +267,7 @@ onMount(() => {
 			</Tabs.List>
 
 			<!-- Sort + filter controls -->
+			{#if !embedded}
 			<div class="flex items-center gap-2 ml-auto pr-[var(--space-md)]">
 				<!-- Sort dropdown -->
 				<div class="flex items-center gap-1">
@@ -264,22 +282,22 @@ onMount(() => {
 					</Select.Root>
 				</div>
 
-				<!-- Provider filter chips -->
-				<div class="flex items-center gap-0">
-					{#each providerOptions as opt}
-						<button
-							type="button"
-							class="filter-chip"
-							class:active={sk.providerFilter === opt.value}
-							onclick={() => { sk.providerFilter = opt.value; }}
-						>
-							{opt.label}
-						</button>
-					{/each}
+				<div class="flex items-center gap-1">
+					<span class="text-[9px] font-[family-name:var(--font-mono)] text-[var(--sig-text-muted)] uppercase tracking-wider">Provider</span>
+					<Select.Root type="single" value={sk.providerFilter} onValueChange={(v) => { sk.providerFilter = parseProvider(v ?? "all"); }}>
+						<Select.Trigger class="provider-select">{activeProviderLabel}</Select.Trigger>
+						<Select.Content class="sort-select-content">
+							{#each providerOptions as opt}
+								<Select.Item value={opt.value} label={opt.label} class="sort-select-item" />
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 			</div>
+			{/if}
 		</div>
 	</Tabs.Root>
+	{/if}
 
 	<!-- Content -->
 	{#if compareItems.length > 0}
@@ -311,6 +329,7 @@ onMount(() => {
 			onemptyaction={handleEmptyAction}
 			compareSelectedKeys={sk.compareSelected}
 			oncomparetoggle={toggleCompare}
+			onreviewrequest={onreviewrequest}
 		/>
 	{/if}
 </div>
@@ -347,31 +366,20 @@ onMount(() => {
 		font-size: 10px;
 	}
 
-	.filter-chip {
+	:global(.provider-select) {
 		font-family: var(--font-mono);
-		font-size: 9px;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--sig-text-muted);
-		background: transparent;
-		border: 1px solid var(--sig-border);
-		padding: 2px 8px;
-		cursor: pointer;
-		transition: all 0.1s;
-	}
-	.filter-chip:not(:first-child) {
-		border-left: none;
-	}
-	.filter-chip:hover {
-		color: var(--sig-text);
-		background: var(--sig-surface-raised);
-	}
-	.filter-chip.active {
+		font-size: 10px;
 		color: var(--sig-text-bright);
 		background: var(--sig-surface-raised);
-		border-color: var(--sig-accent);
+		border: 1px solid var(--sig-border-strong);
+		padding: 2px 8px;
+		height: auto;
+		min-height: 28px;
+		outline: none;
+		cursor: pointer;
+		border-radius: 0.5rem;
 	}
-	.filter-chip.active + .filter-chip {
-		border-left-color: var(--sig-accent);
+	:global(.provider-select:focus) {
+		border-color: var(--sig-accent);
 	}
 </style>

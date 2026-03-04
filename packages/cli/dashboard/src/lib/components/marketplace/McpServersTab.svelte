@@ -1,53 +1,98 @@
 <script lang="ts">
-import type { MarketplaceMcpCatalogEntry } from "$lib/api";
+import {
+	type MarketplaceMcpCatalogEntry,
+	type MarketplaceMcpServer,
+} from "$lib/api";
+import McpDetailSheet from "$lib/components/marketplace/McpDetailSheet.svelte";
 import McpInstallSheet from "$lib/components/marketplace/McpInstallSheet.svelte";
 import { Button } from "$lib/components/ui/button/index.js";
 import * as Select from "$lib/components/ui/select/index.js";
-import { Switch } from "$lib/components/ui/switch/index.js";
+import * as Tabs from "$lib/components/ui/tabs/index.js";
 import {
 	type McpCatalogSort,
 	type McpCatalogSourceFilter,
 	fetchMarketplaceMcpCatalog,
 	fetchMarketplaceMcpInstalled,
 	getFilteredMarketplaceMcpCatalog,
-	getMarketplaceMcpCategoryOptions,
 	getMarketplaceMcpSourceOptions,
 	mcpMarket,
 	refreshMarketplaceMcpTools,
 	removeMarketplaceMcpServer,
-	toggleMarketplaceMcpServer,
 } from "$lib/stores/marketplace-mcp.svelte";
 import { onMount } from "svelte";
 
 interface Props {
 	embedded?: boolean;
+	showViewTabs?: boolean;
+	currentView?: "browse" | "installed";
+	onviewchange?: (view: "browse" | "installed") => void;
+	onreviewrequest?: (payload: {
+		targetType: "mcp";
+		targetId: string;
+		targetLabel: string;
+	}) => void | Promise<void>;
 }
 
-const { embedded = false }: Props = $props();
+const {
+	embedded = false,
+	showViewTabs = true,
+	currentView = "browse",
+	onviewchange,
+}: Props = $props();
+
+interface McpDetailItem {
+	targetId: string;
+	name: string;
+	description: string;
+	category: string;
+	sourceLabel: string;
+	official: boolean;
+	popularityRank: number | null;
+	sourceUrl: string;
+	catalogEntry: MarketplaceMcpCatalogEntry | null;
+	serverId: string | null;
+}
 
 const filteredCatalog = $derived(getFilteredMarketplaceMcpCatalog());
-const categories = $derived(getMarketplaceMcpCategoryOptions());
 const sourceOptions = $derived(getMarketplaceMcpSourceOptions());
 const installedCatalogIds = $derived(
 	new Set(mcpMarket.installed.flatMap((s) => (s.catalogId ? [`${s.source}:${s.catalogId}`] : []))),
 );
-const healthByServer = $derived(new Map(mcpMarket.serverHealth.map((h) => [h.serverId, h])));
+const installedServerByCatalogId = $derived(
+	new Map<string, string>(
+		mcpMarket.installed.flatMap((s) =>
+			s.catalogId ? [[`${s.source}:${s.catalogId}`, s.id] as [string, string]] : [],
+		),
+	),
+);
+const catalogById = $derived(
+	new Map<string, MarketplaceMcpCatalogEntry>(
+		mcpMarket.catalog.map((entry) => [entry.id, entry]),
+	),
+);
 let installSheetOpen = $state(false);
 let selectedCatalogEntry = $state<MarketplaceMcpCatalogEntry | null>(null);
-const activeCategoryLabel = $derived(mcpMarket.category === "all" ? "All categories" : mcpMarket.category);
+let detailOpen = $state(false);
+let detailItem = $state<McpDetailItem | null>(null);
+let view = $state<"browse" | "installed">("browse");
 const activeSourceLabel = $derived(mcpMarket.source === "all" ? "All sources" : formatSourceLabel(mcpMarket.source));
 const activeSortLabel = $derived.by(() => {
 	if (mcpMarket.sortBy === "name") return "Name";
 	if (mcpMarket.sortBy === "official") return "Official";
 	return "Popularity";
 });
-const installedPanelHint = $derived(
-	mcpMarket.loadingInstalled
-		? "Loading installed tool servers..."
-		: mcpMarket.installedError
-			? `Failed to load installed servers: ${mcpMarket.installedError}`
-			: "No Tool Servers installed yet.",
+const displayMode = $derived<"installed" | "browse">(
+	view === "installed" && !mcpMarket.query.trim() ? "installed" : "browse",
 );
+
+const MONOGRAM_COLORS = [
+	"var(--sig-icon-bg-1)",
+	"var(--sig-icon-bg-2)",
+	"var(--sig-icon-bg-3)",
+	"var(--sig-icon-bg-4)",
+	"var(--sig-icon-bg-5)",
+	"var(--sig-icon-bg-6)",
+] as const;
 
 onMount(() => {
 	fetchMarketplaceMcpInstalled();
@@ -79,9 +124,28 @@ function parseSource(value: string): McpCatalogSourceFilter {
 	return "all";
 }
 
-function parseCategory(value: string): string {
-	if (value === "all") return "all";
-	return categories.includes(value) ? value : "all";
+$effect(() => {
+	view = currentView;
+});
+
+function parseView(value: string): "browse" | "installed" {
+	return value === "installed" ? "installed" : "browse";
+}
+
+function getMonogram(name: string): string {
+	const parts = name.split(/[-_.\s]+/).filter(Boolean);
+	if (parts.length >= 2) {
+		return `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`.toUpperCase();
+	}
+	return name.slice(0, 2).toUpperCase();
+}
+
+function getMonogramBg(name: string): string {
+	let hash = 0;
+	for (const ch of name) {
+		hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff;
+	}
+	return MONOGRAM_COLORS[Math.abs(hash) % MONOGRAM_COLORS.length] ?? MONOGRAM_COLORS[0];
 }
 
 function openInstallSheet(entry: MarketplaceMcpCatalogEntry): void {
@@ -93,12 +157,83 @@ function closeInstallSheet(): void {
 	installSheetOpen = false;
 	selectedCatalogEntry = null;
 }
+
+function mcpReviewTargetIdForInstalled(server: MarketplaceMcpServer): string {
+	if (server.catalogId) {
+		return `${server.source}:${server.catalogId}`;
+	}
+	const normalized = server.name.trim().toLowerCase().replace(/\s+/g, "-");
+	return `${server.source}:${normalized}`;
+}
+
+function openCatalogDetail(entry: MarketplaceMcpCatalogEntry): void {
+	detailItem = {
+		targetId: entry.id,
+		name: entry.name,
+		description: entry.description,
+		category: entry.category,
+		sourceLabel: formatSourceLabel(entry.source),
+		official: entry.official,
+		popularityRank: entry.popularityRank,
+		sourceUrl: entry.sourceUrl,
+		catalogEntry: entry,
+		serverId: installedServerByCatalogId.get(entry.id) ?? null,
+	};
+	detailOpen = true;
+}
+
+function openInstalledDetail(server: MarketplaceMcpServer): void {
+	const catalogKey = server.catalogId ? `${server.source}:${server.catalogId}` : null;
+	const catalogEntry = catalogKey ? (catalogById.get(catalogKey) ?? null) : null;
+	detailItem = {
+		targetId: catalogKey ?? mcpReviewTargetIdForInstalled(server),
+		name: server.name,
+		description: server.description || catalogEntry?.description || server.id,
+		category: server.category || catalogEntry?.category || "general",
+		sourceLabel: formatSourceLabel(server.source),
+		official: server.official || catalogEntry?.official || false,
+		popularityRank: catalogEntry?.popularityRank ?? null,
+		sourceUrl: catalogEntry?.sourceUrl || server.homepage || "",
+		catalogEntry,
+		serverId: server.id,
+	};
+	detailOpen = true;
+}
+
+function closeDetailSheet(): void {
+	detailOpen = false;
+}
+
+function onCatalogCardKeydown(event: KeyboardEvent, entry: MarketplaceMcpCatalogEntry): void {
+	if (event.key !== "Enter" && event.key !== " ") return;
+	event.preventDefault();
+	openCatalogDetail(entry);
+}
+
+function onInstalledCardKeydown(event: KeyboardEvent, server: MarketplaceMcpServer): void {
+	if (event.key !== "Enter" && event.key !== " ") return;
+	event.preventDefault();
+	openInstalledDetail(server);
+}
+
+function openInstallFromDetail(entry: MarketplaceMcpCatalogEntry): void {
+	detailOpen = false;
+	openInstallSheet(entry);
+}
+
+async function removeFromDetail(serverId: string): Promise<void> {
+	await removeMarketplaceMcpServer(serverId);
+	if (!detailItem || detailItem.serverId !== serverId) return;
+	detailItem = { ...detailItem, serverId: null };
+}
+
 </script>
 
 <div class="h-full flex flex-col overflow-hidden">
 	<div
-		class="shrink-0 px-[var(--space-md)] py-[var(--space-sm)]
-			border-b border-[var(--sig-border)] flex items-center gap-2 flex-wrap"
+		class={`shrink-0 px-[var(--space-md)] py-[var(--space-sm)] flex items-center gap-2 flex-wrap ${
+			embedded ? "" : "border-b border-[var(--sig-border)]"
+		}`}
 	>
 		{#if !embedded}
 			<input
@@ -112,167 +247,187 @@ function closeInstallSheet(): void {
 			/>
 		{/if}
 
-		<Select.Root type="single" value={mcpMarket.category} onValueChange={(v) => { mcpMarket.category = parseCategory(v ?? "all"); }}>
-			<Select.Trigger class="select-trigger">{activeCategoryLabel}</Select.Trigger>
-			<Select.Content class="select-content">
-				{#each categories as category}
-					<Select.Item value={category} label={category} class="select-item" />
-				{/each}
-			</Select.Content>
-		</Select.Root>
-
-		<Select.Root type="single" value={mcpMarket.source} onValueChange={(v) => { mcpMarket.source = parseSource(v ?? "all"); }}>
-			<Select.Trigger class="select-trigger">{activeSourceLabel}</Select.Trigger>
-			<Select.Content class="select-content">
-				{#each sourceOptions as source}
-					<Select.Item
-						value={source}
-						label={source === "all" ? "All sources" : formatSourceLabel(source)}
-						class="select-item"
-					/>
-				{/each}
-			</Select.Content>
-		</Select.Root>
-
-		<Select.Root type="single" value={mcpMarket.sortBy} onValueChange={(v) => { mcpMarket.sortBy = parseSort(v ?? "popularity"); }}>
-			<Select.Trigger class="select-trigger">{activeSortLabel}</Select.Trigger>
-			<Select.Content class="select-content">
-				<Select.Item value="popularity" label="Popularity" class="select-item" />
-				<Select.Item value="official" label="Official" class="select-item" />
-				<Select.Item value="name" label="Name" class="select-item" />
-			</Select.Content>
-		</Select.Root>
-
-		<Button
-			variant="outline"
-			size="sm"
-			class="h-7 text-[10px] font-[family-name:var(--font-mono)]"
-			onclick={() => refreshMarketplaceMcpTools(true)}
-			disabled={mcpMarket.toolsLoading}
+		{#if showViewTabs}
+		<Tabs.Root
+			value={view}
+			onValueChange={(v) => {
+				view = parseView(v ?? "browse");
+				onviewchange?.(view);
+			}}
 		>
-			{mcpMarket.toolsLoading ? "Refreshing..." : "Refresh routed tools"}
-		</Button>
+			<Tabs.List class="bg-transparent h-auto gap-0 rounded-none border-none">
+				<Tabs.Trigger
+					value="browse"
+					class="font-[family-name:var(--font-mono)] text-[11px] text-[var(--sig-text-muted)] data-[state=active]:text-[var(--sig-text-bright)] data-[state=active]:border-b-[var(--sig-text-bright)] border-b-2 border-b-transparent rounded-none bg-transparent px-[var(--space-md)] py-[var(--space-xs)] hover:text-[var(--sig-text)] data-[state=active]:shadow-none"
+				>
+					Browse{mcpMarket.catalogTotal ? ` (${mcpMarket.catalogTotal.toLocaleString()})` : ""}
+				</Tabs.Trigger>
+				<Tabs.Trigger
+					value="installed"
+					class="font-[family-name:var(--font-mono)] text-[11px] text-[var(--sig-text-muted)] data-[state=active]:text-[var(--sig-text-bright)] data-[state=active]:border-b-[var(--sig-text-bright)] border-b-2 border-b-transparent rounded-none bg-transparent px-[var(--space-md)] py-[var(--space-xs)] hover:text-[var(--sig-text)] data-[state=active]:shadow-none"
+				>
+					Installed ({mcpMarket.installed.length})
+				</Tabs.Trigger>
+			</Tabs.List>
+		</Tabs.Root>
+		{/if}
+
+		{#if !embedded}
+		<div class="ml-auto flex items-center gap-2">
+			<Select.Root type="single" value={mcpMarket.sortBy} onValueChange={(v) => { mcpMarket.sortBy = parseSort(v ?? "popularity"); }}>
+				<Select.Trigger class="select-trigger">{activeSortLabel}</Select.Trigger>
+				<Select.Content class="select-content">
+					<Select.Item value="popularity" label="Popularity" class="select-item" />
+					<Select.Item value="official" label="Official" class="select-item" />
+					<Select.Item value="name" label="Name" class="select-item" />
+				</Select.Content>
+			</Select.Root>
+
+			<Select.Root type="single" value={mcpMarket.source} onValueChange={(v) => { mcpMarket.source = parseSource(v ?? "all"); }}>
+				<Select.Trigger class="select-trigger">{activeSourceLabel}</Select.Trigger>
+				<Select.Content class="select-content">
+					{#each sourceOptions as source}
+						<Select.Item
+							value={source}
+							label={source === "all" ? "All sources" : formatSourceLabel(source)}
+							class="select-item"
+						/>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		</div>
+		{/if}
 	</div>
 
-	<div class="flex-1 overflow-y-auto p-[var(--space-sm)] flex flex-col gap-[var(--space-sm)]">
-		<section class="panel">
-			<div class="panel-head">
-				<span>Installed Tool Servers ({mcpMarket.installed.length})</span>
-				<span>{mcpMarket.tools.length} routed tools</span>
-			</div>
-			{#if mcpMarket.toolsError}
-				<div class="panel-alert">Tool routing refresh failed: {mcpMarket.toolsError}</div>
-			{/if}
+	<div class="flex-1 overflow-y-auto px-[var(--space-sm)] pb-[var(--space-sm)] pt-0 flex flex-col gap-[var(--space-sm)]">
+		{#if displayMode === "installed"}
 			{#if mcpMarket.installed.length === 0}
 				<div class="panel-empty">
-					{installedPanelHint}
-					{#if !mcpMarket.loadingInstalled && !mcpMarket.installedError}
-						<span class="panel-empty-hint">Install one from the catalog below to route tools.</span>
-					{/if}
+					{mcpMarket.loadingInstalled
+						? "Loading installed tool servers..."
+						: mcpMarket.installedError
+							? `Failed to load installed servers: ${mcpMarket.installedError}`
+							: "No Tool Servers installed yet."}
 				</div>
 			{:else}
-				<div class="installed-list">
+				<div class="catalog-grid">
 					{#each mcpMarket.installed as server (server.id)}
-						<div class="installed-row">
-							<div class="installed-main">
-								<div class="installed-name">{server.name}</div>
-								<div class="installed-meta">
-									<span>{server.id}</span>
-									<span>&middot;</span>
-									<span>{server.config.transport}</span>
-									<span>&middot;</span>
-									<span>{healthByServer.get(server.id)?.toolCount ?? 0} tools</span>
-									{#if healthByServer.get(server.id)?.ok === false}
-										<span class="text-[var(--sig-danger)]">offline</span>
-									{/if}
+						<div
+							class="catalog-card"
+							role="button"
+							tabindex="0"
+							onclick={() => openInstalledDetail(server)}
+							onkeydown={(event) => onInstalledCardKeydown(event, server)}
+						>
+							<div class="catalog-top">
+								<div class="mcp-icon" style={`background: ${getMonogramBg(server.name)};`}>
+									{getMonogram(server.name)}
 								</div>
+								<div class="catalog-name">{server.name}</div>
 							</div>
-							<div class="installed-actions">
-								<Switch
-									checked={server.enabled}
-									onCheckedChange={(v: boolean) =>
-										toggleMarketplaceMcpServer(server.id, v)}
-									disabled={mcpMarket.togglingId === server.id}
-									class="scale-75 origin-right"
-								/>
+							<div class="catalog-desc">{server.description || server.id}</div>
+							<div class="catalog-meta">
+								<span class="mcp-badge">installed</span>
+								<span class="mcp-badge">{server.config.transport}</span>
+							</div>
+							<div class="catalog-actions">
 								<Button
 									variant="outline"
 									size="sm"
-									class="h-6 text-[9px]"
-									onclick={() => removeMarketplaceMcpServer(server.id)}
+									class="flex-1 h-auto rounded-lg font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.08em] px-2 py-1 border-[var(--sig-danger)] text-[var(--sig-danger)] hover:bg-[var(--sig-danger)] hover:text-[var(--sig-text-bright)]"
+									onclick={(event: MouseEvent) => {
+										event.stopPropagation();
+										void removeMarketplaceMcpServer(server.id);
+									}}
 									disabled={mcpMarket.removingId === server.id}
 								>
-									{mcpMarket.removingId === server.id ? "..." : "Remove"}
+									{mcpMarket.removingId === server.id ? "..." : "REMOVE"}
 								</Button>
 							</div>
 						</div>
 					{/each}
 				</div>
 			{/if}
-		</section>
-
-		<section class="panel">
-			<div class="panel-head">
-				<span>Discover Tool Servers (MCP)</span>
-				<span>{filteredCatalog.length} shown{#if mcpMarket.catalogTotal > 0} / {mcpMarket.catalogTotal} total{/if}</span>
+		{:else if mcpMarket.catalogError}
+			<div class="panel-alert">Failed to load catalog: {mcpMarket.catalogError}</div>
+		{:else if mcpMarket.catalogLoading}
+			<div class="panel-empty">Loading catalog...</div>
+		{:else if filteredCatalog.length === 0}
+			<div class="panel-empty">
+				No matching Tool Servers.
+				<button
+					type="button"
+					class="panel-reset"
+					onclick={() => {
+						mcpMarket.query = "";
+						mcpMarket.category = "all";
+						mcpMarket.source = "all";
+					}}
+				>
+					Clear filters
+				</button>
 			</div>
-			{#if mcpMarket.catalogError}
-				<div class="panel-alert">Failed to load catalog: {mcpMarket.catalogError}</div>
-			{/if}
-			{#if mcpMarket.catalogLoading}
-				<div class="panel-empty">Loading catalog...</div>
-			{:else if filteredCatalog.length === 0}
-				<div class="panel-empty">
-					No matching Tool Servers.
-					<button
-						type="button"
-						class="panel-reset"
-						onclick={() => {
-							mcpMarket.query = "";
-							mcpMarket.category = "all";
-							mcpMarket.source = "all";
-						}}
+		{:else}
+			<div class="catalog-grid">
+				{#each filteredCatalog as entry (entry.id)}
+					<div
+						class="catalog-card"
+						role="button"
+						tabindex="0"
+						onclick={() => openCatalogDetail(entry)}
+						onkeydown={(event) => onCatalogCardKeydown(event, entry)}
 					>
-						Clear filters
-					</button>
-				</div>
-			{:else}
-				<div class="catalog-grid">
-					{#each filteredCatalog as entry (entry.id)}
-						<div class="catalog-card">
+						<div class="catalog-top">
+							<div class="mcp-icon" style={`background: ${getMonogramBg(entry.name)};`}>
+								{getMonogram(entry.name)}
+							</div>
 							<div class="catalog-name">{entry.name}</div>
-							<div class="catalog-desc">{entry.description}</div>
-							<div class="catalog-meta">
-								<span>{formatSourceLabel(entry.source)}</span>
-								<span>{entry.category}</span>
-								{#if entry.official}
-									<span class="text-[var(--sig-success)]">official</span>
-								{/if}
-								<span>#{entry.popularityRank}</span>
-							</div>
-							<div class="catalog-actions">
-								<a href={entry.sourceUrl} target="_blank" rel="noopener" class="catalog-link">View</a>
-								{#if installedCatalogIds.has(entry.id)}
-									<Button variant="outline" size="sm" class="h-6 text-[9px]" disabled>
-										Installed
-									</Button>
-								{:else}
-									<Button
-										variant="outline"
-										size="sm"
-										class="h-6 text-[9px]"
-										onclick={() => openInstallSheet(entry)}
-										disabled={mcpMarket.installingId === entry.id}
-									>
-										{mcpMarket.installingId === entry.id ? "..." : "Install"}
-									</Button>
-								{/if}
-							</div>
 						</div>
-					{/each}
-				</div>
-			{/if}
-		</section>
+						<div class="catalog-desc">{entry.description}</div>
+						<div class="catalog-meta">
+							<span class="mcp-badge">{formatSourceLabel(entry.source)}</span>
+							<span class="mcp-badge">{entry.category}</span>
+							{#if entry.official}
+								<span class="mcp-badge mcp-official">official</span>
+							{/if}
+							<span class="mcp-rank">#{entry.popularityRank}</span>
+						</div>
+						<div class="catalog-actions">
+							{#if installedCatalogIds.has(entry.id)}
+								<Button
+									variant="outline"
+									size="sm"
+									class="flex-1 h-auto rounded-lg font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.08em] px-2 py-1 border-[var(--sig-danger)] text-[var(--sig-danger)] hover:bg-[var(--sig-danger)] hover:text-[var(--sig-text-bright)]"
+									onclick={(event: MouseEvent) => {
+										event.stopPropagation();
+										const serverId = installedServerByCatalogId.get(entry.id);
+										if (serverId) {
+											void removeMarketplaceMcpServer(serverId);
+										}
+									}}
+									disabled={!installedServerByCatalogId.get(entry.id)}
+								>
+									REMOVE
+								</Button>
+							{:else}
+								<Button
+									variant="outline"
+									size="sm"
+									class="flex-1 h-auto rounded-lg font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.08em] px-2 py-1 border-[var(--sig-border-strong)] text-[var(--sig-text-bright)]"
+										onclick={(event: MouseEvent) => {
+											event.stopPropagation();
+											openInstallSheet(entry);
+										}}
+										disabled={mcpMarket.installingId === entry.id}
+								>
+									{mcpMarket.installingId === entry.id ? "..." : "INSTALL"}
+								</Button>
+							{/if}
+						</div>
+					</div>
+				{/each}
+			</div>
+		{/if}
 	</div>
 </div>
 
@@ -280,6 +435,20 @@ function closeInstallSheet(): void {
 	open={installSheetOpen}
 	entry={selectedCatalogEntry}
 	onclose={closeInstallSheet}
+/>
+
+<McpDetailSheet
+	open={detailOpen}
+	item={detailItem}
+	isInstalled={detailItem ? detailItem.serverId !== null : false}
+	canReview={detailItem ? detailItem.serverId !== null : false}
+	installBusy={detailItem?.catalogEntry ? mcpMarket.installingId === detailItem.catalogEntry.id : false}
+	removeBusy={detailItem?.serverId ? mcpMarket.removingId === detailItem.serverId : false}
+	onclose={closeDetailSheet}
+	oninstall={openInstallFromDetail}
+	onuninstall={(serverId) => {
+		void removeFromDetail(serverId);
+	}}
 />
 
 <style>
@@ -384,16 +553,20 @@ function closeInstallSheet(): void {
 
 	.installed-row {
 		display: flex;
-		justify-content: space-between;
+		align-items: flex-start;
 		gap: 10px;
 		padding: 9px 10px;
 		border-bottom: 1px solid var(--sig-border);
+		background:
+			radial-gradient(circle at 12% -24%, color-mix(in srgb, var(--sig-accent) 8%, transparent), transparent 52%),
+			linear-gradient(220deg, color-mix(in srgb, var(--sig-surface-raised) 92%, black) 0%, var(--sig-surface) 72%);
 	}
 	.installed-row:last-child {
 		border-bottom: none;
 	}
 
 	.installed-main {
+		flex: 1;
 		min-width: 0;
 	}
 
@@ -424,7 +597,7 @@ function closeInstallSheet(): void {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 		gap: 8px;
-		padding: 8px;
+		padding: 0;
 	}
 
 	.catalog-card {
@@ -433,7 +606,29 @@ function closeInstallSheet(): void {
 		gap: 8px;
 		padding: 9px;
 		border: 1px solid var(--sig-border);
-		background: var(--sig-surface);
+		background:
+			radial-gradient(circle at 12% -24%, color-mix(in srgb, var(--sig-accent) 8%, transparent), transparent 52%),
+			linear-gradient(220deg, color-mix(in srgb, var(--sig-surface-raised) 92%, black) 0%, var(--sig-surface-raised) 72%);
+		cursor: pointer;
+		transition: border-color 0.15s;
+		min-height: 140px;
+		width: 100%;
+		text-align: left;
+	}
+
+	.catalog-card:hover {
+		border-color: var(--sig-accent);
+	}
+
+	.catalog-card:focus-visible {
+		outline: none;
+		border-color: var(--sig-accent);
+	}
+
+	.catalog-top {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
 
 	.catalog-name {
@@ -442,6 +637,22 @@ function closeInstallSheet(): void {
 		color: var(--sig-text-bright);
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
+	}
+
+	.mcp-icon {
+		width: 28px;
+		height: 28px;
+		border-radius: 0.45rem;
+		border: 1px solid var(--sig-icon-border);
+		display: grid;
+		place-items: center;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		color: var(--sig-icon-fg);
+		text-transform: uppercase;
+		flex-shrink: 0;
 	}
 
 	.catalog-desc {
@@ -467,10 +678,26 @@ function closeInstallSheet(): void {
 		color: var(--sig-text-muted);
 	}
 
+	.mcp-badge {
+		border: 1px solid var(--sig-border-strong);
+		padding: 1px 6px;
+		line-height: 1.3;
+	}
+
+	.mcp-official {
+		border-color: color-mix(in srgb, var(--sig-success) 70%, var(--sig-border-strong));
+		color: var(--sig-success);
+	}
+
+	.mcp-rank {
+		color: var(--sig-text-muted);
+	}
+
 	.catalog-actions {
 		display: flex;
-		justify-content: space-between;
+		justify-content: flex-start;
 		align-items: center;
+		gap: 6px;
 		margin-top: auto;
 	}
 
@@ -483,4 +710,5 @@ function closeInstallSheet(): void {
 	.catalog-link:hover {
 		text-decoration: underline;
 	}
+
 </style>

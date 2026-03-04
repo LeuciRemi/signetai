@@ -54,6 +54,14 @@
 	--sig-success: #4a7a5e;
 	--sig-dither: #f0f0f2;
 	--sig-grain-opacity: 0.04;
+	--sig-icon-fg: #f8fafc;
+	--sig-icon-border: rgba(255, 255, 255, 0.26);
+	--sig-icon-bg-1: #2563eb;
+	--sig-icon-bg-2: #7c3aed;
+	--sig-icon-bg-3: #059669;
+	--sig-icon-bg-4: #d97706;
+	--sig-icon-bg-5: #dc2626;
+	--sig-icon-bg-6: #0891b2;
 
 	/* Typography & spacing */
 	--font-display: "Diamond Grotesk", "Chakra Petch", sans-serif;
@@ -121,6 +129,14 @@
 	--sig-success: #4a7a5e;
 	--sig-dither: #0a0a0c;
 	--sig-grain-opacity: 0.06;
+	--sig-icon-fg: #111827;
+	--sig-icon-border: rgba(0, 0, 0, 0.22);
+	--sig-icon-bg-1: #93c5fd;
+	--sig-icon-bg-2: #c4b5fd;
+	--sig-icon-bg-3: #86efac;
+	--sig-icon-bg-4: #fcd34d;
+	--sig-icon-bg-5: #fca5a5;
+	--sig-icon-bg-6: #67e8f9;
 }
 
 /* === Tailwind v4 theme registration === */

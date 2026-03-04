@@ -8,7 +8,6 @@ import { PAGE_HEADERS } from "$lib/components/layout/page-headers";
 import { Button } from "$lib/components/ui/button/index.js";
 import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 import { Toaster } from "$lib/components/ui/sonner/index.js";
-import { mcpMarket } from "$lib/stores/marketplace-mcp.svelte";
 import {
 	clearAll,
 	clearSearchTimer,
@@ -24,7 +23,6 @@ import {
 	nav,
 	setTab,
 } from "$lib/stores/navigation.svelte";
-import { sk } from "$lib/stores/skills.svelte";
 import { openForm, ts } from "$lib/stores/tasks.svelte";
 import { hasUnsavedChanges } from "$lib/stores/unsaved-changes.svelte";
 import { Skeleton } from "$lib/components/ui/skeleton/index.js";
@@ -234,14 +232,6 @@ onMount(() => {
 					<span class="sig-label">
 						Constellation
 					</span>
-				{:else if activeTab === "skills"}
-					<span class="sig-eyebrow">
-						{#if sk.catalogTotal || mcpMarket.catalogTotal}
-							{(sk.catalogTotal + mcpMarket.catalogTotal).toLocaleString()} listed
-							<span class="text-[var(--sig-border-strong)]">&middot;</span>
-						{/if}
-						{sk.installed.length} skills &middot; {mcpMarket.installed.length} tool servers
-					</span>
 				{:else if activeTab === "tasks"}
 					<Button
 						variant="outline"
@@ -410,6 +400,7 @@ onMount(() => {
 			{/if}
 		</div>
 
+		{#if activeTab !== "skills"}
 		<div
 			class="flex items-center justify-between h-[26px] px-4
 				border-t border-[var(--sig-border)]
@@ -449,9 +440,6 @@ onMount(() => {
 			{:else if activeTab === "secrets"}
 				<span>Secrets</span>
 				<span>libsodium</span>
-			{:else if activeTab === "skills"}
-				<span>{sk.installed.length} skills · {mcpMarket.installed.length} tool servers</span>
-				<span>{mcpMarket.tools.length} routed tools</span>
 			{:else if activeTab === "tasks"}
 				<span>{ts.tasks.length} scheduled tasks</span>
 				<span>cron scheduler</span>
@@ -460,6 +448,7 @@ onMount(() => {
 				<span>connector health</span>
 			{/if}
 		</div>
+		{/if}
 	</main>
 </Sidebar.Provider>
 
