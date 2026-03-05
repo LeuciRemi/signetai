@@ -326,6 +326,7 @@ function getActualPackages(): PackageInfo[] {
 		if (visitedDirs.has(realDir)) return; // guard against circular symlinks
 		visitedDirs.add(realDir);
 		for (const entry of readdirSync(dir)) {
+			if (entry === "node_modules" || entry.startsWith(".")) continue;
 			const full = join(dir, entry);
 			const rel = relPrefix ? `${relPrefix}/${entry}` : entry;
 			const pkgJson = join(full, "package.json");
@@ -343,7 +344,7 @@ function getActualPackages(): PackageInfo[] {
 			}
 			// Always recurse — a workspace root may have an unnamed package.json
 			// but still contain named sub-packages underneath it.
-			if (existsSync(full) && statSync(full).isDirectory() && entry !== "node_modules" && !entry.startsWith(".")) {
+			if (existsSync(full) && statSync(full).isDirectory()) {
 				scan(full, rel);
 			}
 		}
