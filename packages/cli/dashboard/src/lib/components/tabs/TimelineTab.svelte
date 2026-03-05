@@ -48,17 +48,22 @@ const activeSkillsUsed = $derived(
 );
 
 function inferMcpUsageFromBucket(bucket: MemoryTimelineBucket): number {
-	const sourceSignals = bucket.sourceBreakdown.filter(
-		(metric: { key: string }) =>
-		/\bmcp\b|openclaw-memory|tool server|modelcontextprotocol/i.test(
-			metric.key,
-		),
+	// Use source breakdown only; tags are a weaker signal and can double-count with sources
+	const sourceSignals = bucket.sourceBreakdown.filter((metric: { key: string }) =>
+		hasMcpSignal(metric.key),
 	).length;
-	const tagSignals = bucket.topTags.filter(
-		(metric: { key: string }) =>
-		/\bmcp\b|tool-server|model-context-protocol/i.test(metric.key),
-	).length;
-	return sourceSignals + tagSignals;
+	return sourceSignals;
+}
+
+function hasMcpSignal(raw: string): boolean {
+	const key = raw.trim().toLowerCase();
+	if (!key) return false;
+	if (/\bmcp\b/.test(key)) return true;
+	if (/\btool[-\s]?servers?\b/.test(key)) return true;
+	if (key.includes("model context protocol")) return true;
+	if (key.includes("model-context-protocol")) return true;
+	if (key.includes("modelcontextprotocol")) return true;
+	return false;
 }
 
 const activeMcpServersUsed = $derived(
@@ -98,7 +103,7 @@ function parseTags(tags: Memory["tags"]): string[] {
 						.filter((tag) => tag.length > 0);
 				}
 			} catch {
-				return [];
+				// Fall through to CSV parsing on JSON error
 			}
 		}
 		return trimmed
@@ -126,20 +131,26 @@ function buildBucketUsageMaps(
 			pattern: new RegExp(`\\b${escapeRegex(name)}\\b`, "i"),
 		}));
 
-	const mcpMatchers = mcpServers
-		.flatMap((server) => [server.name, server.id])
-		.map((value) => value.trim().toLowerCase())
-		.filter((value) => value.length > 0)
-		.map((value) => ({
-			value,
-			pattern: new RegExp(`\\b${escapeRegex(value)}\\b`, "i"),
-		}));
+	// Key by serverId so a server matching on both name and id counts as 1
+	const mcpMatchers = mcpServers.flatMap((server) => {
+		const entries: Array<{ serverId: string; pattern: RegExp }> = [];
+		for (const raw of [server.name, server.id]) {
+			const value = raw.trim().toLowerCase();
+			if (value.length > 0) {
+				entries.push({
+					serverId: server.id,
+					pattern: new RegExp(`\\b${escapeRegex(value)}\\b`, "i"),
+				});
+			}
+		}
+		return entries;
+	});
 
 	const storage = bucketsInput.map((bucket) => ({
 		bucket,
 		skillSet: new Set<string>(),
 		mcpSet: new Set<string>(),
-		mcpMentionIds: new Set<string>(),
+		hasMcpSignal: false,
 		startMs: Date.parse(bucket.start),
 		endMs: Date.parse(bucket.end),
 	}));
@@ -150,6 +161,12 @@ function buildBucketUsageMaps(
 
 		const tags = parseTags(memory.tags).join(" ");
 		const memoryText = [memory.content, memory.who, memory.type, tags]
+			.filter((value): value is string => typeof value === "string")
+			.join(" ")
+			.toLowerCase();
+		// For MCP signal detection fallback, exclude content to avoid false positives
+		// from memories that merely mention "MCP" conversationally
+		const signalText = [memory.who, memory.type, tags]
 			.filter((value): value is string => typeof value === "string")
 			.join(" ")
 			.toLowerCase();
@@ -166,13 +183,14 @@ function buildBucketUsageMaps(
 			let matchedMcp = false;
 			for (const matcher of mcpMatchers) {
 				if (matcher.pattern.test(memoryText)) {
-					entry.mcpSet.add(matcher.value);
+					entry.mcpSet.add(matcher.serverId);
 					matchedMcp = true;
 				}
 			}
 
-			if (!matchedMcp && /\bmcp\b|model context protocol|tool server/i.test(memoryText)) {
-				entry.mcpMentionIds.add(memory.id);
+			// If no named server matched, check for MCP signal in metadata only
+			if (!matchedMcp && hasMcpSignal(signalText)) {
+				entry.hasMcpSignal = true;
 			}
 		}
 	}
@@ -181,8 +199,9 @@ function buildBucketUsageMaps(
 	const mcpUsage: Record<string, number> = {};
 	for (const entry of storage) {
 		skillUsage[entry.bucket.rangeKey] = entry.skillSet.size;
+		// If we matched named servers, use that count; otherwise cap at 1 if signal detected
 		mcpUsage[entry.bucket.rangeKey] =
-			entry.mcpSet.size > 0 ? entry.mcpSet.size : entry.mcpMentionIds.size;
+			entry.mcpSet.size > 0 ? entry.mcpSet.size : (entry.hasMcpSignal ? 1 : 0);
 	}
 
 	return { skillUsage, mcpUsage };
@@ -274,11 +293,15 @@ async function loadTimeline(): Promise<void> {
 	loading = true;
 	error = null;
 	try {
+		// Share the memory fetch promise with getMemoryTimeline for its fallback path
+		const memoryResultPromise = getMemories(5000, 0);
 		const [response, skills, mcp, memoryResult] = await Promise.all([
-			getMemoryTimeline(),
+			getMemoryTimeline({
+				fallbackMemories: memoryResultPromise.then((r) => r.memories),
+			}),
 			getSkills(),
 			getMarketplaceMcpServers(),
-			getMemories(5000, 0),
+			memoryResultPromise,
 		]);
 		buckets = response.buckets;
 		emitGeneratedFor(response.generatedFor);
@@ -305,21 +328,22 @@ async function loadTimeline(): Promise<void> {
 		bucketSkillUsage = {};
 		bucketMcpUsage = {};
 		bucketTopMemories = {};
+	} finally {
+		loading = false;
 	}
-	loading = false;
 }
 
 function formatDateRange(startIso: string, endIso: string): string {
-	const start = new Date(startIso);
-	const end = new Date(endIso);
-	return `${start.toLocaleDateString("en-US", {
+	// Format in UTC to avoid timezone offset issues where UTC midnight
+	// appears as the previous local day in negative-UTC-offset timezones
+	const opts: Intl.DateTimeFormatOptions = {
 		month: "short",
 		day: "numeric",
-	})} - ${end.toLocaleDateString("en-US", {
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-	})}`;
+		timeZone: "UTC",
+	};
+	const start = new Date(startIso).toLocaleDateString("en-US", opts);
+	const end = new Date(endIso).toLocaleDateString("en-US", { ...opts, year: "numeric" });
+	return `${start} - ${end}`;
 }
 
 function formatMemoryMoment(
@@ -333,11 +357,13 @@ function formatMemoryMoment(
 		return date.toLocaleTimeString("en-US", {
 			hour: "numeric",
 			minute: "2-digit",
+			timeZone: "UTC",
 		});
 	}
 	return date.toLocaleDateString("en-US", {
 		month: "short",
 		day: "numeric",
+		timeZone: "UTC",
 	});
 }
 

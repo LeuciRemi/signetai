@@ -27,8 +27,8 @@ interface RangeSpec {
 	readonly eraIndex: number;
 	readonly key: "today" | "last_week" | "one_month";
 	readonly label: "Today" | "Last week" | "One month";
-	readonly startDaysAgo: number;
-	readonly endDaysAgo: number;
+	/** Number of days the range spans, starting from "today" and going back */
+	readonly lookbackDays: number;
 }
 
 const RANGE_SPECS: readonly RangeSpec[] = [
@@ -36,22 +36,19 @@ const RANGE_SPECS: readonly RangeSpec[] = [
 		eraIndex: 0,
 		key: "today",
 		label: "Today",
-		startDaysAgo: 0,
-		endDaysAgo: 0,
+		lookbackDays: 1,
 	},
 	{
 		eraIndex: 1,
 		key: "last_week",
 		label: "Last week",
-		startDaysAgo: 0,
-		endDaysAgo: 6,
+		lookbackDays: 7,
 	},
 	{
 		eraIndex: 2,
 		key: "one_month",
 		label: "One month",
-		startDaysAgo: 0,
-		endDaysAgo: 29,
+		lookbackDays: 30,
 	},
 ] as const;
 
@@ -122,15 +119,8 @@ function rangeBounds(spec: RangeSpec, nowStartMs: number): {
 	startMs: number;
 	endMs: number;
 } {
-	if (spec.startDaysAgo === 0 && spec.endDaysAgo === 0) {
-		return {
-			startMs: nowStartMs,
-			endMs: nowStartMs + MS_PER_DAY - 1,
-		};
-	}
-
-	const startMs = nowStartMs - spec.endDaysAgo * MS_PER_DAY;
-	const endMs = nowStartMs - (spec.startDaysAgo - 1) * MS_PER_DAY - 1;
+	const startMs = nowStartMs - (spec.lookbackDays - 1) * MS_PER_DAY;
+	const endMs = nowStartMs + MS_PER_DAY - 1;
 	return { startMs, endMs };
 }
 
@@ -243,14 +233,19 @@ export function buildMemoryTimeline(
 	const nowStartMs = startOfUtcDay(now.getTime());
 	const buckets = createBuckets(nowStartMs);
 
+	// Widest bucket is 30 days — filter SQL to avoid full table scan
+	const cutoffMs = nowStartMs - 29 * MS_PER_DAY;
+	const cutoffIso = new Date(cutoffMs).toISOString();
+
 	const memoryRows = db
 		.prepare(
 			`SELECT id, created_at, type, who, tags, importance, pinned
 			 FROM memories
 			 WHERE is_deleted = 0
+			   AND created_at >= ?
 			 ORDER BY created_at DESC`,
 		)
-		.all() as MemoryRow[];
+		.all(cutoffIso) as MemoryRow[];
 
 	const historyRows = db
 		.prepare(
@@ -258,9 +253,10 @@ export function buildMemoryTimeline(
 			 FROM memory_history h
 			 INNER JOIN memories m ON m.id = h.memory_id
 			 WHERE m.is_deleted = 0
+			   AND h.created_at >= ?
 			 ORDER BY h.created_at DESC`,
 		)
-		.all() as HistoryRow[];
+		.all(cutoffIso) as HistoryRow[];
 
 	let invalidMemoryTimestamps = 0;
 	let invalidHistoryTimestamps = 0;
@@ -305,14 +301,16 @@ export function buildMemoryTimeline(
 			bucket.trackedEvents += 1;
 			if (EVOLVED_EVENTS.has(row.event)) {
 				bucket.evolved += 1;
+				// Only count strengthened for events that also count as evolved
+				// (updated/merged imply strength; recovered with strengthening reason also counts)
+				if (row.event === "updated" || row.event === "merged") {
+					bucket.strengthened += 1;
+				} else if (row.reason && STRENGTHENED_REASON_PATTERN.test(row.reason)) {
+					bucket.strengthened += 1;
+				}
 			}
 			if (row.event === "recovered") {
 				bucket.recovered += 1;
-			}
-			if (row.event === "updated" || row.event === "merged") {
-				bucket.strengthened += 1;
-			} else if (row.reason && STRENGTHENED_REASON_PATTERN.test(row.reason)) {
-				bucket.strengthened += 1;
 			}
 		});
 	}
@@ -350,7 +348,9 @@ export function buildMemoryTimeline(
 		generatedAt: new Date().toISOString(),
 		generatedFor: new Date(nowStartMs).toISOString(),
 		rangePreset: "today-last_week-one_month",
+		// Count of non-deleted memories within the 30-day query window, not the full DB total
 		totalMemories: memoryRows.length,
+		// Count of history events within the 30-day window for non-deleted memories
 		totalHistoryEvents: historyRows.length,
 		invalidMemoryTimestamps,
 		invalidHistoryTimestamps,

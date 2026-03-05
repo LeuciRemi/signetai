@@ -980,6 +980,9 @@ app.use("/memory/search", async (c, next) => {
 app.use("/memory/similar", async (c, next) => {
 	return requirePermission("recall", authConfig)(c, next);
 });
+app.use("/api/memory/timeline", async (c, next) => {
+	return requirePermission("recall", authConfig)(c, next);
+});
 
 // Modify — with rate limiting
 app.use("/api/memory/modify", async (c, next) => {

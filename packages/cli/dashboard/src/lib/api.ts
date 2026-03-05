@@ -236,6 +236,7 @@ export async function getMemories(limit = 100, offset = 0): Promise<{ memories: 
 }
 
 function buildTimelineFallback(memories: readonly Memory[]): MemoryTimelineResponse {
+	const MS_PER_DAY = 24 * 60 * 60 * 1000;
 	const now = new Date();
 	const nowStart = Date.UTC(
 		now.getUTCFullYear(),
@@ -244,32 +245,14 @@ function buildTimelineFallback(memories: readonly Memory[]): MemoryTimelineRespo
 	);
 
 	const ranges = [
-		{ eraIndex: 0 as const, rangeKey: "today" as const, label: "Today" as const, startDaysAgo: 0, endDaysAgo: 0 },
-		{
-			eraIndex: 1 as const,
-			rangeKey: "last_week" as const,
-			label: "Last week" as const,
-			startDaysAgo: 0,
-			endDaysAgo: 6,
-		},
-		{
-			eraIndex: 2 as const,
-			rangeKey: "one_month" as const,
-			label: "One month" as const,
-			startDaysAgo: 0,
-			endDaysAgo: 29,
-		},
+		{ eraIndex: 0 as const, rangeKey: "today" as const, label: "Today" as const, lookbackDays: 1 },
+		{ eraIndex: 1 as const, rangeKey: "last_week" as const, label: "Last week" as const, lookbackDays: 7 },
+		{ eraIndex: 2 as const, rangeKey: "one_month" as const, label: "One month" as const, lookbackDays: 30 },
 	];
 
 	const buckets = ranges.map((range) => {
-		const start =
-			range.startDaysAgo === 0
-				? nowStart
-				: nowStart - range.endDaysAgo * 24 * 60 * 60 * 1000;
-		const end =
-			range.startDaysAgo === 0
-				? nowStart + 24 * 60 * 60 * 1000 - 1
-				: nowStart - (range.startDaysAgo - 1) * 24 * 60 * 60 * 1000 - 1;
+		const start = nowStart - (range.lookbackDays - 1) * MS_PER_DAY;
+		const end = nowStart + MS_PER_DAY - 1;
 		return {
 			range,
 			start,
@@ -325,7 +308,11 @@ function buildTimelineFallback(memories: readonly Memory[]): MemoryTimelineRespo
 							.filter((tag) => tag.length > 0);
 					}
 				} catch {
-					tags = [];
+					// Fall through to CSV parsing on JSON parse error
+					tags = trimmed
+						.split(",")
+						.map((tag) => tag.trim())
+						.filter((tag) => tag.length > 0);
 				}
 			} else {
 				tags = trimmed
@@ -350,11 +337,15 @@ function buildTimelineFallback(memories: readonly Memory[]): MemoryTimelineRespo
 			.slice(0, 5)
 			.map(([key, count]) => ({ key, count }));
 
+	// Use the widest bucket (30-day) count to match daemon semantics
+	const widestBucket = buckets[buckets.length - 1];
+	const totalInWindow = widestBucket?.memoriesAdded ?? 0;
+
 	return {
 		generatedAt: new Date().toISOString(),
 		generatedFor: new Date(nowStart).toISOString(),
 		rangePreset: "today-last_week-one_month",
-		totalMemories: memories.length,
+		totalMemories: totalInWindow,
 		totalHistoryEvents: 0,
 		invalidMemoryTimestamps: 0,
 		invalidHistoryTimestamps: 0,
@@ -383,15 +374,34 @@ function buildTimelineFallback(memories: readonly Memory[]): MemoryTimelineRespo
 	};
 }
 
-export async function getMemoryTimeline(): Promise<MemoryTimelineResponse> {
+export async function getMemoryTimeline(options?: {
+	readonly fallbackMemories?: readonly Memory[] | Promise<readonly Memory[]>;
+}): Promise<MemoryTimelineResponse> {
 	try {
-		const response = await fetch(`${API_BASE}/api/memory/timeline`);
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 10_000);
+		let response: Response;
+		try {
+			response = await fetch(`${API_BASE}/api/memory/timeline`, {
+				signal: controller.signal,
+			});
+		} finally {
+			clearTimeout(timeoutId);
+		}
 		if (!response.ok) throw new Error("Failed to fetch memory timeline");
 		return await response.json();
 	} catch {
-		const fallback = await getMemories(5000, 0);
+		let fallbackMemories: readonly Memory[];
+		try {
+			fallbackMemories = options?.fallbackMemories
+				? await options.fallbackMemories
+				: (await getMemories(5000, 0)).memories;
+		} catch {
+			// If fallback also fails, return an empty timeline
+			fallbackMemories = [];
+		}
 		return {
-			...buildTimelineFallback(fallback.memories),
+			...buildTimelineFallback(fallbackMemories),
 			error: "Timeline API unavailable. Showing memory-index fallback.",
 		};
 	}
