@@ -2,6 +2,15 @@
 
 All notable changes to Signet are documented here.
 
+## [0.38.4] - 2026-03-05
+
+### Bug Fixes
+
+- initial scroll-to-bottom and stuck connecting state in LogsTab
+- **logs**: close stream edge cases and recent-read gaps
+- **logs**: ship refreshed UI with hardened stream behavior
+
+
 ## [0.38.3] - 2026-03-05
 
 ### Bug Fixes
