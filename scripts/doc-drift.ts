@@ -106,6 +106,9 @@ function extractRoutesFromSource(): RouteEntry[] {
 		"packages/daemon/src/mcp/route.ts",
 	];
 
+	// NOTE: Only matches routes registered directly on `app`. Sub-router patterns
+	// like `const router = new Hono(); router.get(...)` are not detected.
+	// Keep all daemon routes registered on the top-level `app` variable.
 	const routePattern =
 		/app\.(get|post|put|patch|delete|all)\(\s*["'`]([^"'`]+)["'`]/g;
 
@@ -204,9 +207,13 @@ function checkRouteDrift(claudeMd: string): {
 
 	const extraInDocs: DocRoute[] = [];
 	for (const dr of docRoutes) {
-		const missingMethods = dr.methods.filter(
-			(m) => !sourceKeys.has(routeKey(m, dr.endpoint)),
-		);
+		const missingMethods = dr.methods.filter((m) => {
+			if (m === "ALL") {
+				// A documented ALL is valid if source has any specific method for that path
+				return !HTTP_METHODS.some((hm) => sourceKeys.has(routeKey(hm, dr.endpoint)));
+			}
+			return !sourceKeys.has(routeKey(m, dr.endpoint));
+		});
 		if (missingMethods.length > 0) {
 			extraInDocs.push({ endpoint: dr.endpoint, methods: missingMethods });
 		}
@@ -239,7 +246,9 @@ function checkMigrationDrift(claudeMd: string): MigrationDrift {
 	// unrelated text elsewhere in CLAUDE.md (e.g. changelogs, step counts).
 	const sectionHeader = "## Database Migrations";
 	const sectionStart = claudeMd.indexOf(sectionHeader);
-	const migSection = sliceSection(claudeMd, sectionHeader) || claudeMd;
+	// If the section is absent, leave migSection empty so ranges stays empty
+	// and the hasDrift ternary correctly signals drift when migration files exist.
+	const migSection = sliceSection(claudeMd, sectionHeader);
 	// Compute line offset so reported locations point to the correct file line.
 	const lineOffset =
 		sectionStart === -1 ? 0 : claudeMd.slice(0, sectionStart).split("\n").length - 1;

@@ -106,7 +106,7 @@ It should report no drift (exit 0). If drift remains, fix it and re-check.
 ## Step 5: Commit and PR
 
 ```bash
-git add CLAUDE.md README.md docs/
+git add CLAUDE.md README.md docs/**/*.md 2>/dev/null || git add CLAUDE.md README.md docs/
 git commit -m "docs: fix documentation drift
 
 ${DRIFT_BULLETS}"
