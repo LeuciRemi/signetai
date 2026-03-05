@@ -1841,7 +1841,13 @@ $effect(() => {
 								<div class="flex flex-wrap gap-1">
 									<button class="px-2 py-[2px] font-[family-name:var(--font-mono)] text-[10px] uppercase border border-[var(--sig-border-strong)] {nodeColorMode === 'newness' ? 'text-[var(--sig-text-bright)] bg-[var(--sig-surface-raised)]' : 'text-[var(--sig-text-muted)] bg-transparent'}" onclick={() => (nodeColorMode = "newness")}>Newness</button>
 									<button class="px-2 py-[2px] font-[family-name:var(--font-mono)] text-[10px] uppercase border border-[var(--sig-border-strong)] {nodeColorMode === 'source' ? 'text-[var(--sig-text-bright)] bg-[var(--sig-surface-raised)]' : 'text-[var(--sig-text-muted)] bg-transparent'}" onclick={() => (nodeColorMode = "source")}>Source</button>
-									<button class="px-2 py-[2px] font-[family-name:var(--font-mono)] text-[10px] uppercase border border-[var(--sig-border-strong)] {nodeColorMode === 'none' ? 'text-[var(--sig-text-bright)] bg-[var(--sig-surface-raised)]' : 'text-[var(--sig-text-muted)] bg-transparent'}" onclick={() => (nodeColorMode = "none")}>None</button>
+								<button class="px-2 py-[2px] font-[family-name:var(--font-mono)] text-[10px] uppercase border border-[var(--sig-border-strong)] {nodeColorMode === 'none' ? 'text-[var(--sig-text-bright)] bg-[var(--sig-surface-raised)]' : 'text-[var(--sig-text-muted)] bg-transparent'}" onclick={() => (nodeColorMode = "none")}>None</button>
+							</div>
+						</div>
+						<div class="border border-[var(--sig-border)] px-2 py-2 space-y-1.5">
+							<div class="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.08em] text-[var(--sig-text-muted)]">Overlays</div>
+							<div class="flex flex-wrap gap-1">
+								<button class="px-2 py-[2px] font-[family-name:var(--font-mono)] text-[10px] uppercase border border-[var(--sig-border-strong)] {showNewSinceLastSeen ? 'text-[var(--sig-text-bright)] bg-[var(--sig-surface-raised)]' : 'text-[var(--sig-text-muted)] bg-transparent'}" onclick={() => (showNewSinceLastSeen = !showNewSinceLastSeen)}>New since last seen</button>
 								</div>
 							</div>
 							<div class="border border-[var(--sig-border)] px-2 py-2 space-y-1.5">
