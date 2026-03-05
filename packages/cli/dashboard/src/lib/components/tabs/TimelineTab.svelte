@@ -401,6 +401,19 @@ function getRangeChipLabel(bucket: MemoryTimelineBucket): string {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
+	const target = event.target;
+	if (target instanceof HTMLElement) {
+		const tag = target.tagName;
+		if (
+			tag === "INPUT" ||
+			tag === "TEXTAREA" ||
+			tag === "SELECT" ||
+			target.isContentEditable
+		) {
+			return;
+		}
+	}
+
 	if (event.key === "ArrowRight") {
 		event.preventDefault();
 		moveOlder(event.shiftKey ? 3 : 1);
@@ -494,7 +507,7 @@ onMount(() => {
 							<p class="sig-heading timeline-era-title">
 								{activeBucket.label}: <span class="timeline-era-title-range">{formatDateRange(activeBucket.start, activeBucket.end)}</span>
 							</p>
-							<div class="timeline-era-controls" role="tablist" aria-orientation="horizontal">
+							<div class="timeline-era-controls flex items-center gap-1">
 								<Button
 									variant="outline"
 									size="sm"
@@ -506,20 +519,22 @@ onMount(() => {
 									<ChevronLeft class="size-3.5" />
 								</Button>
 
-								{#each buckets as bucket, index (bucket.eraIndex)}
-									<button
-										class={`${railButtonBase} ${index === activeIndex
-											? 'border-[var(--sig-accent)] bg-[color-mix(in_srgb,var(--sig-surface-raised)_76%,transparent)] text-[var(--sig-text-bright)]'
-											: 'border-[var(--sig-border-strong)] text-[var(--sig-text-muted)] hover:text-[var(--sig-text-bright)]'}`}
-										onclick={() => {
-											activeIndex = index;
-										}}
-										role="tab"
-										aria-selected={index === activeIndex}
-									>
-										{getRangeChipLabel(bucket)}
-									</button>
-								{/each}
+								<div role="tablist" aria-orientation="horizontal" class="flex items-center gap-1">
+									{#each buckets as bucket, index (bucket.eraIndex)}
+										<button
+											class={`${railButtonBase} ${index === activeIndex
+												? 'border-[var(--sig-accent)] bg-[color-mix(in_srgb,var(--sig-surface-raised)_76%,transparent)] text-[var(--sig-text-bright)]'
+												: 'border-[var(--sig-border-strong)] text-[var(--sig-text-muted)] hover:text-[var(--sig-text-bright)]'}`}
+											onclick={() => {
+												activeIndex = index;
+											}}
+											role="tab"
+											aria-selected={index === activeIndex}
+										>
+											{getRangeChipLabel(bucket)}
+										</button>
+									{/each}
+								</div>
 
 								<Button
 									variant="outline"
