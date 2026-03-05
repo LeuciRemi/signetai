@@ -12,6 +12,10 @@ bun scripts/doc-drift.ts --markdown
 If exit code is 0, there is no drift. Reply "No documentation drift detected."
 and stop.
 
+If exit code is 2, the drift detector encountered an error (e.g., CLAUDE.md is
+missing or an unknown flag was passed). Reply with the error message and stop —
+do not proceed to Step 2.
+
 If exit code is 1, continue to Step 2.
 
 ## Step 2: Create a branch
