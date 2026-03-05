@@ -17,7 +17,12 @@ const ROOT = resolve(import.meta.dirname, "..");
 // ---------------------------------------------------------------------------
 
 function read(relPath: string): string {
-	return readFileSync(join(ROOT, relPath), "utf8");
+	const abs = join(ROOT, relPath);
+	if (!existsSync(abs)) {
+		console.error(`Error: required file not found: ${relPath}`);
+		process.exit(2);
+	}
+	return readFileSync(abs, "utf8");
 }
 
 function fileExists(relPath: string): boolean {
@@ -62,7 +67,7 @@ function sliceSection(content: string, heading: string): string {
 
 	const afterStart = content.slice(start + heading.length);
 	const nextH2 = afterStart.search(/\n##\s+/);
-	const nextSetext = afterStart.search(/\n[^\n]+\n(?:={3,}|-{3,})/);
+	const nextSetext = afterStart.search(/\n[^\n]+\n(?:={3,}|-{3,})[ \t]*(?:\n|$)/);
 	const boundaries = [nextH2, nextSetext].filter((offset) => offset >= 0);
 	const end =
 		boundaries.length > 0
@@ -80,6 +85,8 @@ function normRoute(p: string): string {
 function routeKey(method: string, path: string): string {
 	return `${method.toUpperCase()} ${normRoute(path)}`;
 }
+
+const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 
 // ---------------------------------------------------------------------------
 // 1. Route drift
@@ -143,12 +150,11 @@ function parseClaudeMdRoutes(content: string): DocRoute[] {
 	return routes;
 }
 
-function checkRouteDrift(): {
+function checkRouteDrift(claudeMd: string): {
 	missingFromDocs: RouteEntry[];
 	extraInDocs: DocRoute[];
 } {
 	const sourceRoutes = extractRoutesFromSource();
-	const claudeMd = read("CLAUDE.md");
 	const endpointSection = sliceSection(claudeMd, "## HTTP API Endpoints");
 	const docRoutes = endpointSection
 		? parseClaudeMdRoutes(endpointSection)
@@ -162,15 +168,24 @@ function checkRouteDrift(): {
 		}
 	}
 
-	// Build a set of source route keys
+	// Build a set of source route keys; expand app.all() to all HTTP methods
+	// so documented specific-method entries aren't falsely flagged as missing.
 	const sourceKeys = new Set<string>();
 	for (const sr of sourceRoutes) {
-		sourceKeys.add(routeKey(sr.method, sr.path));
+		if (sr.method === "ALL") {
+			for (const m of HTTP_METHODS) sourceKeys.add(routeKey(m, sr.path));
+		} else {
+			sourceKeys.add(routeKey(sr.method, sr.path));
+		}
 	}
 
-	const missingFromDocs = sourceRoutes.filter(
-		(sr) => !docKeys.has(routeKey(sr.method, sr.path)),
-	);
+	const missingFromDocs = sourceRoutes.filter((sr) => {
+		if (sr.method === "ALL") {
+			// An app.all() route is documented if any specific method covers it
+			return !HTTP_METHODS.some((m) => docKeys.has(routeKey(m, sr.path)));
+		}
+		return !docKeys.has(routeKey(sr.method, sr.path));
+	});
 
 	const extraInDocs: DocRoute[] = [];
 	for (const dr of docRoutes) {
@@ -196,8 +211,7 @@ interface MigrationDrift {
 	hasDrift: boolean;
 }
 
-function checkMigrationDrift(): MigrationDrift {
-	const claudeMd = read("CLAUDE.md");
+function checkMigrationDrift(claudeMd: string): MigrationDrift {
 	const migFiles = globDir("packages/core/src/migrations", /^\d{3}.*\.ts$/)
 		.filter((f) => !f.includes(".test.") && f !== "index.ts")
 		.sort();
@@ -206,7 +220,10 @@ function checkMigrationDrift(): MigrationDrift {
 	const maxNum = actualMax.match(/^(\d{3})/)?.[1] ?? "000";
 
 	const ranges: { location: string; text: string }[] = [];
-	const lines = claudeMd.split("\n");
+	// Bound the scan to the migrations section to avoid false positives from
+	// unrelated text elsewhere in CLAUDE.md (e.g. changelogs, step counts).
+	const migSection = sliceSection(claudeMd, "## Database Migrations") || claudeMd;
+	const lines = migSection.split("\n");
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
 		const rangeMatch = line.match(/(\d{3})[\w-]*\s+through\s+(\d{3})[\w-]*/);
@@ -240,8 +257,7 @@ interface KeyFilesDrift {
 	total: number;
 }
 
-function checkKeyFilesDrift(): KeyFilesDrift {
-	const claudeMd = read("CLAUDE.md");
+function checkKeyFilesDrift(claudeMd: string): KeyFilesDrift {
 	const section = sliceSection(claudeMd, "## Key Files");
 	if (!section) return { missing: [], total: 0 };
 
@@ -343,14 +359,13 @@ function parsePackageTable(
 	return result;
 }
 
-function checkPackageDrift(): PackageTableDrift[] {
+function checkPackageDrift(claudeMd: string): PackageTableDrift[] {
 	const actual = getActualPackages();
 	const actualNames = new Set(actual.map((p) => p.name));
 
 	const results: PackageTableDrift[] = [];
 
 	// CLAUDE.md
-	const claudeMd = read("CLAUDE.md");
 	const claudeTable = parsePackageTable(claudeMd, "## Packages");
 	results.push({
 		file: "CLAUDE.md",
@@ -393,10 +408,11 @@ interface DriftReport {
 }
 
 function generateReport(): DriftReport {
-	const routes = checkRouteDrift();
-	const migrations = checkMigrationDrift();
-	const keyFiles = checkKeyFilesDrift();
-	const packages = checkPackageDrift();
+	const claudeMd = read("CLAUDE.md");
+	const routes = checkRouteDrift(claudeMd);
+	const migrations = checkMigrationDrift(claudeMd);
+	const keyFiles = checkKeyFilesDrift(claudeMd);
+	const packages = checkPackageDrift(claudeMd);
 
 	const summary: string[] = [];
 
