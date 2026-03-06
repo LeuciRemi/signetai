@@ -169,12 +169,18 @@ export function startSynthesisWorker(
 ): SynthesisWorkerHandle {
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let stopped = false;
+	let isSynthesizing = false;
 	const idleGapMs = config.idleGapMinutes * 60 * 1000;
 
 	async function tick(): Promise<void> {
 		if (stopped) return;
 
 		try {
+			if (isSynthesizing) {
+				scheduleTick(CHECK_INTERVAL_MS);
+				return;
+			}
+
 			// Don't synthesize while sessions are active
 			if (activeSessionCount() > 0) {
 				scheduleTick(CHECK_INTERVAL_MS);
@@ -211,9 +217,14 @@ export function startSynthesisWorker(
 				return;
 			}
 
-			const success = await runSynthesis(config);
-			if (success) {
-				writeLastSynthesisTime(Date.now());
+			isSynthesizing = true;
+			try {
+				const success = await runSynthesis(config);
+				if (success) {
+					writeLastSynthesisTime(Date.now());
+				}
+			} finally {
+				isSynthesizing = false;
 			}
 		} catch (e) {
 			logger.error("synthesis", "Unhandled tick error", e as Error);
@@ -253,6 +264,10 @@ export function startSynthesisWorker(
 			return readLastSynthesisTime();
 		},
 		async triggerNow() {
+			if (isSynthesizing) {
+				return { success: false, skipped: true, reason: "Synthesis already in progress" };
+			}
+
 			const lastRun = readLastSynthesisTime();
 			const elapsed = Date.now() - lastRun;
 
@@ -262,11 +277,16 @@ export function startSynthesisWorker(
 				return { success: false, skipped: true, reason };
 			}
 
-			const success = await runSynthesis(config);
-			if (success) {
-				writeLastSynthesisTime(Date.now());
+			isSynthesizing = true;
+			try {
+				const success = await runSynthesis(config);
+				if (success) {
+					writeLastSynthesisTime(Date.now());
+				}
+				return { success, skipped: false };
+			} finally {
+				isSynthesizing = false;
 			}
-			return { success, skipped: false };
 		},
 	};
 }

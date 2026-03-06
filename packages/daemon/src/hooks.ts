@@ -1686,6 +1686,7 @@ Instructions:
 - Remove only items that are clearly superseded or obsolete
 - Keep the document well-organized with clear sections
 - This is a working document, not a changelog — keep it current-state focused
+- Be concise (target under ${maxTokens} tokens)
 - Do not include a generated timestamp — that is added automatically
 - Output the full updated MEMORY.md content`
 		: `You are generating MEMORY.md — a working memory summary for an AI agent.
@@ -1702,7 +1703,7 @@ Instructions:
   - Technical notes and learnings
   - Open threads and todos
 - Format as clean markdown with clear sections
-- Be concise but complete
+- Be concise but complete (target under ${maxTokens} tokens)
 - Do not include a generated timestamp — that is added automatically`;
 
 	return {
