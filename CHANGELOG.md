@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.42.2] - 2026-03-06
+
+### Bug Fixes
+
+- **codex**: address post-merge Greptile follow-ups (#153)
+
+
 ## [0.42.1] - 2026-03-06
 
 ### Bug Fixes
