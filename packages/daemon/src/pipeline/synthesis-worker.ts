@@ -138,9 +138,14 @@ async function runSynthesis(config: PipelineSynthesisConfig): Promise<SynthesisR
 		// Guard against non-markdown output (e.g. raw JSON error blobs)
 		const trimmed = result.text.trim();
 		if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-			logger.error("synthesis", "LLM returned JSON instead of markdown, skipping write",
-				undefined, { preview: trimmed.slice(0, 200) });
-			return "failed";
+			try {
+				JSON.parse(trimmed);
+				logger.error("synthesis", "LLM returned JSON instead of markdown, skipping write",
+					undefined, { preview: trimmed.slice(0, 200) });
+				return "failed";
+			} catch {
+				// Not valid JSON — markdown starting with [ or { is fine
+			}
 		}
 
 		// Write MEMORY.md via shared helper (handles backup)

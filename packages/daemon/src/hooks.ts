@@ -1709,12 +1709,22 @@ export function handleRecall(req: RecallRequest): RecallResponse {
  * Shared by the synthesis-complete endpoint and the synthesis worker.
  */
 export function writeMemoryMd(content: string): void {
-	// Last-resort guard: refuse to overwrite MEMORY.md with non-markdown
+	// Last-resort guard: refuse to overwrite MEMORY.md with JSON blobs
 	const trimmed = content.trim();
-	if (!trimmed || trimmed.startsWith("{") || trimmed.startsWith("[")) {
-		logger.error("hooks", "Refusing to write non-markdown content to MEMORY.md",
-			undefined, { preview: trimmed.slice(0, 200) });
+	if (!trimmed) {
+		logger.error("hooks", "Refusing to write empty content to MEMORY.md");
 		return;
+	}
+	if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+		try {
+			JSON.parse(trimmed);
+			// Parsed successfully — it's JSON, not markdown
+			logger.error("hooks", "Refusing to write JSON to MEMORY.md",
+				undefined, { preview: trimmed.slice(0, 200) });
+			return;
+		} catch {
+			// Not valid JSON — markdown that starts with [ or { is fine
+		}
 	}
 
 	const memoryMdPath = join(AGENTS_DIR, "MEMORY.md");
