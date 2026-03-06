@@ -15,7 +15,8 @@
     "web"
   ],
   "scripts": {
-    "build": "bun run build:core && bun run build:connector-base && bun run build:opencode-plugin && bun run build:deps && bun run build:signetai",
+    "build": "bun run build:core && bun run build:connector-base && bun run build:opencode-plugin && bun run build:native && bun run build:deps && bun run build:signetai",
+    "build:native": "cd packages/native && if command -v cargo >/dev/null 2>&1; then bun run build; else echo '[signet] skipping native build (rust not installed)'; fi",
     "build:core": "cd packages/core && bun run build",
     "build:connector-base": "cd packages/connector-base && bun run build",
     "build:opencode-plugin": "cd packages/opencode-plugin && bun run build",

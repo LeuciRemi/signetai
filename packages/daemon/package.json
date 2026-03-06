@@ -44,6 +44,9 @@
     "umap-js": "^1.4.0",
     "zod": "^4.3.6"
   },
+  "optionalDependencies": {
+    "@signet/native": "workspace:*"
+  },
   "devDependencies": {
     "@types/libsodium-wrappers": "^0.8.2"
   }
