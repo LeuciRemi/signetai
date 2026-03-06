@@ -2,6 +2,61 @@
 
 All notable changes to Signet are documented here.
 
+## [0.38.6] - 2026-03-06
+
+### Features
+
+- **timeline**: add signet evolution timeline recap view
+- add doc drift detection script and agent prompt
+
+### Bug Fixes
+
+- **dashboard**: clear overlay when entering none mode
+- **dashboard**: avoid persisting hidden overlay state
+- **dashboard**: refine none-mode relation and overlay cues
+- **dashboard**: split read-side hydration into independent try/catch blocks
+- **doc-drift**: filter valid flags from unknown-flag error, guard commit failure
+- **dashboard**: improve none-mode legend copy
+- **doc-drift**: trailing whitespace in table rows, build dirs, safe commit message
+- **dashboard**: clarify none-mode constellation legend
+- **doc-drift**: distinguish absent vs stale migration range in summary
+- **dashboard**: remove dead new-since hydration branch
+- **doc-drift**: handle exit code 2 explicitly in agent prompt
+- **dashboard**: align constellation source colors and session overlay state
+- **doc-drift**: move dot-dir guard to top of scan loop
+- **doc-drift**: apply private filter and dot-dir guard consistently
+- **doc-drift**: circular symlink guard, private package filter, empty actualMax report
+- **doc-drift**: accept empty route descriptions, clarify absent migration section
+- **doc-drift**: fix ALL symmetry in extraInDocs, migration fallback, and sub-router note
+- **doc-drift**: guard broken symlinks and expand ALL in docKeys
+- **doc-drift**: guard statSync against broken symlinks in packages dir
+- **doc-drift**: skip 4 header lines when embedding drift report in PR body
+- **doc-drift**: dedup routes, fix key-file pattern, fix PR heading hierarchy
+- **doc-drift**: move scan recursion inside for loop
+- **doc-drift**: fix line offsets, nested package discovery, redundant runs
+- **doc-drift**: address Greptile review comments
+- **doc-drift**: reset regex lastIndex between files, fix indentation
+- **timeline**: address second greptile review pass
+- **timeline**: address greptile review comments
+- **scripts**: harden package parsing and prompt messaging
+- **timeline**: correct card windows and timestamp display
+- **scripts**: harden doc drift section parsing
+- **dashboard**: split storage writes by backend
+- **dashboard**: harden timeline keyboard and tab semantics
+- **scripts**: harden doc drift detector parsing
+- **dashboard**: tighten overlay toggle and storage cleanup
+- **timeline**: clamp avgImportance to [0,1] range
+- **timeline**: use UTC timezone for footer 'As of' timestamp
+- **timeline**: apply greptile review fixes
+- **dashboard**: clean up constellation control regressions
+- **dashboard**: restore overlays toggle in constellation
+- **dashboard**: make constellation color mode session-scoped
+
+### Performance
+
+- hoist prepared statements and batch trackFtsHits
+
+
 ## [0.38.5] - 2026-03-05
 
 ### Bug Fixes
