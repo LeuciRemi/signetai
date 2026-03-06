@@ -5,13 +5,14 @@
  */
 
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
-import { createOllamaProvider, createClaudeCodeProvider, createOpenCodeProvider } from "./provider";
+import { createOllamaProvider, createClaudeCodeProvider, createCodexProvider, createOpenCodeProvider } from "./provider";
 
 // ---------------------------------------------------------------------------
 // Fetch mock helpers
 // ---------------------------------------------------------------------------
 
 const originalFetch = globalThis.fetch;
+const originalSpawn = Bun.spawn;
 
 function mockFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>): void {
 	globalThis.fetch = mock(handler as typeof fetch);
@@ -19,6 +20,19 @@ function mockFetch(handler: (url: string, init?: RequestInit) => Response | Prom
 
 function restoreFetch(): void {
 	globalThis.fetch = originalFetch;
+}
+
+function restoreSpawn(): void {
+	Bun.spawn = originalSpawn;
+}
+
+function streamFromString(value: string): ReadableStream<Uint8Array> {
+	return new ReadableStream({
+		start(controller) {
+			controller.enqueue(new TextEncoder().encode(value));
+			controller.close();
+		},
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +162,50 @@ describe("createClaudeCodeProvider", () => {
 		const result = await provider.available();
 		// This will be true in dev environments where claude is installed
 		expect(typeof result).toBe("boolean");
+	});
+});
+
+describe("createCodexProvider", () => {
+	afterEach(() => restoreSpawn());
+
+	it("returns a provider with the correct name", () => {
+		const provider = createCodexProvider({ model: "gpt-5.3-codex" });
+		expect(provider.name).toBe("codex:gpt-5.3-codex");
+	});
+
+	it("generateWithUsage() parses JSONL agent output and usage", async () => {
+		let capturedArgs: string[] = [];
+		Bun.spawn = mock((args: string[]) => {
+			capturedArgs = args;
+			return {
+				stdout: streamFromString(
+					'{"type":"thread.started","thread_id":"abc"}\n{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\n{"type":"turn.completed","usage":{"input_tokens":12,"cached_input_tokens":5,"output_tokens":7}}\n',
+				),
+				stderr: streamFromString(""),
+				exited: Promise.resolve(0),
+				kill() {},
+			};
+		}) as typeof Bun.spawn;
+
+		const provider = createCodexProvider({ model: "gpt-5.3-codex" });
+		const result = await provider.generateWithUsage!("test");
+		expect(result.text).toBe("done");
+		expect(result.usage?.inputTokens).toBe(12);
+		expect(result.usage?.cacheReadTokens).toBe(5);
+		expect(result.usage?.outputTokens).toBe(7);
+		expect(capturedArgs).not.toContain("-a");
+	});
+
+	it("generate() throws on non-zero exit", async () => {
+		Bun.spawn = mock((_args: string[]) => ({
+			stdout: streamFromString(""),
+			stderr: streamFromString("boom"),
+			exited: Promise.resolve(1),
+			kill() {},
+		})) as typeof Bun.spawn;
+
+		const provider = createCodexProvider({ model: "gpt-5.3-codex" });
+		await expect(provider.generate("test")).rejects.toThrow(/codex exit 1/);
 	});
 });
 

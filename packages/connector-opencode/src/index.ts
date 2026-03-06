@@ -227,6 +227,10 @@ export class OpenCodeConnector extends BaseConnector {
 		return join(this.getPluginsPath(opencodePath), "signet.mjs");
 	}
 
+	private getPluginConfigEntry(opencodePath: string): string {
+		return `./${this.getPluginFilePath(opencodePath).replace(`${opencodePath}/`, "")}`;
+	}
+
 	/**
 	 * Install OpenCode integration
 	 *
@@ -261,10 +265,12 @@ export class OpenCodeConnector extends BaseConnector {
 		// Migrate away from legacy memory.mjs before writing new plugin
 		this.migrateFromLegacy(opencodePath);
 
-		// Write bundled plugin (OpenCode auto-discovers plugins/ directory)
+		// Write bundled plugin and register it in config so runtime loading
+		// does not depend on undocumented auto-discovery behavior.
 		const pluginFilePath = this.getPluginFilePath(opencodePath);
 		writeFileSync(pluginFilePath, PLUGIN_BUNDLE);
 		filesWritten.push(pluginFilePath);
+		this.registerPlugin(opencodePath);
 
 		// Generate AGENTS.md from identity files
 		const agentsMdPath = await this.generateAgentsMd(basePath);
@@ -309,6 +315,7 @@ export class OpenCodeConnector extends BaseConnector {
 		}
 
 		this.migrateFromLegacy(opencodePath);
+		this.removePlugin(opencodePath);
 		this.removeMcpServer(opencodePath);
 
 		return { filesRemoved };
@@ -411,6 +418,51 @@ export class OpenCodeConnector extends BaseConnector {
 	/**
 	 * Register Signet MCP server in OpenCode config file
 	 */
+	private registerPlugin(opencodePath: string): void {
+		const pluginEntry = this.getPluginConfigEntry(opencodePath);
+
+		for (const configPath of this.getConfigCandidates(opencodePath)) {
+			if (!existsSync(configPath)) continue;
+
+			let config: JsonObject;
+			try {
+				config = parseJsonOrJsonc(readFileSync(configPath, "utf-8"));
+			} catch {
+				continue;
+			}
+
+			const existing = toStringArray(config.plugin);
+			if (!existing.includes(pluginEntry)) {
+				config.plugin = [...existing, pluginEntry];
+				writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+			}
+			return;
+		}
+	}
+
+	private removePlugin(opencodePath: string): void {
+		const pluginEntry = this.getPluginConfigEntry(opencodePath);
+
+		for (const configPath of this.getConfigCandidates(opencodePath)) {
+			if (!existsSync(configPath)) continue;
+
+			let config: JsonObject;
+			try {
+				config = parseJsonOrJsonc(readFileSync(configPath, "utf-8"));
+			} catch {
+				continue;
+			}
+
+			const existing = toStringArray(config.plugin);
+			const filtered = existing.filter((entry) => entry !== pluginEntry);
+			if (filtered.length !== existing.length) {
+				config.plugin = filtered;
+				writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+			}
+			return;
+		}
+	}
+
 	private registerMcpServer(opencodePath: string): void {
 		for (const configPath of this.getConfigCandidates(opencodePath)) {
 			if (!existsSync(configPath)) continue;

@@ -185,7 +185,7 @@ async function executeTask(
 	let result: SpawnResult;
 	try {
 		result = await spawnTask(
-			task.harness as "claude-code" | "opencode",
+			task.harness as "claude-code" | "opencode" | "codex",
 			effectivePrompt,
 			task.working_directory,
 			undefined,

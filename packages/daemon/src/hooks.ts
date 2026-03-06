@@ -1382,7 +1382,11 @@ export function handleSessionEnd(
 	let transcript = "";
 	if (req.transcriptPath && existsSync(req.transcriptPath)) {
 		try {
-			transcript = readFileSync(req.transcriptPath, "utf-8");
+			const rawTranscript = readFileSync(req.transcriptPath, "utf-8");
+			transcript =
+				req.harness === "codex"
+					? normalizeCodexTranscript(rawTranscript)
+					: rawTranscript;
 		} catch {
 			logger.warn("hooks", "Could not read transcript", {
 				path: req.transcriptPath,
@@ -1423,6 +1427,82 @@ export function handleSessionEnd(
 	});
 
 	return { memoriesSaved: 0, queued: true, jobId };
+}
+
+function normalizeCodexTranscript(raw: string): string {
+	const lines: string[] = [];
+
+	for (const row of raw.split(/\r?\n/)) {
+		const trimmed = row.trim();
+		if (!trimmed) continue;
+
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(trimmed);
+		} catch {
+			continue;
+		}
+
+		if (typeof parsed !== "object" || parsed === null) continue;
+		const event = parsed as Record<string, unknown>;
+
+		if (event.type === "session_meta") {
+			const payload = event.payload;
+			if (typeof payload === "object" && payload !== null) {
+				const meta = payload as Record<string, unknown>;
+				const cwd = typeof meta.cwd === "string" ? meta.cwd : "";
+				const model = typeof meta.model === "string"
+					? meta.model
+					: typeof meta.model_provider === "string"
+						? meta.model_provider
+						: "";
+				if (cwd || model) {
+					lines.push(`Session: cwd=${cwd || "unknown"}, model=${model || "unknown"}`);
+				}
+			}
+			continue;
+		}
+
+		if (event.type === "event_msg") {
+			const payload = event.payload;
+			if (typeof payload === "object" && payload !== null) {
+				const msg = payload as Record<string, unknown>;
+				if (msg.type === "user_message" && typeof msg.message === "string") {
+					lines.push(`User: ${msg.message.trim()}`);
+				}
+				if (msg.type === "agent_message" && typeof msg.message === "string") {
+					lines.push(`Assistant: ${msg.message.trim()}`);
+				}
+			}
+			continue;
+		}
+
+		if (event.type === "response_item") {
+			const payload = event.payload;
+			if (typeof payload === "object" && payload !== null) {
+				const item = payload as Record<string, unknown>;
+				if (item.type === "function_call") {
+					const name = typeof item.name === "string" ? item.name : "tool";
+					const args = typeof item.arguments === "string" ? item.arguments : "";
+					lines.push(`Tool call (${name}): ${args}`);
+				}
+				if (item.type === "function_call_output" && typeof item.output === "string") {
+					lines.push(`Tool output: ${item.output.trim().slice(0, 1000)}`);
+				}
+				if (item.type === "item.completed") {
+					const completed = item.item;
+					if (typeof completed === "object" && completed !== null) {
+						const done = completed as Record<string, unknown>;
+						if (done.type === "agent_message" && typeof done.text === "string") {
+							lines.push(`Assistant: ${done.text.trim()}`);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return lines.join("\n");
 }
 
 // ============================================================================
@@ -1480,8 +1560,8 @@ export function handleRemember(req: RememberRequest): RememberResponse {
 				`INSERT INTO memories
 				 (id, content, type, importance, source_type, who, tags,
 				  pinned, project, idempotency_key, runtime_path,
-				  created_at, updated_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				  created_at, updated_at, updated_by)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			).run(
 				id,
 				content,
@@ -1496,6 +1576,7 @@ export function handleRemember(req: RememberRequest): RememberResponse {
 				req.runtimePath || null,
 				now,
 				now,
+				req.who || req.harness || "hooks",
 			);
 
 			return id;

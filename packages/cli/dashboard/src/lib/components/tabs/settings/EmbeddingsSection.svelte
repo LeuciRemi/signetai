@@ -11,43 +11,184 @@
 		"font-[family-name:var(--font-mono)] text-[11px] bg-[var(--sig-bg)] text-[var(--sig-text)] border-[var(--sig-border-strong)] rounded-lg";
 	const selectItemClass = "font-[family-name:var(--font-mono)] text-[11px] rounded-lg";
 
-	function handleProviderChange(v: string | undefined) {
-		st.sSetStr([...st.embPath(), "provider"], v ?? "");
+	const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
+	const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+
+	const EMBEDDING_PROVIDER_OPTIONS = [
+		{ value: "native", label: "native (built-in)" },
+		{ value: "ollama", label: "ollama" },
+		{ value: "openai", label: "openai" },
+		{ value: "none", label: "none (disable vectors)" },
+	] as const;
+
+	const EMBEDDING_MODEL_PRESETS = {
+		native: [
+			{ value: "nomic-embed-text-v1.5", label: "nomic-embed-text-v1.5", dimensions: 768 },
+		],
+		ollama: [
+			{ value: "nomic-embed-text", label: "nomic-embed-text (recommended)", dimensions: 768 },
+			{ value: "all-minilm", label: "all-minilm", dimensions: 384 },
+			{ value: "mxbai-embed-large", label: "mxbai-embed-large", dimensions: 1024 },
+		],
+		openai: [
+			{ value: "text-embedding-3-small", label: "text-embedding-3-small (recommended)", dimensions: 1536 },
+			{ value: "text-embedding-3-large", label: "text-embedding-3-large", dimensions: 3072 },
+		],
+		none: [],
+	} as const;
+
+	type EmbeddingProvider = keyof typeof EMBEDDING_MODEL_PRESETS;
+
+	function embPath(): string[] {
+		return st.embPath();
+	}
+
+	function embeddingProvider(): EmbeddingProvider | "" {
+		const provider = st.sStr([...embPath(), "provider"]);
+		return provider in EMBEDDING_MODEL_PRESETS ? (provider as EmbeddingProvider) : "";
+	}
+
+	function embeddingModelPresets() {
+		const provider = embeddingProvider();
+		return provider ? EMBEDDING_MODEL_PRESETS[provider] : [];
+	}
+
+	function embeddingModelSelectValue(): string {
+		const model = st.sStr([...embPath(), "model"]);
+		if (!model) return "";
+		return embeddingModelPresets().some((preset) => preset.value === model)
+			? model
+			: "__custom__";
+	}
+
+	function isKnownPreset(model: string): boolean {
+		return Object.values(EMBEDDING_MODEL_PRESETS).some((presets) =>
+			presets.some((preset) => preset.value === model),
+		);
+	}
+
+	function defaultBaseUrlForProvider(provider: EmbeddingProvider): string {
+		if (provider === "ollama") return DEFAULT_OLLAMA_BASE_URL;
+		if (provider === "openai") return DEFAULT_OPENAI_BASE_URL;
+		return "";
+	}
+
+	function setProviderDefaults(provider: EmbeddingProvider): void {
+		const currentModel = st.sStr([...embPath(), "model"]);
+		const currentBaseUrl = st.sStr([...embPath(), "base_url"]);
+		const presets = EMBEDDING_MODEL_PRESETS[provider];
+		const defaultPreset = presets[0];
+
+		if ((!currentModel || isKnownPreset(currentModel)) && defaultPreset) {
+			st.sSetStr([...embPath(), "model"], defaultPreset.value);
+			st.sSetNum([...embPath(), "dimensions"], defaultPreset.dimensions);
+		}
+
+		const nextBaseUrl = defaultBaseUrlForProvider(provider);
+		if (
+			currentBaseUrl === "" ||
+			currentBaseUrl === DEFAULT_OLLAMA_BASE_URL ||
+			currentBaseUrl === DEFAULT_OPENAI_BASE_URL
+		) {
+			st.sSetStr([...embPath(), "base_url"], nextBaseUrl);
+		}
+	}
+
+	function handleProviderChange(v: string | undefined): void {
+		const nextProvider = (v ?? "") as EmbeddingProvider | "";
+		st.sSetStr([...embPath(), "provider"], nextProvider);
+		if (!nextProvider) return;
+		if (nextProvider === "none") return;
+		setProviderDefaults(nextProvider);
+	}
+
+	function handleModelPresetChange(v: string | undefined): void {
+		if (!v || v === "__custom__") return;
+		const preset = embeddingModelPresets().find((candidate) => candidate.value === v);
+		if (!preset) return;
+		st.sSetStr([...embPath(), "model"], preset.value);
+		st.sSetNum([...embPath(), "dimensions"], preset.dimensions);
 	}
 </script>
 
 {#if st.settingsFileName}
-	<FormSection description="Vector embedding configuration for semantic memory search. Embeddings power the vector half of hybrid recall.">
-		<FormField label="Provider" description="Embedding backend. Native runs built-in (recommended). Ollama runs locally, OpenAI requires an API key.">
+	<FormSection description="Vector embedding configuration for semantic memory search. Provider defaults keep model, dimensions, and base URL aligned so search does not drift into a broken state.">
+		<FormField label="Provider" description="Embedding backend. Native runs built-in. Ollama runs locally. OpenAI uses the official embeddings API and requires an API key.">
 			<Select.Root
 				type="single"
-				value={st.sStr([...st.embPath(), "provider"])}
+				value={st.sStr([...embPath(), "provider"])}
 				onValueChange={handleProviderChange}
 			>
 				<Select.Trigger class={selectTriggerClass}>
-					{st.sStr([...st.embPath(), "provider"]) || "— select —"}
+					{st.sStr([...embPath(), "provider"]) || "— select —"}
 				</Select.Trigger>
 				<Select.Content class={selectContentClass}>
 					<Select.Item class={selectItemClass} value="" label="— select —" />
-					<Select.Item class={selectItemClass} value="native" label="native (built-in)" />
-					<Select.Item class={selectItemClass} value="ollama" label="ollama" />
-					<Select.Item class={selectItemClass} value="openai" label="openai" />
+					{#each EMBEDDING_PROVIDER_OPTIONS as option (option.value)}
+						<Select.Item class={selectItemClass} value={option.value} label={option.label} />
+					{/each}
 				</Select.Content>
 			</Select.Root>
 		</FormField>
-		<FormField label="Model" description="Native: nomic-embed-text-v1.5 (768d). Ollama: nomic-embed-text (768d), all-minilm (384d), mxbai-embed-large (1024d). OpenAI: text-embedding-3-small (1536d), text-embedding-3-large (3072d).">
-			<Input value={st.sStr([...st.embPath(), "model"])} oninput={(e) => st.sSetStr([...st.embPath(), "model"], e.currentTarget.value)} />
-		</FormField>
-		<FormField label="Dimensions" description="Must match the model's output dimension. Mismatched dimensions will produce broken search results.">
-			<Input type="number" value={st.sNum([...st.embPath(), "dimensions"])} oninput={(e) => st.sSetNum([...st.embPath(), "dimensions"], e.currentTarget.value)} />
-		</FormField>
-		{#if st.sStr([...st.embPath(), "provider"]) !== "native"}
-			<FormField label="Base URL" description="Ollama default: http://localhost:11434. OpenAI default: https://api.openai.com/v1.">
-				<Input value={st.sStr([...st.embPath(), "base_url"])} oninput={(e) => st.sSetStr([...st.embPath(), "base_url"], e.currentTarget.value)} />
+
+		{#if embeddingProvider() && embeddingProvider() !== "none"}
+			<FormField label="Model" description="Choose a recommended default or switch to custom for a specific embedding model. OpenAI's closest general-purpose replacement for the built-in nomic default is text-embedding-3-small.">
+				<div class="flex flex-col gap-2">
+					<Select.Root
+						type="single"
+						value={embeddingModelSelectValue()}
+						onValueChange={handleModelPresetChange}
+					>
+						<Select.Trigger class={selectTriggerClass}>
+							{embeddingModelSelectValue() === "__custom__"
+								? `custom: ${st.sStr([...embPath(), "model"])}`
+								: st.sStr([...embPath(), "model"]) || "— select —"}
+						</Select.Trigger>
+						<Select.Content class={selectContentClass}>
+							<Select.Item class={selectItemClass} value="" label="— select —" />
+							{#each embeddingModelPresets() as preset (preset.value)}
+								<Select.Item class={selectItemClass} value={preset.value} label={preset.label} />
+							{/each}
+							<Select.Item class={selectItemClass} value="__custom__" label="custom" />
+						</Select.Content>
+					</Select.Root>
+					{#if embeddingModelSelectValue() === "__custom__" || embeddingModelPresets().length === 0}
+						<Input
+							value={st.sStr([...embPath(), "model"])}
+							oninput={(e) => st.sSetStr([...embPath(), "model"], e.currentTarget.value)}
+							placeholder="custom model id"
+						/>
+					{/if}
+				</div>
 			</FormField>
-			<FormField label="API Key" description="Optional for Ollama, required for OpenAI. Use $secret:NAME to reference a stored secret instead of plaintext.">
-				<Input type="password" value={st.sStr([...st.embPath(), "api_key"])} oninput={(e) => st.sSetStr([...st.embPath(), "api_key"], e.currentTarget.value)} />
+
+			<FormField label="Dimensions" description="Must match the model output size. Preset selections auto-fill this; custom models must be set manually.">
+				<Input
+					type="number"
+					value={st.sNum([...embPath(), "dimensions"])}
+					oninput={(e) => st.sSetNum([...embPath(), "dimensions"], e.currentTarget.value)}
+				/>
 			</FormField>
+
+			{#if embeddingProvider() === "ollama" || embeddingProvider() === "openai"}
+				<FormField label="Base URL" description="Ollama defaults to http://localhost:11434. OpenAI defaults to https://api.openai.com/v1. Switching providers keeps the matching default unless you override it.">
+					<Input
+						value={st.sStr([...embPath(), "base_url"])}
+						oninput={(e) => st.sSetStr([...embPath(), "base_url"], e.currentTarget.value)}
+					/>
+				</FormField>
+			{/if}
+
+			{#if embeddingProvider() === "openai"}
+				<FormField label="API Key" description="Required for OpenAI. Use $secret:OPENAI_API_KEY to reference a stored secret instead of plaintext.">
+					<Input
+						type="password"
+						value={st.sStr([...embPath(), "api_key"])}
+						oninput={(e) => st.sSetStr([...embPath(), "api_key"], e.currentTarget.value)}
+						placeholder="$secret:OPENAI_API_KEY"
+					/>
+				</FormField>
+			{/if}
 		{/if}
 	</FormSection>
 {/if}

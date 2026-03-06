@@ -50,6 +50,8 @@ interface LlmSummaryResult {
 	}>;
 }
 
+export const SUMMARY_WORKER_UPDATED_BY = "summary-worker";
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -203,44 +205,7 @@ async function processJob(
 		summary: result.summary,
 	});
 
-	// Insert atomic facts (same logic as old handleSessionEnd)
-	const now = new Date().toISOString();
-	const saved = accessor.withWriteTx((db) => {
-		let count = 0;
-		const stmt = db.prepare(
-			`INSERT INTO memories
-			 (id, content, type, importance, source_type, who, tags,
-			  project, session_id, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		);
-
-		for (const item of result.facts) {
-			if (!item.content || typeof item.content !== "string") continue;
-
-			const importance = Math.min(item.importance ?? 0.3, 0.5);
-
-			if (isDuplicate(db as unknown as Database, item.content)) continue;
-
-			const id = crypto.randomUUID();
-			const type = item.type || inferType(item.content);
-
-			stmt.run(
-				id,
-				item.content,
-				type,
-				importance,
-				"session_end",
-				job.harness,
-				item.tags || null,
-				job.project || null,
-				job.session_key || null,
-				now,
-				now,
-			);
-			count++;
-		}
-		return count;
-	});
+	const saved = insertSummaryFacts(accessor, job, result.facts);
 
 	logger.info("summary-worker", "Inserted session facts", {
 		total: result.facts.length,
@@ -512,6 +477,52 @@ async function scoreContinuity(
 		perMemoryScores: result.per_memory.length,
 		sessionKey: job.session_key,
 		project: job.project,
+	});
+}
+
+export function insertSummaryFacts(
+	accessor: DbAccessor,
+	job: Pick<SummaryJobRow, "harness" | "project" | "session_key">,
+	facts: ReadonlyArray<LlmSummaryResult["facts"][number]>,
+): number {
+	const now = new Date().toISOString();
+
+	return accessor.withWriteTx((db) => {
+		let count = 0;
+		const stmt = db.prepare(
+			`INSERT INTO memories
+			 (id, content, type, importance, source_id, source_type, who, tags,
+			  project, created_at, updated_at, updated_by)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		);
+
+		for (const item of facts) {
+			if (!item.content || typeof item.content !== "string") continue;
+
+			const importance = Math.min(item.importance ?? 0.3, 0.5);
+
+			if (isDuplicate(db as unknown as Database, item.content)) continue;
+
+			const id = crypto.randomUUID();
+			const type = item.type || inferType(item.content);
+
+			stmt.run(
+				id,
+				item.content,
+				type,
+				importance,
+				job.session_key || null,
+				"session_end",
+				job.harness,
+				item.tags || null,
+				job.project || null,
+				now,
+				now,
+				SUMMARY_WORKER_UPDATED_BY,
+			);
+			count++;
+		}
+		return count;
 	});
 }
 

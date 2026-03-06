@@ -291,6 +291,182 @@ export function createClaudeCodeProvider(
 }
 
 // ---------------------------------------------------------------------------
+// Codex via local CLI
+// ---------------------------------------------------------------------------
+
+export interface CodexProviderConfig {
+	readonly model: string;
+	readonly defaultTimeoutMs: number;
+	readonly workingDirectory: string;
+}
+
+const DEFAULT_CODEX_CONFIG: CodexProviderConfig = {
+	model: "gpt-5.3-codex",
+	defaultTimeoutMs: 60000,
+	workingDirectory: homedir(),
+};
+
+interface CodexTurnUsage {
+	readonly input_tokens?: number;
+	readonly cached_input_tokens?: number;
+	readonly output_tokens?: number;
+}
+
+function parseCodexJsonl(raw: string): LlmGenerateResult {
+	const messages: string[] = [];
+	let usage: LlmGenerateResult["usage"] = null;
+
+	for (const line of raw.split(/\r?\n/)) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(trimmed);
+		} catch {
+			continue;
+		}
+
+		if (typeof parsed !== "object" || parsed === null) continue;
+		const event = parsed as Record<string, unknown>;
+
+		if (event.type === "item.completed") {
+			const item = event.item;
+			if (typeof item === "object" && item !== null) {
+				const record = item as Record<string, unknown>;
+				if (record.type === "agent_message" && typeof record.text === "string") {
+					messages.push(record.text.trim());
+				}
+			}
+		}
+
+		if (event.type === "turn.completed") {
+			const rawUsage = event.usage;
+			if (typeof rawUsage === "object" && rawUsage !== null) {
+				const turnUsage = rawUsage as CodexTurnUsage;
+				usage = {
+					inputTokens:
+						typeof turnUsage.input_tokens === "number"
+							? turnUsage.input_tokens
+							: null,
+					outputTokens:
+						typeof turnUsage.output_tokens === "number"
+							? turnUsage.output_tokens
+							: null,
+					cacheReadTokens:
+						typeof turnUsage.cached_input_tokens === "number"
+							? turnUsage.cached_input_tokens
+							: null,
+					cacheCreationTokens: null,
+					totalCost: null,
+					totalDurationMs: null,
+				};
+			}
+		}
+	}
+
+	const text = messages.join("\n").trim();
+	if (text.length === 0) {
+		throw new Error("codex returned empty output");
+	}
+
+	return { text, usage };
+}
+
+export function createCodexProvider(
+	config?: Partial<CodexProviderConfig>,
+): LlmProvider {
+	const cfg = { ...DEFAULT_CODEX_CONFIG, ...config };
+
+	async function callCodex(
+		prompt: string,
+		opts?: { timeoutMs?: number; maxTokens?: number },
+	): Promise<LlmGenerateResult> {
+		const timeoutMs = opts?.timeoutMs ?? cfg.defaultTimeoutMs;
+		const args = [
+			"exec",
+			"--skip-git-repo-check",
+			"--json",
+			"--sandbox",
+			"read-only",
+			"-C",
+			cfg.workingDirectory,
+			"--model",
+			cfg.model,
+			prompt,
+		];
+
+		const { SIGNET_NO_HOOKS: _, SIGNET_CODEX_BYPASS_WRAPPER: __, ...cleanEnv } = process.env;
+		const proc = Bun.spawn(["codex", ...args], {
+			stdout: "pipe",
+			stderr: "pipe",
+			env: {
+				...cleanEnv,
+				NO_COLOR: "1",
+				SIGNET_NO_HOOKS: "1",
+				SIGNET_CODEX_BYPASS_WRAPPER: "1",
+			},
+		});
+
+		const timer = setTimeout(() => {
+			proc.kill();
+		}, timeoutMs);
+
+		try {
+			const stdout = await new Response(proc.stdout).text();
+			const exitCode = await proc.exited;
+			if (exitCode !== 0) {
+				const stderr = await new Response(proc.stderr).text();
+				throw new Error(`codex exit ${exitCode}: ${stderr.slice(0, 300)}`);
+			}
+			return parseCodexJsonl(stdout);
+		} catch (e) {
+			if (e instanceof Error && e.message.includes("codex exit")) {
+				throw e;
+			}
+			if (e instanceof Error && e.message.includes("SIGTERM")) {
+				throw new Error(`codex timeout after ${timeoutMs}ms`);
+			}
+			throw e;
+		} finally {
+			clearTimeout(timer);
+		}
+	}
+
+	return {
+		name: `codex:${cfg.model}`,
+
+		async generate(prompt, opts): Promise<string> {
+			const result = await callCodex(prompt, opts);
+			return result.text;
+		},
+
+		async generateWithUsage(prompt, opts): Promise<LlmGenerateResult> {
+			return callCodex(prompt, opts);
+		},
+
+		async available(): Promise<boolean> {
+			try {
+				const proc = Bun.spawn(["codex", "--version"], {
+					stdout: "pipe",
+					stderr: "pipe",
+					env: {
+						...process.env,
+						SIGNET_NO_HOOKS: "1",
+						SIGNET_CODEX_BYPASS_WRAPPER: "1",
+					},
+				});
+				const exitCode = await proc.exited;
+				return exitCode === 0;
+			} catch {
+				logger.debug("pipeline", "Codex CLI not available");
+				return false;
+			}
+		},
+	};
+}
+
+// ---------------------------------------------------------------------------
 // OpenCode via headless HTTP server
 // ---------------------------------------------------------------------------
 

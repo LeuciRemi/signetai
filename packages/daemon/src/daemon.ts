@@ -71,7 +71,11 @@ import { getAllFeatureFlags, initFeatureFlags } from "./feature-flags";
 import { closeLlmProvider, initLlmProvider } from "./llm";
 import { closeSynthesisProvider, initSynthesisProvider } from "./synthesis-llm";
 import { type LogEntry, logger } from "./logger";
-import { type EmbeddingConfig, loadMemoryConfig } from "./memory-config";
+import {
+	DEFAULT_OPENAI_BASE_URL,
+	type EmbeddingConfig,
+	loadMemoryConfig,
+} from "./memory-config";
 import { buildMemoryTimeline } from "./memory-timeline";
 import { type RecallParams, hybridRecall } from "./memory-search";
 import { ONEPASSWORD_SERVICE_ACCOUNT_SECRET, importOnePasswordSecrets, listOnePasswordVaults } from "./onepassword.js";
@@ -89,6 +93,7 @@ import {
 import { getGraphBoostIds } from "./pipeline/graph-search";
 import {
 	createClaudeCodeProvider,
+	createCodexProvider,
 	createOllamaProvider,
 	createOpenCodeProvider,
 	ensureOpenCodeServer,
@@ -249,6 +254,25 @@ async function fetchOllamaEmbedding(text: string, baseUrl: string, model: string
 	return data.embedding ?? null;
 }
 
+function resolveEmbeddingBaseUrl(cfg: EmbeddingConfig): string {
+	if (cfg.provider === "openai") {
+		return cfg.base_url.trim() || DEFAULT_OPENAI_BASE_URL;
+	}
+	return cfg.base_url;
+}
+
+async function resolveEmbeddingApiKey(rawApiKey: string | undefined): Promise<string> {
+	const configured = rawApiKey?.trim() ?? "";
+	if (configured.startsWith("$secret:")) {
+		const secretName = configured.slice("$secret:".length).trim();
+		return secretName ? getSecret(secretName) : "";
+	}
+	if (configured.startsWith("op://")) {
+		return getSecret(configured);
+	}
+	return configured || process.env.OPENAI_API_KEY || "";
+}
+
 // Track whether we've already fallen back to ollama for native failures
 let nativeFallbackToOllama = false;
 
@@ -287,8 +311,10 @@ async function fetchEmbedding(text: string, cfg: EmbeddingConfig): Promise<numbe
 			return await fetchOllamaEmbedding(text, cfg.base_url, cfg.model);
 		} else {
 			// OpenAI-compatible
-			const apiKey = cfg.api_key ?? process.env.OPENAI_API_KEY ?? "";
-			const res = await fetch(`${cfg.base_url.replace(/\/$/, "")}/embeddings`, {
+			const apiKey = await resolveEmbeddingApiKey(cfg.api_key);
+			if (!apiKey) return null;
+			const baseUrl = resolveEmbeddingBaseUrl(cfg);
+			const res = await fetch(`${baseUrl.replace(/\/$/, "")}/embeddings`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -658,7 +684,7 @@ async function checkEmbeddingProvider(cfg: EmbeddingConfig): Promise<EmbeddingSt
 	const status: EmbeddingStatus = {
 		provider: cfg.provider,
 		model: cfg.model,
-		base_url: cfg.base_url,
+		base_url: resolveEmbeddingBaseUrl(cfg),
 		available: false,
 		checkedAt: new Date().toISOString(),
 	};
@@ -730,6 +756,13 @@ async function checkEmbeddingProvider(cfg: EmbeddingConfig): Promise<EmbeddingSt
 			}
 		} else {
 			// OpenAI: test with a minimal embedding request
+			const apiKey = await resolveEmbeddingApiKey(cfg.api_key);
+			if (!apiKey) {
+				status.error = "Missing OpenAI API key";
+				cachedEmbeddingStatus = status;
+				statusCacheTime = now;
+				return status;
+			}
 			const testResult = await fetchEmbedding("test", cfg);
 			if (testResult) {
 				status.available = true;
@@ -2301,10 +2334,19 @@ app.get("/api/memory/:id", (c) => {
 	}
 
 	const row = getDbAccessor().withReadDb((db) => {
+		const hasSessionIdColumn = (
+			db.prepare("PRAGMA table_info(memories)").all() as Array<{
+				name?: unknown;
+			}>
+		).some((column) => column.name === "session_id");
+		const sessionSelect = hasSessionIdColumn
+			? "session_id,"
+			: "NULL AS session_id,";
+
 		return db
 			.prepare(
 				`SELECT id, content, type, importance, tags, pinned, who,
-				        source_type, project, session_id, confidence,
+				        source_id, source_type, project, ${sessionSelect} confidence,
 				        access_count, last_accessed, is_deleted, deleted_at,
 				        extraction_status, embedding_model, version,
 				        created_at, updated_at, updated_by
@@ -2317,7 +2359,19 @@ app.get("/api/memory/:id", (c) => {
 		return c.json({ error: "not found" }, 404);
 	}
 
-	return c.json(row);
+	const sessionId =
+		typeof row.session_id === "string"
+			? row.session_id
+			: typeof row.source_id === "string" &&
+				  typeof row.source_type === "string" &&
+				  row.source_type.startsWith("session")
+			? row.source_id
+			: undefined;
+
+	return c.json({
+		...row,
+		sessionId,
+	});
 });
 
 app.get("/api/memory/:id/history", (c) => {
@@ -5018,8 +5072,8 @@ app.post("/api/tasks", async (c) => {
 		return c.json({ error: "Invalid cron expression" }, 400);
 	}
 
-	if (harness !== "claude-code" && harness !== "opencode") {
-		return c.json({ error: "harness must be 'claude-code' or 'opencode'" }, 400);
+	if (harness !== "claude-code" && harness !== "opencode" && harness !== "codex") {
+		return c.json({ error: "harness must be 'claude-code', 'codex', or 'opencode'" }, 400);
 	}
 
 	if (skillName && (skillName.includes("/") || skillName.includes(".."))) {
@@ -5199,7 +5253,7 @@ app.post("/api/tasks/:id/run", async (c) => {
 
 	// Narrow task fields from raw SQL result
 	const taskPrompt = typeof task.prompt === "string" ? task.prompt : null;
-	const taskHarness = task.harness === "claude-code" || task.harness === "opencode"
+	const taskHarness = task.harness === "claude-code" || task.harness === "opencode" || task.harness === "codex"
 		? task.harness : null;
 	if (!taskPrompt || !taskHarness) {
 		return c.json({ error: "Task has invalid prompt or harness" }, 500);
@@ -7335,6 +7389,23 @@ async function main() {
 			logger.warn("config", "Claude Code CLI not found, falling back to ollama for extraction");
 			effectiveExtractionProvider = "ollama";
 		}
+	} else if (effectiveExtractionProvider === "codex") {
+		try {
+			const proc = Bun.spawn(["codex", "--version"], {
+				stdout: "pipe",
+				stderr: "pipe",
+				env: {
+					...process.env,
+					SIGNET_NO_HOOKS: "1",
+					SIGNET_CODEX_BYPASS_WRAPPER: "1",
+				},
+			});
+			const exitCode = await proc.exited;
+			if (exitCode !== 0) throw new Error("non-zero exit");
+		} catch {
+			logger.warn("config", "Codex CLI not found, falling back to ollama for extraction");
+			effectiveExtractionProvider = "ollama";
+		}
 	}
 	logger.info("config", "Extraction provider", { provider: effectiveExtractionProvider });
 
@@ -7350,6 +7421,11 @@ async function main() {
 						model: memoryCfg.pipelineV2.extraction.model || "haiku",
 						defaultTimeoutMs: memoryCfg.pipelineV2.extraction.timeout,
 					})
+				: effectiveExtractionProvider === "codex"
+					? createCodexProvider({
+							model: memoryCfg.pipelineV2.extraction.model || "gpt-5.3-codex",
+							defaultTimeoutMs: memoryCfg.pipelineV2.extraction.timeout,
+						})
 				: createOllamaProvider({
 						model: memoryCfg.pipelineV2.extraction.model || "qwen3:4b",
 						defaultTimeoutMs: memoryCfg.pipelineV2.extraction.timeout,

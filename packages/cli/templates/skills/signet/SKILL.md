@@ -98,7 +98,7 @@ signet setup --non-interactive \
   --name "My Agent" \
   --harness claude-code \
   --embedding-provider <ollama|openai|none> \
-  --extraction-provider <claude-code|ollama|none>
+  --extraction-provider <claude-code|codex|opencode|ollama|none>
 ```
 
 Use `--non-interactive` when the agent needs to complete setup without

@@ -25,7 +25,7 @@ export interface SkillMeta {
 	/** Optional version string */
 	version?: string;
 	/** Source harness */
-	source: "openclaw" | "claude-code" | "opencode" | "manual";
+	source: "openclaw" | "claude-code" | "opencode" | "codex" | "manual";
 	/** When the skill was installed */
 	installedAt?: Date;
 	/** Whether this skill is symlinked (vs copied) */

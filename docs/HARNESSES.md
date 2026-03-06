@@ -134,6 +134,37 @@ This gives Claude Code direct access to `memory_search`, `memory_store`,
 
 ---
 
+## Codex
+
+Codex is OpenAI's terminal coding agent. Signet integrates with Codex by
+installing a shell wrapper that fires Signet lifecycle hooks around local
+`codex` sessions and injects session-start context through Codex's
+`model_instructions_file` setting.
+
+### Files managed by Signet
+
+| File | Description |
+|------|-------------|
+| `~/.config/signet/bin/codex` | Signet-managed Codex wrapper script |
+| `~/.zshrc` / `~/.bashrc` / `~/.bash_profile` | PATH snippet that prioritizes the wrapper |
+
+### How it works
+
+1. The wrapper calls `signet hook session-start -H codex` before launching Codex.
+2. The returned Signet context is written to a temporary instructions file.
+3. Codex is launched with `-c model_instructions_file=...` so the session starts with Signet context loaded.
+4. When Codex exits, the wrapper finds the newest `~/.codex/sessions/*.jsonl` transcript and calls `signet hook session-end -H codex`.
+
+This gives Codex the same durable memory lifecycle as Claude Code without
+requiring Codex-specific database or schema changes.
+
+### Prerequisites
+
+- Codex installed and in `PATH`
+- A new terminal session after Signet installs the shell PATH snippet
+
+---
+
 ## OpenCode
 
 OpenCode is an open-source AI coding tool. Signet integrates via a
@@ -149,9 +180,9 @@ bundled plugin and AGENTS.md sync.
 ### Plugin Bundle
 
 During `signet install`, the connector writes a self-contained
-`signet.mjs` file to `~/.config/opencode/plugins/`. OpenCode
-auto-discovers plugins from that directory at startup — no config
-entry is needed for the plugin itself.
+`signet.mjs` file to `~/.config/opencode/plugins/` and registers
+`./plugins/signet.mjs` in the OpenCode config so the runtime loads it
+consistently at startup.
 
 The plugin is built from `@signet/opencode-plugin` source and bundled
 into a single ESM file at build time (stored as a string constant in

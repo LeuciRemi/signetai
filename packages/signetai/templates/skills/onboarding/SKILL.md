@@ -44,7 +44,7 @@ signet setup --non-interactive \
   --description "Personal AI assistant" \
   --harness claude-code \
   --embedding-provider <ollama|openai|none> \
-  --extraction-provider <claude-code|ollama|none>
+  --extraction-provider <claude-code|codex|opencode|ollama|none>
 ```
 
 Use interactive `signet` when the user wants to answer prompts manually.

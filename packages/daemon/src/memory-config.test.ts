@@ -137,7 +137,7 @@ describe("loadMemoryConfig", () => {
 		expect(cfg.embedding.base_url).toBe("http://localhost:11434");
 	});
 
-	it("does not set default base_url for non-ollama providers", () => {
+	it("defaults openai base_url to the official API endpoint when not specified", () => {
 		const agentsDir = makeTempAgentsDir();
 		writeFileSync(
 			join(agentsDir, "agent.yaml"),
@@ -145,7 +145,18 @@ describe("loadMemoryConfig", () => {
 		);
 		const cfg = loadMemoryConfig(agentsDir);
 		expect(cfg.embedding.provider).toBe("openai");
-		expect(cfg.embedding.base_url).toBe("");
+		expect(cfg.embedding.base_url).toBe("https://api.openai.com/v1");
+	});
+
+	it("respects explicit openai base_url when provided", () => {
+		const agentsDir = makeTempAgentsDir();
+		writeFileSync(
+			join(agentsDir, "agent.yaml"),
+			"embedding:\n  provider: openai\n  model: text-embedding-3-small\n  base_url: https://example.com/v1\n",
+		);
+		const cfg = loadMemoryConfig(agentsDir);
+		expect(cfg.embedding.provider).toBe("openai");
+		expect(cfg.embedding.base_url).toBe("https://example.com/v1");
 	});
 
 	it("respects ollama+nomic-embed-text:latest config without overriding", () => {
@@ -209,6 +220,22 @@ describe("loadMemoryConfig", () => {
 		expect(cfg.pipelineV2.autonomous.frozen).toBe(DEFAULT_PIPELINE_V2.autonomous.frozen);
 		expect(cfg.pipelineV2.extraction.minConfidence).toBe(0.82);
 	});
+
+	it("loads codex extraction settings from agent.yaml", () => {
+		const agentsDir = makeTempAgentsDir();
+		writeFileSync(
+			join(agentsDir, "agent.yaml"),
+			`memory:
+  pipelineV2:
+    extractionProvider: codex
+    extractionModel: gpt-5.3-codex
+`,
+		);
+
+		const cfg = loadMemoryConfig(agentsDir);
+		expect(cfg.pipelineV2.extraction.provider).toBe("codex");
+		expect(cfg.pipelineV2.extraction.model).toBe("gpt-5.3-codex");
+	});
 });
 
 describe("loadPipelineConfig", () => {
@@ -220,6 +247,23 @@ describe("loadPipelineConfig", () => {
 	it("returns all-false defaults when memory key exists but pipelineV2 is absent", () => {
 		const result = loadPipelineConfig({ memory: { database: "test.db" } });
 		expect(result).toEqual(DEFAULT_PIPELINE_V2);
+	});
+
+	it("resolves codex from nested extraction.provider", () => {
+		const result = loadPipelineConfig({
+			memory: {
+				pipelineV2: {
+					extractionProvider: "ollama",
+					extraction: {
+						provider: "codex",
+						model: "gpt-5.3-codex",
+					},
+				},
+			},
+		});
+
+		expect(result.extraction.provider).toBe("codex");
+		expect(result.extraction.model).toBe("gpt-5.3-codex");
 	});
 
 	it("loads all flags correctly when all set to true (flat keys)", () => {

@@ -137,7 +137,7 @@ export type PipelineFlag = (typeof PIPELINE_FLAGS)[number];
 // -- Pipeline v2 sub-config interfaces --
 
 export interface PipelineExtractionConfig {
-	readonly provider: "ollama" | "claude-code" | "opencode";
+	readonly provider: "ollama" | "claude-code" | "opencode" | "codex";
 	readonly model: string;
 	readonly timeout: number;
 	readonly minConfidence: number;
@@ -297,7 +297,7 @@ export type DecisionAction = (typeof DECISION_ACTIONS)[number];
 
 // -- Scheduled tasks --
 
-export const TASK_HARNESSES = ["claude-code", "opencode"] as const;
+export const TASK_HARNESSES = ["claude-code", "opencode", "codex"] as const;
 export type TaskHarness = (typeof TASK_HARNESSES)[number];
 
 export const TASK_RUN_STATUSES = [

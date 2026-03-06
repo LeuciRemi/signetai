@@ -27,6 +27,7 @@ agent:
 # AI tools this agent works with
 harnesses:
   - claude-code
+  - codex
   - opencode
   - openclaw
 
@@ -83,7 +84,7 @@ memory:
   
   # MEMORY.md synthesis configuration
   synthesis:
-    # Which harness performs the synthesis (openclaw, claude-code, opencode)
+    # Which harness performs the synthesis (openclaw, claude-code, codex, opencode)
     harness: openclaw
     
     # Model to use for synthesis (harness-specific format)
@@ -109,7 +110,7 @@ memory:
 
     # Extraction provider and model
     extraction:
-      # "claude-code" (uses Claude CLI) or "ollama" (local)
+      # "claude-code" (Claude CLI), "codex" (Codex CLI), "opencode" (OpenCode), or "ollama" (local)
       provider: claude-code
       model: haiku
       # timeout: 45000

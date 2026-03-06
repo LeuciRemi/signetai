@@ -141,6 +141,7 @@ export interface SetupDetection {
 		claudeCode: boolean;
 		openclaw: boolean;
 		opencode: boolean;
+		codex: boolean;
 	};
 }
 
@@ -196,6 +197,9 @@ export function detectExistingSetup(basePath: string): SetupDetection {
 				existsSync(join(home, ".openclaw", "openclaw.json")) ||
 				existsSync(join(home, ".clawdbot", "clawdbot.json")),
 			opencode: existsSync(join(home, ".config", "opencode", "config.json")),
+			codex:
+				existsSync(join(home, ".codex", "config.toml")) ||
+				existsSync(join(home, ".config", "signet", "bin", "codex")),
 		},
 	};
 }

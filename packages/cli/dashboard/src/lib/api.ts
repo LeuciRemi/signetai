@@ -1655,7 +1655,7 @@ export interface ScheduledTask {
 	name: string;
 	prompt: string;
 	cron_expression: string;
-	harness: "claude-code" | "opencode";
+	harness: "claude-code" | "opencode" | "codex";
 	working_directory: string | null;
 	enabled: number;
 	last_run_at: string | null;

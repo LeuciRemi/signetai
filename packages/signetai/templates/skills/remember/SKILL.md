@@ -9,7 +9,7 @@ builtin: true
 # /remember
 
 Save to persistent memory across sessions. Shared between all agents
-(claude-code, opencode, clawdbot). Memories are auto-embedded for
+(claude-code, codex, opencode, clawdbot). Memories are auto-embedded for
 semantic search via the Signet daemon.
 
 ## Why This Skill Is Hidden
@@ -63,7 +63,7 @@ Options:
 - `-i, --importance <n>` — importance 0-1 (default: 0.7)
 - `--critical` — mark as pinned (importance=1.0, never decays)
 
-where `<agent-name>` is one of: claude-code, opencode, clawdbot
+where `<agent-name>` is one of: claude-code, codex, opencode, clawdbot
 
 The daemon automatically:
 - detects `critical:` prefix → pins memory (importance=1.0, never decays)

@@ -29,6 +29,8 @@ function buildCommand(
 	switch (harness) {
 		case "claude-code":
 			return ["claude", ["--dangerously-skip-permissions", "-p", prompt]];
+		case "codex":
+			return ["codex", ["exec", "--skip-git-repo-check", "--json", prompt]];
 		case "opencode":
 			return ["opencode", ["run", "--format", "json", prompt]];
 	}

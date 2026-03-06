@@ -34,7 +34,7 @@ function formatRelativeTime(iso: string | null): string {
 }
 
 let harnessLabel = $derived(
-	task.harness === "claude-code" ? "claude" : "opencode",
+	task.harness === "claude-code" ? "claude" : task.harness === "codex" ? "codex" : "opencode",
 );
 
 let nextRunLabel = $derived(formatRelativeTime(task.next_run_at));

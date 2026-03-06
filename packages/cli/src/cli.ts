@@ -21,6 +21,7 @@ import { dirname, join, resolve as resolvePath } from "path";
 import { fileURLToPath } from "url";
 import { checkbox, confirm, input, password, select } from "@inquirer/prompts";
 import { ClaudeCodeConnector } from "@signet/connector-claude-code";
+import { CodexConnector } from "@signet/connector-codex";
 import { OpenClawConnector } from "@signet/connector-openclaw";
 import { OpenCodeConnector } from "@signet/connector-opencode";
 import {
@@ -489,6 +490,11 @@ async function configureHarnessHooks(
 			await connector.install(basePath);
 			break;
 		}
+		case "codex": {
+			const connector = new CodexConnector();
+			await connector.install(basePath);
+			break;
+		}
 		case "opencode": {
 			const connector = new OpenCodeConnector();
 			await connector.install(basePath);
@@ -596,6 +602,7 @@ function formatDetectionSummary(detection: SetupDetection): string {
 	if (detection.harnesses.claudeCode) installedHarnesses.push("Claude Code");
 	if (detection.harnesses.openclaw) installedHarnesses.push("OpenClaw");
 	if (detection.harnesses.opencode) installedHarnesses.push("OpenCode");
+	if (detection.harnesses.codex) installedHarnesses.push("Codex");
 
 	if (installedHarnesses.length > 0) {
 		lines.push(`  ${chalk.cyan("Installed harnesses:")}`);
@@ -605,9 +612,9 @@ function formatDetectionSummary(detection: SetupDetection): string {
 	return lines.join("\n");
 }
 
-type HarnessChoice = "claude-code" | "opencode" | "openclaw";
+type HarnessChoice = "claude-code" | "opencode" | "openclaw" | "codex";
 type EmbeddingProviderChoice = "native" | "ollama" | "openai" | "none";
-type ExtractionProviderChoice = "claude-code" | "ollama" | "opencode" | "none";
+type ExtractionProviderChoice = "claude-code" | "ollama" | "opencode" | "codex" | "none";
 type OpenClawRuntimeChoice = "plugin" | "legacy";
 
 interface SetupWizardOptions {
@@ -627,9 +634,9 @@ interface SetupWizardOptions {
 	configureOpenclawWorkspace?: boolean;
 }
 
-const SETUP_HARNESS_CHOICES: readonly HarnessChoice[] = ["claude-code", "opencode", "openclaw"];
+const SETUP_HARNESS_CHOICES: readonly HarnessChoice[] = ["claude-code", "opencode", "openclaw", "codex"];
 const EMBEDDING_PROVIDER_CHOICES: readonly EmbeddingProviderChoice[] = ["native", "ollama", "openai", "none"];
-const EXTRACTION_PROVIDER_CHOICES: readonly ExtractionProviderChoice[] = ["claude-code", "ollama", "opencode", "none"];
+const EXTRACTION_PROVIDER_CHOICES: readonly ExtractionProviderChoice[] = ["claude-code", "ollama", "opencode", "codex", "none"];
 const OPENCLAW_RUNTIME_CHOICES: readonly OpenClawRuntimeChoice[] = ["plugin", "legacy"];
 
 function collectListOption(value: string, previous: string[]): string[] {
@@ -1360,6 +1367,7 @@ async function manageHarnesses() {
 		message: "Select harnesses to configure:",
 		choices: [
 			{ value: "claude-code", name: "Claude Code (Anthropic CLI)" },
+			{ value: "codex", name: "Codex" },
 			{ value: "opencode", name: "OpenCode" },
 			{ value: "openclaw", name: "OpenClaw" },
 			{ value: "cursor", name: "Cursor" },
@@ -1456,6 +1464,7 @@ async function existingSetupWizard(
 		if (detection.harnesses.claudeCode) detectedHarnesses.push("claude-code");
 		if (detection.harnesses.openclaw) detectedHarnesses.push("openclaw");
 		if (detection.harnesses.opencode) detectedHarnesses.push("opencode");
+		if (detection.harnesses.codex) detectedHarnesses.push("codex");
 		const packageManager = resolvePrimaryPackageManager({
 			agentsDir: basePath,
 			env: process.env,
@@ -1516,6 +1525,8 @@ async function existingSetupWizard(
 					options.extractionModel ||
 					(options.extractionProvider === "claude-code"
 						? "haiku"
+						: options.extractionProvider === "codex"
+							? "gpt-5.3-codex"
 						: options.extractionProvider === "opencode"
 							? "anthropic/claude-haiku-4-5-20251001"
 							: "glm-4.7-flash"),
@@ -1876,7 +1887,7 @@ async function setupWizard(options: SetupWizardOptions) {
 				);
 			}
 			if (!migrationExtractionProvider) {
-				failNonInteractiveSetup("Non-interactive setup requires --extraction-provider (claude-code, ollama, or none).");
+				failNonInteractiveSetup("Non-interactive setup requires --extraction-provider (claude-code, codex, ollama, opencode, or none).");
 			}
 
 			await existingSetupWizard(basePath, existing, existingConfig, {
@@ -1961,6 +1972,11 @@ async function setupWizard(options: SetupWizardOptions) {
 			value: "claude-code",
 			name: "Claude Code (Anthropic CLI)",
 			checked: existingHarnesses.includes("claude-code"),
+		},
+		{
+			value: "codex",
+			name: "Codex",
+			checked: existingHarnesses.includes("codex"),
 		},
 		{
 			value: "opencode",
@@ -2062,7 +2078,7 @@ async function setupWizard(options: SetupWizardOptions) {
 	}
 
 	if (nonInteractive && !requestedExtractionProvider) {
-		failNonInteractiveSetup("Non-interactive setup requires --extraction-provider (claude-code, ollama, or none).");
+		failNonInteractiveSetup("Non-interactive setup requires --extraction-provider (claude-code, codex, ollama, opencode, or none).");
 	}
 
 	let embeddingProvider: EmbeddingProviderChoice;
@@ -2156,11 +2172,13 @@ async function setupWizard(options: SetupWizardOptions) {
 	// Memory pipeline provider — auto-detect best default
 	const detectedProvider: ExtractionProviderChoice = hasCommand("claude")
 		? "claude-code"
-		: hasCommand("opencode")
-			? "opencode"
-			: hasCommand("ollama")
-				? "ollama"
-				: "none";
+		: hasCommand("codex")
+			? "codex"
+			: hasCommand("opencode")
+				? "opencode"
+				: hasCommand("ollama")
+					? "ollama"
+					: "none";
 
 	let extractionProvider: ExtractionProviderChoice;
 	if (nonInteractive) {
@@ -2175,6 +2193,14 @@ async function setupWizard(options: SetupWizardOptions) {
 			{
 				value: "claude-code" as const,
 				name: `Claude Code (uses your Claude subscription via CLI)${detectedProvider === "claude-code" ? " — detected" : ""}`,
+			},
+			{
+				value: "codex" as const,
+				name: `Codex (uses your OpenAI Codex CLI locally)${detectedProvider === "codex" ? " — detected" : ""}`,
+			},
+			{
+				value: "opencode" as const,
+				name: `OpenCode (uses the OpenCode CLI or local server)${detectedProvider === "opencode" ? " — detected" : ""}`,
 			},
 			{
 				value: "ollama" as const,
@@ -2203,6 +2229,23 @@ async function setupWizard(options: SetupWizardOptions) {
 				choices: [
 					{ value: "haiku", name: "Haiku (fast, cheap, recommended)" },
 					{ value: "sonnet", name: "Sonnet (better quality, slower)" },
+				],
+			})) as string;
+		}
+	} else if (extractionProvider === "codex") {
+		if (nonInteractive) {
+			extractionModel =
+				normalizeStringValue(options.extractionModel) ||
+				normalizeStringValue(existingMemory.pipelineV2?.extractionModel) ||
+				"gpt-5.3-codex";
+		} else {
+			console.log();
+			extractionModel = (await select({
+				message: "Which Codex model for extraction?",
+				choices: [
+					{ value: "gpt-5.3-codex", name: "gpt-5.3-codex (recommended)" },
+					{ value: "gpt-5-codex", name: "gpt-5-codex (stable fallback)" },
+					{ value: "gpt-5-codex-mini", name: "gpt-5-codex-mini (faster, lighter)" },
 				],
 			})) as string;
 		}
@@ -3107,13 +3150,13 @@ program
 	.option("--description <description>", "Agent description (non-interactive mode)")
 	.option(
 		"--harness <harness>",
-		"Harness to configure (repeatable or comma-separated: claude-code, opencode, openclaw)",
+		"Harness to configure (repeatable or comma-separated: claude-code, codex, opencode, openclaw)",
 		collectListOption,
 		[],
 	)
 	.option("--embedding-provider <provider>", "Embedding provider in non-interactive mode (ollama, openai, none)")
 	.option("--embedding-model <model>", "Embedding model in non-interactive mode")
-	.option("--extraction-provider <provider>", "Extraction provider in non-interactive mode (claude-code, ollama, none)")
+	.option("--extraction-provider <provider>", "Extraction provider in non-interactive mode (claude-code, codex, ollama, opencode, none)")
 	.option("--extraction-model <model>", "Extraction model in non-interactive mode")
 	.option("--search-balance <alpha>", "Search balance alpha in non-interactive mode (0-1)")
 	.option("--openclaw-runtime-path <mode>", "OpenClaw runtime path in non-interactive mode (plugin, legacy)")
@@ -3368,6 +3411,9 @@ program
 		if (existsSync(join(homedir(), ".claude", "settings.json"))) {
 			detectedHarnesses.push("claude-code");
 		}
+		if (existsSync(join(homedir(), ".config", "signet", "bin", "codex")) || existsSync(join(homedir(), ".codex", "config.toml"))) {
+			detectedHarnesses.push("codex");
+		}
 		if (existsSync(join(homedir(), ".config", "opencode"))) {
 			detectedHarnesses.push("opencode");
 		}
@@ -3471,6 +3517,7 @@ program
 					message: "Select AI platforms:",
 					choices: [
 						{ value: "claude-code", name: "Claude Code" },
+						{ value: "codex", name: "Codex" },
 						{ value: "opencode", name: "OpenCode" },
 						{ value: "openclaw", name: "OpenClaw" },
 						{ value: "cursor", name: "Cursor" },
@@ -5202,6 +5249,9 @@ updateCmd
 			const harnesses: string[] = [];
 			if (existsSync(join(homedir(), ".claude", "settings.json"))) {
 				harnesses.push("claude-code");
+			}
+			if (existsSync(join(homedir(), ".config", "signet", "bin", "codex")) || existsSync(join(homedir(), ".codex", "config.toml"))) {
+				harnesses.push("codex");
 			}
 			if (existsSync(join(homedir(), ".config", "opencode"))) {
 				harnesses.push("opencode");

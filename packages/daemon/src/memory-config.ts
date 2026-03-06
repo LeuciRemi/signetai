@@ -114,6 +114,9 @@ export const DEFAULT_PIPELINE_V2: PipelineV2Config = {
 	},
 };
 
+export const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
+export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+
 export interface ResolvedMemoryConfig {
 	embedding: EmbeddingConfig;
 	search: MemorySearchConfig;
@@ -175,8 +178,10 @@ export function loadPipelineConfig(
 	const nestedProvider = extractionRaw?.provider;
 	const flatProvider = raw.extractionProvider;
 	const flatModel = raw.extractionModel;
-	const resolvedProvider: "ollama" | "claude-code" | "opencode" =
-		nestedProvider === "opencode" || flatProvider === "opencode"
+	const resolvedProvider: "ollama" | "claude-code" | "opencode" | "codex" =
+		nestedProvider === "codex" || flatProvider === "codex"
+			? "codex"
+			: nestedProvider === "opencode" || flatProvider === "opencode"
 			? "opencode"
 			: nestedProvider === "claude-code" || flatProvider === "claude-code"
 				? "claude-code"
@@ -513,9 +518,6 @@ export function loadPipelineConfig(
 	};
 }
 
-/** Default Ollama API base URL (standard local installation) */
-const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
-
 export function loadMemoryConfig(agentsDir: string): ResolvedMemoryConfig {
 	const defaults: ResolvedMemoryConfig = {
 		embedding: {
@@ -565,13 +567,17 @@ export function loadMemoryConfig(agentsDir: string): ResolvedMemoryConfig {
 					String(emb.dimensions ?? "768"),
 					10,
 				);
-				// For ollama provider, default to standard local URL only when base_url is omitted.
 				const explicitBaseUrl = emb.base_url as string | undefined;
 				if (defaults.embedding.provider === "ollama") {
 					defaults.embedding.base_url =
 						typeof explicitBaseUrl === "string" && explicitBaseUrl.trim().length > 0
 							? explicitBaseUrl
 							: DEFAULT_OLLAMA_BASE_URL;
+				} else if (defaults.embedding.provider === "openai") {
+					defaults.embedding.base_url =
+						typeof explicitBaseUrl === "string" && explicitBaseUrl.trim().length > 0
+							? explicitBaseUrl
+							: DEFAULT_OPENAI_BASE_URL;
 				} else {
 					defaults.embedding.base_url = explicitBaseUrl ?? defaults.embedding.base_url;
 				}

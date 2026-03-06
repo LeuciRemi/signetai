@@ -12,7 +12,7 @@
     },
     "packages/adapters/openclaw": {
       "name": "@signetai/signet-memory-openclaw",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "dependencies": {
         "@sinclair/typebox": "0.34.47",
       },
@@ -22,11 +22,12 @@
     },
     "packages/cli": {
       "name": "@signet/cli",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "bin": "./dist/cli.js",
       "dependencies": {
         "@inquirer/prompts": "^7.0.0",
         "@signet/connector-claude-code": "workspace:*",
+        "@signet/connector-codex": "workspace:*",
         "@signet/connector-openclaw": "workspace:*",
         "@signet/connector-opencode": "workspace:*",
         "@signet/core": "workspace:*",
@@ -44,7 +45,7 @@
     },
     "packages/connector-base": {
       "name": "@signet/connector-base",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "dependencies": {
         "@signet/core": "workspace:*",
       },
@@ -58,6 +59,18 @@
     },
     "packages/connector-claude-code": {
       "name": "@signet/connector-claude-code",
+      "version": "0.40.0",
+      "dependencies": {
+        "@signet/connector-base": "workspace:*",
+        "@signet/core": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^22.0.0",
+        "typescript": "^5.7.0",
+      },
+    },
+    "packages/connector-codex": {
+      "name": "@signet/connector-codex",
       "version": "0.39.0",
       "dependencies": {
         "@signet/connector-base": "workspace:*",
@@ -70,7 +83,7 @@
     },
     "packages/connector-openclaw": {
       "name": "@signet/connector-openclaw",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "dependencies": {
         "@signet/connector-base": "workspace:*",
       },
@@ -81,7 +94,7 @@
     },
     "packages/connector-opencode": {
       "name": "@signet/connector-opencode",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "dependencies": {
         "@signet/connector-base": "workspace:*",
         "@signet/core": "workspace:*",
@@ -93,7 +106,7 @@
     },
     "packages/core": {
       "name": "@signet/core",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "dependencies": {
         "sqlite-vec": "^0.1.7-alpha.2",
         "yaml": "^2.6.0",
@@ -113,7 +126,7 @@
     },
     "packages/daemon": {
       "name": "@signet/daemon",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "bin": {
         "signet-daemon": "./dist/daemon.js",
         "signet-mcp": "./dist/mcp-stdio.js",
@@ -142,7 +155,7 @@
     },
     "packages/extension": {
       "name": "@signet/extension",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "devDependencies": {
         "@types/chrome": "^0.0.287",
         "typescript": "^5.7.0",
@@ -150,21 +163,21 @@
     },
     "packages/native": {
       "name": "@signet/native",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "devDependencies": {
         "@napi-rs/cli": "^3.5.1",
       },
     },
     "packages/opencode-plugin": {
       "name": "@signet/opencode-plugin",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "peerDependencies": {
         "@opencode-ai/plugin": ">=0.1.0",
       },
     },
     "packages/sdk": {
       "name": "@signet/sdk",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "devDependencies": {
         "@types/react": "^19.0.0",
         "react": "^19.0.0",
@@ -180,7 +193,7 @@
     },
     "packages/signetai": {
       "name": "signetai",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "bin": {
         "signet": "bin/signet.js",
         "signet-mcp": "dist/mcp-stdio.js",
@@ -210,7 +223,7 @@
     },
     "packages/tray": {
       "name": "@signet/tray",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "dependencies": {
         "@signet/sdk": "workspace:*",
         "@tauri-apps/api": "^2.5.0",
@@ -1161,6 +1174,8 @@
     "@signet/connector-base": ["@signet/connector-base@workspace:packages/connector-base"],
 
     "@signet/connector-claude-code": ["@signet/connector-claude-code@workspace:packages/connector-claude-code"],
+
+    "@signet/connector-codex": ["@signet/connector-codex@workspace:packages/connector-codex"],
 
     "@signet/connector-openclaw": ["@signet/connector-openclaw@workspace:packages/connector-openclaw"],
 

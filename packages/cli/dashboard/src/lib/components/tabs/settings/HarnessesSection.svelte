@@ -15,7 +15,7 @@
 
 {#if st.agentFile}
 	<FormSection description="AI platforms to integrate with. The daemon syncs identity files and installs hooks for each active harness.">
-		<FormField label="Active harnesses" description="Supported: claude-code, openclaw, opencode. Cursor, windsurf, chatgpt, and gemini are planned.">
+		<FormField label="Active harnesses" description="Supported: claude-code, codex, openclaw, opencode. Cursor, windsurf, chatgpt, and gemini are planned.">
 			<div class="harness-grid">
 				{#each KNOWN_HARNESSES as h (h)}
 					<label class="harness-item">
