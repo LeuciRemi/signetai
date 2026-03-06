@@ -32,6 +32,7 @@ export type LogCategory =
 	| "pipeline" // Extraction/decision pipeline
 	| "embedding-tracker" // Incremental embedding refresh tracker
 	| "summary-worker" // Session summary worker
+	| "synthesis" // MEMORY.md synthesis worker
 	| "session-memories" // Session memory tracking
 	| "system" // System events
 	| "update"; // Auto-update cycle

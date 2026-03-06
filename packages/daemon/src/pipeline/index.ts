@@ -2,32 +2,20 @@
  * Pipeline barrel — startPipeline/stopPipeline orchestration.
  */
 
-import type { DbAccessor } from "../db-accessor";
-import type { EmbeddingConfig, PipelineV2Config } from "../memory-config";
-import { getLlmProvider } from "../llm";
-import { startWorker, type WorkerHandle } from "./worker";
-import {
-	startRetentionWorker,
-	DEFAULT_RETENTION,
-	type RetentionHandle,
-} from "./retention-worker";
-import {
-	startMaintenanceWorker,
-	type MaintenanceHandle,
-} from "./maintenance-worker";
-import {
-	startDocumentWorker,
-	type DocumentWorkerHandle,
-} from "./document-worker";
-import {
-	startSummaryWorker,
-	type SummaryWorkerHandle,
-} from "./summary-worker";
-import type { DecisionConfig } from "./decision";
-import type { ProviderTracker } from "../diagnostics";
 import type { AnalyticsCollector } from "../analytics";
-import type { TelemetryCollector } from "../telemetry";
+import type { DbAccessor } from "../db-accessor";
+import type { ProviderTracker } from "../diagnostics";
+import { getLlmProvider } from "../llm";
 import { logger } from "../logger";
+import type { EmbeddingConfig, PipelineV2Config } from "../memory-config";
+import type { TelemetryCollector } from "../telemetry";
+import type { DecisionConfig } from "./decision";
+import { type DocumentWorkerHandle, startDocumentWorker } from "./document-worker";
+import { type MaintenanceHandle, startMaintenanceWorker } from "./maintenance-worker";
+import { DEFAULT_RETENTION, type RetentionHandle, startRetentionWorker } from "./retention-worker";
+import { type SummaryWorkerHandle, startSummaryWorker } from "./summary-worker";
+import { type SynthesisWorkerHandle, startSynthesisWorker } from "./synthesis-worker";
+import { type WorkerHandle, startWorker } from "./worker";
 
 export { enqueueExtractionJob } from "./worker";
 export { enqueueDocumentIngestJob } from "./document-worker";
@@ -43,6 +31,8 @@ export type { RetentionHandle, RetentionConfig } from "./retention-worker";
 export type { MaintenanceHandle } from "./maintenance-worker";
 export { startSummaryWorker, enqueueSummaryJob } from "./summary-worker";
 export type { SummaryWorkerHandle } from "./summary-worker";
+export { startSynthesisWorker } from "./synthesis-worker";
+export type { SynthesisWorkerHandle } from "./synthesis-worker";
 
 // ---------------------------------------------------------------------------
 // Singleton state
@@ -53,6 +43,7 @@ let retentionHandle: RetentionHandle | null = null;
 let maintenanceHandle: MaintenanceHandle | null = null;
 let documentWorkerHandle: DocumentWorkerHandle | null = null;
 let summaryWorkerHandle: SummaryWorkerHandle | null = null;
+let synthesisWorkerHandle: SynthesisWorkerHandle | null = null;
 
 /** Snapshot of running state for each worker — used by /api/pipeline/status */
 export function getPipelineWorkerStatus(): Record<string, { running: boolean }> {
@@ -62,6 +53,7 @@ export function getPipelineWorkerStatus(): Record<string, { running: boolean }> 
 		document: { running: documentWorkerHandle !== null },
 		retention: { running: retentionHandle !== null },
 		maintenance: { running: maintenanceHandle !== null },
+		synthesis: { running: synthesisWorkerHandle !== null },
 	};
 }
 
@@ -73,10 +65,7 @@ export function startPipeline(
 	accessor: DbAccessor,
 	pipelineCfg: PipelineV2Config,
 	embeddingCfg: EmbeddingConfig,
-	fetchEmbedding: (
-		text: string,
-		cfg: EmbeddingConfig,
-	) => Promise<number[] | null>,
+	fetchEmbedding: (text: string, cfg: EmbeddingConfig) => Promise<number[] | null>,
 	searchCfg: { alpha: number; top_k: number; min_score: number },
 	providerTracker?: ProviderTracker,
 	analytics?: AnalyticsCollector,
@@ -105,12 +94,7 @@ export function startPipeline(
 
 	// Maintenance worker (F3) — runs alongside retention
 	if (!maintenanceHandle && providerTracker) {
-		maintenanceHandle = startMaintenanceWorker(
-			accessor,
-			pipelineCfg,
-			providerTracker,
-			retentionHandle,
-		);
+		maintenanceHandle = startMaintenanceWorker(accessor, pipelineCfg, providerTracker, retentionHandle);
 	}
 
 	// Document ingest worker runs alongside the extraction pipeline
@@ -128,17 +112,22 @@ export function startPipeline(
 		summaryWorkerHandle = startSummaryWorker(accessor);
 	}
 
+	// Synthesis worker — periodic MEMORY.md regeneration
+	if (!synthesisWorkerHandle) {
+		synthesisWorkerHandle = startSynthesisWorker();
+	}
+
 	logger.info("pipeline", "Pipeline started", {
 		mode:
-			pipelineCfg.enabled &&
-			!pipelineCfg.shadowMode &&
-			!pipelineCfg.mutationsFrozen
-				? "controlled-write"
-				: "shadow",
+			pipelineCfg.enabled && !pipelineCfg.shadowMode && !pipelineCfg.mutationsFrozen ? "controlled-write" : "shadow",
 	});
 }
 
 export async function stopPipeline(): Promise<void> {
+	if (synthesisWorkerHandle) {
+		synthesisWorkerHandle.stop();
+		synthesisWorkerHandle = null;
+	}
 	if (summaryWorkerHandle) {
 		summaryWorkerHandle.stop();
 		summaryWorkerHandle = null;
