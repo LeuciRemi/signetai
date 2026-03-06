@@ -5068,7 +5068,7 @@ hookCmd
 			harness?: string;
 			model?: string;
 			prompt?: string;
-			memories?: Array<{ content: string }>;
+			fileCount?: number;
 			error?: string;
 		}>("/api/hooks/synthesis", {
 			method: "POST",
@@ -5086,7 +5086,7 @@ hookCmd
 			console.log(chalk.bold("MEMORY.md Synthesis Request\n"));
 			console.log(chalk.dim(`Harness: ${data?.harness}`));
 			console.log(chalk.dim(`Model: ${data?.model}`));
-			console.log(chalk.dim(`Memories: ${data?.memories?.length || 0}\n`));
+			console.log(chalk.dim(`Session files: ${data?.fileCount ?? 0}\n`));
 			console.log(data?.prompt);
 		}
 	});

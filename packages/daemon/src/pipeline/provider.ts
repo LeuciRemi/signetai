@@ -187,10 +187,6 @@ export function createClaudeCodeProvider(
 			"--output-format", outputFormat,
 		];
 
-		if (opts?.maxTokens) {
-			args.push("--max-budget-usd", "0.05");
-		}
-
 		// Unset CLAUDECODE to avoid nested-session detection when the
 		// daemon itself is launched from within a Claude Code session.
 		// Also inject SIGNET_NO_HOOKS to prevent recursive hook loops.
@@ -256,6 +252,16 @@ export function createClaudeCodeProvider(
 			} catch {
 				// JSON parse failed — treat raw output as text, no usage
 				return { text: raw, usage: null };
+			}
+
+			// Detect error responses (e.g. budget cap) that exit 0 but
+			// carry no usable result — just an error blob with subtype.
+			if (!parsed.result) {
+				const blob = parsed as Record<string, unknown>;
+				const subtype = typeof blob.subtype === "string" ? blob.subtype : "";
+				if (subtype.startsWith("error")) {
+					throw new Error(`claude-code error: ${subtype}`);
+				}
 			}
 
 			const text = parsed.result ?? raw;

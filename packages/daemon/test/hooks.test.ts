@@ -957,42 +957,38 @@ describe("handleSessionEnd", () => {
 // ============================================================================
 
 describe("handleSynthesisRequest", () => {
-	test("returns prompt with memories", () => {
-		createMemoryDb([
-			{
-				content: "User likes Bun",
-				type: "preference",
-				importance: 0.8,
-			},
-		]);
+	test("returns prompt with session summary files", () => {
+		ensureDir(join(TEST_DIR, "memory"));
+		writeFileSync(
+			join(TEST_DIR, "memory", "2026-03-05-session-abc.md"),
+			"# Session\n\nUser likes Bun and prefers dark mode.",
+		);
 
 		const result = handleSynthesisRequest({ trigger: "manual" });
 
 		expect(result.harness).toBe("daemon");
 		expect(result.model).toBe("synthesis");
 		expect(result.prompt).toContain("MEMORY.md");
-		expect(result.memories.length).toBe(1);
-		expect(result.memories[0].content).toBe("User likes Bun");
+		expect(result.fileCount).toBe(1);
+		expect(result.prompt).toContain("User likes Bun");
 	});
 
 	test("generates fresh prompt when no existing MEMORY.md", () => {
-		createMemoryDb([
-			{
-				content: "Test memory",
-				type: "fact",
-				importance: 0.5,
-			},
-		]);
+		ensureDir(join(TEST_DIR, "memory"));
+		writeFileSync(
+			join(TEST_DIR, "memory", "2026-03-04-session-def.md"),
+			"Test session summary content",
+		);
 
 		const result = handleSynthesisRequest({ trigger: "scheduled" });
 
 		expect(result.prompt).toContain("generating MEMORY.md");
-		expect(result.prompt).toContain("Test memory");
+		expect(result.prompt).toContain("Test session summary content");
 	});
 
-	test("returns empty memories when no database", () => {
+	test("returns zero fileCount when no session files", () => {
 		const result = handleSynthesisRequest({ trigger: "manual" });
-		expect(result.memories).toEqual([]);
+		expect(result.fileCount).toBe(0);
 	});
 });
 

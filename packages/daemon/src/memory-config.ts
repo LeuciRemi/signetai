@@ -107,7 +107,7 @@ export const DEFAULT_PIPELINE_V2: PipelineV2Config = {
 	synthesis: {
 		enabled: true,
 		provider: "claude-code",
-		model: "sonnet",
+		model: "haiku",
 		timeout: 120000,
 		maxTokens: 8000,
 		idleGapMinutes: 15,

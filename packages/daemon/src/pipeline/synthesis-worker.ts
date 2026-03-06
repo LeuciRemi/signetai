@@ -118,8 +118,8 @@ async function runSynthesis(config: PipelineSynthesisConfig): Promise<SynthesisR
 			},
 		);
 
-		if (synthesisData.memories.length === 0) {
-			logger.info("synthesis", "No memories to synthesize, skipping");
+		if (synthesisData.fileCount === 0) {
+			logger.info("synthesis", "No session summaries to synthesize, skipping");
 			return "empty";
 		}
 
@@ -135,11 +135,24 @@ async function runSynthesis(config: PipelineSynthesisConfig): Promise<SynthesisR
 			return "failed";
 		}
 
+		// Guard against non-markdown output (e.g. raw JSON error blobs)
+		const trimmed = result.text.trim();
+		if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+			try {
+				JSON.parse(trimmed);
+				logger.error("synthesis", "LLM returned JSON instead of markdown, skipping write",
+					undefined, { preview: trimmed.slice(0, 200) });
+				return "failed";
+			} catch {
+				// Not valid JSON — markdown starting with [ or { is fine
+			}
+		}
+
 		// Write MEMORY.md via shared helper (handles backup)
 		writeMemoryMd(result.text);
 
 		logger.info("synthesis", "MEMORY.md synthesized", {
-			memories: synthesisData.memories.length,
+			sessionFiles: synthesisData.fileCount,
 			outputLength: result.text.length,
 			...(result.usage
 				? {
@@ -291,7 +304,7 @@ export function startSynthesisWorker(
 				return {
 					success: result === "ok",
 					skipped: result === "empty",
-					reason: result === "empty" ? "No memories to synthesize" : undefined,
+					reason: result === "empty" ? "No session summaries to synthesize" : undefined,
 				};
 			} finally {
 				isSynthesizing = false;

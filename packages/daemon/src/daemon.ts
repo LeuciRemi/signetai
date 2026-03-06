@@ -7476,7 +7476,7 @@ async function main() {
 					})
 				: effectiveSynthesisProvider === "claude-code"
 					? createClaudeCodeProvider({
-							model: memoryCfg.pipelineV2.synthesis.model || "sonnet",
+							model: memoryCfg.pipelineV2.synthesis.model || "haiku",
 							defaultTimeoutMs: memoryCfg.pipelineV2.synthesis.timeout,
 						})
 					: createOllamaProvider({

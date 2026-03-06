@@ -11,7 +11,7 @@
  */
 
 import type { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseSimpleYaml } from "@signet/core";
@@ -77,13 +77,8 @@ export interface SynthesisResponse {
 	harness: string;
 	model: string;
 	prompt: string;
-	memories: Array<{
-		id: string;
-		content: string;
-		type: string;
-		importance: number;
-		created_at: string;
-	}>;
+	/** Number of session summary files included in the prompt. */
+	fileCount: number;
 }
 
 export interface SessionStartRequest {
@@ -1714,6 +1709,24 @@ export function handleRecall(req: RecallRequest): RecallResponse {
  * Shared by the synthesis-complete endpoint and the synthesis worker.
  */
 export function writeMemoryMd(content: string): void {
+	// Last-resort guard: refuse to overwrite MEMORY.md with JSON blobs
+	const trimmed = content.trim();
+	if (!trimmed) {
+		logger.error("hooks", "Refusing to write empty content to MEMORY.md");
+		return;
+	}
+	if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+		try {
+			JSON.parse(trimmed);
+			// Parsed successfully — it's JSON, not markdown
+			logger.error("hooks", "Refusing to write JSON to MEMORY.md",
+				undefined, { preview: trimmed.slice(0, 200) });
+			return;
+		} catch {
+			// Not valid JSON — markdown that starts with [ or { is fine
+		}
+	}
+
 	const memoryMdPath = join(AGENTS_DIR, "MEMORY.md");
 	if (existsSync(memoryMdPath)) {
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -1735,6 +1748,7 @@ export function handleSynthesisRequest(
 	opts?: { maxTokens?: number; sinceTimestamp?: number },
 ): SynthesisResponse {
 	const maxTokens = opts?.maxTokens ?? 8000;
+	const charBudget = maxTokens * 4; // rough char-to-token estimate
 
 	logger.info("hooks", "Synthesis request", { trigger: req.trigger });
 
@@ -1743,22 +1757,59 @@ export function handleSynthesisRequest(
 	let existingContent = "";
 	if (existsSync(memoryMdPath)) {
 		try {
-			existingContent = readFileSync(memoryMdPath, "utf-8")
+			const raw = readFileSync(memoryMdPath, "utf-8")
 				.replace(/^<!-- generated .* -->\n\n?/, "")
 				.trim();
+			// Cap existing content to avoid blowing up the prompt
+			if (raw.length > charBudget) {
+				logger.warn("hooks", "Truncating large MEMORY.md for synthesis", {
+					originalChars: raw.length,
+					budgetChars: charBudget,
+				});
+				existingContent = raw.slice(0, charBudget);
+			} else {
+				existingContent = raw;
+			}
 		} catch {
 			// ignore read errors
 		}
 	}
 
-	const memories = opts?.sinceTimestamp
-		? getMemoriesSince(opts.sinceTimestamp, 200)
-		: getRecentMemories(100, 0.5);
+	// Read session summary files from memory directory
+	const memoryDir = join(AGENTS_DIR, "memory");
+	const DATE_PREFIX = /^\d{4}-\d{2}-\d{2}/;
+	let sessionFiles: string[] = [];
 
-	const memoriesBlock = memories.map((m) => {
-		const dateStr = formatMemoryDate(m.created_at);
-		return `- [${m.type}] ${m.content} (${dateStr})`;
-	}).join("\n");
+	if (existsSync(memoryDir)) {
+		try {
+			sessionFiles = readdirSync(memoryDir)
+				.filter((f) => f.endsWith(".md") && DATE_PREFIX.test(f))
+				.sort()
+				.reverse(); // newest first
+		} catch {
+			// ignore read errors
+		}
+	}
+
+	// Collect file contents up to char budget, skipping files older than sinceTimestamp
+	const sinceMs = opts?.sinceTimestamp ?? 0;
+	const sessionBlocks: string[] = [];
+	let cumChars = 0;
+	for (const file of sessionFiles) {
+		if (cumChars >= charBudget) break;
+		try {
+			const filePath = join(memoryDir, file);
+			if (sinceMs > 0 && statSync(filePath).mtimeMs < sinceMs) continue;
+			const content = readFileSync(filePath, "utf-8").trim();
+			if (content.length === 0) continue;
+			sessionBlocks.push(content);
+			cumChars += content.length;
+		} catch {
+			// skip unreadable files
+		}
+	}
+
+	const sessionsBlock = sessionBlocks.join("\n\n---\n\n");
 
 	const prompt = existingContent
 		? `You are updating MEMORY.md — a working memory summary for an AI agent.
@@ -1767,13 +1818,13 @@ export function handleSynthesisRequest(
 
 ${existingContent}
 
-## Recent Memories
+## Session Summaries
 
-${memoriesBlock}
+${sessionsBlock}
 
 Instructions:
 - Preserve existing sections and structure
-- Update entries that have new information from recent memories
+- Update entries that have new information from session summaries
 - Add new projects, decisions, context, or technical notes that appeared
 - Remove only items that are clearly superseded or obsolete
 - Keep the document well-organized with clear sections
@@ -1783,9 +1834,9 @@ Instructions:
 - Output the full updated MEMORY.md content`
 		: `You are generating MEMORY.md — a working memory summary for an AI agent.
 
-## Memories
+## Session Summaries
 
-${memoriesBlock}
+${sessionsBlock}
 
 Instructions:
 - Create a coherent, organized summary capturing:
@@ -1802,6 +1853,6 @@ Instructions:
 		harness: "daemon",
 		model: "synthesis",
 		prompt,
-		memories,
+		fileCount: sessionBlocks.length,
 	};
 }
