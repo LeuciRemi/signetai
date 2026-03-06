@@ -2,6 +2,24 @@
 
 All notable changes to Signet are documented here.
 
+## [0.40.0] - 2026-03-06
+
+### Features
+
+- **codex**: add codex harness and extraction support
+
+### Bug Fixes
+
+- **codex**: simplify timeout error handling, accept model in scheduler
+- **codex**: deduplicate assistant lines, remove node dep, revert dev port
+- **codex**: broaden transcript normalization
+- **dashboard**: allow dev port fallback
+- **daemon**: cache memory schema probe
+- **codex**: report provider timeouts
+- **connectors**: harden wrapper payload handling
+- **codex**: address review feedback
+
+
 ## [0.39.0] - 2026-03-06
 
 ### Features
