@@ -63,3 +63,44 @@ export const PAGE_HEADERS = {
 		eyebrow: "Repository overview and release history",
 	},
 } as const satisfies Record<TabId, PageHeaderDefinition>;
+
+// --- Tab group item arrays (drives TabGroupBar rendering) ---
+
+export const MEMORY_TAB_ITEMS = [
+	{ id: "memory", label: "Index" },
+	{ id: "timeline", label: "Timeline" },
+	{ id: "knowledge", label: "Knowledge" },
+	{ id: "embeddings", label: "Constellation" },
+] as const satisfies ReadonlyArray<{ id: TabId; label: string }>;
+
+export const ENGINE_TAB_ITEMS = [
+	{ id: "settings", label: "Settings" },
+	{ id: "pipeline", label: "Pipeline" },
+	{ id: "predictor", label: "Predictor" },
+	{ id: "connectors", label: "Connectors" },
+	{ id: "logs", label: "Logs" },
+] as const satisfies ReadonlyArray<{ id: TabId; label: string }>;
+
+// --- Footer definitions ---
+
+export interface PageFooterStatic {
+	readonly left: string;
+	readonly right: string;
+}
+
+/**
+ * Static footer content per tab. Tabs with dynamic footers (memory,
+ * timeline, tasks) are handled by PageFooter.svelte via props.
+ * Skills returns null (no footer).
+ */
+export const PAGE_FOOTERS: Partial<Record<TabId, PageFooterStatic>> = {
+	home: { left: "Agent overview", right: "dashboard home" },
+	pipeline: { left: "Pipeline", right: "memory loop v2" },
+	embeddings: { left: "Constellation", right: "UMAP" },
+	knowledge: { left: "structural graph browser", right: "entities, traversal, predictor slices" },
+	logs: { left: "Log viewer", right: "daemon logs" },
+	secrets: { left: "Secrets", right: "libsodium" },
+	predictor: { left: "Predictor Model", right: "predictive memory scorer" },
+	connectors: { left: "platform harnesses + data sources", right: "connector health" },
+	changelog: { left: "project docs + release history", right: "github.com/Signet-AI/signetai" },
+};
