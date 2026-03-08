@@ -179,7 +179,7 @@ async function runSynthesis(config: PipelineSynthesisConfig): Promise<SynthesisR
 
 export interface SynthesisWorkerHandle {
 	stop(): void;
-	/** Drain in-flight synthesis work before shutdown. */
+	/** Drain in-flight synthesis work. Must be called after stop() to prevent new locks. */
 	drain(): Promise<SynthesisDrainResult>;
 	/**
 	 * Acquire the shared write lock for manual/legacy synthesis paths.
