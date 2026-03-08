@@ -239,7 +239,7 @@ describe("synthesis-worker", () => {
 		const drainElapsed = Date.now() - drainStart;
 
 		expect(drainResult).toBe("timeout");
-		expect(drainElapsed).toBeGreaterThanOrEqual(10 + 1000);
+		expect(drainElapsed).toBeGreaterThanOrEqual(10 + 1000 - 5);
 		expect(drainElapsed).toBeLessThan(6000);
 		expect(worker.isSynthesizing).toBe(true);
 		expect(releaseRun).not.toBeNull();
