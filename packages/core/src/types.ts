@@ -88,6 +88,11 @@ export interface AgentManifest {
 		};
 	};
 
+	// Home dashboard configuration (optional)
+	home?: {
+		spotlightEntity?: string;
+	};
+
 	// Legacy fields
 	auth?: {
 		method: "none" | "erc8128" | "gpg" | "did";

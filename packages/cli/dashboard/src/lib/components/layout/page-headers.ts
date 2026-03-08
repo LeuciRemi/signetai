@@ -6,6 +6,10 @@ export interface PageHeaderDefinition {
 }
 
 export const PAGE_HEADERS = {
+	home: {
+		title: "Home",
+		eyebrow: "Agent overview",
+	},
 	settings: {
 		title: "Settings",
 		eyebrow: "Configuration and identity",

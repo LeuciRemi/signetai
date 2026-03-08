@@ -106,6 +106,8 @@ export interface DaemonStatus {
 	host: string;
 	agentsDir: string;
 	memoryDb: boolean;
+	activeSessions?: number;
+	agentCreatedAt?: string | null;
 	update?: {
 		currentVersion: string;
 		latestVersion: string | null;
@@ -2342,5 +2344,73 @@ export async function fetchReadme(): Promise<MarkdownDoc | null> {
 		return (await res.json()) as MarkdownDoc;
 	} catch {
 		return fetchRawGithubMarkdown("README.md", extractReadmeOverview);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostics
+// ---------------------------------------------------------------------------
+
+export interface DiagnosticsDomain {
+	score: number;
+	status: string;
+	[key: string]: unknown;
+}
+
+export interface DiagnosticsReport {
+	timestamp: string;
+	composite: { score: number; status: string };
+	queue: DiagnosticsDomain;
+	storage: DiagnosticsDomain & { totalMemories?: number; dbSizeBytes?: number };
+	index: DiagnosticsDomain & { embeddingCoverage?: number; ftsMismatch?: boolean };
+	provider: DiagnosticsDomain & { availabilityRate?: number };
+	connector: DiagnosticsDomain & { count?: number; errorCount?: number };
+	predictor: DiagnosticsDomain & { alpha?: number; successRate?: number };
+	mutation: DiagnosticsDomain;
+	[key: string]: unknown;
+}
+
+export async function getDiagnostics(): Promise<DiagnosticsReport | null> {
+	try {
+		const res = await fetch(`${API_BASE}/api/diagnostics`);
+		if (!res.ok) return null;
+		return (await res.json()) as DiagnosticsReport;
+	} catch {
+		return null;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Home greeting (falls back gracefully)
+// ---------------------------------------------------------------------------
+
+export async function getHomeGreeting(): Promise<{ greeting: string } | null> {
+	try {
+		const res = await fetch(`${API_BASE}/api/home/greeting`);
+		if (!res.ok) return null;
+		return (await res.json()) as { greeting: string };
+	} catch {
+		return null;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Continuity scores
+// ---------------------------------------------------------------------------
+
+export interface ContinuityEntry {
+	project: string;
+	score: number;
+	created_at: string;
+}
+
+export async function getContinuityLatest(): Promise<ContinuityEntry[]> {
+	try {
+		const res = await fetch(`${API_BASE}/api/analytics/continuity/latest`);
+		if (!res.ok) return [];
+		const body = (await res.json()) as { entries?: ContinuityEntry[] };
+		return body.entries ?? [];
+	} catch {
+		return [];
 	}
 }

@@ -4487,6 +4487,7 @@ import {
 
 import {
 	type RuntimePath,
+	activeSessionCount,
 	claimSession,
 	getSessionPath,
 	releaseSession,
@@ -5480,6 +5481,22 @@ app.get("/api/status", (c) => {
 	}
 
 	const us = getUpdateState();
+
+	// Read agent.created from agent.yaml for agentCreatedAt
+	let agentCreatedAt: string | null = null;
+	try {
+		for (const p of [join(AGENTS_DIR, "agent.yaml"), join(AGENTS_DIR, "AGENT.yaml")]) {
+			if (existsSync(p)) {
+				const yaml = parseSimpleYaml(readFileSync(p, "utf-8"));
+				const agent = yaml.agent as Record<string, unknown> | undefined;
+				if (agent?.created) {
+					agentCreatedAt = String(agent.created);
+				}
+				break;
+			}
+		}
+	} catch { /* ignore parse errors */ }
+
 	return c.json({
 		status: "running",
 		version: CURRENT_VERSION,
@@ -5491,6 +5508,8 @@ app.get("/api/status", (c) => {
 		agentsDir: AGENTS_DIR,
 		memoryDb: existsSync(MEMORY_DB),
 		pipelineV2: config.pipelineV2,
+		activeSessions: activeSessionCount(),
+		agentCreatedAt,
 		...(health ? { health } : {}),
 		update: {
 			currentVersion: us.currentVersion,
@@ -5512,6 +5531,46 @@ app.get("/api/status", (c) => {
 				: {}),
 		},
 	});
+});
+
+// ============================================================================
+// Home greeting
+// ============================================================================
+
+let greetingCache: { greeting: string; cachedAt: string; expires: number } | null = null;
+
+app.get("/api/home/greeting", async (c) => {
+	const now = Date.now();
+	if (greetingCache && now < greetingCache.expires) {
+		return c.json({ greeting: greetingCache.greeting, cachedAt: greetingCache.cachedAt });
+	}
+
+	// Read SOUL.md for voice context
+	const soulPath = join(AGENTS_DIR, "SOUL.md");
+	let soulContent = "";
+	try {
+		soulContent = readFileSync(soulPath, "utf-8").slice(0, 500);
+	} catch { /* no soul file */ }
+
+	const hour = new Date().getHours();
+	const timeOfDay = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
+
+	// Try LLM greeting
+	try {
+		const provider = getLlmProvider();
+		if (provider) {
+			const prompt = `Given this agent personality description:\n\n${soulContent}\n\nGenerate a brief ${timeOfDay} greeting in this character's voice. Max 15 words. No emojis. No quotes around the greeting.`;
+			const text = await provider.generate(prompt, { timeoutMs: 10000, maxTokens: 50 });
+			const greeting = text.trim().replace(/^["']|["']$/g, "");
+			greetingCache = { greeting, cachedAt: new Date().toISOString(), expires: now + 3600000 };
+			return c.json({ greeting: greetingCache.greeting, cachedAt: greetingCache.cachedAt });
+		}
+	} catch { /* LLM unavailable */ }
+
+	// Fallback
+	const fallback = `good ${timeOfDay}`;
+	greetingCache = { greeting: fallback, cachedAt: new Date().toISOString(), expires: now + 3600000 };
+	return c.json({ greeting: greetingCache.greeting, cachedAt: greetingCache.cachedAt });
 });
 
 // ============================================================================

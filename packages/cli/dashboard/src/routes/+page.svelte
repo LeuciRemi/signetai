@@ -710,7 +710,21 @@ function handlePageClick(e: MouseEvent) {
 				</div>
 			{/snippet}
 
-			{#if activeTab === "settings"}
+			{#if activeTab === "home"}
+				{#await import("$lib/components/tabs/HomeTab.svelte")}
+					{@render skeletonCards()}
+				{:then module}
+					<module.default
+						identity={data.identity}
+						memories={memoryDocs}
+						memoryStats={data.memoryStats}
+						harnesses={data.harnesses}
+						{daemonStatus}
+					/>
+				{:catch error}
+					{@render skeletonError(error)}
+				{/await}
+			{:else if activeTab === "settings"}
 				{#await import("$lib/components/tabs/SettingsTab.svelte")}
 					{@render skeletonForm()}
 				{:then module}
@@ -826,7 +840,10 @@ function handlePageClick(e: MouseEvent) {
 				bg-[var(--sig-surface)]
 				sig-eyebrow shrink-0"
 		>
-			{#if activeTab === "settings"}
+			{#if activeTab === "home"}
+				<span>Agent overview</span>
+				<span>dashboard home</span>
+			{:else if activeTab === "settings"}
 				<span>Settings</span>
 				<span class="flex items-center gap-2">
 					<kbd class="px-1 py-px text-[10px] text-[var(--sig-text-muted)]
@@ -871,11 +888,14 @@ function handlePageClick(e: MouseEvent) {
 			{:else if activeTab === "tasks"}
 				<span>{ts.tasks.length} scheduled tasks</span>
 				<span>cron scheduler</span>
+			{:else if activeTab === "predictor"}
+				<span>Predictor Model</span>
+				<span>predictive memory scorer</span>
 			{:else if activeTab === "connectors"}
 				<span>platform harnesses + data sources</span>
 				<span>connector health</span>
 			{:else if activeTab === "changelog"}
-				<span>roadmap + changelog</span>
+				<span>project docs + release history</span>
 				<span>github.com/Signet-AI/signetai</span>
 			{/if}
 		</div>

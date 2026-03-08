@@ -23,6 +23,7 @@ import Brain from "@lucide/svelte/icons/brain";
 import Cog from "@lucide/svelte/icons/cog";
 import ExternalLink from "@lucide/svelte/icons/external-link";
 import Github from "@lucide/svelte/icons/github";
+import House from "@lucide/svelte/icons/house";
 import ListChecks from "@lucide/svelte/icons/list-checks";
 import Moon from "@lucide/svelte/icons/moon";
 import Network from "@lucide/svelte/icons/network";
@@ -61,6 +62,7 @@ type NavItem =
 	| { id: string; label: string; icon: typeof Brain; group: "memory" | "engine" };
 
 const navItems: NavItem[] = [
+	{ id: "home", label: "Home", icon: House },
 	{ id: "memory-group", label: "Memory", icon: Brain, group: "memory" },
 	{ id: "knowledge", label: "Knowledge", icon: Network },
 	{ id: "secrets", label: "Secrets", icon: ShieldCheck },
