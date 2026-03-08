@@ -1,3 +1,5 @@
+import type { TabId } from "$lib/stores/navigation.svelte";
+
 export interface PageHeaderDefinition {
 	readonly title: string;
 	readonly eyebrow: string;
@@ -52,4 +54,8 @@ export const PAGE_HEADERS = {
 		title: "Engine",
 		eyebrow: "Predictive memory scorer",
 	},
-} as const satisfies Record<string, PageHeaderDefinition>;
+	changelog: {
+		title: "Project",
+		eyebrow: "Repository overview and release history",
+	},
+} as const satisfies Record<TabId, PageHeaderDefinition>;

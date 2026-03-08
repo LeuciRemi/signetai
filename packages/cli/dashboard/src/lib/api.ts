@@ -3,6 +3,8 @@
  * Handles communication with the Signet daemon
  */
 
+import { marked } from "marked";
+
 // In production, the dashboard is served by the daemon, so use relative URLs
 // In development, point to the daemon on port 3850
 const isDev = import.meta.env.DEV;
@@ -2257,28 +2259,88 @@ export async function getConstellationOverlay(agentId = "default"): Promise<Cons
 	}
 }
 
-export interface ChangelogDoc {
+export interface MarkdownDoc {
 	html: string;
 	source: "github" | "local";
 	cachedAt: number;
 }
 
-export async function fetchChangelog(): Promise<ChangelogDoc | null> {
+function extractReadmeOverview(content: string): string {
+	const localFirstMatch = content.match(
+		/Signet is a local-first[\s\S]*?without ever reading their values\./,
+	);
+	const whyMatch = content.match(
+		/Most AI tools build memory silos\.[\s\S]*?unless you configure it to\./,
+	);
+
+	const normalizeParagraph = (text: string): string =>
+		text
+			.replace(/<\/?[^>]+>/g, " ")
+			.replace(/\s+/g, " ")
+			.trim();
+
+	if (localFirstMatch && whyMatch) {
+		return [
+			"# Signet",
+			"## Own your agent. Bring it anywhere.",
+			normalizeParagraph(localFirstMatch[0]),
+			"## Why Signet",
+			normalizeParagraph(whyMatch[0]),
+		].join("\n\n");
+	}
+
+	return content;
+}
+
+async function fetchRawGithubMarkdown(
+	filename: string,
+	transform?: (content: string) => string,
+): Promise<MarkdownDoc | null> {
 	try {
-		const res = await fetch(`${API_BASE}/api/changelog`);
+		const res = await fetch(
+			`https://raw.githubusercontent.com/Signet-AI/signetai/main/${filename}`,
+		);
 		if (!res.ok) return null;
-		return (await res.json()) as ChangelogDoc;
+		const raw = await res.text();
+		const content = transform ? transform(raw) : raw;
+		return {
+			html: marked.parse(content, { async: false }) as string,
+			source: "github",
+			cachedAt: Date.now(),
+		};
 	} catch {
 		return null;
 	}
 }
 
-export async function fetchRoadmap(): Promise<ChangelogDoc | null> {
+export async function fetchChangelog(): Promise<MarkdownDoc | null> {
+	try {
+		const res = await fetch(`${API_BASE}/api/changelog`);
+		if (!res.ok) return null;
+		return (await res.json()) as MarkdownDoc;
+	} catch {
+		return null;
+	}
+}
+
+export async function fetchRoadmap(): Promise<MarkdownDoc | null> {
 	try {
 		const res = await fetch(`${API_BASE}/api/roadmap`);
 		if (!res.ok) return null;
-		return (await res.json()) as ChangelogDoc;
+		return (await res.json()) as MarkdownDoc;
 	} catch {
 		return null;
+	}
+}
+
+export async function fetchReadme(): Promise<MarkdownDoc | null> {
+	try {
+		const res = await fetch(`${API_BASE}/api/readme`);
+		if (!res.ok) {
+			return fetchRawGithubMarkdown("README.md", extractReadmeOverview);
+		}
+		return (await res.json()) as MarkdownDoc;
+	} catch {
+		return fetchRawGithubMarkdown("README.md", extractReadmeOverview);
 	}
 }

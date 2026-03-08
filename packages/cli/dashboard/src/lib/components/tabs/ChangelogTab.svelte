@@ -1,187 +1,595 @@
 <script lang="ts">
-import { onMount } from "svelte";
-import { fetchChangelog, fetchRoadmap, type ChangelogDoc } from "$lib/api";
+import {
+	fetchChangelog,
+	fetchReadme,
+	fetchRoadmap,
+	type MarkdownDoc,
+} from "$lib/api";
+import {
+	Card,
+	CardAction,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "$lib/components/ui/card/index.js";
 import { Skeleton } from "$lib/components/ui/skeleton/index.js";
+import ExternalLink from "@lucide/svelte/icons/external-link";
 import Github from "@lucide/svelte/icons/github";
 import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+import { onMount } from "svelte";
 
-type View = "roadmap" | "changelog";
+type ViewId = "readme" | "roadmap" | "changelog";
 
-let view = $state<View>("roadmap");
-let roadmap = $state<ChangelogDoc | null>(null);
-let changelog = $state<ChangelogDoc | null>(null);
+let readme = $state<MarkdownDoc | null>(null);
+let roadmap = $state<MarkdownDoc | null>(null);
+let changelog = $state<MarkdownDoc | null>(null);
+let activeView = $state<ViewId>("roadmap");
 let loading = $state(true);
 let error = $state(false);
 
-async function load() {
-	loading = true;
-	error = false;
-	try {
-		const [rm, cl] = await Promise.all([fetchRoadmap(), fetchChangelog()]);
-		roadmap = rm;
-		changelog = cl;
-		if (!rm && !cl) error = true;
-	} catch {
-		error = true;
-	} finally {
-		loading = false;
-	}
+function docFor(view: ViewId): MarkdownDoc | null {
+	if (view === "readme") return readme;
+	if (view === "roadmap") return roadmap;
+	return changelog;
 }
 
-onMount(load);
+function chooseActiveView(): void {
+	if (docFor(activeView)) return;
+	if (roadmap) {
+		activeView = "roadmap";
+		return;
+	}
+	if (changelog) {
+		activeView = "changelog";
+		return;
+	}
+	if (readme) activeView = "readme";
+}
 
-function sourceLabel(doc: ChangelogDoc | null): string {
+async function load(): Promise<void> {
+	loading = true;
+	error = false;
+
+	const [readmeResult, roadmapResult, changelogResult] = await Promise.allSettled([
+		fetchReadme(),
+		fetchRoadmap(),
+		fetchChangelog(),
+	]);
+
+	readme = readmeResult.status === "fulfilled" ? readmeResult.value : null;
+	roadmap = roadmapResult.status === "fulfilled" ? roadmapResult.value : null;
+	changelog = changelogResult.status === "fulfilled" ? changelogResult.value : null;
+
+	error = !readme && !roadmap && !changelog;
+	chooseActiveView();
+	loading = false;
+}
+
+onMount(() => {
+	void load();
+});
+
+function sourceLabel(doc: MarkdownDoc | null): string {
 	if (!doc) return "";
 	const ago = Math.round((Date.now() - doc.cachedAt) / 1000 / 60);
 	const src = doc.source === "github" ? "github" : "local copy";
 	return ago < 1 ? `${src} · just now` : `${src} · ${ago}m ago`;
 }
 
-const activeDoc = $derived(view === "roadmap" ? roadmap : changelog);
+function eyebrowFor(view: ViewId): string {
+	if (view === "readme") return "OVERVIEW";
+	if (view === "roadmap") return "PLANNING";
+	return "RELEASES";
+}
+
+function titleFor(view: ViewId): string {
+	if (view === "readme") return "README";
+	if (view === "roadmap") return "Roadmap";
+	return "Changelog";
+}
+
+function descriptionFor(view: ViewId): string {
+	if (view === "readme") return "Short overview pulled from README.md.";
+	if (view === "roadmap") return "Current priorities and planned work.";
+	return "Recent released changes from CHANGELOG.md.";
+}
+
+function hrefFor(view: ViewId): string {
+	if (view === "readme") {
+		return "https://github.com/Signet-AI/signetai/blob/main/README.md";
+	}
+	if (view === "roadmap") {
+		return "https://github.com/Signet-AI/signetai/blob/main/ROADMAP.md";
+	}
+	return "https://github.com/Signet-AI/signetai/blob/main/CHANGELOG.md";
+}
+
+const loadedDocs = $derived([readme, roadmap, changelog].filter(Boolean).length);
+const activeDoc = $derived(docFor(activeView));
 </script>
 
-<div class="flex flex-col h-full overflow-hidden">
-	<!-- Header / toggle -->
-	<div class="flex items-center gap-1 px-4 py-2 border-b border-[var(--sig-border)] shrink-0">
-		<button
-			class="px-3 py-1 text-[11px] uppercase tracking-[0.08em] font-[family-name:var(--font-mono)]
-				transition-colors duration-150
-				{view === 'roadmap'
-					? 'text-[var(--sig-text-bright)] border-b border-[var(--sig-accent)]'
-					: 'text-[var(--sig-text-muted)] hover:text-[var(--sig-text)]'}"
-			onclick={() => (view = "roadmap")}
-		>
-			Roadmap
-		</button>
-		<button
-			class="px-3 py-1 text-[11px] uppercase tracking-[0.08em] font-[family-name:var(--font-mono)]
-				transition-colors duration-150
-				{view === 'changelog'
-					? 'text-[var(--sig-text-bright)] border-b border-[var(--sig-accent)]'
-					: 'text-[var(--sig-text-muted)] hover:text-[var(--sig-text)]'}"
-			onclick={() => (view = "changelog")}
-		>
-			Changelog
-		</button>
+<div class="flex h-full min-h-0 flex-col overflow-hidden">
+	<div
+		class="shrink-0 border-b border-[var(--sig-border)] bg-[var(--sig-surface)]
+			px-4 py-3"
+	>
+		<div class="flex items-start gap-3">
+			<div class="min-w-0">
+				<div class="sig-heading text-[var(--sig-text-bright)]">Project</div>
+				<p
+					class="mt-1 max-w-2xl font-[family-name:var(--font-mono)] text-[11px]
+						leading-5 text-[var(--sig-text-muted)]"
+				>
+					Overview, roadmap, and changelog.
+				</p>
+			</div>
 
-		<div class="ml-auto flex items-center gap-2">
-			{#if !loading && activeDoc}
-				<span class="sig-meta text-[var(--sig-text-muted)] flex items-center gap-1">
-					<Github class="size-3" />
-					{sourceLabel(activeDoc)}
-				</span>
-			{/if}
-			<button
-				class="text-[var(--sig-text-muted)] hover:text-[var(--sig-text)] transition-colors"
-				onclick={load}
-				title="Refresh"
-			>
-				<RefreshCw class="size-3.5 {loading ? 'animate-spin' : ''}" />
-			</button>
+			<div class="ml-auto flex items-center gap-3">
+				{#if !loading}
+					<span class="sig-meta whitespace-nowrap text-[var(--sig-text-muted)]">
+						{loadedDocs}/3 docs loaded
+					</span>
+				{/if}
+				<button
+					class="text-[var(--sig-text-muted)] transition-colors hover:text-[var(--sig-text)]"
+					onclick={() => void load()}
+					title="Refresh"
+				>
+					<RefreshCw class="size-3.5 {loading ? 'animate-spin' : ''}" />
+				</button>
+			</div>
 		</div>
 	</div>
 
-	<!-- Content -->
-	<div class="flex-1 overflow-y-auto px-6 py-4">
+	<div class="flex-1 min-h-0 overflow-hidden px-4 py-4 md:px-5 md:py-5">
 		{#if loading}
-			<div class="flex flex-col gap-3 max-w-2xl">
-				<Skeleton class="h-6 w-48" />
-				<Skeleton class="h-4 w-full" />
-				<Skeleton class="h-4 w-3/4" />
-				<Skeleton class="h-4 w-5/6" />
-				<Skeleton class="h-4 w-full" />
-				<Skeleton class="h-4 w-2/3" />
+			<div class="hidden h-full min-h-0 gap-4 2xl:flex">
+				<div class="w-[21rem] min-w-[21rem] border border-[var(--sig-border)] bg-[var(--sig-surface)] p-4">
+					<Skeleton class="mb-3 h-3 w-24" />
+					<Skeleton class="mb-2 h-5 w-40" />
+					<Skeleton class="mb-4 h-4 w-52" />
+					<div class="space-y-2">
+						{#each Array(10) as _}
+							<Skeleton class="h-4 w-full" />
+						{/each}
+					</div>
+				</div>
+				<div class="min-w-0 flex-1 border border-[var(--sig-border)] bg-[var(--sig-surface)] p-4">
+					<Skeleton class="mb-3 h-3 w-24" />
+					<Skeleton class="mb-2 h-5 w-44" />
+					<Skeleton class="mb-4 h-4 w-56" />
+					<div class="space-y-2">
+						{#each Array(14) as _}
+							<Skeleton class="h-4 w-full" />
+						{/each}
+					</div>
+				</div>
+				<div class="min-w-0 flex-1 border border-[var(--sig-border)] bg-[var(--sig-surface)] p-4">
+					<Skeleton class="mb-3 h-3 w-24" />
+					<Skeleton class="mb-2 h-5 w-44" />
+					<Skeleton class="mb-4 h-4 w-56" />
+					<div class="space-y-2">
+						{#each Array(14) as _}
+							<Skeleton class="h-4 w-full" />
+						{/each}
+					</div>
+				</div>
 			</div>
-		{:else if error || !activeDoc}
-			<div class="flex flex-col items-center justify-center h-full gap-3 text-[var(--sig-text-muted)]">
-				<span class="sig-label">couldn't reach github or find local files</span>
-				<button
-					class="text-[11px] uppercase tracking-[0.06em] font-[family-name:var(--font-mono)]
-						text-[var(--sig-accent)] hover:opacity-80 transition-opacity"
-					onclick={load}
+
+			<div class="flex h-full min-h-0 flex-col gap-3 2xl:hidden">
+				<div class="flex gap-2 border-b border-[var(--sig-border)] pb-3">
+					<Skeleton class="h-8 w-20" />
+					<Skeleton class="h-8 w-24" />
+					<Skeleton class="h-8 w-24" />
+				</div>
+				<div class="border border-[var(--sig-border)] bg-[var(--sig-surface)] p-4">
+					<Skeleton class="mb-3 h-3 w-24" />
+					<Skeleton class="mb-2 h-5 w-40" />
+					<Skeleton class="mb-4 h-4 w-56" />
+					<div class="space-y-2">
+						{#each Array(16) as _}
+							<Skeleton class="h-4 w-full" />
+						{/each}
+					</div>
+				</div>
+			</div>
+		{:else if error}
+			<div class="flex h-full min-h-0 items-center justify-center">
+				<div
+					class="border border-[var(--sig-border-strong)] bg-[var(--sig-surface)]
+						px-6 py-5 text-center"
 				>
-					retry
-				</button>
+					<div class="sig-heading text-[var(--sig-text-bright)]">Project Unavailable</div>
+					<p
+						class="mt-2 max-w-md font-[family-name:var(--font-mono)] text-[11px]
+							leading-5 text-[var(--sig-text-muted)]"
+					>
+						Couldn&apos;t load README, roadmap, or changelog.
+					</p>
+					<button
+						class="mt-4 text-[11px] uppercase tracking-[0.08em]
+							font-[family-name:var(--font-mono)] text-[var(--sig-accent)]
+							transition-opacity hover:opacity-80"
+						onclick={() => void load()}
+					>
+						retry
+					</button>
+				</div>
 			</div>
 		{:else}
-			<div class="changelog-md max-w-2xl">
-				{@html activeDoc.html}
+			<div class="hidden h-full min-h-0 gap-4 2xl:flex">
+				<Card
+					class="flex h-full w-[21rem] min-w-[21rem] flex-col overflow-hidden
+						rounded-none border-[var(--sig-border-strong)] bg-[var(--sig-surface)]
+						py-0 shadow-none"
+				>
+					<CardHeader class="border-b border-[var(--sig-border)] px-4 py-3">
+						<div class="sig-micro text-[var(--sig-text-muted)]">{eyebrowFor("readme")}</div>
+						<CardTitle
+							class="font-display text-[13px] font-bold uppercase tracking-[0.12em]
+								text-[var(--sig-text-bright)]"
+						>
+							{titleFor("readme")}
+						</CardTitle>
+						<CardDescription
+							class="font-[family-name:var(--font-mono)] text-[11px] leading-5
+								text-[var(--sig-text-muted)]"
+						>
+							{descriptionFor("readme")}
+						</CardDescription>
+						<CardAction class="flex items-center gap-3">
+							{#if readme}
+								<span
+									class="sig-meta flex items-center gap-1 whitespace-nowrap
+										text-[var(--sig-text-muted)]"
+								>
+									<Github class="size-3" />
+									{sourceLabel(readme)}
+								</span>
+							{/if}
+							<a
+								class="sig-meta flex items-center gap-1 whitespace-nowrap
+									text-[var(--sig-accent)] transition-opacity hover:opacity-80"
+								href={hrefFor("readme")}
+								rel="noopener noreferrer"
+								target="_blank"
+							>
+								<ExternalLink class="size-3" />
+								source
+							</a>
+						</CardAction>
+					</CardHeader>
+
+					<CardContent class="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+						{#if readme}
+							<div class="doc-body doc-body-overview">
+								{@html readme.html}
+							</div>
+						{:else}
+							<div class="doc-empty">README unavailable.</div>
+						{/if}
+					</CardContent>
+				</Card>
+
+				<Card
+					class="flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-none
+						border-[var(--sig-border-strong)] bg-[var(--sig-surface)] py-0
+						shadow-none"
+				>
+					<CardHeader class="border-b border-[var(--sig-border)] px-4 py-3">
+						<div class="sig-micro text-[var(--sig-text-muted)]">{eyebrowFor("roadmap")}</div>
+						<CardTitle
+							class="font-display text-[13px] font-bold uppercase tracking-[0.12em]
+								text-[var(--sig-text-bright)]"
+						>
+							{titleFor("roadmap")}
+						</CardTitle>
+						<CardDescription
+							class="font-[family-name:var(--font-mono)] text-[11px] leading-5
+								text-[var(--sig-text-muted)]"
+						>
+							{descriptionFor("roadmap")}
+						</CardDescription>
+						<CardAction class="flex items-center gap-3">
+							{#if roadmap}
+								<span
+									class="sig-meta flex items-center gap-1 whitespace-nowrap
+										text-[var(--sig-text-muted)]"
+								>
+									<Github class="size-3" />
+									{sourceLabel(roadmap)}
+								</span>
+							{/if}
+							<a
+								class="sig-meta flex items-center gap-1 whitespace-nowrap
+									text-[var(--sig-accent)] transition-opacity hover:opacity-80"
+								href={hrefFor("roadmap")}
+								rel="noopener noreferrer"
+								target="_blank"
+							>
+								<ExternalLink class="size-3" />
+								source
+							</a>
+						</CardAction>
+					</CardHeader>
+
+					<CardContent class="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+						{#if roadmap}
+							<div class="doc-body">
+								{@html roadmap.html}
+							</div>
+						{:else}
+							<div class="doc-empty">Roadmap unavailable.</div>
+						{/if}
+					</CardContent>
+				</Card>
+
+				<Card
+					class="flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-none
+						border-[var(--sig-border-strong)] bg-[var(--sig-surface)] py-0
+						shadow-none"
+				>
+					<CardHeader class="border-b border-[var(--sig-border)] px-4 py-3">
+						<div class="sig-micro text-[var(--sig-text-muted)]">{eyebrowFor("changelog")}</div>
+						<CardTitle
+							class="font-display text-[13px] font-bold uppercase tracking-[0.12em]
+								text-[var(--sig-text-bright)]"
+						>
+							{titleFor("changelog")}
+						</CardTitle>
+						<CardDescription
+							class="font-[family-name:var(--font-mono)] text-[11px] leading-5
+								text-[var(--sig-text-muted)]"
+						>
+							{descriptionFor("changelog")}
+						</CardDescription>
+						<CardAction class="flex items-center gap-3">
+							{#if changelog}
+								<span
+									class="sig-meta flex items-center gap-1 whitespace-nowrap
+										text-[var(--sig-text-muted)]"
+								>
+									<Github class="size-3" />
+									{sourceLabel(changelog)}
+								</span>
+							{/if}
+							<a
+								class="sig-meta flex items-center gap-1 whitespace-nowrap
+									text-[var(--sig-accent)] transition-opacity hover:opacity-80"
+								href={hrefFor("changelog")}
+								rel="noopener noreferrer"
+								target="_blank"
+							>
+								<ExternalLink class="size-3" />
+								source
+							</a>
+						</CardAction>
+					</CardHeader>
+
+					<CardContent class="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+						{#if changelog}
+							<div class="doc-body">
+								{@html changelog.html}
+							</div>
+						{:else}
+							<div class="doc-empty">Changelog unavailable.</div>
+						{/if}
+					</CardContent>
+				</Card>
+			</div>
+
+			<div class="flex h-full min-h-0 flex-col gap-3 2xl:hidden">
+				<div
+					class="flex shrink-0 gap-px border border-[var(--sig-border)]
+						bg-[var(--sig-surface)] p-px"
+				>
+					<button
+						class="updates-tab {activeView === 'readme' ? 'updates-tab-active' : ''}"
+						onclick={() => (activeView = "readme")}
+					>
+						README
+					</button>
+					<button
+						class="updates-tab {activeView === 'roadmap' ? 'updates-tab-active' : ''}"
+						onclick={() => (activeView = "roadmap")}
+					>
+						ROADMAP
+					</button>
+					<button
+						class="updates-tab {activeView === 'changelog' ? 'updates-tab-active' : ''}"
+						onclick={() => (activeView = "changelog")}
+					>
+						CHANGELOG
+					</button>
+				</div>
+
+				<Card
+					class="flex h-full min-h-0 flex-col overflow-hidden rounded-none
+						border-[var(--sig-border-strong)] bg-[var(--sig-surface)] py-0
+						shadow-none"
+				>
+					<CardHeader class="border-b border-[var(--sig-border)] px-4 py-3">
+						<div class="sig-micro text-[var(--sig-text-muted)]">{eyebrowFor(activeView)}</div>
+						<CardTitle
+							class="font-display text-[13px] font-bold uppercase tracking-[0.12em]
+								text-[var(--sig-text-bright)]"
+						>
+							{titleFor(activeView)}
+						</CardTitle>
+						<CardDescription
+							class="font-[family-name:var(--font-mono)] text-[11px] leading-5
+								text-[var(--sig-text-muted)]"
+						>
+							{descriptionFor(activeView)}
+						</CardDescription>
+						<CardAction class="flex items-center gap-3">
+							{#if activeDoc}
+								<span
+									class="sig-meta flex items-center gap-1 whitespace-nowrap
+										text-[var(--sig-text-muted)]"
+								>
+									<Github class="size-3" />
+									{sourceLabel(activeDoc)}
+								</span>
+							{/if}
+							<a
+								class="sig-meta flex items-center gap-1 whitespace-nowrap
+									text-[var(--sig-accent)] transition-opacity hover:opacity-80"
+								href={hrefFor(activeView)}
+								rel="noopener noreferrer"
+								target="_blank"
+							>
+								<ExternalLink class="size-3" />
+								source
+							</a>
+						</CardAction>
+					</CardHeader>
+
+					<CardContent class="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+						{#if activeDoc}
+							<div class="doc-body {activeView === 'readme' ? 'doc-body-overview' : ''}">
+								{@html activeDoc.html}
+							</div>
+						{:else}
+							<div class="doc-empty">{titleFor(activeView)} unavailable.</div>
+						{/if}
+					</CardContent>
+				</Card>
 			</div>
 		{/if}
 	</div>
 </div>
 
 <style>
-	.changelog-md :global(h1) {
+	.updates-tab {
+		flex: 1;
+		border: 0;
+		background: transparent;
+		padding: 0.55rem 0.75rem;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--sig-text-muted);
+		transition: color var(--dur), background-color var(--dur);
+	}
+
+	.updates-tab:hover {
+		background: var(--sig-surface-raised);
+		color: var(--sig-text);
+	}
+
+	.updates-tab-active {
+		background: var(--sig-surface-raised);
+		color: var(--sig-text-bright);
+	}
+
+	.doc-body {
+		max-width: none;
+	}
+
+	.doc-body :global(h1) {
 		font-family: var(--font-display);
-		font-size: var(--font-size-lg);
+		font-size: 1rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--sig-text-bright);
+		margin-bottom: var(--space-sm);
+	}
+
+	.doc-body :global(h2) {
+		font-family: var(--font-display);
+		font-size: 0.85rem;
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.1em;
 		color: var(--sig-text-bright);
+		margin-top: var(--space-lg);
 		margin-bottom: var(--space-sm);
-		margin-top: var(--space-lg);
-	}
-	.changelog-md :global(h2) {
-		font-family: var(--font-mono);
-		font-size: var(--font-size-sm);
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--sig-text-bright);
-		margin-top: var(--space-lg);
-		margin-bottom: var(--space-xs);
 		padding-bottom: var(--space-xs);
 		border-bottom: 1px solid var(--sig-border);
 	}
-	.changelog-md :global(h3) {
+
+	.doc-body :global(h3) {
 		font-family: var(--font-mono);
-		font-size: var(--font-size-base);
+		font-size: var(--font-size-sm);
 		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
 		color: var(--sig-text);
 		margin-top: var(--space-md);
 		margin-bottom: var(--space-xs);
 	}
-	.changelog-md :global(p) {
+
+	.doc-body :global(p) {
 		font-family: var(--font-mono);
 		font-size: var(--font-size-sm);
+		line-height: 1.8;
 		color: var(--sig-text-muted);
-		line-height: 1.6;
 		margin-bottom: var(--space-sm);
 	}
-	.changelog-md :global(ul) {
+
+	.doc-body :global(ul) {
 		font-family: var(--font-mono);
 		font-size: var(--font-size-sm);
+		line-height: 1.75;
 		color: var(--sig-text-muted);
-		padding-left: var(--space-md);
+		padding-left: 1.15rem;
 		margin-bottom: var(--space-sm);
-		line-height: 1.7;
 	}
-	.changelog-md :global(li) {
-		margin-bottom: 2px;
+
+	.doc-body :global(li) {
+		margin-bottom: 0.35rem;
 	}
-	.changelog-md :global(code) {
+
+	.doc-body :global(code) {
 		font-family: var(--font-mono);
 		font-size: var(--font-size-xs);
 		background: var(--sig-surface-raised);
-		color: var(--sig-accent);
+		color: var(--sig-text-bright);
 		padding: 1px 4px;
-		border-radius: 2px;
+		border: 1px solid var(--sig-border);
 	}
-	.changelog-md :global(strong) {
+
+	.doc-body :global(strong) {
 		color: var(--sig-text);
 		font-weight: 600;
 	}
-	.changelog-md :global(hr) {
-		border: none;
+
+	.doc-body :global(em) {
+		color: var(--sig-text);
+	}
+
+	.doc-body :global(hr) {
+		border: 0;
 		border-top: 1px solid var(--sig-border);
 		margin: var(--space-lg) 0;
 	}
-	.changelog-md :global(a) {
+
+	.doc-body :global(a) {
 		color: var(--sig-accent);
 		text-decoration: none;
 	}
-	.changelog-md :global(a:hover) {
+
+	.doc-body :global(a:hover) {
 		text-decoration: underline;
+	}
+
+	.doc-body-overview :global(h1) {
+		margin-bottom: var(--space-xs);
+	}
+
+	.doc-body-overview :global(h2:first-of-type) {
+		margin-top: 0;
+	}
+
+	.doc-empty {
+		font-family: var(--font-mono);
+		font-size: var(--font-size-sm);
+		line-height: 1.7;
+		color: var(--sig-text-muted);
 	}
 </style>

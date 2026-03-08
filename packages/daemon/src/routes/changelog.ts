@@ -1,7 +1,7 @@
 /**
  * Changelog and roadmap routes.
  *
- * Fetches CHANGELOG.md and ROADMAP.md from GitHub, renders them to HTML
+ * Fetches project markdown docs from GitHub, renders them to HTML
  * server-side (no client-side markdown library needed), and caches for 5 min.
  * Falls back to local files when GitHub is unreachable.
  */
@@ -27,6 +27,8 @@ interface CacheEntry {
 	cachedAt: number;
 }
 
+type DocFilename = "CHANGELOG.md" | "ROADMAP.md" | "README.md";
+
 const cache = new Map<string, CacheEntry>();
 
 /** Trim changelog to N most recent release sections. */
@@ -34,6 +36,45 @@ function truncateChangelog(content: string, max = CHANGELOG_MAX_RELEASES): strin
 	const sections = content.split(/(?=\n## \[)/);
 	const header = sections[0] ?? "";
 	return header + sections.slice(1, max + 1).join("");
+}
+
+function extractReadmeOverview(content: string): string {
+	const localFirstMatch = content.match(
+		/Signet is a local-first[\s\S]*?without ever reading their values\./,
+	);
+	const whyMatch = content.match(
+		/Most AI tools build memory silos\.[\s\S]*?unless you configure it to\./,
+	);
+
+	const normalizeParagraph = (text: string): string =>
+		text
+			.replace(/<\/?[^>]+>/g, " ")
+			.replace(/\s+/g, " ")
+			.trim();
+
+	if (localFirstMatch && whyMatch) {
+		return [
+			"# Signet",
+			"## Own your agent. Bring it anywhere.",
+			normalizeParagraph(localFirstMatch[0]),
+			"## Why Signet",
+			normalizeParagraph(whyMatch[0]),
+		].join("\n\n");
+	}
+
+	const cleaned = content
+		.replace(/<[^>]+>/g, "")
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(
+			(line) =>
+				line &&
+				!line.startsWith("![") &&
+				!line.includes("img.shields.io") &&
+				line !== "---",
+		);
+	const fallback = cleaned.slice(0, 18).join("\n");
+	return fallback || "# Signet\n\nSignet overview unavailable.";
 }
 
 /** Minimal markdown → HTML for headings, lists, bold, code, hr. */
@@ -106,7 +147,7 @@ function inlineFormat(s: string): string {
 }
 
 async function fetchAndRender(
-	filename: "CHANGELOG.md" | "ROADMAP.md",
+	filename: DocFilename,
 ): Promise<CacheEntry | null> {
 	const now = Date.now();
 	const cached = cache.get(filename);
@@ -145,7 +186,12 @@ async function fetchAndRender(
 
 	if (!raw) return null;
 
-	const content = filename === "CHANGELOG.md" ? truncateChangelog(raw) : raw;
+	const content =
+		filename === "CHANGELOG.md"
+			? truncateChangelog(raw)
+			: filename === "README.md"
+				? extractReadmeOverview(raw)
+				: raw;
 	const html = renderMarkdown(content);
 	const entry: CacheEntry = { html, source, cachedAt: now };
 	cache.set(filename, entry);
@@ -171,6 +217,17 @@ export function mountChangelogRoutes(app: Hono): void {
 			return c.json(entry);
 		} catch (err) {
 			logger.error("changelog", "Failed to serve roadmap", err as Error);
+			return c.json({ error: "Internal error" }, 500);
+		}
+	});
+
+	app.get("/api/readme", async (c) => {
+		try {
+			const entry = await fetchAndRender("README.md");
+			if (!entry) return c.json({ error: "README unavailable" }, 503);
+			return c.json(entry);
+		} catch (err) {
+			logger.error("changelog", "Failed to serve README overview", err as Error);
 			return c.json({ error: "Internal error" }, 500);
 		}
 	});

@@ -21,6 +21,7 @@ import {
 import BookOpen from "@lucide/svelte/icons/book-open";
 import Brain from "@lucide/svelte/icons/brain";
 import Cog from "@lucide/svelte/icons/cog";
+import ExternalLink from "@lucide/svelte/icons/external-link";
 import Github from "@lucide/svelte/icons/github";
 import ListChecks from "@lucide/svelte/icons/list-checks";
 import Moon from "@lucide/svelte/icons/moon";
@@ -65,9 +66,16 @@ const navItems: NavItem[] = [
 	{ id: "secrets", label: "Secrets", icon: ShieldCheck },
 	{ id: "skills", label: "Marketplace", icon: Store },
 	{ id: "tasks", label: "Tasks", icon: ListChecks },
-	{ id: "changelog", label: "Updates", icon: BookOpen },
 	{ id: "engine-group", label: "Engine", icon: Cog, group: "engine" },
 ];
+
+function openGithub(): void {
+	window.open("https://github.com/Signet-AI/signetai", "_blank");
+}
+
+function openProjectPage(): void {
+	setTab("changelog");
+}
 
 function isActive(item: NavItem): boolean {
 	if (item.group === "memory") return isMemoryGroup(nav.activeTab);
@@ -264,23 +272,36 @@ function activateItem(item: NavItem): void {
 			</Sidebar.MenuItem>
 
 			<Sidebar.MenuItem>
-			<Sidebar.MenuButton
-				data-sidebar-item="github-link"
-				tabindex={getTabIndex("github-link")}
-				onclick={() => window.open("https://github.com/Signet-AI/signetai", "_blank")}
-				onkeydown={(e) => handleFooterKeydown(e, "github-link")}
-				onfocus={() => { focus.sidebarItem = "github-link"; }}
-				tooltipContent="GitHub"
-			>
-					<Github class="size-4" />
-					<span class="text-xs font-[family-name:var(--font-mono)]
-						overflow-hidden whitespace-nowrap
-						transition-opacity duration-200 ease-out
-						group-data-[collapsible=icon]:opacity-0"
+				<div class="flex items-center gap-1">
+					<Sidebar.MenuButton
+						data-sidebar-item="github-link"
+						tabindex={getTabIndex("github-link")}
+						isActive={nav.activeTab === "changelog"}
+						onclick={openProjectPage}
+						onkeydown={(e) => handleFooterKeydown(e, "github-link")}
+						onfocus={() => { focus.sidebarItem = "github-link"; }}
+						tooltipContent="Project"
 					>
-						GitHub
-					</span>
-				</Sidebar.MenuButton>
+						<Github class="size-4" />
+						<span
+							class="text-xs font-[family-name:var(--font-mono)]
+								overflow-hidden whitespace-nowrap
+								transition-opacity duration-200 ease-out
+								group-data-[collapsible=icon]:opacity-0"
+						>
+							Project
+						</span>
+					</Sidebar.MenuButton>
+
+					<Sidebar.MenuButton
+						class="w-8 shrink-0 justify-center px-0
+							group-data-[collapsible=icon]:hidden"
+						onclick={openGithub}
+						tooltipContent="Open GitHub"
+					>
+						<ExternalLink class="size-3.5" />
+					</Sidebar.MenuButton>
+				</div>
 			</Sidebar.MenuItem>
 
 			{#if daemonStatus}
