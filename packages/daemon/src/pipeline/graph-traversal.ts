@@ -63,6 +63,7 @@ export function getTraversalStatus(): TraversalStatusSnapshot | null {
 /** Reset the traversal table availability cache (call after migrations). */
 export function invalidateTraversalCache(): void {
 	traversalTablesAvailableCache = null;
+	lastTraversalStatus = null;
 }
 
 function normalizeToken(value: string): string {

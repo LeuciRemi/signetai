@@ -148,7 +148,7 @@ export const DEFAULT_PIPELINE_V2: PipelineV2Config = {
 		decayIntervalSessions: 10,
 	},
 	predictor: {
-		enabled: false,
+		enabled: true,
 		trainIntervalSessions: 10,
 		minTrainingSessions: 10,
 		scoreTimeoutMs: 120,

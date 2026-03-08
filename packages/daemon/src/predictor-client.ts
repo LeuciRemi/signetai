@@ -236,6 +236,17 @@ function newestExistingBinary(candidates: ReadonlyArray<string>): string | null 
 	return existing[0]?.path ?? null;
 }
 
+function npmLocalBinaryCandidate(): string | null {
+	// When running from a global npm/bun install, the daemon lives in
+	// .../signetai/dist/daemon.js — the downloaded predictor binary is placed
+	// in .../signetai/bin/ by the postinstall script.
+	const platform = process.platform; // 'linux' | 'darwin' | 'win32'
+	const arch = process.arch === "arm64" ? "arm64" : "x64";
+	const ext = platform === "win32" ? ".exe" : "";
+	const name = `signet-predictor-${platform}-${arch}${ext}`;
+	return join(import.meta.dir, "..", "bin", name);
+}
+
 function localBinaryCandidates(): ReadonlyArray<string> {
 	const monoRoot = join(import.meta.dir, "..", "..", "..");
 	const repoCandidates = [
@@ -250,7 +261,8 @@ function localBinaryCandidates(): ReadonlyArray<string> {
 		join(process.cwd(), "packages", "predictor", "target", "debug", "signet-predictor"),
 		join(process.cwd(), "packages", "predictor", "target", "debug", "predictor"),
 	];
-	return [...new Set([...repoCandidates, ...cwdCandidates])];
+	const npmCandidate = npmLocalBinaryCandidate();
+	return [...new Set([...repoCandidates, ...cwdCandidates, ...(npmCandidate ? [npmCandidate] : [])])];
 }
 
 function resolveBinaryPath(configured: string | undefined): string | null {
