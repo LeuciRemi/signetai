@@ -296,6 +296,9 @@ export class ClaudeCodeConnector extends BaseConnector {
 			}
 		}
 
+		// $(pwd) is bash; %CD% is the cmd.exe equivalent
+		const pwdExpr = process.platform === "win32" ? "%CD%" : "$(pwd)";
+
 		const hooks: Record<string, unknown[]> = {};
 
 		if (hooksConfig.sessionStart !== false) {
@@ -305,7 +308,7 @@ export class ClaudeCodeConnector extends BaseConnector {
 						{
 							type: "command",
 							command:
-								`${signetCmd} hook session-start -H claude-code --project "$(pwd)"`,
+								`${signetCmd} hook session-start -H claude-code --project "${pwdExpr}"`,
 							timeout: 3000,
 						},
 					],
@@ -320,7 +323,7 @@ export class ClaudeCodeConnector extends BaseConnector {
 						{
 							type: "command",
 							command:
-								`${signetCmd} hook user-prompt-submit -H claude-code --project "$(pwd)"`,
+								`${signetCmd} hook user-prompt-submit -H claude-code --project "${pwdExpr}"`,
 							timeout: 2000,
 						},
 					],
@@ -335,7 +338,7 @@ export class ClaudeCodeConnector extends BaseConnector {
 						{
 							type: "command",
 							command:
-								`${signetCmd} hook pre-compaction -H claude-code --project "$(pwd)"`,
+								`${signetCmd} hook pre-compaction -H claude-code --project "${pwdExpr}"`,
 							timeout: 3000,
 						},
 					],
