@@ -216,8 +216,11 @@ function resolveBinaryPath(configured: string | undefined): string | null {
 		}
 	}
 
-	// Fallback: check common relative locations from project root
+	// Fallback: check relative to monorepo root (2 dirs up from packages/daemon/src)
+	const monoRoot = join(import.meta.dir, "..", "..", "..");
 	const candidates = [
+		join(monoRoot, "packages", "predictor", "target", "release", "signet-predictor"),
+		join(monoRoot, "packages", "predictor", "target", "release", "predictor"),
 		join(process.cwd(), "packages", "predictor", "target", "release", "signet-predictor"),
 		join(process.cwd(), "packages", "predictor", "target", "release", "predictor"),
 	];

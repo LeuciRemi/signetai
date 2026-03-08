@@ -131,11 +131,16 @@ pub struct StatusResult {
     pub last_trained: Option<String>,
 }
 
+fn default_limit() -> usize { 5000 }
+fn default_epochs() -> usize { 3 }
+
 #[derive(Debug, Deserialize)]
 pub struct TrainFromDbParams {
     pub db_path: String,
     pub checkpoint_path: Option<String>,
+    #[serde(default = "default_limit")]
     pub limit: usize,
+    #[serde(default = "default_epochs")]
     pub epochs: usize,
     #[serde(default = "default_temperature")]
     pub temperature: f64,
