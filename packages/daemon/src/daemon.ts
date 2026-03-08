@@ -4664,7 +4664,7 @@ app.post("/api/hooks/synthesis/complete", async (c) => {
 
 		return c.json({ success: true });
 	} catch (e) {
-		logger.error("hooks", "Synthesis complete failed", e as Error);
+		logger.error("hooks", "Synthesis complete failed", e instanceof Error ? e : new Error(String(e)));
 		return c.json({ error: "Failed to save MEMORY.md" }, 500);
 	}
 });

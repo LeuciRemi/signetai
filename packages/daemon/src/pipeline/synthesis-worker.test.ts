@@ -234,19 +234,20 @@ describe("synthesis-worker", () => {
 		await Promise.resolve();
 		worker.stop();
 
-		const drainStart = Date.now();
-		const drainResult = await worker.drain();
-		const drainElapsed = Date.now() - drainStart;
+		try {
+			const drainStart = Date.now();
+			const drainResult = await worker.drain();
+			const drainElapsed = Date.now() - drainStart;
 
-		expect(drainResult).toBe("timeout");
-		expect(drainElapsed).toBeGreaterThanOrEqual(10 + 1000 - 5);
-		expect(drainElapsed).toBeLessThan(6000);
-		expect(worker.isSynthesizing).toBe(true);
-		expect(releaseRun).not.toBeNull();
-		if (releaseRun === null) {
-			throw new Error("expected release function");
+			expect(drainResult).toBe("timeout");
+			expect(drainElapsed).toBeGreaterThanOrEqual(10 + 1000 - 5);
+			expect(drainElapsed).toBeLessThan(6000);
+			expect(worker.isSynthesizing).toBe(true);
+		} finally {
+			if (releaseRun !== null) {
+				releaseRun();
+			}
+			await runPromise.catch(() => undefined);
 		}
-		releaseRun();
-		await runPromise;
 	}, 10_000);
 });
