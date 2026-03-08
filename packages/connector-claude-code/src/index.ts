@@ -292,7 +292,7 @@ export class ClaudeCodeConnector extends BaseConnector {
 			const cliEntry = process.argv[1] || "";
 			const signetJs = join(cliEntry, "..", "..", "bin", "signet.js");
 			if (existsSync(signetJs)) {
-				signetCmd = `${process.execPath} "${signetJs}"`;
+			signetCmd = `"${process.execPath}" "${signetJs}"`;
 			}
 		}
 
