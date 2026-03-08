@@ -626,6 +626,7 @@ async function ensureOpenClawPluginPackage(
 		stdio: options.silent ? "pipe" : "inherit",
 		timeout: 120_000,
 		env: process.env,
+		windowsHide: true,
 	});
 
 	if (result.status !== 0) {
@@ -978,7 +979,7 @@ async function runCommandWithOutput(
 
 function hasCommand(command: string): boolean {
 	try {
-		const result = spawnSync(command, ["--version"], { stdio: "ignore" });
+		const result = spawnSync(command, ["--version"], { stdio: "ignore", windowsHide: true });
 		return result.status === 0;
 	} catch {
 		return false;
@@ -2754,6 +2755,7 @@ async function importFromGitHub(basePath: string) {
 		const statusResult = spawnSync("git", ["status", "--porcelain"], {
 			cwd: basePath,
 			encoding: "utf-8",
+			windowsHide: true,
 		});
 		if (statusResult.stdout && statusResult.stdout.trim()) {
 			const proceed = await confirm({
@@ -2780,6 +2782,7 @@ async function importFromGitHub(basePath: string) {
 		const cloneResult = spawnSync("git", ["clone", "--depth", "1", gitUrl, tmpDir], {
 			encoding: "utf-8",
 			stdio: ["pipe", "pipe", "pipe"],
+			windowsHide: true,
 		});
 
 		if (cloneResult.status !== 0) {
@@ -2863,11 +2866,13 @@ async function importFromGitHub(basePath: string) {
 			const remoteResult = spawnSync("git", ["remote", "get-url", "origin"], {
 				cwd: basePath,
 				encoding: "utf-8",
+				windowsHide: true,
 			});
 			if (remoteResult.status !== 0) {
 				// No origin remote, add it
 				spawnSync("git", ["remote", "add", "origin", gitUrl], {
 					cwd: basePath,
+					windowsHide: true,
 				});
 				console.log(chalk.dim(`  Set origin remote to ${gitUrl}`));
 			}
@@ -3370,6 +3375,7 @@ async function restartOpenClaw(basePath: string): Promise<boolean> {
 		const result = spawnSync("sh", ["-c", restartCommand], {
 			timeout: 15_000,
 			stdio: "pipe",
+			windowsHide: true,
 		});
 		if (result.status === 0) {
 			spinner.succeed("OpenClaw restarted");

@@ -100,7 +100,7 @@ function pickFirstAvailable(
  */
 function detectFromExecPath(execPath: string | undefined): PackageManagerFamily | null {
 	if (!execPath) return null;
-	const lower = execPath.toLowerCase();
+	const lower = execPath.replaceAll("\\", "/").toLowerCase();
 	if (lower.includes(".bun/") || lower.includes("/bun/")) return "bun";
 	if (lower.includes(".pnpm/") || lower.includes("/pnpm/")) return "pnpm";
 	if (lower.includes(".yarn/") || lower.includes("/yarn/")) return "yarn";
@@ -160,7 +160,8 @@ export function resolvePrimaryPackageManager(
 		options.execPath ?? (typeof process !== "undefined" ? process.argv[0] : undefined);
 	if (!detectFromExecPath(execPathForDetection)) {
 		try {
-			const result = spawnSync("which", ["signet"], { encoding: "utf-8", windowsHide: true });
+			const locator = process.platform === "win32" ? "where" : "which";
+			const result = spawnSync(locator, ["signet"], { encoding: "utf-8", windowsHide: true });
 			if (result.status === 0 && result.stdout.trim()) {
 				execPathForDetection = result.stdout.trim();
 			}

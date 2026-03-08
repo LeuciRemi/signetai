@@ -172,12 +172,11 @@ export class ClaudeCodeConnector extends BaseConnector {
 			const content = readFileSync(settingsPath, "utf-8");
 			const settings = JSON.parse(content);
 
-			// Check if Signet hooks are present
-			return (
-				settings.hooks?.SessionStart?.[0]?.hooks?.[0]?.command?.includes(
-					"signet hook",
-				) || false
-			);
+			// Check if Signet hooks are present (matches both Unix "signet hook ..."
+			// and Windows 'node "...signet.js" hook ...' command formats)
+			const cmd =
+				settings.hooks?.SessionStart?.[0]?.hooks?.[0]?.command ?? "";
+			return cmd.includes("hook session-start");
 		} catch {
 			return false;
 		}
@@ -285,15 +284,15 @@ export class ClaudeCodeConnector extends BaseConnector {
 		};
 
 		// On Windows, bypass the .cmd wrapper which flashes a console window.
-		// Invoke node with the signet.js entry point directly instead.
+		// Invoke the node binary with the signet.js entry point directly.
 		let signetCmd = "signet";
 		if (process.platform === "win32") {
-			// process.argv[1] is the CLI entry point (e.g. .../signetai/dist/cli.js).
+			// process.argv[1] is the entry point (e.g. .../signetai/bin/signet.js).
 			// Navigate up to the package root and into bin/signet.js.
 			const cliEntry = process.argv[1] || "";
 			const signetJs = join(cliEntry, "..", "..", "bin", "signet.js");
 			if (existsSync(signetJs)) {
-				signetCmd = `node "${signetJs}"`;
+				signetCmd = `${process.execPath} "${signetJs}"`;
 			}
 		}
 
