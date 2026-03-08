@@ -2,6 +2,26 @@
 
 All notable changes to Signet are documented here.
 
+## [0.42.3] - 2026-03-08
+
+### Features
+
+- **web**: add scroll-animated marketing lead capture page
+
+### Bug Fixes
+
+- **synthesis**: address Greptile follow-up feedback
+- **synthesis**: close shutdown lock races
+- **synthesis**: expose drain timeout status
+- **synthesis**: tighten shutdown lock handling
+- **synthesis**: harden shutdown and tests
+- **synthesis**: serialize legacy writes and drain shutdown
+
+### Docs
+
+- **synthesis**: document drain() precondition on SynthesisWorkerHandle
+
+
 ## [0.42.2] - 2026-03-06
 
 ### Bug Fixes
