@@ -4583,8 +4583,8 @@ function isInternalCall(c: Context): boolean {
 }
 
 // Check whether the session is bypassed (hooks return no-op responses)
-function checkBypass(body?: { sessionKey?: string }): boolean {
-	const key = body?.sessionKey;
+function checkBypass(body?: { sessionKey?: string; sessionId?: string }): boolean {
+	const key = body?.sessionKey ?? body?.sessionId;
 	if (!key) return false;
 	return isSessionBypassed(key);
 }
@@ -4691,14 +4691,15 @@ app.post("/api/hooks/session-end", async (c) => {
 			return c.json({ memoriesSaved: 0, bypassed: true });
 		}
 
-		const result = await handleSessionEnd(body);
-
-		// Release session claim on end
-		if (sessionKey) {
-			releaseSession(sessionKey);
+		try {
+			const result = await handleSessionEnd(body);
+			return c.json(result);
+		} finally {
+			// Always release session claim, even if extraction throws
+			if (sessionKey) {
+				releaseSession(sessionKey);
+			}
 		}
-
-		return c.json(result);
 	} catch (e) {
 		logger.error("hooks", "Session end hook failed", e as Error);
 		return c.json({ error: "Hook execution failed" }, 500);
@@ -4871,11 +4872,6 @@ app.get("/api/hooks/synthesis/config", (c) => {
 app.post("/api/hooks/synthesis", async (c) => {
 	try {
 		const body = (await c.req.json()) as SynthesisRequest;
-
-		if (checkBypass(body)) {
-			return c.json({ queued: false, bypassed: true });
-		}
-
 		const result = handleSynthesisRequest(body);
 		return c.json(result);
 	} catch (e) {
@@ -4986,16 +4982,11 @@ app.post("/api/sessions/:key/bypass", async (c) => {
 		return c.json({ error: "Session not found" }, 404);
 	}
 
-	const raw: unknown = await c.req.json();
-	if (
-		typeof raw !== "object" ||
-		raw === null ||
-		!("enabled" in raw) ||
-		typeof (raw as Record<string, unknown>).enabled !== "boolean"
-	) {
+	const body = await readOptionalJsonObject(c);
+	if (!body || typeof body.enabled !== "boolean") {
 		return c.json({ error: "enabled (boolean) is required" }, 400);
 	}
-	const enabled = (raw as Record<string, unknown>).enabled === true;
+	const enabled = body.enabled === true;
 
 	if (enabled) {
 		const ok = bypassSession(key);

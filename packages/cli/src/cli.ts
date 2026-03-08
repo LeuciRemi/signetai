@@ -6113,14 +6113,13 @@ program
 
 			console.log(chalk.bold("Active Sessions\n"));
 			console.log(
-				`  ${chalk.dim("KEY".padEnd(14))}${chalk.dim("PATH".padEnd(10))}${chalk.dim("AGE".padEnd(10))}${chalk.dim("BYPASS")}`,
+				`  ${chalk.dim("KEY".padEnd(38))}${chalk.dim("PATH".padEnd(10))}${chalk.dim("AGE".padEnd(10))}${chalk.dim("BYPASS")}`,
 			);
 
 			for (const s of data.sessions) {
-				const shortKey = s.key.slice(0, 12);
 				const age = formatAge(s.claimedAt);
 				const bypassLabel = s.bypassed ? chalk.yellow("bypassed") : chalk.dim("-");
-				console.log(`  ${shortKey.padEnd(14)}${s.runtimePath.padEnd(10)}${age.padEnd(10)}${bypassLabel}`);
+				console.log(`  ${s.key.padEnd(38)}${s.runtimePath.padEnd(10)}${age.padEnd(10)}${bypassLabel}`);
 			}
 			return;
 		}

@@ -6,19 +6,33 @@ import { toast } from "$lib/stores/toast.svelte";
 
 let sessions: SessionInfo[] = $state([]);
 let loading = $state(true);
+let pending = $state(new Set<string>());
 
 async function load(): Promise<void> {
-	const data = await fetchSessions();
-	sessions = [...data.sessions];
-	loading = false;
+	try {
+		const data = await fetchSessions();
+		sessions = [...data.sessions];
+	} catch {
+		toast("Failed to load sessions", "error");
+	} finally {
+		loading = false;
+	}
 }
 
-async function handleToggle(session: SessionInfo): Promise<void> {
-	const result = await toggleSessionBypass(session.key, !session.bypassed);
-	if (result) {
-		sessions = sessions.map((s) => (s.key === session.key ? { ...s, bypassed: result.bypassed } : s));
-	} else {
-		toast("Failed to toggle bypass", "error");
+async function handleToggle(session: SessionInfo, enabled: boolean): Promise<void> {
+	if (pending.has(session.key)) return;
+	pending = new Set([...pending, session.key]);
+	try {
+		const result = await toggleSessionBypass(session.key, enabled);
+		if (result) {
+			sessions = sessions.map((s) => (s.key === session.key ? { ...s, bypassed: result.bypassed } : s));
+		} else {
+			toast("Failed to toggle bypass", "error");
+		}
+	} finally {
+		const next = new Set(pending);
+		next.delete(session.key);
+		pending = next;
 	}
 }
 
@@ -78,7 +92,9 @@ $effect(() => {
 						</span>
 						<Switch.Root
 							checked={session.bypassed}
-							onCheckedChange={() => handleToggle(session)}
+							disabled={pending.has(session.key)}
+							onCheckedChange={(checked: boolean) => handleToggle(session, checked)}
+							aria-label="Bypass session {session.key}"
 						>
 							<Switch.Thumb />
 						</Switch.Root>
