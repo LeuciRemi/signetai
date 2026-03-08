@@ -730,7 +730,9 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		"agent_peers",
 		{
 			title: "List Peer Sessions",
-			description: "List currently active Signet peer agent sessions.",
+			description:
+				"List currently active Signet peer agent sessions. " +
+				"Pass include_self: true to include sessions from the same agent (same agentId).",
 			inputSchema: z.object({
 				agent_id: z.string().optional().describe("Current agent id (default: default)"),
 				session_key: z.string().optional().describe("Current session key (excluded from peers)"),
@@ -768,34 +770,19 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 			description:
 				"Send a structured message to another Signet agent session. " +
 				"Supports local daemon delivery or ACP relay for cross-provider communication.",
-			inputSchema: z.union([
-				z.object({
-					from_agent_id: z.string().optional().describe("Sender agent id"),
-					from_session_key: z.string().optional().describe("Sender session key"),
-					to_agent_id: z.string().optional().describe("Target agent id"),
-					to_session_key: z.string().optional().describe("Target session key"),
-					broadcast: z.boolean().optional().describe("Broadcast to all active sessions"),
-					type: z.enum(["assist_request", "decision_update", "info", "question"]).optional().describe("Message type"),
-					content: z.string().describe("Message content"),
-					via: z.literal("local").optional().describe("Delivery path (default: local)"),
-					acp_base_url: z.string().optional().describe("ACP server base URL"),
-					acp_target_agent_name: z.string().optional().describe("ACP target agent name"),
-					acp_timeout_ms: z.number().optional().describe("ACP request timeout"),
-				}),
-				z.object({
-					from_agent_id: z.string().optional().describe("Sender agent id"),
-					from_session_key: z.string().optional().describe("Sender session key"),
-					to_agent_id: z.string().optional().describe("Target agent id"),
-					to_session_key: z.string().optional().describe("Target session key"),
-					broadcast: z.boolean().optional().describe("Broadcast to all active sessions"),
-					type: z.enum(["assist_request", "decision_update", "info", "question"]).optional().describe("Message type"),
-					content: z.string().describe("Message content"),
-					via: z.literal("acp").describe("Delivery path"),
-					acp_base_url: z.string().min(1).describe("ACP server base URL"),
-					acp_target_agent_name: z.string().min(1).describe("ACP target agent name"),
-					acp_timeout_ms: z.number().optional().describe("ACP request timeout"),
-				}),
-			]),
+			inputSchema: z.object({
+				from_agent_id: z.string().optional().describe("Sender agent id"),
+				from_session_key: z.string().optional().describe("Sender session key"),
+				to_agent_id: z.string().optional().describe("Target agent id"),
+				to_session_key: z.string().optional().describe("Target session key"),
+				broadcast: z.boolean().optional().describe("Broadcast to all active sessions"),
+				type: z.enum(["assist_request", "decision_update", "info", "question"]).optional().describe("Message type"),
+				content: z.string().describe("Message content"),
+				via: z.enum(["local", "acp"]).optional().describe("Delivery path (default: local)"),
+				acp_base_url: z.string().optional().describe("ACP server base URL (required when via='acp')"),
+				acp_target_agent_name: z.string().optional().describe("ACP target agent name (required when via='acp')"),
+				acp_timeout_ms: z.number().optional().describe("ACP request timeout"),
+			}),
 			annotations: { readOnlyHint: false },
 		},
 		async ({
