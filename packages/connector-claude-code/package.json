@@ -1,6 +1,6 @@
 {
   "name": "@signet/connector-claude-code",
-  "version": "0.45.2",
+  "version": "0.46.0",
   "description": "Signet connector for Claude Code (Anthropic CLI)",
   "type": "module",
   "main": "./dist/index.js",

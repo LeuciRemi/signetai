@@ -2,6 +2,19 @@
 
 All notable changes to Signet are documented here.
 
+## [0.45.2] - 2026-03-08
+
+### Features
+
+- **daemon**: add cross-agent messaging and ACP relay
+
+### Bug Fixes
+
+- **daemon**: scope cross-agent SSE presence by project
+- **daemon**: harden cross-agent prompt and routing safety
+- **daemon**: harden cross-agent auth and ACP relay
+
+
 ## [0.45.1] - 2026-03-08
 
 ### Bug Fixes
