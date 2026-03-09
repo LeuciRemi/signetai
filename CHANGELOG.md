@@ -2,6 +2,22 @@
 
 All notable changes to Signet are documented here.
 
+## [0.52.0] - 2026-03-09
+
+### Features
+
+- implement LCM foundation patterns for memory pipeline
+
+### Bug Fixes
+
+- **dag**: preserve row id on DAG write retry via ON CONFLICT DO UPDATE
+- **retention**: address coderabbit pass-5 findings
+- **lcm**: address coderabbit pass-4 findings
+- **retention**: add original_row_json for truly lossless cold archival
+- **lcm**: address greptile pass-2 findings
+- address Greptile review findings
+
+
 ## [0.51.0] - 2026-03-09
 
 ### Features
