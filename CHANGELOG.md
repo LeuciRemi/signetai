@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.48.2] - 2026-03-09
+
+### Features
+
+- inject date/time metadata on every user-prompt-submit hook
+
+
 ## [0.48.1] - 2026-03-09
 
 ### Bug Fixes
