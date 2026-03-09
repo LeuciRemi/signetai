@@ -7,6 +7,8 @@ type HookHandler = (event: Record<string, unknown>, ctx: unknown) => Promise<unk
 const originalFetch = globalThis.fetch;
 let pathCounts = new Map<string, number>();
 let registeredServices: Array<{ stop: () => void | Promise<void> }> = [];
+let failSessionStartCount = 0;
+let failPromptSubmitCount = 0;
 
 function hit(path: string): void {
 	pathCounts.set(path, (pathCounts.get(path) ?? 0) + 1);
@@ -70,6 +72,8 @@ function createMockApi(): {
 beforeEach(() => {
 	pathCounts = new Map<string, number>();
 	registeredServices = [];
+	failSessionStartCount = 0;
+	failPromptSubmitCount = 0;
 
 	globalThis.fetch = (async (input) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -80,8 +84,16 @@ beforeEach(() => {
 			case "/health":
 				return new Response("ok", { status: 200 });
 			case "/api/hooks/session-start":
+				if (failSessionStartCount > 0) {
+					failSessionStartCount -= 1;
+					return jsonResponse({ error: "temporarily unavailable" }, 503);
+				}
 				return jsonResponse({ ok: true });
 			case "/api/hooks/user-prompt-submit":
+				if (failPromptSubmitCount > 0) {
+					failPromptSubmitCount -= 1;
+					return jsonResponse({ error: "temporarily unavailable" }, 503);
+				}
 				return jsonResponse({
 					inject: "turn-memory",
 					memoryCount: 2,
@@ -157,5 +169,75 @@ describe("signet-memory-openclaw lifecycle hooks", () => {
 		expect((result as { prependContext?: string } | undefined)?.prependContext).toContain("turn-memory");
 		expect(getHits("/api/hooks/user-prompt-submit")).toBe(1);
 		expect(getHits("/api/hooks/session-start")).toBe(1);
+	});
+
+	it("deduplicates session-start for sessionless turns when both hooks fire", async () => {
+		const { api, hooks } = createMockApi();
+		signetPlugin.register(api);
+
+		const beforePromptBuild = hooks.get("before_prompt_build");
+		const beforeAgentStart = hooks.get("before_agent_start");
+
+		const event = {
+			prompt: "sessionless turn",
+			messages: [{ role: "assistant", content: "Prior context" }],
+		};
+		const ctx = {
+			agentId: "agent-1",
+		};
+
+		const first = await beforePromptBuild?.(event, ctx);
+		const second = await beforeAgentStart?.(event, ctx);
+
+		expect((first as { prependContext?: string } | undefined)?.prependContext).toContain("turn-memory");
+		expect(second).toBeUndefined();
+		expect(getHits("/api/hooks/session-start")).toBe(1);
+		expect(getHits("/api/hooks/user-prompt-submit")).toBe(1);
+	});
+
+	it("retries session-start on fallback hook when initial claim attempt fails", async () => {
+		failSessionStartCount = 1;
+		const { api, hooks } = createMockApi();
+		signetPlugin.register(api);
+
+		const beforePromptBuild = hooks.get("before_prompt_build");
+		const beforeAgentStart = hooks.get("before_agent_start");
+		const event = {
+			prompt: "retry session claim",
+			messages: [{ role: "assistant", content: "Prior context" }],
+		};
+		const ctx = {
+			sessionKey: "session-retry",
+			agentId: "agent-1",
+		};
+
+		await beforePromptBuild?.(event, ctx);
+		await beforeAgentStart?.(event, ctx);
+
+		expect(getHits("/api/hooks/session-start")).toBe(2);
+	});
+
+	it("does not suppress legacy fallback recall when first recall attempt fails", async () => {
+		failPromptSubmitCount = 1;
+		const { api, hooks } = createMockApi();
+		signetPlugin.register(api);
+
+		const beforePromptBuild = hooks.get("before_prompt_build");
+		const beforeAgentStart = hooks.get("before_agent_start");
+		const event = {
+			prompt: "fallback recall retry",
+			messages: [{ role: "assistant", content: "Prior context" }],
+		};
+		const ctx = {
+			sessionKey: "session-fallback",
+			agentId: "agent-1",
+		};
+
+		const first = await beforePromptBuild?.(event, ctx);
+		const second = await beforeAgentStart?.(event, ctx);
+
+		expect(first).toBeUndefined();
+		expect((second as { prependContext?: string } | undefined)?.prependContext).toContain("turn-memory");
+		expect(getHits("/api/hooks/user-prompt-submit")).toBe(2);
 	});
 });

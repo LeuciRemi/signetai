@@ -206,13 +206,29 @@ describe("OpenClawConnector config patching", () => {
 	it("keeps legacy OPENCLAW_STATE_HOME compatibility", () => {
 		const stateHome = join(tmpRoot, "legacy-state-home");
 		const configPath = join(stateHome, "openclaw.json");
+		const legacyClawdbotPath = join(stateHome, "clawdbot.json");
 		mkdirSync(stateHome, { recursive: true });
 		writeFileSync(configPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
+		writeFileSync(legacyClawdbotPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
 
 		process.env.OPENCLAW_STATE_HOME = stateHome;
 
 		const connector = new OpenClawConnector();
-		expect(connector.getDiscoveredConfigPaths()).toContain(configPath);
+		const discovered = connector.getDiscoveredConfigPaths();
+		expect(discovered).toContain(configPath);
+		expect(discovered).not.toContain(legacyClawdbotPath);
+	});
+
+	it("discovers legacy-named config files under OPENCLAW_STATE_DIR", () => {
+		const stateDir = join(tmpRoot, "state-openclaw-mixed");
+		const legacyConfigPath = join(stateDir, "clawdbot.json");
+		mkdirSync(stateDir, { recursive: true });
+		writeFileSync(legacyConfigPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
+
+		process.env.OPENCLAW_STATE_DIR = stateDir;
+
+		const connector = new OpenClawConnector();
+		expect(connector.getDiscoveredConfigPaths()).toContain(legacyConfigPath);
 	});
 
 	it("ignores invalid configs when discovering workspaces", () => {

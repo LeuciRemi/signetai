@@ -599,7 +599,12 @@ export class OpenClawConnector extends BaseConnector {
 		// Current state-dir env vars + legacy Signet compatibility fallback.
 		pushStateDir(process.env.OPENCLAW_STATE_DIR);
 		pushStateDir(process.env.CLAWDBOT_STATE_DIR);
-		pushStateDir(process.env.OPENCLAW_STATE_HOME);
+		// Preserve historical behavior: OPENCLAW_STATE_HOME maps to openclaw.json only.
+		push(
+			process.env.OPENCLAW_STATE_HOME
+				? join(this.expandPath(process.env.OPENCLAW_STATE_HOME), "openclaw.json")
+				: undefined,
+		);
 
 		for (const stateDir of stateDirs) {
 			for (const filename of configFileNames) {

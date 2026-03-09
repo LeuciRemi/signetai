@@ -728,6 +728,13 @@ function buildInjectionResult(result: UserPromptSubmitResult): { prependContext:
 	};
 }
 
+function buildSessionlessTurnKey(event: Record<string, unknown>, agentId: string | undefined): string {
+	const rawPrompt = typeof event.prompt === "string" ? extractUserMessage(event.prompt) : "";
+	const normalizedPrompt = rawPrompt.trim().replace(/\s+/g, " ").slice(0, 240);
+	const messageCount = Array.isArray(event.messages) ? event.messages.length : -1;
+	return `${agentId ?? "-"}|${messageCount}|${normalizedPrompt}`;
+}
+
 async function registerMarketplaceProxyTools(
 	api: OpenClawPluginApi,
 	options: MarketplaceContextOptions,
@@ -1237,6 +1244,7 @@ const signetPlugin = {
 		// ==================================================================
 
 		const claimedSessions = new Set<string>();
+		const sessionlessSessionStarts = new Map<string, number>();
 		const recentPromptTurns = new Map<string, number>();
 
 		const resolveHookContext = (
@@ -1252,9 +1260,28 @@ const signetPlugin = {
 			};
 		};
 
-		const ensureSessionStarted = async (sessionKey: string | undefined, agentId: string | undefined): Promise<void> => {
+		const ensureSessionStarted = async (
+			event: Record<string, unknown>,
+			sessionKey: string | undefined,
+			agentId: string | undefined,
+		): Promise<void> => {
 			if (!sessionKey) {
-				await onSessionStart("openclaw", { ...opts, sessionKey, agentId });
+				const now = Date.now();
+				cleanupRecentPromptTurns(sessionlessSessionStarts, now);
+				const sessionlessKey = buildSessionlessTurnKey(event, agentId);
+				const recentStartAt = sessionlessSessionStarts.get(sessionlessKey);
+				if (typeof recentStartAt === "number" && now - recentStartAt <= PROMPT_DEDUPE_WINDOW_MS) {
+					return;
+				}
+
+				const startResult = await onSessionStart("openclaw", {
+					...opts,
+					sessionKey,
+					agentId,
+				});
+				if (startResult) {
+					sessionlessSessionStarts.set(sessionlessKey, now);
+				}
 				return;
 			}
 
@@ -1262,8 +1289,14 @@ const signetPlugin = {
 				return;
 			}
 
-			await onSessionStart("openclaw", { ...opts, sessionKey, agentId });
-			claimedSessions.add(sessionKey);
+			const startResult = await onSessionStart("openclaw", {
+				...opts,
+				sessionKey,
+				agentId,
+			});
+			if (startResult) {
+				claimedSessions.add(sessionKey);
+			}
 		};
 
 		const runPromptInjection = async (
@@ -1290,7 +1323,6 @@ const signetPlugin = {
 			if (typeof recentTs === "number" && now - recentTs <= PROMPT_DEDUPE_WINDOW_MS) {
 				return undefined;
 			}
-			recentPromptTurns.set(promptTurnKey, now);
 
 			const lastAssistantMessage = extractLastAssistantMessage(event);
 			const result = await onUserPromptSubmit("openclaw", {
@@ -1303,6 +1335,7 @@ const signetPlugin = {
 			if (!result) {
 				return undefined;
 			}
+			recentPromptTurns.set(promptTurnKey, now);
 			return buildInjectionResult(result);
 		};
 
@@ -1313,7 +1346,7 @@ const signetPlugin = {
 				if (!cfg.enabled) return undefined;
 
 				const { sessionKey, agentId } = resolveHookContext(ctx);
-				await ensureSessionStarted(sessionKey, agentId);
+				await ensureSessionStarted(event, sessionKey, agentId);
 				return runPromptInjection(event, sessionKey, agentId);
 			},
 			{ priority: 20 },
@@ -1324,7 +1357,7 @@ const signetPlugin = {
 			if (!cfg.enabled) return undefined;
 
 			const { sessionKey, agentId } = resolveHookContext(ctx);
-			await ensureSessionStarted(sessionKey, agentId);
+			await ensureSessionStarted(event, sessionKey, agentId);
 			return runPromptInjection(event, sessionKey, agentId);
 		});
 
