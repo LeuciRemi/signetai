@@ -65,7 +65,7 @@ let canvas = $state<HTMLCanvasElement | null>(null);
 // Camera state (internal)
 let camX = 0;
 let camY = 0;
-let camZoom = 1;
+let camZoom = 0.15;
 
 // Interaction state
 let isPanning = false;
@@ -86,6 +86,18 @@ let lastFrameTime = 0;
 let needsRedraw = true;
 let lastHoveredId: string | null = null;
 let userAdjustedCamera = false;
+
+// Throttled camera fit — avoids O(n) computeWorldBounds on every tick
+let lastFitTime = 0;
+const FIT_THROTTLE_MS = 100;
+
+function throttledFitCamera(): void {
+	const now = performance.now();
+	if (now - lastFitTime > FIT_THROTTLE_MS) {
+		fitCameraToBounds();
+		lastFitTime = now;
+	}
+}
 
 // Minimap state
 const MINIMAP_WIDTH = 160;
@@ -123,7 +135,7 @@ const MAX_EDGES_FAR = 5000;
 export function resetCamera(): void {
 	camX = 0;
 	camY = 0;
-	camZoom = 1;
+	camZoom = 0.15;
 	userAdjustedCamera = false;
 }
 
@@ -153,10 +165,15 @@ export function startSimulation(
 			forceCollide().radius((entry: any) => entry.radius + 2),
 		)
 		.alphaDecay(0.03)
-		.on("tick", requestRedraw)
+		.on("tick", () => {
+			if (!userAdjustedCamera) throttledFitCamera();
+			requestRedraw();
+		})
 		.on("end", () => {
 			if (!userAdjustedCamera) fitCameraToBounds();
 		});
+	// Fit immediately — nodes already have UMAP positions before simulation ticks
+	if (!userAdjustedCamera) fitCameraToBounds();
 }
 
 export function startKnowledgeGraphSimulation(
@@ -200,10 +217,14 @@ export function startKnowledgeGraphSimulation(
 			forceCollide().radius((entry: any) => entry.radius + 2),
 		)
 		.alphaDecay(0.03)
-		.on("tick", requestRedraw)
+		.on("tick", () => {
+			if (!userAdjustedCamera) throttledFitCamera();
+			requestRedraw();
+		})
 		.on("end", () => {
 			if (!userAdjustedCamera) fitCameraToBounds();
 		});
+	if (!userAdjustedCamera) fitCameraToBounds();
 }
 
 export function updatePhysics(nextPhysics: GraphPhysicsConfig): void {
@@ -272,7 +293,7 @@ function fitCameraToBounds(): void {
 	if (nodes.length === 0) {
 		camX = 0;
 		camY = 0;
-		camZoom = 1;
+		camZoom = 0.15;
 		return;
 	}
 
@@ -285,7 +306,7 @@ function fitCameraToBounds(): void {
 
 	camX = (bounds.minX + bounds.maxX) / 2;
 	camY = (bounds.minY + bounds.maxY) / 2;
-	camZoom = Math.max(0.08, Math.min(1, fitZoom));
+	camZoom = Math.max(0.08, fitZoom);
 }
 
 function screenToWorld(sx: number, sy: number): [number, number] {

@@ -12,19 +12,19 @@
 
 <div class="banner">
 	<div class="banner-content">
-		{#if children}
-			<div class="banner-left">
+		<div class="banner-left">
+			{#if children}
 				{@render children()}
-			</div>
-		{/if}
+			{/if}
+		</div>
 		<div class="banner-text">
 			<h2 class="banner-title">{title}</h2>
 		</div>
-		{#if right}
-			<div class="banner-right">
+		<div class="banner-right">
+			{#if right}
 				{@render right()}
-			</div>
-		{/if}
+			{/if}
+		</div>
 	</div>
 	<!-- Coordinate markers -->
 	<span class="banner-coord banner-coord--tl" aria-hidden="true">0,0</span>
