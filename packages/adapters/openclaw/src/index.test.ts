@@ -43,8 +43,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 function createMockApi(): {
 	api: OpenClawPluginApi;
 	hooks: Map<string, HookHandler>;
+	hookOptions: Map<string, unknown>;
 } {
 	const hooks = new Map<string, HookHandler>();
+	const hookOptions = new Map<string, unknown>();
 
 	const api: OpenClawPluginApi = {
 		pluginConfig: {
@@ -71,15 +73,18 @@ function createMockApi(): {
 		registerService(service) {
 			registeredServices.push(service);
 		},
-		on(event, handler) {
+		on(event, handler, opts) {
 			hooks.set(event, handler);
+			if (opts !== undefined) {
+				hookOptions.set(event, opts);
+			}
 		},
 		resolvePath(input) {
 			return input;
 		},
 	};
 
-	return { api, hooks };
+	return { api, hooks, hookOptions };
 }
 
 beforeEach(() => {
@@ -155,7 +160,7 @@ afterEach(async () => {
 
 describe("signet-memory-openclaw lifecycle hooks", () => {
 	it("prefers before_prompt_build and deduplicates legacy fallback for the same turn", async () => {
-		const { api, hooks } = createMockApi();
+		const { api, hooks, hookOptions } = createMockApi();
 		signetPlugin.register(api);
 
 		const beforePromptBuild = hooks.get("before_prompt_build");
@@ -163,6 +168,7 @@ describe("signet-memory-openclaw lifecycle hooks", () => {
 
 		expect(beforePromptBuild).toBeDefined();
 		expect(beforeAgentStart).toBeDefined();
+		expect(hookOptions.get("before_prompt_build")).toMatchObject({ priority: 20 });
 
 		const event = {
 			prompt: "Remember release criteria for this plugin",
