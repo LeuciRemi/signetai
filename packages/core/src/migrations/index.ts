@@ -32,6 +32,7 @@ import { up as predictorColumns } from "./023-predictor-columns";
 import { up as predictorComparisonColumns } from "./024-predictor-comparison-columns";
 import { up as agentFeedback } from "./025-agent-feedback";
 import { up as predictorTrainingPairs } from "./026-predictor-training-pairs";
+import { up as backfillCanonicalNames } from "./027-backfill-canonical-names";
 
 // -- Public interface consumed by Database.init() --
 
@@ -161,6 +162,11 @@ export const MIGRATIONS: readonly Migration[] = [
 		version: 26,
 		name: "predictor-training-pairs",
 		up: predictorTrainingPairs,
+	},
+	{
+		version: 27,
+		name: "backfill-canonical-names",
+		up: backfillCanonicalNames,
 	},
 ];
 
