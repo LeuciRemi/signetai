@@ -252,7 +252,7 @@ onMount(() => {
 		{/snippet}
 	</PageBanner>
 	<!-- Board -->
-	<div class="flex-1 min-h-0 overflow-auto">
+	<div class="flex flex-col flex-1 min-h-0 overflow-auto">
 		<TaskBoard
 			tasks={ts.tasks}
 			loading={ts.loading}

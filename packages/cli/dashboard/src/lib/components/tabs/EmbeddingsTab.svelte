@@ -1979,8 +1979,12 @@ $effect(() => {
 		{/if}
 
 			<div class="absolute left-3 top-3 bottom-3 z-[8] pointer-events-none flex flex-col justify-end items-start max-w-[220px]">
-				<Collapsible.Root bind:open={legendOpen} class="pointer-events-auto min-w-[180px]">
-					<Collapsible.Content class="border border-[var(--sig-border)] px-3 py-2 overflow-y-auto">
+				<Collapsible.Root bind:open={legendOpen} class="pointer-events-auto flex min-w-[180px] max-h-full flex-col-reverse">
+					<Collapsible.Trigger class="flex w-full items-center gap-2 px-3 py-1.5 min-w-[180px] border border-[var(--sig-border)] text-[10px] font-[family-name:var(--font-mono)] uppercase tracking-[0.06em] text-[var(--sig-text-muted)] bg-transparent" aria-expanded={legendOpen}>
+						<span>Legend</span>
+						<ChevronDown class={`size-3 text-[var(--sig-text-muted)] transition-transform ${legendOpen ? 'rotate-180' : ''}`} />
+					</Collapsible.Trigger>
+					<Collapsible.Content class="min-h-0 max-h-[min(40vh,24rem)] overflow-y-auto border border-[var(--sig-border)] bg-[rgba(5,5,5,0.88)] px-3 py-2">
 						<div class="text-[10px] text-[var(--sig-text-muted)] leading-[1.35] mb-1">
 							<span class="text-[var(--sig-text)]">Color</span> = {nodeColorMode === "none" ? "off" : nodeColorMode === "newness" ? "by recency" : "by source"}
 						</div>
@@ -2053,10 +2057,6 @@ $effect(() => {
 							</div>
 						{/if}
 					</Collapsible.Content>
-					<Collapsible.Trigger class="flex w-full items-center gap-2 px-3 py-1.5 min-w-[180px] border border-[var(--sig-border)] text-[10px] font-[family-name:var(--font-mono)] uppercase tracking-[0.06em] text-[var(--sig-text-muted)] bg-transparent">
-						<span>Legend</span>
-						<ChevronDown class={`size-3 text-[var(--sig-text-muted)] transition-transform ${legendOpen ? 'rotate-180' : ''}`} />
-					</Collapsible.Trigger>
 				</Collapsible.Root>
 			</div>
 
