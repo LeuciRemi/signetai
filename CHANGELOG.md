@@ -2,6 +2,25 @@
 
 All notable changes to Signet are documented here.
 
+## [0.47.2] - 2026-03-09
+
+### Features
+
+- **dashboard**: pinterest-inspired theme refresh
+
+### Bug Fixes
+
+- **dashboard**: address remaining PR #168 review comments
+- **dashboard**: Address third round of review findings
+- **dashboard**: Address second round of review findings
+- **dashboard**: Address Greptile and CodeRabbit review findings
+- **dashboard**: address Greptile review feedback
+
+### Docs
+
+- add PR screenshots for theme refresh
+
+
 ## [0.47.1] - 2026-03-09
 
 ### Bug Fixes
