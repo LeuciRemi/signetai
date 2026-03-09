@@ -6,7 +6,8 @@
  */
 
 export interface OpenClawPluginApi {
-	readonly pluginConfig: unknown;
+	readonly pluginConfig?: Record<string, unknown>;
+	readonly config?: unknown;
 	readonly logger: {
 		info(msg: string): void;
 		warn(msg: string): void;
@@ -14,23 +15,22 @@ export interface OpenClawPluginApi {
 	};
 	registerTool(
 		definition: OpenClawToolDefinition,
-		metadata: { name: string },
+		metadata?: {
+			name?: string;
+			names?: string[];
+			optional?: boolean;
+		},
 	): void;
-	registerCli(
-		fn: (ctx: { program: unknown }) => void,
-		opts: { commands: readonly string[] },
-	): void;
+	registerCli(fn: (ctx: { program: unknown }) => void, opts?: { commands?: readonly string[] }): void;
 	registerService(service: {
 		id: string;
-		start(): void;
-		stop(): void;
+		start(): void | Promise<void>;
+		stop(): void | Promise<void>;
 	}): void;
 	on(
 		event: string,
-		handler: (
-			event: Record<string, unknown>,
-			ctx: unknown,
-		) => Promise<unknown>,
+		handler: (event: Record<string, unknown>, ctx: unknown) => unknown | Promise<unknown>,
+		opts?: { priority?: number },
 	): void;
 	resolvePath?(p: string): string;
 }
@@ -40,10 +40,7 @@ export interface OpenClawToolDefinition {
 	readonly label: string;
 	readonly description: string;
 	readonly parameters: unknown;
-	execute(
-		toolCallId: string,
-		params: unknown,
-	): Promise<OpenClawToolResult>;
+	execute(toolCallId: string, params: unknown): Promise<OpenClawToolResult>;
 }
 
 export interface OpenClawToolResult {

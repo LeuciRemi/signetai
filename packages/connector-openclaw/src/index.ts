@@ -21,27 +21,21 @@
  * ```
  */
 
-import {
-	BaseConnector,
-	type InstallResult,
-	type UninstallResult,
-} from "@signet/connector-base";
-import {
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
-import { runInNewContext } from "node:vm";
+import { BaseConnector, type InstallResult, type UninstallResult } from "@signet/connector-base";
+import { parse as parseJson5 } from "json5";
 
 // ============================================================================
 // Deep merge helper
 // ============================================================================
 
 type JsonObject = Record<string, unknown>;
+
+function isJsonObject(value: unknown): value is JsonObject {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 interface OpenClawConfigShape {
 	hooks?: {
@@ -53,10 +47,7 @@ interface OpenClawConfigShape {
 		slots?: {
 			memory?: string;
 		};
-		entries?: Record<
-			string,
-			{ enabled?: boolean; config?: Record<string, unknown> }
-		>;
+		entries?: Record<string, { enabled?: boolean; config?: Record<string, unknown> }>;
 	};
 	agents?: {
 		defaults?: {
@@ -209,14 +200,16 @@ function stripTrailingCommas(source: string): string {
 
 function parseJsonOrJson5(raw: string): JsonObject {
 	const content = raw.replace(/^\uFEFF/, "");
+	let lastError: Error | null = null;
 
 	try {
-		const parsed = JSON.parse(content);
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		const parsed: unknown = JSON.parse(content);
+		if (!isJsonObject(parsed)) {
 			throw new Error("Top-level config must be an object");
 		}
-		return parsed as JsonObject;
-	} catch {
+		return parsed;
+	} catch (error) {
+		lastError = error instanceof Error ? error : new Error(String(error));
 		// Fallback to JSON5-like parsing.
 	}
 
@@ -224,25 +217,26 @@ function parseJsonOrJson5(raw: string): JsonObject {
 	const withoutTrailingCommas = stripTrailingCommas(withoutComments);
 
 	try {
-		const parsed = JSON.parse(withoutTrailingCommas);
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		const parsed: unknown = JSON.parse(withoutTrailingCommas);
+		if (!isJsonObject(parsed)) {
 			throw new Error("Top-level config must be an object");
 		}
-		return parsed as JsonObject;
-	} catch {
-		// Fall through to the isolated expression parser.
+		return parsed;
+	} catch (error) {
+		lastError = error instanceof Error ? error : new Error(String(error));
 	}
 
-	const evaluated = runInNewContext(
-		`(${withoutComments})`,
-		{},
-		{ timeout: 250 },
-	);
-	if (!evaluated || typeof evaluated !== "object" || Array.isArray(evaluated)) {
-		throw new Error("Top-level config must be an object");
+	try {
+		const parsed: unknown = parseJson5(withoutComments);
+		if (!isJsonObject(parsed)) {
+			throw new Error("Top-level config must be an object");
+		}
+		return parsed;
+	} catch (error) {
+		const json5Error = error instanceof Error ? error : new Error(String(error));
+		const priorError = lastError ? `; prior parse error: ${lastError.message}` : "";
+		throw new Error(`could not parse JSON/JSON5 config (${json5Error.message}${priorError})`);
 	}
-
-	return evaluated as JsonObject;
 }
 
 // ============================================================================
@@ -265,10 +259,7 @@ export class OpenClawConnector extends BaseConnector {
 	 * - Patches OpenClaw workspace only when explicitly requested
 	 * - Installs hook handler files under `<basePath>/hooks/agent-memory/`
 	 */
-	async install(
-		basePath: string,
-		options: OpenClawInstallOptions = {},
-	): Promise<InstallResult> {
+	async install(basePath: string, options: OpenClawInstallOptions = {}): Promise<InstallResult> {
 		const expandedBasePath = this.expandPath(basePath);
 		const filesWritten: string[] = [];
 		const configsPatched: string[] = [];
@@ -281,8 +272,7 @@ export class OpenClawConnector extends BaseConnector {
 		const patch: JsonObject = {};
 		if (configureWorkspace) {
 			this.validateWorkspacePath(basePath);
-			const ownershipWarnings =
-				this.checkWorkspaceOwnership(expandedBasePath);
+			const ownershipWarnings = this.checkWorkspaceOwnership(expandedBasePath);
 			warnings.push(...ownershipWarnings);
 			deepMerge(patch, {
 				agents: { defaults: { workspace: expandedBasePath } },
@@ -357,8 +347,7 @@ export class OpenClawConnector extends BaseConnector {
 	async configureWorkspace(basePath: string): Promise<string[]> {
 		this.validateWorkspacePath(basePath);
 		const expandedBasePath = this.expandPath(basePath);
-		const ownershipWarnings =
-			this.checkWorkspaceOwnership(expandedBasePath);
+		const ownershipWarnings = this.checkWorkspaceOwnership(expandedBasePath);
 		for (const w of ownershipWarnings) {
 			console.warn(w);
 		}
@@ -390,9 +379,7 @@ export class OpenClawConnector extends BaseConnector {
 
 		for (const configPath of this.getDiscoveredConfigPaths()) {
 			try {
-				const config = parseJsonOrJson5(
-					readFileSync(configPath, "utf-8"),
-				) as OpenClawConfigShape;
+				const config = parseJsonOrJson5(readFileSync(configPath, "utf-8")) as OpenClawConfigShape;
 				const rawWorkspace = config.agents?.defaults?.workspace;
 				if (typeof rawWorkspace !== "string") {
 					continue;
@@ -457,9 +444,7 @@ export class OpenClawConnector extends BaseConnector {
 			},
 		});
 
-		const configsPatched = [
-			...new Set([...hookResult.patched, ...pluginResult.patched]),
-		];
+		const configsPatched = [...new Set([...hookResult.patched, ...pluginResult.patched])];
 
 		// Remove hook handler files from the first valid base path
 		const basePath = join(this.getHomeDir(), ".agents");
@@ -482,25 +467,17 @@ export class OpenClawConnector extends BaseConnector {
 	isInstalled(): boolean {
 		for (const configPath of this.getDiscoveredConfigPaths()) {
 			try {
-				const config = parseJsonOrJson5(
-					readFileSync(configPath, "utf-8"),
-				) as OpenClawConfigShape;
+				const config = parseJsonOrJson5(readFileSync(configPath, "utf-8")) as OpenClawConfigShape;
 				// Legacy hook system
-				if (
-					config.hooks?.internal?.entries?.["signet-memory"]?.enabled === true
-				) {
+				if (config.hooks?.internal?.entries?.["signet-memory"]?.enabled === true) {
 					return true;
 				}
 				// Plugin system (new name)
-				if (
-					config.plugins?.entries?.["signet-memory-openclaw"]?.enabled === true
-				) {
+				if (config.plugins?.entries?.["signet-memory-openclaw"]?.enabled === true) {
 					return true;
 				}
 				// Plugin system (old name, pre-migration)
-				if (
-					config.plugins?.entries?.["signet-memory"]?.enabled === true
-				) {
+				if (config.plugins?.entries?.["signet-memory"]?.enabled === true) {
 					return true;
 				}
 			} catch {
@@ -515,9 +492,7 @@ export class OpenClawConnector extends BaseConnector {
 
 		for (const configPath of this.getDiscoveredConfigPaths()) {
 			try {
-				const config = parseJsonOrJson5(
-					readFileSync(configPath, "utf-8"),
-				) as OpenClawConfigShape;
+				const config = parseJsonOrJson5(readFileSync(configPath, "utf-8")) as OpenClawConfigShape;
 
 				const pluginEntry =
 					config.plugins?.entries?.["signet-memory-openclaw"]?.enabled === true ||
@@ -530,9 +505,7 @@ export class OpenClawConnector extends BaseConnector {
 					return "plugin";
 				}
 
-				if (
-					config.hooks?.internal?.entries?.["signet-memory"]?.enabled === true
-				) {
+				if (config.hooks?.internal?.entries?.["signet-memory"]?.enabled === true) {
 					sawLegacy = true;
 				}
 			} catch {
@@ -570,9 +543,7 @@ export class OpenClawConnector extends BaseConnector {
 		const resolved = resolve(this.expandPath(p));
 		const tmp = tmpdir();
 		if (resolved.startsWith(tmp) || resolved.startsWith("/tmp/")) {
-			throw new Error(
-				`Refusing to set workspace to temp directory: ${resolved}`,
-			);
+			throw new Error(`Refusing to set workspace to temp directory: ${resolved}`);
 		}
 	}
 
@@ -588,15 +559,13 @@ export class OpenClawConnector extends BaseConnector {
 		const homeSep = home.endsWith("/") ? home : `${home}/`;
 		if (!resolved.startsWith(homeSep) && resolved !== home) {
 			warnings.push(
-				`[signet/openclaw] workspace path "${resolved}" is outside ` +
-					`current user home "${home}". This is likely a misconfiguration.`,
+				`[signet/openclaw] workspace path "${resolved}" is outside current user home "${home}". This is likely a misconfiguration.`,
 			);
 		}
 
 		if (!existsSync(resolved)) {
 			warnings.push(
-				`[signet/openclaw] workspace path "${resolved}" does not exist. ` +
-					`Run \`signet setup\` or create the directory manually.`,
+				`[signet/openclaw] workspace path "${resolved}" does not exist. Run \`signet setup\` or create the directory manually.`,
 			);
 		}
 
@@ -606,6 +575,13 @@ export class OpenClawConnector extends BaseConnector {
 	private getConfigCandidates(): string[] {
 		const seen = new Set<string>();
 		const candidates: string[] = [];
+		const configFileNames = ["openclaw.json", "clawdbot.json", "moldbot.json", "moltbot.json"] as const;
+		const namedConfigPairs = [
+			{ dirName: "openclaw", fileName: "openclaw.json" },
+			{ dirName: "clawdbot", fileName: "clawdbot.json" },
+			{ dirName: "moldbot", fileName: "moldbot.json" },
+			{ dirName: "moltbot", fileName: "moltbot.json" },
+		] as const;
 
 		const push = (rawPath: string | undefined) => {
 			if (!rawPath) return;
@@ -615,14 +591,54 @@ export class OpenClawConnector extends BaseConnector {
 			candidates.push(expanded);
 		};
 
-		const envPath = process.env.OPENCLAW_CONFIG_PATH;
-		if (envPath) {
-			for (const pathEntry of envPath.split(delimiter)) {
+		const pushPathList = (raw: string | undefined) => {
+			if (!raw) {
+				return;
+			}
+			for (const pathEntry of raw.split(delimiter)) {
 				push(pathEntry);
+			}
+		};
+
+		// Current OpenClaw/Clawdbot explicit config env vars.
+		pushPathList(process.env.OPENCLAW_CONFIG_PATH);
+		pushPathList(process.env.CLAWDBOT_CONFIG_PATH);
+
+		const home = this.getHomeDir();
+		const stateDirs: string[] = [];
+		const pushStateDir = (raw: string | undefined) => {
+			if (!raw || raw.trim().length === 0) {
+				return;
+			}
+			stateDirs.push(this.expandPath(raw.trim()));
+		};
+
+		// Current state-dir env vars + legacy Signet compatibility fallback.
+		pushStateDir(process.env.OPENCLAW_STATE_DIR);
+		pushStateDir(process.env.CLAWDBOT_STATE_DIR);
+		// Preserve historical behavior: OPENCLAW_STATE_HOME maps to openclaw.json only.
+		push(
+			process.env.OPENCLAW_STATE_HOME
+				? join(this.expandPath(process.env.OPENCLAW_STATE_HOME), "openclaw.json")
+				: undefined,
+		);
+
+		for (const stateDir of stateDirs) {
+			for (const filename of configFileNames) {
+				push(join(stateDir, filename));
 			}
 		}
 
-		const home = this.getHomeDir();
+		// Historical home-dir overrides.
+		push(process.env.OPENCLAW_HOME ? join(this.expandPath(process.env.OPENCLAW_HOME), "openclaw.json") : undefined);
+		push(process.env.CLAWDBOT_HOME ? join(this.expandPath(process.env.CLAWDBOT_HOME), "clawdbot.json") : undefined);
+		push(process.env.MOLDBOT_HOME ? join(this.expandPath(process.env.MOLDBOT_HOME), "moldbot.json") : undefined);
+		push(process.env.MOLTBOT_HOME ? join(this.expandPath(process.env.MOLTBOT_HOME), "moltbot.json") : undefined);
+
+		for (const pair of namedConfigPairs) {
+			push(join(home, `.${pair.dirName}`, pair.fileName));
+		}
+
 		const xdgConfigHome = process.env.XDG_CONFIG_HOME
 			? this.expandPath(process.env.XDG_CONFIG_HOME)
 			: join(home, ".config");
@@ -630,41 +646,11 @@ export class OpenClawConnector extends BaseConnector {
 			? this.expandPath(process.env.XDG_STATE_HOME)
 			: join(home, ".local", "state");
 
-		push(
-			process.env.OPENCLAW_HOME
-				? join(this.expandPath(process.env.OPENCLAW_HOME), "openclaw.json")
-				: undefined,
-		);
-		push(
-			process.env.CLAWDBOT_HOME
-				? join(this.expandPath(process.env.CLAWDBOT_HOME), "clawdbot.json")
-				: undefined,
-		);
-		push(
-			process.env.MOLTBOT_HOME
-				? join(this.expandPath(process.env.MOLTBOT_HOME), "moltbot.json")
-				: undefined,
-		);
-		push(
-			process.env.OPENCLAW_STATE_HOME
-				? join(
-						this.expandPath(process.env.OPENCLAW_STATE_HOME),
-						"openclaw.json",
-					)
-				: undefined,
-		);
-
-		push(join(home, ".openclaw", "openclaw.json"));
-		push(join(home, ".clawdbot", "clawdbot.json"));
-		push(join(home, ".moltbot", "moltbot.json"));
-
-		push(join(xdgConfigHome, "openclaw", "openclaw.json"));
-		push(join(xdgConfigHome, "clawdbot", "clawdbot.json"));
-		push(join(xdgConfigHome, "moltbot", "moltbot.json"));
-
-		push(join(xdgStateHome, "openclaw", "openclaw.json"));
-		push(join(xdgStateHome, "clawdbot", "clawdbot.json"));
-		push(join(xdgStateHome, "moltbot", "moltbot.json"));
+		// XDG fallbacks for older non-default installs.
+		for (const pair of namedConfigPairs) {
+			push(join(xdgConfigHome, pair.dirName, pair.fileName));
+			push(join(xdgStateHome, pair.dirName, pair.fileName));
+		}
 
 		return candidates;
 	}
@@ -736,20 +722,15 @@ export class OpenClawConnector extends BaseConnector {
 					entriesObj[pluginName] = pluginEntry;
 					pluginsObj.entries = entriesObj;
 					config.plugins = pluginsObj;
-					delete config.signet;
+					config.signet = undefined;
 				}
 
 				deepMerge(config, patch);
-				writeFileSync(
-					configPath,
-					JSON.stringify(config, null, indent),
-				);
+				writeFileSync(configPath, JSON.stringify(config, null, indent));
 				patched.push(configPath);
 			} catch (e) {
-				const message =
-					(e as Error).message || "unknown parse/write error";
-				const warning =
-					`[signet/openclaw] Skipped patch for ${configPath}: ${message}`;
+				const message = (e as Error).message || "unknown parse/write error";
+				const warning = `[signet/openclaw] Skipped patch for ${configPath}: ${message}`;
 				warnings.push(warning);
 				console.warn(warning);
 			}
@@ -786,9 +767,7 @@ export class OpenClawConnector extends BaseConnector {
 		try {
 			config = parseJsonOrJson5(raw);
 		} catch (e) {
-			throw new Error(
-				`could not parse JSON/JSON5 config (${(e as Error).message})`,
-			);
+			throw new Error(`could not parse JSON/JSON5 config (${(e as Error).message})`);
 		}
 
 		const indent = this.detectIndent(raw);
@@ -922,14 +901,7 @@ configured by rejecting session claims from the second path (HTTP 409).
 
 		writeFileSync(hookMdPath, hookMd);
 		writeFileSync(handlerJsPath, handlerJs);
-		writeFileSync(
-			packageJsonPath,
-			JSON.stringify(
-				{ name: "agent-memory", version: "1.0.0", type: "module" },
-				null,
-				2,
-			),
-		);
+		writeFileSync(packageJsonPath, JSON.stringify({ name: "agent-memory", version: "1.0.0", type: "module" }, null, 2));
 		writeFileSync(migrationMdPath, migrationMd);
 
 		return [hookMdPath, handlerJsPath, packageJsonPath, migrationMdPath];

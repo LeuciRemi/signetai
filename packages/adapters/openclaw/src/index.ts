@@ -40,9 +40,8 @@ function looksLikeMetadataJson(content: string): boolean {
 
 	// Check for metadata field patterns
 	const metadataFields = ["label", "username", "tag", "sender", "conversation"];
-	const hasMultipleMetadataFields = metadataFields.filter(f =>
-		content.includes(`"${f}"`) || content.includes(`'${f}'`)
-	).length >= 2;
+	const hasMultipleMetadataFields =
+		metadataFields.filter((f) => content.includes(`"${f}"`) || content.includes(`'${f}'`)).length >= 2;
 
 	return hasMultipleMetadataFields;
 }
@@ -130,6 +129,10 @@ function firstNonEmptyString(...values: readonly unknown[]): string | undefined 
 	return undefined;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
 function isAssistantMessage(message: Record<string, unknown>): boolean {
 	const role = typeof message.role === "string" ? message.role.toLowerCase() : "";
 	const sender = typeof message.sender === "string" ? message.sender.toLowerCase() : "";
@@ -145,8 +148,8 @@ function getMessageText(message: Record<string, unknown>): string | undefined {
 
 	const textParts: string[] = [];
 	for (const chunk of message.content) {
-		if (typeof chunk !== "object" || chunk === null) continue;
-		const part = chunk as Record<string, unknown>;
+		if (!isRecord(chunk)) continue;
+		const part = chunk;
 		if (part.type !== "text") continue;
 		if (typeof part.text === "string" && part.text.trim().length > 0) {
 			textParts.push(part.text);
@@ -173,9 +176,8 @@ function extractLastAssistantMessage(event: Record<string, unknown>): string | u
 
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const raw = messages[i];
-		if (typeof raw !== "object" || raw === null) continue;
-
-		const message = raw as Record<string, unknown>;
+		if (!isRecord(raw)) continue;
+		const message = raw;
 		if (!isAssistantMessage(message)) continue;
 
 		const text = getMessageText(message);
@@ -245,6 +247,8 @@ interface MarketplaceExposurePolicy {
 	readonly maxSearchResults: number;
 	readonly updatedAt: string;
 }
+
+const PROMPT_DEDUPE_WINDOW_MS = 1_000;
 
 function sanitizeToolSegment(value: string): string {
 	const normalized = value
@@ -696,6 +700,42 @@ function textResult(text: string, details?: Record<string, unknown>): OpenClawTo
 		content: [{ type: "text", text }],
 		...(details ? { details } : {}),
 	};
+}
+
+function cleanupRecentPromptTurns(recentTurns: Map<string, number>, now: number): void {
+	for (const [key, ts] of recentTurns) {
+		if (now - ts > PROMPT_DEDUPE_WINDOW_MS) {
+			recentTurns.delete(key);
+		}
+	}
+}
+
+function buildPromptTurnKey(params: {
+	sessionKey?: string;
+	agentId?: string;
+	prompt: string;
+	messageCount?: number;
+}): string {
+	const normalizedPrompt = params.prompt.trim().replace(/\s+/g, " ").slice(0, 240);
+	return `${params.sessionKey ?? "-"}|${params.agentId ?? "-"}|${params.messageCount ?? -1}|${normalizedPrompt}`;
+}
+
+function buildInjectionResult(result: UserPromptSubmitResult): { prependContext: string } | undefined {
+	if (!result.inject) {
+		return undefined;
+	}
+	const queryAttr = result.queryTerms ? ` query="${result.queryTerms.replace(/"/g, "'").slice(0, 100)}"` : "";
+	const attrs = `source="auto-recall"${queryAttr} results="${result.memoryCount}" engine="${result.engine ?? "fts+decay"}"`;
+	return {
+		prependContext: `<signet-memory ${attrs}>\n${result.inject}\n</signet-memory>`,
+	};
+}
+
+function buildSessionlessTurnKey(event: Record<string, unknown>, agentId: string | undefined): string {
+	const rawPrompt = typeof event.prompt === "string" ? extractUserMessage(event.prompt) : "";
+	const normalizedPrompt = rawPrompt.trim().replace(/\s+/g, " ").slice(0, 240);
+	const messageCount = Array.isArray(event.messages) ? event.messages.length : -1;
+	return `${agentId ?? "-"}|${messageCount}|${normalizedPrompt}`;
 }
 
 async function registerMarketplaceProxyTools(
@@ -1206,50 +1246,136 @@ const signetPlugin = {
 		// Lifecycle hooks
 		// ==================================================================
 
+		const claimedSessions = new Set<string>();
+		const sessionlessSessionStarts = new Map<string, number>();
+		const recentPromptTurns = new Map<string, number>();
+
+		const resolveHookContext = (
+			ctx: unknown,
+		): {
+			sessionKey?: string;
+			agentId?: string;
+		} => {
+			if (!isRecord(ctx)) {
+				return {};
+			}
+			const sessionContext = ctx;
+			return {
+				sessionKey: typeof sessionContext?.sessionKey === "string" ? sessionContext.sessionKey : undefined,
+				agentId: typeof sessionContext?.agentId === "string" ? sessionContext.agentId : undefined,
+			};
+		};
+
+		const ensureSessionStarted = async (
+			event: Record<string, unknown>,
+			sessionKey: string | undefined,
+			agentId: string | undefined,
+		): Promise<void> => {
+			if (!sessionKey) {
+				const now = Date.now();
+				cleanupRecentPromptTurns(sessionlessSessionStarts, now);
+				const sessionlessKey = buildSessionlessTurnKey(event, agentId);
+				const recentStartAt = sessionlessSessionStarts.get(sessionlessKey);
+				if (typeof recentStartAt === "number" && now - recentStartAt <= PROMPT_DEDUPE_WINDOW_MS) {
+					return;
+				}
+
+				const startResult = await onSessionStart("openclaw", {
+					...opts,
+					sessionKey,
+					agentId,
+				});
+				if (startResult) {
+					sessionlessSessionStarts.set(sessionlessKey, Date.now());
+				}
+				return;
+			}
+
+			if (claimedSessions.has(sessionKey)) {
+				return;
+			}
+
+			const startResult = await onSessionStart("openclaw", {
+				...opts,
+				sessionKey,
+				agentId,
+			});
+			if (startResult) {
+				claimedSessions.add(sessionKey);
+			}
+		};
+
+		const runPromptInjection = async (
+			event: Record<string, unknown>,
+			sessionKey: string | undefined,
+			agentId: string | undefined,
+		): Promise<unknown> => {
+			const rawPrompt = typeof event.prompt === "string" ? event.prompt : undefined;
+			const prompt = rawPrompt ? extractUserMessage(rawPrompt) : undefined;
+			if (!prompt || prompt.length <= 3) {
+				return undefined;
+			}
+
+			const now = Date.now();
+			cleanupRecentPromptTurns(recentPromptTurns, now);
+			const messageCount = Array.isArray(event.messages) ? event.messages.length : undefined;
+			const promptTurnKey = buildPromptTurnKey({
+				sessionKey,
+				agentId,
+				prompt,
+				messageCount,
+			});
+			const recentTs = recentPromptTurns.get(promptTurnKey);
+			if (typeof recentTs === "number" && now - recentTs <= PROMPT_DEDUPE_WINDOW_MS) {
+				return undefined;
+			}
+
+			const lastAssistantMessage = extractLastAssistantMessage(event);
+			const result = await onUserPromptSubmit("openclaw", {
+				...opts,
+				agentId,
+				userMessage: prompt,
+				lastAssistantMessage,
+				sessionKey,
+			});
+			if (!result) {
+				return undefined;
+			}
+			recentPromptTurns.set(promptTurnKey, Date.now());
+			return buildInjectionResult(result);
+		};
+
+		// Preferred lifecycle hook in modern OpenClaw versions.
+		api.on(
+			"before_prompt_build",
+			async (event: Record<string, unknown>, ctx: unknown): Promise<unknown> => {
+				if (!cfg.enabled) return undefined;
+
+				const { sessionKey, agentId } = resolveHookContext(ctx);
+				await ensureSessionStarted(event, sessionKey, agentId);
+				return runPromptInjection(event, sessionKey, agentId);
+			},
+			{ priority: 20 },
+		);
+
+		// Legacy fallback for older OpenClaw runtimes.
 		api.on("before_agent_start", async (event: Record<string, unknown>, ctx: unknown): Promise<unknown> => {
 			if (!cfg.enabled) return undefined;
 
-			const sessionContext = ctx as Record<string, unknown> | undefined;
-			const sessionKey = typeof sessionContext?.sessionKey === "string"
-				? sessionContext.sessionKey
-				: undefined;
-			const agentId = typeof sessionContext?.agentId === "string"
-				? sessionContext.agentId
-				: undefined;
-
-			// Session start — claim session with daemon
-			await onSessionStart("openclaw", { ...opts, sessionKey, agentId });
-
-			// If there's a prompt, do memory injection
-			const rawPrompt = event.prompt as string | undefined;
-			const prompt = rawPrompt ? extractUserMessage(rawPrompt) : undefined;
-			if (prompt && prompt.length > 3) {
-				const lastAssistantMessage = extractLastAssistantMessage(event);
-				const result = await onUserPromptSubmit("openclaw", {
-					...opts,
-					agentId,
-					userMessage: prompt,
-					lastAssistantMessage,
-					sessionKey,
-				});
-				if (result?.inject) {
-					const queryAttr = result.queryTerms ? ` query="${result.queryTerms.replace(/"/g, "'").slice(0, 100)}"` : "";
-					const attrs = `source="auto-recall"${queryAttr} results="${result.memoryCount}" engine="${result.engine ?? "fts+decay"}"`;
-					return {
-						prependContext: `<signet-memory ${attrs}>\n${result.inject}\n</signet-memory>`,
-					};
-				}
-			}
-
-			return undefined;
+			const { sessionKey, agentId } = resolveHookContext(ctx);
+			await ensureSessionStarted(event, sessionKey, agentId);
+			return runPromptInjection(event, sessionKey, agentId);
 		});
 
 		api.on("agent_end", async (_event: Record<string, unknown>, ctx: unknown): Promise<unknown> => {
 			if (!cfg.enabled) return undefined;
 
-			const sessionKey = (ctx as Record<string, unknown> | undefined)?.sessionKey as string | undefined;
+			const { sessionKey } = resolveHookContext(ctx);
 
 			await onSessionEnd("openclaw", { ...opts, sessionKey });
+			if (sessionKey) {
+				claimedSessions.delete(sessionKey);
+			}
 			return undefined;
 		});
 

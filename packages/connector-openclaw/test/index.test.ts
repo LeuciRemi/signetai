@@ -1,33 +1,43 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OpenClawConnector } from "../src/index";
 
 let tmpRoot = "";
-let previousConfigPath: string | undefined;
-let previousHome: string | undefined;
+const envKeys = [
+	"OPENCLAW_CONFIG_PATH",
+	"CLAWDBOT_CONFIG_PATH",
+	"OPENCLAW_STATE_DIR",
+	"CLAWDBOT_STATE_DIR",
+	"OPENCLAW_STATE_HOME",
+	"OPENCLAW_HOME",
+	"CLAWDBOT_HOME",
+	"MOLDBOT_HOME",
+	"MOLTBOT_HOME",
+	"XDG_CONFIG_HOME",
+	"XDG_STATE_HOME",
+	"HOME",
+] as const;
+const previousEnv = new Map<string, string | undefined>();
 
 beforeEach(() => {
 	tmpRoot = mkdtempSync(join(tmpdir(), "signet-openclaw-test-"));
-	previousConfigPath = process.env.OPENCLAW_CONFIG_PATH;
-	previousHome = process.env.HOME;
+	previousEnv.clear();
+	for (const key of envKeys) {
+		previousEnv.set(key, process.env[key]);
+	}
 	process.env.HOME = tmpRoot;
 });
 
 afterEach(() => {
-	if (previousConfigPath === undefined) {
-		// biome-ignore lint/performance/noDelete: assigning undefined to process.env stringifies it
-		delete process.env.OPENCLAW_CONFIG_PATH;
-	} else {
-		process.env.OPENCLAW_CONFIG_PATH = previousConfigPath;
-	}
-
-	if (previousHome === undefined) {
-		// biome-ignore lint/performance/noDelete: assigning undefined to process.env stringifies it
-		delete process.env.HOME;
-	} else {
-		process.env.HOME = previousHome;
+	for (const key of envKeys) {
+		const previous = previousEnv.get(key);
+		if (previous === undefined) {
+			delete process.env[key];
+		} else {
+			process.env[key] = previous;
+		}
 	}
 
 	if (tmpRoot) {
@@ -103,6 +113,28 @@ describe("OpenClawConnector config patching", () => {
 		expect(patched.hooks.internal.entries["signet-memory"].enabled).toBe(true);
 	});
 
+	it("does not execute non-JSON expressions while parsing configs", async () => {
+		const configPath = join(tmpRoot, "openclaw.json");
+		const hookBasePath = join(tmpRoot, "agents");
+
+		// This is valid JavaScript expression syntax, but not valid JSON/JSON5.
+		writeFileSync(
+			configPath,
+			`({ agents: { defaults: { workspace: "/home/old/.agents" } }, hooks: { internal: { entries: {} } } })`,
+		);
+		process.env.OPENCLAW_CONFIG_PATH = configPath;
+
+		const connector = new OpenClawConnector();
+		const result = await connector.install(hookBasePath, {
+			configureWorkspace: false,
+			configureHooks: true,
+		});
+
+		expect(result.configsPatched).not.toContain(configPath);
+		expect(result.warnings?.some((w) => w.includes("could not parse JSON/JSON5 config"))).toBe(true);
+		expect(connector.getDiscoveredWorkspacePaths()).toHaveLength(0);
+	});
+
 	it("rejects temp directory as workspace", async () => {
 		const configPath = join(tmpRoot, "openclaw.json");
 		writeFileSync(
@@ -155,6 +187,101 @@ describe("OpenClawConnector config patching", () => {
 		const workspaces = connector.getDiscoveredWorkspacePaths();
 		expect(workspaces).toContain(workspacePath);
 		expect(workspaces.filter((path) => path === workspacePath)).toHaveLength(1);
+	});
+
+	it("discovers config from OPENCLAW_STATE_DIR", () => {
+		const stateDir = join(tmpRoot, "state-openclaw");
+		const configPath = join(stateDir, "openclaw.json");
+		mkdirSync(stateDir, { recursive: true });
+		writeFileSync(configPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
+
+		process.env.OPENCLAW_STATE_DIR = stateDir;
+
+		const connector = new OpenClawConnector();
+		expect(connector.getDiscoveredConfigPaths()).toContain(configPath);
+	});
+
+	it("discovers config from CLAWDBOT_STATE_DIR", () => {
+		const stateDir = join(tmpRoot, "state-clawdbot");
+		const configPath = join(stateDir, "clawdbot.json");
+		mkdirSync(stateDir, { recursive: true });
+		writeFileSync(configPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
+
+		process.env.CLAWDBOT_STATE_DIR = stateDir;
+
+		const connector = new OpenClawConnector();
+		expect(connector.getDiscoveredConfigPaths()).toContain(configPath);
+	});
+
+	it("discovers moldbot and moltbot legacy default directories", () => {
+		const moldbotPath = join(tmpRoot, ".moldbot", "moldbot.json");
+		const moltbotPath = join(tmpRoot, ".moltbot", "moltbot.json");
+		mkdirSync(join(tmpRoot, ".moldbot"), { recursive: true });
+		mkdirSync(join(tmpRoot, ".moltbot"), { recursive: true });
+		writeFileSync(moldbotPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
+		writeFileSync(moltbotPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
+
+		const connector = new OpenClawConnector();
+		const discovered = connector.getDiscoveredConfigPaths();
+		expect(discovered).toContain(moldbotPath);
+		expect(discovered).toContain(moltbotPath);
+	});
+
+	it("does not cross-match filenames in legacy default directories", () => {
+		const canonicalPath = join(tmpRoot, ".openclaw", "openclaw.json");
+		const mismatchedPath = join(tmpRoot, ".openclaw", "clawdbot.json");
+		mkdirSync(join(tmpRoot, ".openclaw"), { recursive: true });
+		writeFileSync(canonicalPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
+		writeFileSync(mismatchedPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
+
+		const connector = new OpenClawConnector();
+		const discovered = connector.getDiscoveredConfigPaths();
+		expect(discovered).toContain(canonicalPath);
+		expect(discovered).not.toContain(mismatchedPath);
+	});
+
+	it("keeps legacy OPENCLAW_STATE_HOME compatibility", () => {
+		const stateHome = join(tmpRoot, "legacy-state-home");
+		const configPath = join(stateHome, "openclaw.json");
+		const legacyClawdbotPath = join(stateHome, "clawdbot.json");
+		mkdirSync(stateHome, { recursive: true });
+		writeFileSync(configPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
+		writeFileSync(legacyClawdbotPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
+
+		process.env.OPENCLAW_STATE_HOME = stateHome;
+
+		const connector = new OpenClawConnector();
+		const discovered = connector.getDiscoveredConfigPaths();
+		expect(discovered).toContain(configPath);
+		expect(discovered).not.toContain(legacyClawdbotPath);
+	});
+
+	it("discovers legacy-named config files under OPENCLAW_STATE_DIR", () => {
+		const stateDir = join(tmpRoot, "state-openclaw-mixed");
+		const legacyConfigPath = join(stateDir, "clawdbot.json");
+		mkdirSync(stateDir, { recursive: true });
+		writeFileSync(legacyConfigPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
+
+		process.env.OPENCLAW_STATE_DIR = stateDir;
+
+		const connector = new OpenClawConnector();
+		expect(connector.getDiscoveredConfigPaths()).toContain(legacyConfigPath);
+	});
+
+	it("does not cross-match filenames in XDG fallback directories", () => {
+		const xdgConfigHome = join(tmpRoot, "xdg-config");
+		process.env.XDG_CONFIG_HOME = xdgConfigHome;
+
+		const canonicalPath = join(xdgConfigHome, "openclaw", "openclaw.json");
+		const mismatchedPath = join(xdgConfigHome, "openclaw", "clawdbot.json");
+		mkdirSync(join(xdgConfigHome, "openclaw"), { recursive: true });
+		writeFileSync(canonicalPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
+		writeFileSync(mismatchedPath, JSON.stringify({ agents: { defaults: {} } }, null, 2));
+
+		const connector = new OpenClawConnector();
+		const discovered = connector.getDiscoveredConfigPaths();
+		expect(discovered).toContain(canonicalPath);
+		expect(discovered).not.toContain(mismatchedPath);
 	});
 
 	it("ignores invalid configs when discovering workspaces", () => {

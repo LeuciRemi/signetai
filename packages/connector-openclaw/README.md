@@ -28,7 +28,17 @@ await connector.install('~/.agents');
 ## What It Does
 
 - Patches JSON config files: `~/.openclaw/openclaw.json`,
-  `~/.clawdbot/clawdbot.json`, `~/.moltbot/moltbot.json`
+  `~/.clawdbot/clawdbot.json`, `~/.moldbot/moldbot.json`,
+  `~/.moltbot/moltbot.json`
+- Also discovers config via modern env vars used by OpenClaw:
+  `OPENCLAW_CONFIG_PATH`, `CLAWDBOT_CONFIG_PATH`,
+  `OPENCLAW_STATE_DIR`, `CLAWDBOT_STATE_DIR`
+- State-dir discovery follows OpenClaw compatibility behavior and may
+  detect legacy config filenames in that directory (`clawdbot.json`,
+  `moldbot.json`, `moltbot.json`) in addition to `openclaw.json`
+- Preserves legacy env compatibility used by older installs:
+  `OPENCLAW_HOME`, `CLAWDBOT_HOME`, `MOLDBOT_HOME`, `MOLTBOT_HOME`,
+  `OPENCLAW_STATE_HOME`
 - Sets `agents.defaults.workspace` to point at `~/.agents`
 - Enables the `signet-memory` internal hook entry
 - Creates hook handler files in `~/.agents/hooks/agent-memory/` for
