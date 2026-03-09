@@ -2624,6 +2624,87 @@ app.get("/api/memory/:id/history", (c) => {
 	});
 });
 
+// Memory jobs — read-only (uses documents permission)
+app.use("/api/memory/jobs", async (c, next) => {
+	return requirePermission("documents", authConfig)(c, next);
+});
+
+app.get("/api/memory/jobs/:id", (c) => {
+	const jobId = c.req.param("id")?.trim();
+	if (!jobId) {
+		return c.json({ error: "job id is required" }, 400);
+	}
+
+	const maybeRow = getDbAccessor().withReadDb((db) => {
+		return db
+			.prepare(
+				`SELECT id, memory_id, document_id, job_type, status,
+				        attempts, max_attempts, leased_at, completed_at,
+				        failed_at, error, created_at, updated_at
+				 FROM memory_jobs
+				 WHERE id = ?
+				 LIMIT 1`,
+			)
+			.get(jobId) as unknown;
+	});
+
+	type JobRow = {
+		readonly id: string;
+		readonly memory_id: string | null;
+		readonly document_id: string | null;
+		readonly job_type: string;
+		readonly status: string;
+		readonly attempts: number;
+		readonly max_attempts: number;
+		readonly leased_at: string | null;
+		readonly completed_at: string | null;
+		readonly failed_at: string | null;
+		readonly error: string | null;
+		readonly created_at: string;
+		readonly updated_at: string;
+	};
+
+	const isJobRow = (val: unknown): val is JobRow => {
+		if (!val || typeof val !== "object") return false;
+		const obj = val as Record<string, unknown>;
+		return (
+			typeof obj.id === "string" &&
+			typeof obj.job_type === "string" &&
+			typeof obj.status === "string" &&
+			typeof obj.attempts === "number" &&
+			typeof obj.max_attempts === "number" &&
+			typeof obj.created_at === "string" &&
+			typeof obj.updated_at === "string"
+		);
+	};
+
+	const row = isJobRow(maybeRow) ? maybeRow : null;
+
+	if (!row) {
+		return c.json({ error: "Job not found" }, 404);
+	}
+
+	return c.json({
+		id: row.id,
+		memory_id: row.memory_id,
+		document_id: row.document_id,
+		job_type: row.job_type,
+		status: row.status,
+		attempt_count: row.attempts,
+		attempts: row.attempts,
+		max_attempts: row.max_attempts,
+		next_attempt_at: null,
+		last_error: row.error,
+		last_error_code: null,
+		error: row.error,
+		leased_at: row.leased_at,
+		completed_at: row.completed_at,
+		failed_at: row.failed_at,
+		created_at: row.created_at,
+		updated_at: row.updated_at,
+	});
+});
+
 app.post("/api/memory/:id/recover", async (c) => {
 	const payload = await readOptionalJsonObject(c);
 	if (payload === null) {
@@ -3767,9 +3848,8 @@ app.post("/api/documents", async (c) => {
 			});
 		}
 
-		enqueueDocumentIngestJob(accessor, id);
-
-		return c.json({ id, status: "queued" }, 201);
+		const jobId = enqueueDocumentIngestJob(accessor, id);
+		return c.json({ id, status: "queued", jobId: jobId ?? undefined }, 201);
 	} catch (e) {
 		logger.error("documents", "Failed to create document", e as Error);
 		return c.json({ error: "Failed to create document" }, 500);
