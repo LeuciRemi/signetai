@@ -2,6 +2,17 @@
 
 All notable changes to Signet are documented here.
 
+## [0.49.0] - 2026-03-09
+
+### Features
+
+- **native**: add batch cosine similarity, KNN edges, axis normalization, and hybrid score merging
+
+### Bug Fixes
+
+- **native**: address Greptile review — epsilon parity and dead export TODO
+
+
 ## [0.48.2] - 2026-03-09
 
 ### Features
