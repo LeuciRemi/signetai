@@ -41,17 +41,21 @@ interface UserPromptSubmitResult {
 	readonly memoryCount?: number;
 }
 
+// Tighter timeout for the prompt-submit path — this blocks every user message,
+// so we can't afford the full 5s READ_TIMEOUT if the daemon is slow.
+const PROMPT_SUBMIT_TIMEOUT = 2000;
+
 // Per-prompt inject cache: consumed once by system.transform after chat.message populates it.
 // Capped to prevent unbounded growth if sessions die between the two hooks.
 const MAX_PENDING = 64;
 const pendingInject = new Map<string, string>();
 
 function pendingInjectSet(sessionID: string, inject: string): void {
-	pendingInject.set(sessionID, inject);
-	if (pendingInject.size > MAX_PENDING) {
+	if (!pendingInject.has(sessionID) && pendingInject.size >= MAX_PENDING) {
 		const oldest = pendingInject.keys().next().value;
 		if (oldest !== undefined) pendingInject.delete(oldest);
 	}
+	pendingInject.set(sessionID, inject);
 }
 
 function readRuntimeEnv(name: string): string | undefined {
@@ -118,6 +122,9 @@ export const SignetPlugin: Plugin = async ({ directory }) => {
 				.trim();
 			if (!userText) return;
 
+			// Clear any unconsumed inject from a prior prompt for this session
+			pendingInject.delete(input.sessionID);
+
 			try {
 				const result = await client.post<UserPromptSubmitResult>(
 					"/api/hooks/user-prompt-submit",
@@ -129,7 +136,7 @@ export const SignetPlugin: Plugin = async ({ directory }) => {
 						userMessage: userText,
 						runtimePath: RUNTIME_PATH,
 					},
-					READ_TIMEOUT,
+					PROMPT_SUBMIT_TIMEOUT,
 				);
 				if (result?.inject) {
 					pendingInjectSet(input.sessionID, result.inject);
