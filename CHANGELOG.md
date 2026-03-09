@@ -2,6 +2,18 @@
 
 All notable changes to Signet are documented here.
 
+## [0.51.0] - 2026-03-09
+
+### Features
+
+- add user-prompt-submit hook to OpenCode plugin
+
+### Bug Fixes
+
+- address review feedback on prompt-submit hook
+- cap pendingInject map to prevent unbounded growth
+
+
 ## [0.50.1] - 2026-03-09
 
 ### Features
