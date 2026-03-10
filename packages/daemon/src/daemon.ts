@@ -243,7 +243,12 @@ function normalizeBaseUrl(url: string | undefined): string | undefined {
 }
 
 function normalizeLoopbackHost(host: string): string {
-	return host === "localhost" ? "127.0.0.1" : host;
+	return host === "localhost" || host === "::1" ? "127.0.0.1" : host;
+}
+
+function parsePort(raw: string | undefined, fallback: number): number {
+	const parsed = Number.parseInt(raw ?? "", 10);
+	return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65_535 ? parsed : fallback;
 }
 
 function normalizeRuntimeBaseUrl(url: string | undefined, fallback: string): string {
@@ -275,7 +280,7 @@ function isManagedOpenCodeLocalEndpoint(baseUrl: string): boolean {
 	}
 }
 
-const PORT = Number.parseInt(readEnvTrimmed("SIGNET_PORT") ?? "3850", 10);
+const PORT = parsePort(readEnvTrimmed("SIGNET_PORT"), 3850);
 const HOST = normalizeLoopbackHost(readEnvTrimmed("SIGNET_HOST") ?? "127.0.0.1");
 const BIND_HOST = normalizeLoopbackHost(readEnvTrimmed("SIGNET_BIND") ?? HOST);
 const INTERNAL_SELF_HOST =
