@@ -112,6 +112,7 @@ function spawnHidden(cmd: string[], options?: { env?: Record<string, string | un
 		}
 	}
 	const proc = Bun.spawn(cmd, {
+		stdin: "ignore",
 		stdout: "pipe",
 		stderr: "pipe",
 		env: options?.env ? sanitizedEnv : undefined,
@@ -128,7 +129,7 @@ function spawnHidden(cmd: string[], options?: { env?: Record<string, string | un
 		stderr: proc.stderr,
 		exited: proc.exited,
 		kill(signal?: string) {
-			const sigMap: Record<string, number> = { SIGTERM: 15, SIGKILL: 9 };
+			const sigMap: Record<string, number | undefined> = { SIGTERM: 15, SIGKILL: 9 };
 			const sigNum = signal ? sigMap[signal] : 15;
 			if (signal && sigNum === undefined) {
 				logger.warn("pipeline", `Unknown signal "${signal}", defaulting to SIGTERM`);
@@ -538,7 +539,7 @@ export function createAnthropicProvider(
 		opts?: { timeoutMs?: number; maxTokens?: number },
 	): Promise<{ text: string; usage: AnthropicUsage | null }> {
 		const timeoutMs = opts?.timeoutMs ?? cfg.defaultTimeoutMs;
-		const maxTokens = opts?.maxTokens ?? 4096;
+		const maxTokens = opts?.maxTokens || 4096;
 		const url = `${cfg.baseUrl}/v1/messages`;
 		const body = JSON.stringify({
 			model: resolvedModel,
