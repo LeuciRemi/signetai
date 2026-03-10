@@ -816,8 +816,15 @@ export class OpenClawConnector extends BaseConnector {
 					continue;
 				}
 
-				const pluginsObj = (config.plugins ?? {}) as JsonObject;
-				const loadObj = (pluginsObj.load ?? {}) as JsonObject;
+				const pluginsObj = isJsonObject(config.plugins) ? config.plugins : {};
+				const rawLoad = pluginsObj.load;
+				if (Array.isArray(rawLoad)) {
+					const warning = `[signet/openclaw] Skipped load.paths patch for ${configPath}: plugins.load is array-shaped; run install() first`;
+					warnings.push(warning);
+					console.warn(warning);
+					continue;
+				}
+				const loadObj = isJsonObject(rawLoad) ? rawLoad : {};
 				const rawPaths = loadObj.paths;
 				const existingPaths =
 					Array.isArray(rawPaths) &&

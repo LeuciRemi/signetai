@@ -662,18 +662,22 @@ async function ensureOpenClawPluginPackage(
 	});
 
 	if (!options.force && readOpenClawPluginSyncVersion(basePath) === VERSION) {
-		// Cached — skip re-install but still resolve and return path for caller
+		// Cached — skip re-install but still resolve and return path for caller.
+		// If the path can't be resolved (package was pruned after the stamp was
+		// written), fall through to re-install rather than returning undefined.
 		const cachedPath = resolveGlobalPackagePath(packageManager.family, OPENCLAW_PLUGIN_PACKAGE);
 		if (cachedPath) {
 			ensureOpenClawExtensionSymlink(cachedPath, options.silent);
-		} else if (!options.silent) {
+			return cachedPath;
+		}
+		if (!options.silent) {
 			console.log(
 				chalk.yellow(
-					`  Warning: could not resolve global path for ${OPENCLAW_PLUGIN_PACKAGE}; plugin discovery may be incomplete. Run 'signet setup' again if needed.`,
+					`  Warning: cached ${OPENCLAW_PLUGIN_PACKAGE} not found on disk; retrying install.`,
 				),
 			);
 		}
-		return cachedPath;
+		// Fall through to re-install below.
 	}
 
 	const installCommand = getGlobalInstallCommand(
@@ -794,15 +798,18 @@ function createExtensionSymlink(
 				return;
 			}
 		} else {
-			// Exists but not a symlink — remove
-			try {
-				rmSync(symlinkPath, { force: true, recursive: true });
-			} catch (rmErr) {
-				if (!silent) {
-					console.log(chalk.yellow(`  Warning: could not remove existing path at ${symlinkPath}: ${rmErr}`));
-				}
-				return;
+			// Exists but is not a symlink (real file or directory). Removing it
+			// before symlinkSync could permanently destroy a working manual
+			// installation if symlink creation then fails. Leave it in place and
+			// warn — the user can remove it manually to enable the managed symlink.
+			if (!silent) {
+				console.log(
+					chalk.yellow(
+						`  Warning: existing non-symlink at ${symlinkPath}; leaving it in place. Remove it manually to enable the Signet-managed symlink.`,
+					),
+				);
 			}
+			return;
 		}
 	} catch {
 		// Path doesn't exist — will create below
