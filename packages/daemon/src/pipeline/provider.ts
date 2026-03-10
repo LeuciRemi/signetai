@@ -60,7 +60,9 @@ class SubprocessSemaphore {
 }
 
 const subprocessSemaphore = new SubprocessSemaphore(
-	Number(process.env.SIGNET_MAX_LLM_CONCURRENCY) || DEFAULT_MAX_CONCURRENT_SUBPROCESSES,
+	process.env.SIGNET_MAX_LLM_CONCURRENCY !== undefined
+		? Math.max(1, Number(process.env.SIGNET_MAX_LLM_CONCURRENCY))
+		: DEFAULT_MAX_CONCURRENT_SUBPROCESSES,
 );
 
 /**

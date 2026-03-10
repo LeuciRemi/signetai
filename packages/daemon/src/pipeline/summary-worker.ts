@@ -783,10 +783,12 @@ function writeSummaryToDAG(
 // Worker loop
 // ---------------------------------------------------------------------------
 
+/** Resolve from synthesis config — distinct from extraction so users can
+ *  decouple the summary provider/model/timeout from the extraction pipeline. */
 function resolveProvider(cfg: ReturnType<typeof loadMemoryConfig>): LlmProvider {
-	const p = cfg.pipelineV2.extraction.provider;
-	const model = cfg.pipelineV2.extraction.model;
-	const timeout = cfg.pipelineV2.extraction.timeout;
+	const p = cfg.pipelineV2.synthesis.provider;
+	const model = cfg.pipelineV2.synthesis.model;
+	const timeout = cfg.pipelineV2.synthesis.timeout;
 	switch (p) {
 		case "claude-code":
 			return createClaudeCodeProvider({ model: model || "haiku", defaultTimeoutMs: timeout });
