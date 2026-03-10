@@ -3939,6 +3939,79 @@ secretCmd
 	});
 
 secretCmd
+	.command("get <name>")
+	.description("Explain how to use a secret (values are never exposed)")
+	.action(async (name: string) => {
+		if (!(await ensureDaemonForSecrets())) return;
+
+		try {
+			const { data } = await secretApiCall("GET", "/api/secrets");
+			const secrets = (data as { secrets: string[] }).secrets ?? [];
+			const exists = secrets.includes(name);
+
+			if (!exists) {
+				console.log(chalk.red(`\n  Secret "${chalk.bold(name)}" not found.\n`));
+				console.log(chalk.dim("  Store it with:"));
+				console.log(`    signet secret put ${name}\n`);
+				process.exit(1);
+			}
+
+			console.log(
+				chalk.yellow(`\n  Secret "${chalk.bold(name)}" exists, but values are never exposed directly.`)
+			);
+			console.log(chalk.dim("\n  Signet secrets are injected at runtime, not read from disk."));
+			console.log(chalk.dim("  Use one of the following:\n"));
+			console.log(chalk.dim("  In a command (injected as env var):"));
+			console.log(`    signet secret exec --secret ${name} "your-command-here"\n`);
+			console.log(chalk.dim("  In agent.yaml (resolved by the daemon):"));
+			console.log(`    api_key: $secret:${name}\n`);
+		} catch (e) {
+			console.error(chalk.red(`  Error: ${(e as Error).message}`));
+			process.exit(1);
+		}
+	});
+
+secretCmd
+	.command("exec <command>")
+	.description("Run a command with secrets injected as environment variables")
+	.option("-s, --secret <name>", "Secret to inject (repeatable)", appendCliString, [] as string[])
+	.action(async (command: string, opts: { secret: string[] }) => {
+		if (!(await ensureDaemonForSecrets())) return;
+
+		if (opts.secret.length === 0) {
+			console.error(chalk.red("  At least one --secret is required."));
+			console.log(chalk.dim("\n  Example:"));
+			console.log(`    signet secret exec --secret OPENAI_API_KEY "curl -H 'Authorization: Bearer $OPENAI_API_KEY' ..."\n`);
+			process.exit(1);
+		}
+
+		const secrets: Record<string, string> = {};
+		for (const name of opts.secret) {
+			secrets[name] = name;
+		}
+
+		try {
+			const { ok, data } = await secretApiCall("POST", "/api/secrets/exec", {
+				command,
+				secrets,
+			});
+
+			if (!ok) {
+				console.error(chalk.red(`  Error: ${(data as { error: string }).error}`));
+				process.exit(1);
+			}
+
+			const result = data as { stdout: string; stderr: string; code: number };
+			if (result.stdout) process.stdout.write(result.stdout);
+			if (result.stderr) process.stderr.write(result.stderr);
+			process.exit(result.code);
+		} catch (e) {
+			console.error(chalk.red(`  Error: ${(e as Error).message}`));
+			process.exit(1);
+		}
+	});
+
+secretCmd
 	.command("has <name>")
 	.description("Check if a secret exists (exits 0 if found, 1 if not)")
 	.action(async (name: string) => {
