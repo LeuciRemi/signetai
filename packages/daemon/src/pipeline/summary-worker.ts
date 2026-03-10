@@ -15,7 +15,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Database } from "bun:sqlite";
 import type { DbAccessor } from "../db-accessor";
-import type { LlmProvider } from "./provider";
+import type { LlmProvider } from "@signet/core";
 import { createOllamaProvider, createClaudeCodeProvider, createCodexProvider, createOpenCodeProvider } from "./provider";
 
 import { isDuplicate, inferType } from "../hooks";

@@ -242,7 +242,10 @@ export function requeueDeadJobs(
 				 WHERE id IN (${placeholders})`,
 			)
 			.run(...ids);
-		return countChanges(result);
+		const count = countChanges(result);
+		const msg = `requeued ${count} dead summary job(s) to pending`;
+		writeRepairAudit(db, action, ctx, count, msg);
+		return count;
 	});
 
 	const totalAffected = affected + summaryAffected;
