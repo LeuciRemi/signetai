@@ -888,9 +888,9 @@ export function startSummaryWorker(
 				project: job.project,
 			});
 
-			// Cache provider across jobs — re-resolve on config change, key
-			// rotation, or TTL expiry. Include a fingerprint of the current
-			// API key so rotations take effect immediately.
+			// Cache provider across jobs — re-resolve on config change, env
+			// key rotation, or TTL expiry. Env-var key changes invalidate
+			// immediately; secrets-store-only rotations rely on the 5-min TTL.
 			const envKey = process.env.ANTHROPIC_API_KEY ?? "";
 			const keyFingerprint = envKey.length > 8 ? envKey.slice(-8) : envKey;
 			const providerKey = `${cfg.pipelineV2.synthesis.provider}:${cfg.pipelineV2.synthesis.model}:${cfg.pipelineV2.synthesis.timeout}:${keyFingerprint}`;

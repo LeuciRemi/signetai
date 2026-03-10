@@ -339,16 +339,19 @@ export function createClaudeCodeProvider(
 			const SIGKILL_GRACE_MS = 2000;
 
 			const timeoutPromise = new Promise<never>((_resolve, reject) => {
+				let killTimer: ReturnType<typeof setTimeout> | null = null;
 				const timer = setTimeout(() => {
 					// SIGTERM first, SIGKILL after grace period
 					proc.kill("SIGTERM");
-					setTimeout(() => {
+					killTimer = setTimeout(() => {
 						try { proc.kill("SIGKILL"); } catch { /* already dead */ }
 					}, SIGKILL_GRACE_MS);
 					reject(new Error(`claude-code timeout after ${timeoutMs}ms`));
 				}, timeoutMs);
-				// Allow the timer to be GC'd if the process finishes first
-				proc.exited.then(() => clearTimeout(timer)).catch(() => clearTimeout(timer));
+				// Clear both timers if the process exits on its own
+				proc.exited
+					.then(() => { clearTimeout(timer); if (killTimer) clearTimeout(killTimer); })
+					.catch(() => { clearTimeout(timer); if (killTimer) clearTimeout(killTimer); });
 			});
 
 			const resultPromise = (async (): Promise<string> => {
@@ -851,14 +854,17 @@ export function createCodexProvider(
 			const SIGKILL_GRACE_MS = 2000;
 
 			const timeoutPromise = new Promise<never>((_resolve, reject) => {
+				let killTimer: ReturnType<typeof setTimeout> | null = null;
 				const timer = setTimeout(() => {
 					proc.kill("SIGTERM");
-					setTimeout(() => {
+					killTimer = setTimeout(() => {
 						try { proc.kill("SIGKILL"); } catch { /* already dead */ }
 					}, SIGKILL_GRACE_MS);
 					reject(new Error(`codex timeout after ${timeoutMs}ms`));
 				}, timeoutMs);
-				proc.exited.then(() => clearTimeout(timer)).catch(() => clearTimeout(timer));
+				proc.exited
+					.then(() => { clearTimeout(timer); if (killTimer) clearTimeout(killTimer); })
+					.catch(() => { clearTimeout(timer); if (killTimer) clearTimeout(killTimer); });
 			});
 
 			const resultPromise = (async (): Promise<LlmGenerateResult> => {
