@@ -342,7 +342,7 @@ export function createClaudeCodeProvider(
 				let killTimer: ReturnType<typeof setTimeout> | null = null;
 				const timer = setTimeout(() => {
 					// SIGTERM first, SIGKILL after grace period
-					proc.kill("SIGTERM");
+					try { proc.kill("SIGTERM"); } catch { /* already exited */ }
 					killTimer = setTimeout(() => {
 						try { proc.kill("SIGKILL"); } catch { /* already dead */ }
 					}, SIGKILL_GRACE_MS);
@@ -856,7 +856,7 @@ export function createCodexProvider(
 			const timeoutPromise = new Promise<never>((_resolve, reject) => {
 				let killTimer: ReturnType<typeof setTimeout> | null = null;
 				const timer = setTimeout(() => {
-					proc.kill("SIGTERM");
+					try { proc.kill("SIGTERM"); } catch { /* already exited */ }
 					killTimer = setTimeout(() => {
 						try { proc.kill("SIGKILL"); } catch { /* already dead */ }
 					}, SIGKILL_GRACE_MS);
