@@ -2,6 +2,37 @@
 
 All notable changes to Signet are documented here.
 
+## [0.53.4] - 2026-03-11
+
+### Features
+
+- add `secret get` and `secret exec` CLI subcommands
+
+### Bug Fixes
+
+- log patchLoadPaths outcome at setup time
+- remove double-logging of patchLoadPaths warnings at call site
+- guard scalar plugins.load values, widen ECONNREFUSED detection
+- distinguish timeout errors in secret exec with actionable message
+- send secret-get not-found message to stderr
+- filter load.paths entries, surface patchLoadPaths warnings, guard mkdirSync
+- retry install on missing cached package, preserve non-symlink extensions
+- validate secret names are valid POSIX env var identifiers
+- guard patchLoadPaths against legacy array plugins, surface rmSync errors
+- clarify --secret must precede command token in exec
+- expand ~ in OPENCLAW_STATE_DIR env vars and honor OPENCLAW_STATE_HOME
+- escape \$ in exec args to block command substitution injection
+- warn when resolveGlobalPackagePath returns undefined after install
+- switch to double-quoting for exec args to allow \$VAR expansion
+- address second greptile/coderabbit round
+- shell-escape exec args, use exitCode to avoid truncating output
+- address greptile review — yarn berry, dedup resolve, load.paths dir
+- passThroughOptions for exec, note streaming limitation
+- openclaw plugin discovery — symlink + load.paths fallback
+- variadic exec args, null exit code, document secrets map
+- address review — add ok check in secret get, extend exec timeout
+
+
 ## [0.53.3] - 2026-03-10
 
 ### Bug Fixes
