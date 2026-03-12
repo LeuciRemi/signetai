@@ -13,7 +13,6 @@
 
 	let maximized = $state(false);
 	let hovered = $state(false);
-	let scaleFactor = $state(1);
 
 	// Tauri window API — lazy loaded to avoid errors in browser
 	let windowApi: typeof import("@tauri-apps/api/window") | null = null;
@@ -26,9 +25,10 @@
 		return windowApi;
 	}
 
-	// Track maximized state and scale factor via resize event (no polling).
-	// onResized fires synchronously on maximize/restore/resize, so the
-	// button icon updates immediately instead of lagging up to 500ms.
+	// Track maximized state via resize event (no polling).
+	// onResized fires synchronously on maximize/restore/resize.
+	// Guard: if teardown happens while init() is still awaiting, check
+	// `cancelled` after onResized resolves and immediately unlisten.
 	$effect(() => {
 		if (!isTauri) return;
 		let unlisten: (() => void) | null = null;
@@ -38,15 +38,17 @@
 			const api = await ensureApi();
 			if (!api || cancelled) return;
 			const win = api.getCurrentWindow();
-			// Initial state
 			maximized = await win.isMaximized();
-			scaleFactor = await win.scaleFactor();
-			// Subscribe to resize events
-			unlisten = await win.onResized(async () => {
+			const stop = await win.onResized(async () => {
 				if (cancelled) return;
 				maximized = await win.isMaximized();
-				scaleFactor = await win.scaleFactor();
 			});
+			// If teardown ran while we were awaiting onResized, unlisten immediately
+			if (cancelled) {
+				stop();
+				return;
+			}
+			unlisten = stop;
 		}
 
 		init();
@@ -112,6 +114,12 @@
 				: EyeOff,
 	);
 </script>
+
+{#if isTauri && !titlebar.visible}
+	<!-- "none" mode: invisible drag strip so the window stays movable.
+	     Without this, `decorations: false` + no titlebar = permanently stuck. -->
+	<div class="titlebar__drag-strip" data-tauri-drag-region></div>
+{/if}
 
 {#if isTauri && titlebar.visible}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -222,6 +230,28 @@
 {/if}
 
 <style>
+	/* ── Platform color tokens (intentionally platform-specific, not theme tokens) ──
+	   macOS traffic lights use the exact system colors for authentic look.
+	   Windows close hover uses the system red. These are not interchangeable
+	   with --sig-danger or --sig-success which carry semantic UI meaning. */
+	:root {
+		--tb-mac-close: #ff5f57;
+		--tb-mac-minimize: #febc2e;
+		--tb-mac-maximize: #28c840;
+		--tb-win-close-bg: #c42b1c;
+		--tb-win-close-fg: #fff;
+	}
+
+	/* ── Drag strip for "none" mode — keeps window movable when titlebar is hidden ── */
+	.titlebar__drag-strip {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 8px;
+		z-index: 9999;
+	}
+
 	/* ── Shared titlebar ── */
 	.titlebar {
 		display: flex;
@@ -317,21 +347,21 @@
 	}
 
 	.traffic-light--close {
-		background: #ff5f57;
+		background: var(--tb-mac-close);
 	}
 	.traffic-light--close:hover {
 		filter: brightness(1.1);
 	}
 
 	.traffic-light--minimize {
-		background: #febc2e;
+		background: var(--tb-mac-minimize);
 	}
 	.traffic-light--minimize:hover {
 		filter: brightness(1.1);
 	}
 
 	.traffic-light--maximize {
-		background: #28c840;
+		background: var(--tb-mac-maximize);
 	}
 	.traffic-light--maximize:hover {
 		filter: brightness(1.1);
@@ -382,7 +412,7 @@
 	}
 
 	.win-btn--close:hover {
-		background: #c42b1c;
-		color: #fff;
+		background: var(--tb-win-close-bg);
+		color: var(--tb-win-close-fg);
 	}
 </style>
