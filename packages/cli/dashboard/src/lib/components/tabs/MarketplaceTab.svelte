@@ -664,57 +664,45 @@ $effect(() => {
 <svelte:window onkeydown={handleGlobalKey} />
 
 <div class="store-shell">
-	<section class="hero">
-		<div class="hero-main">
-			<h2>
-				{section === "skills"
-					? "Discover skill packs that level up your agent workflow"
-					: "Browse MCP servers and route production tools with confidence"}
-			</h2>
-			<p>
-				{section === "skills"
-					? "Install trusted skills, compare options, and rate what actually delivers results."
-					: "Connect tool servers, monitor routed tools, and leave Signet Reviews for your stack."}
-			</p>
-			<div class="hero-actions">
-				<Button
-					variant="outline"
-					size="sm"
-					class={`hero-switch ${section === "skills" ? "hero-switch-active" : ""}`}
-					onclick={() => handleSectionChange("skills")}
-					onkeydown={(e) => {
-						if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-							e.stopPropagation();
-							handleGlobalKey(e);
-							e.preventDefault();
-						}
-					}}
-				>
-					Agent Skills
-				</Button>
-				<Button
-					variant="outline"
-					size="sm"
-					class={`hero-switch ${section === "mcp" ? "hero-switch-active" : ""}`}
-					onclick={() => handleSectionChange("mcp")}
-					onkeydown={(e) => {
-						if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-							e.stopPropagation();
-							handleGlobalKey(e);
-							e.preventDefault();
-						}
-					}}
-				>
-					MCP Servers
-				</Button>
-			</div>
+	<!-- Header -->
+	<div class="tab-header">
+		<div class="tab-header-left">
+			<span class="tab-header-title">MARKETPLACE</span>
+			<span class="tab-header-count">{activeInstalledCount} INSTALLED</span>
+			<span class="tab-header-sep" aria-hidden="true"></span>
+			<span class="tab-header-count">{sectionCatalogCount.toLocaleString()} CATALOG</span>
 		</div>
-		<div class="hero-aside">
-			<div class="hero-metric"><span>Active section</span><strong>{activeSectionLabel} · {activeInstalledCount} installed</strong></div>
-			<div class="hero-metric"><span>Catalog size</span><strong>{sectionCatalogCount.toLocaleString()}</strong></div>
-			<div class="hero-metric"><span>Signet Reviews</span><strong>{reviewsMarket.summary.count} reviews</strong></div>
+		<div class="tab-header-right">
+			<button
+				class="section-switch"
+				class:section-switch--active={section === "skills"}
+				onclick={() => handleSectionChange("skills")}
+				onkeydown={(e) => {
+					if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+						e.stopPropagation();
+						handleGlobalKey(e);
+						e.preventDefault();
+					}
+				}}
+			>
+				SKILLS
+			</button>
+			<button
+				class="section-switch"
+				class:section-switch--active={section === "mcp"}
+				onclick={() => handleSectionChange("mcp")}
+				onkeydown={(e) => {
+					if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+						e.stopPropagation();
+						handleGlobalKey(e);
+						e.preventDefault();
+					}
+				}}
+			>
+				MCP SERVERS
+			</button>
 		</div>
-	</section>
+	</div>
 
 	<div class="store-grid">
 		<main class="store-main">
@@ -999,86 +987,103 @@ $effect(() => {
 		height: 100%;
 		display: flex;
 		flex-direction: column;
-		gap: 10px;
 		overflow: hidden;
-		padding: 10px;
 	}
 
-	.hero,
 	.store-main,
 	:global(.rail-panel) {
 		border: none;
 		background: var(--sig-surface);
 	}
 
-	.hero {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) 260px;
-		gap: 10px;
-		padding: 14px;
-		background:
-			radial-gradient(circle at 85% -20%, color-mix(in srgb, var(--sig-accent) 16%, transparent), transparent 45%),
-			linear-gradient(140deg, color-mix(in srgb, var(--sig-surface-raised) 88%, black) 0%, var(--sig-surface) 65%);
+	/* Header — matches Tasks/Secrets */
+	.tab-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--space-sm) var(--space-md);
+		border-bottom: 1px solid var(--sig-border);
+		flex-shrink: 0;
 	}
 
-	.hero-main h2 {
-		margin: 8px 0 4px;
-		font-size: clamp(19px, 2vw, 27px);
-		line-height: 1.15;
+	.tab-header-left {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
 	}
 
-	.hero-main p {
-		margin: 0;
-		font-family: var(--font-mono);
+	.tab-header-title {
+		font-family: var(--font-display);
 		font-size: 11px;
-		line-height: 1.55;
-		color: var(--sig-text);
-	}
-
-	.hero-aside {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-
-	.hero-metric {
-		display: flex;
-		flex-direction: column;
-		gap: 3px;
-		padding: 8px;
-		background: var(--sig-surface-raised);
-		border: 1px solid var(--sig-border);
-		border-radius: 0.45rem;
-	}
-
-	.hero-metric span {
-		font-family: var(--font-mono);
-		font-size: 9px;
+		font-weight: 700;
 		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		color: var(--sig-text-bright);
+	}
+
+	.tab-header-count {
+		font-family: var(--font-mono);
+		font-size: 8px;
 		letter-spacing: 0.1em;
 		color: var(--sig-text-muted);
 	}
 
-	.hero-metric strong {
-		font-family: var(--font-display);
-		font-size: 11px;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-		color: var(--sig-text-bright);
+	.tab-header-sep {
+		width: 1px;
+		height: 10px;
+		background: var(--sig-border);
+	}
+
+	.tab-header-right {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.section-switch {
+		padding: 3px 10px;
+		background: transparent;
+		border: 1px solid var(--sig-border);
+		color: var(--sig-text-muted);
+		font-family: var(--font-mono);
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		cursor: pointer;
+		transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+	}
+
+	.section-switch:first-child {
+		border-radius: var(--radius) 0 0 var(--radius);
+		border-right: none;
+	}
+
+	.section-switch:last-child {
+		border-radius: 0 var(--radius) var(--radius) 0;
+	}
+
+	.section-switch:hover {
+		color: var(--sig-highlight);
+		border-color: var(--sig-highlight);
+	}
+
+	.section-switch--active {
+		color: var(--sig-highlight);
+		border-color: var(--sig-highlight);
+		background: color-mix(in srgb, var(--sig-highlight), var(--sig-bg) 92%);
 	}
 
 	.module-search,
 	.input,
 	:global(.section-select) {
-		height: 34px;
+		height: 28px;
 		padding: 0 10px;
 		font-family: var(--font-mono);
-		font-size: 11px;
+		font-size: 10px;
 		color: var(--sig-text-bright);
-		background: var(--sig-surface-raised);
-		border: 1px solid var(--sig-border-strong);
+		background: var(--sig-surface);
+		border: 1px solid var(--sig-border);
 		outline: none;
-		border-radius: 0.5rem;
+		border-radius: var(--radius);
 		transition: border-color 0.15s;
 	}
 
@@ -1110,7 +1115,8 @@ $effect(() => {
 		min-height: 0;
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 250px;
-		gap: 10px;
+		gap: var(--space-sm);
+		padding: var(--space-sm);
 	}
 
 	.store-main {
@@ -1125,15 +1131,16 @@ $effect(() => {
 		grid-template-columns: minmax(260px, 1fr) auto;
 		align-items: center;
 		gap: 8px;
-		padding: 0 8px;
-		margin-bottom: 8px;
+		padding: var(--space-sm) var(--space-sm) 0;
+		margin-bottom: var(--space-sm);
 	}
 
 	.module-search {
-		height: 30px;
+		height: 28px;
 		min-width: 0;
 		width: 100%;
 		padding-right: 72px;
+		font-size: 10px;
 	}
 
 	.module-search-wrap {
@@ -1165,9 +1172,9 @@ $effect(() => {
 	}
 
 	:global(.view-tab) {
-		height: 30px;
+		height: 28px;
 		font-family: var(--font-mono);
-		font-size: 10px;
+		font-size: 9px;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		transition: border-color 0.15s;
@@ -1189,35 +1196,6 @@ $effect(() => {
 		background: color-mix(in srgb, var(--sig-highlight), var(--sig-bg) 90%);
 	}
 
-	.hero-actions {
-		display: flex;
-		gap: 8px;
-		margin-top: 12px;
-	}
-
-	:global(.hero-switch) {
-		height: 30px;
-		font-size: 10px;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		transition: border-color 0.15s, background-color 0.15s;
-	}
-
-	:global(.hero-switch:hover) {
-		border-color: var(--sig-highlight);
-		color: var(--sig-highlight);
-	}
-
-	:global(.hero-switch:focus-visible) {
-		outline: 2px solid var(--sig-highlight);
-		outline-offset: 1px;
-	}
-
-	:global(.hero-switch.hero-switch-active) {
-		border-color: var(--sig-highlight);
-		color: var(--sig-highlight);
-		background: color-mix(in srgb, var(--sig-highlight), var(--sig-bg) 90%);
-	}
 
 	.module-body {
 		flex: 1;
@@ -1237,13 +1215,13 @@ $effect(() => {
 	}
 
 	:global(.rail-panel) {
-		padding: 8px;
+		padding: var(--space-sm);
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-		background: color-mix(in srgb, var(--sig-highlight), var(--sig-bg) 96%);
+		background: var(--sig-surface);
 		border: 1px solid var(--sig-border);
-		border-radius: 0.5rem;
+		border-radius: var(--radius);
 	}
 
 	:global(.rail-trigger) {
@@ -1255,16 +1233,17 @@ $effect(() => {
 		background: transparent;
 		border: none;
 		font-family: var(--font-display);
-		font-size: 11px;
+		font-size: 10px;
+		font-weight: 700;
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--sig-highlight);
+		letter-spacing: 0.1em;
+		color: var(--sig-text-muted);
 		cursor: pointer;
 		transition: color 0.15s;
 	}
 
 	:global(.rail-trigger:hover) {
-		color: var(--sig-highlight-text);
+		color: var(--sig-text-bright);
 	}
 
 	:global(.rail-trigger:focus-visible) {
@@ -1280,16 +1259,16 @@ $effect(() => {
 	}
 
 	:global(.rail-select) {
-		height: 32px;
+		height: 28px;
 		width: 100%;
-		padding: 0 10px;
+		padding: 0 8px;
 		font-family: var(--font-mono);
-		font-size: 10px;
+		font-size: 9px;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		background: var(--sig-surface-raised);
-		border: 1px solid var(--sig-border-strong);
-		border-radius: 0.5rem;
+		background: var(--sig-bg);
+		border: 1px solid var(--sig-border);
+		border-radius: var(--radius);
 		transition: border-color 0.15s, outline-color 0.15s;
 	}
 
@@ -1312,8 +1291,8 @@ $effect(() => {
 	:global(.rail-btn) {
 		justify-content: flex-start;
 		font-family: var(--font-mono);
-		font-size: 10px;
-		height: 30px;
+		font-size: 9px;
+		height: 28px;
 		transition: border-color 0.15s, outline-color 0.15s;
 	}
 
@@ -1402,8 +1381,9 @@ $effect(() => {
 	}
 
 	@media (max-width: 980px) {
-		.hero {
-			grid-template-columns: 1fr;
+		.tab-header {
+			flex-wrap: wrap;
+			gap: var(--space-sm);
 		}
 
 		.module-head {

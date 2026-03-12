@@ -236,30 +236,27 @@ let isInstalled = $derived(
 	.card {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: 6px;
 		padding: var(--space-sm);
-		background:
-			radial-gradient(circle at 15% 120%, color-mix(in srgb, var(--sig-accent) 8%, transparent), transparent 45%),
-			linear-gradient(to right, color-mix(in srgb, var(--sig-surface-raised) 94%, black) 0%, var(--sig-surface) 65%);
+		background: var(--sig-surface);
 		border: 1px solid var(--sig-border);
+		border-radius: var(--radius);
 		cursor: pointer;
-		transition: border-color 0.15s, background 0.15s;
+		transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 		text-align: left;
-		min-height: 140px;
+		min-height: 0;
 		width: 100%;
 	}
 
 	.card:hover {
-		border-color: var(--sig-highlight);
-		background:
-			radial-gradient(circle at 15% 120%, color-mix(in srgb, var(--sig-accent) 11%, transparent), transparent 45%),
-			linear-gradient(to right, color-mix(in srgb, var(--sig-surface-raised) 91%, black) 0%, var(--sig-surface) 65%);
+		border-color: var(--sig-border-strong);
+		background: var(--sig-surface-raised);
 	}
 
 	.card:focus-visible {
-		outline: 2px solid var(--sig-highlight);
-		outline-offset: 1px;
+		outline: none;
 		border-color: var(--sig-highlight);
+		border-left: 2px solid var(--sig-highlight);
 	}
 
 	.action-row {
@@ -269,12 +266,11 @@ let isInstalled = $derived(
 	}
 	.card-wrap.selected > .card {
 		border-color: var(--sig-highlight);
-		background:
-			radial-gradient(circle at 15% 120%, color-mix(in srgb, var(--sig-accent) 14%, transparent), transparent 45%),
-			linear-gradient(to right, color-mix(in srgb, var(--sig-surface-raised) 88%, black) 0%, var(--sig-surface) 65%);
+		border-left: 2px solid var(--sig-highlight);
+		background: var(--sig-surface-raised);
 	}
 	.card-wrap.featured > .card {
-		min-height: 160px;
+		min-height: 0;
 	}
 
 	.remove-corner {
@@ -313,15 +309,15 @@ let isInstalled = $derived(
 
 	.monogram {
 		flex-shrink: 0;
-		width: 28px;
-		height: 28px;
+		width: 24px;
+		height: 24px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		border-radius: 0.45rem;
+		border-radius: 3px;
 		border: 1px solid var(--sig-icon-border);
 		font-family: var(--font-mono);
-		font-size: 10px;
+		font-size: 9px;
 		font-weight: 700;
 		color: var(--sig-icon-fg);
 		letter-spacing: 0.06em;
@@ -329,9 +325,9 @@ let isInstalled = $derived(
 		user-select: none;
 	}
 	.monogram.monogram-featured {
-		width: 34px;
-		height: 34px;
-		font-size: 11px;
+		width: 24px;
+		height: 24px;
+		font-size: 9px;
 	}
 
 	.card-header-content {
@@ -355,10 +351,10 @@ let isInstalled = $derived(
 	}
 
 	.card-name {
-		font-family: var(--font-display);
-		font-size: 12px;
+		font-family: var(--font-mono);
+		font-size: 11px;
 		font-weight: 600;
-		color: var(--sig-highlight);
+		color: var(--sig-text-bright);
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		overflow: hidden;
@@ -368,7 +364,7 @@ let isInstalled = $derived(
 		min-width: 0;
 	}
 	.card-name.card-name-featured {
-		font-size: 13px;
+		font-size: 11px;
 	}
 
 	.provider-badge {
@@ -388,14 +384,14 @@ let isInstalled = $derived(
 
 	.card-desc {
 		font-family: var(--font-mono);
-		font-size: 10px;
+		font-size: 9px;
 		color: var(--sig-text-muted);
 		line-height: 1.5;
 		margin: 0;
 		flex: 1;
-		line-clamp: 3;
+		line-clamp: 2;
 		display: -webkit-box;
-		-webkit-line-clamp: 3;
+		-webkit-line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 	}
@@ -403,7 +399,7 @@ let isInstalled = $derived(
 	.card-stats {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: 8px;
 		flex-wrap: wrap;
 	}
 
@@ -412,7 +408,7 @@ let isInstalled = $derived(
 		align-items: center;
 		gap: 3px;
 		font-family: var(--font-mono);
-		font-size: 10px;
+		font-size: 9px;
 		color: var(--sig-text-muted);
 		font-variant-numeric: tabular-nums;
 	}

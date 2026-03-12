@@ -16,8 +16,6 @@ import { nav } from "$lib/stores/navigation.svelte";
 import TaskBoard from "$lib/components/tasks/TaskBoard.svelte";
 import TaskForm from "$lib/components/tasks/TaskForm.svelte";
 import TaskDetail from "$lib/components/tasks/TaskDetail.svelte";
-import PageBanner from "$lib/components/layout/PageBanner.svelte";
-import { Button } from "$lib/components/ui/button/index.js";
 import Plus from "@lucide/svelte/icons/plus";
 
 // Track position as [columnIndex, taskIndex]
@@ -103,10 +101,8 @@ function handleGlobalKey(e: KeyboardEvent) {
 		if (e.key === "ArrowLeft" && isBoardFocused) {
 			e.preventDefault();
 			if (selectedColumn === 0) {
-				// At first column, return to sidebar
 				returnToSidebar();
 			} else if (selectedColumn > 0) {
-				// Move to previous column (skip empty columns)
 				let newCol = selectedColumn - 1;
 				while (newCol > 0 && getColumnTasks(columnKeys[newCol]).length === 0) {
 					newCol--;
@@ -117,7 +113,6 @@ function handleGlobalKey(e: KeyboardEvent) {
 					selectedTaskInColumn = Math.min(selectedTaskInColumn, prevColTasks.length - 1);
 					focusTaskCard(selectedColumn, selectedTaskInColumn);
 				} else {
-					// No non-empty column found to the left, return to sidebar
 					returnToSidebar();
 				}
 			}
@@ -126,12 +121,10 @@ function handleGlobalKey(e: KeyboardEvent) {
 
 		if (e.key === "ArrowRight") {
 			e.preventDefault();
-			// If coming from sidebar (no task focused yet), select first task
 			const currentFocus = document.activeElement;
 			const isTaskFocused = currentFocus?.classList.contains('task-card');
 
 			if (!isTaskFocused && ts.tasks.length > 0) {
-				// First arrow right from sidebar - focus first task
 				selectedColumn = findFirstColumnWithTasks();
 				const colTasks = getColumnTasks(columnKeys[selectedColumn]);
 				if (colTasks.length > 0) {
@@ -139,7 +132,6 @@ function handleGlobalKey(e: KeyboardEvent) {
 					focusTaskCard(selectedColumn, selectedTaskInColumn);
 				}
 			} else if (selectedColumn < columnKeys.length - 1) {
-				// Move to next column (skip empty columns)
 				let newCol = selectedColumn + 1;
 				while (newCol < columnKeys.length - 1 && getColumnTasks(columnKeys[newCol]).length === 0) {
 					newCol++;
@@ -194,14 +186,12 @@ function handleGlobalKey(e: KeyboardEvent) {
 
 	// R/D require a selected task (detail panel must be open)
 	if (ts.detailOpen && ts.selectedId) {
-		// R: Trigger/Run task
 		if (e.key === "r" || e.key === "R") {
 			e.preventDefault();
 			doTrigger(ts.selectedId);
 			return;
 		}
 
-		// D: Delete task
 		if (e.key === "d" || e.key === "D") {
 			e.preventDefault();
 			doDelete(ts.selectedId);
@@ -211,7 +201,6 @@ function handleGlobalKey(e: KeyboardEvent) {
 }
 
 function focusTaskCard(columnIndex: number, taskIndex: number): void {
-	// Find the column container and get only the cards within that column
 	const columns = document.querySelectorAll('[data-column-idx]');
 	const column = columns[columnIndex];
 	if (!column) return;
@@ -233,24 +222,25 @@ onMount(() => {
 		if (refreshTimer) clearInterval(refreshTimer);
 	};
 });
+
+const taskCount = $derived(ts.tasks.length);
 </script>
 
 <svelte:window onkeydown={handleGlobalKey} />
 
 <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
-	<PageBanner title="Tasks">
-		{#snippet right()}
-			<Button
-				variant="outline"
-				size="sm"
-				class="h-7 gap-1.5 text-[11px] bg-[var(--sig-bg)] border-[var(--sig-border)]"
-				onclick={() => openForm()}
-			>
-				<Plus class="size-3.5" />
-				New Task
-			</Button>
-		{/snippet}
-	</PageBanner>
+	<!-- Inline header -->
+	<div class="tab-header">
+		<div class="tab-header-left">
+			<span class="tab-header-title">SCHEDULER</span>
+			<span class="tab-header-count">{taskCount} TASKS</span>
+		</div>
+		<button class="new-task-btn" onclick={() => openForm()}>
+			<Plus class="size-3" />
+			<span>NEW TASK</span>
+		</button>
+	</div>
+
 	<!-- Board -->
 	<div class="flex flex-col flex-1 min-h-0 overflow-auto">
 		<TaskBoard
@@ -268,21 +258,17 @@ onMount(() => {
 		/>
 	</div>
 
-	<!-- Keyboard shortcuts -->
-	<div
-		class="shrink-0 px-4 py-2 border-t border-[var(--sig-border)]
-			flex items-center gap-4 text-[10px] text-[var(--sig-text-muted)]
-			font-[family-name:var(--font-mono)]"
-	>
+	<!-- Keyboard hints -->
+	<div class="shortcut-bar">
 		{#if !ts.formOpen}
-			<span><kbd class="px-1 py-px bg-[var(--sig-surface-raised)] border border-[var(--sig-border)]">N</kbd> New</span>
+			<span class="shortcut"><kbd>N</kbd> NEW</span>
 		{/if}
 		{#if ts.detailOpen}
-			<span><kbd class="px-1 py-px bg-[var(--sig-surface-raised)] border border-[var(--sig-border)]">R</kbd> Run</span>
-			<span><kbd class="px-1 py-px bg-[var(--sig-surface-raised)] border border-[var(--sig-border)]">D</kbd> Delete</span>
-			<span><kbd class="px-1 py-px bg-[var(--sig-surface-raised)] border border-[var(--sig-border)]">Esc</kbd> Close</span>
+			<span class="shortcut"><kbd>R</kbd> RUN</span>
+			<span class="shortcut"><kbd>D</kbd> DELETE</span>
+			<span class="shortcut"><kbd>ESC</kbd> CLOSE</span>
 		{:else if ts.formOpen}
-			<span><kbd class="px-1 py-px bg-[var(--sig-surface-raised)] border border-[var(--sig-border)]">Esc</kbd> Cancel</span>
+			<span class="shortcut"><kbd>ESC</kbd> CANCEL</span>
 		{/if}
 	</div>
 </div>
@@ -310,3 +296,87 @@ onMount(() => {
 		openForm(id);
 	}}
 />
+
+<style>
+	.tab-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--space-sm) var(--space-md);
+		border-bottom: 1px solid var(--sig-border);
+		flex-shrink: 0;
+	}
+
+	.tab-header-left {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+	}
+
+	.tab-header-title {
+		font-family: var(--font-display);
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		color: var(--sig-text-bright);
+	}
+
+	.tab-header-count {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.1em;
+		color: var(--sig-text-muted);
+	}
+
+	.new-task-btn {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 3px 10px;
+		background: transparent;
+		border: 1px solid var(--sig-border-strong);
+		border-radius: var(--radius);
+		color: var(--sig-text-muted);
+		font-family: var(--font-mono);
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		cursor: pointer;
+		transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+	}
+
+	.new-task-btn:hover {
+		color: var(--sig-highlight);
+		border-color: var(--sig-highlight);
+	}
+
+	.shortcut-bar {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		height: 22px;
+		padding: 0 12px;
+		border-top: 1px solid var(--sig-border);
+		flex-shrink: 0;
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.06em;
+		color: var(--sig-text-muted);
+	}
+
+	.shortcut {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.shortcut kbd {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		padding: 0 3px;
+		background: var(--sig-surface-raised);
+		border: 1px solid var(--sig-border);
+		border-radius: 2px;
+		color: var(--sig-text-muted);
+	}
+</style>

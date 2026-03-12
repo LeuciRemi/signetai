@@ -16,16 +16,12 @@
 		getContinuityLatest,
 		getPipelineStatus,
 		getConnectors,
-		fetchChangelog,
 	} from "$lib/api";
 	import AgentHeader from "$lib/components/home/AgentHeader.svelte";
 	import SuggestedInsights from "$lib/components/home/SuggestedInsights.svelte";
 	import PredictorSplitBar from "$lib/components/home/PredictorSplitBar.svelte";
 	import PinnedEntityCluster from "$lib/components/home/PinnedEntityCluster.svelte";
-	import SystemInfoCard from "$lib/components/home/SystemInfoCard.svelte";
-	import MiniChangelog from "$lib/components/home/MiniChangelog.svelte";
 	import { onMount } from "svelte";
-	import PageBanner from "$lib/components/layout/PageBanner.svelte";
 
 	interface Props {
 		identity: Identity;
@@ -43,7 +39,6 @@
 	let continuity = $state<ContinuityEntry[]>([]);
 	let pipelineStatus = $state<PipelineStatus | null>(null);
 	let connectors = $state<DocumentConnector[]>([]);
-	let changelogHtml = $state<string | null>(null);
 	let loaded = $state(false);
 
 	onMount(async () => {
@@ -53,7 +48,6 @@
 			getContinuityLatest(),
 			getPipelineStatus(),
 			getConnectors(),
-			fetchChangelog(),
 		]);
 
 		if (results[0].status === "fulfilled" && results[0].value)
@@ -66,14 +60,11 @@
 			pipelineStatus = results[3].value;
 		if (results[4].status === "fulfilled")
 			connectors = results[4].value;
-		if (results[5].status === "fulfilled" && results[5].value)
-			changelogHtml = results[5].value.html;
 		loaded = true;
 	});
 </script>
 
 <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
-<PageBanner title="Home" />
 <div class="home-grid">
 	<div class="area-banner">
 		<AgentHeader
@@ -83,24 +74,17 @@
 			connectorCount={connectors.length}
 			{continuity}
 			memoryCount={memoryStats?.total ?? 0}
-		/>
-	</div>
-	<div class="area-insights">
-		<SuggestedInsights {memories} />
-	</div>
-	<div class="area-right-top">
-		<PinnedEntityCluster />
-		<PredictorSplitBar {daemonStatus} />
-	</div>
-	<div class="area-health">
-		<SystemInfoCard
 			{diagnostics}
 			{pipelineStatus}
 			{memoryStats}
 		/>
 	</div>
-	<div class="area-changelog">
-		<MiniChangelog html={changelogHtml} />
+	<div class="area-insights">
+		<SuggestedInsights {memories} />
+	</div>
+	<div class="area-sidebar">
+		<PinnedEntityCluster />
+		<PredictorSplitBar {daemonStatus} />
 	</div>
 </div>
 </div>
@@ -109,11 +93,10 @@
 	.home-grid {
 		display: grid;
 		grid-template-columns: 1.6fr 1fr;
-		grid-template-rows: auto 1fr 1fr;
+		grid-template-rows: auto 1fr;
 		grid-template-areas:
-			"banner     banner"
-			"insights   righttop"
-			"health     changelog";
+			"banner  banner"
+			"insights sidebar";
 		gap: var(--space-sm);
 		flex: 1;
 		min-height: 0;
@@ -131,26 +114,18 @@
 		overflow: hidden;
 	}
 
-	.area-right-top {
-		grid-area: righttop;
+	.area-sidebar {
+		grid-area: sidebar;
 		display: flex;
+		flex-direction: column;
 		gap: var(--space-sm);
 		min-height: 0;
 		overflow: hidden;
 	}
 
-	.area-right-top > :global(*) {
+	.area-sidebar > :global(*) {
 		flex: 1;
 		min-width: 0;
-	}
-
-	.area-health {
-		grid-area: health;
-	}
-
-	.area-changelog {
-		grid-area: changelog;
 		min-height: 0;
-		overflow: hidden;
 	}
 </style>

@@ -9,6 +9,7 @@ import type {
 	MemoryStats,
 } from "$lib/api";
 import { Skeleton } from "$lib/components/ui/skeleton/index.js";
+import { fade } from "svelte/transition";
 
 interface Props {
 	activeTab: TabId;
@@ -80,6 +81,8 @@ const {
 	</div>
 {/snippet}
 
+{#key activeTab}
+<div class="tab-transition" in:fade={{ duration: 80 }}>
 {#if activeTab === "home"}
 	{#await import("$lib/components/tabs/HomeTab.svelte")}
 		{@render skeletonCards()}
@@ -201,3 +204,14 @@ const {
 		{@render skeletonError(error)}
 	{/await}
 {/if}
+</div>
+{/key}
+
+<style>
+	.tab-transition {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-height: 0;
+	}
+</style>

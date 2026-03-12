@@ -1,14 +1,6 @@
 <script lang="ts">
-	import {
-		Card,
-		CardContent,
-		CardHeader,
-		CardTitle,
-	} from "$lib/components/ui/card/index.js";
-	import { Badge } from "$lib/components/ui/badge/index.js";
 	import { setTab } from "$lib/stores/navigation.svelte";
 	import type { DaemonStatus } from "$lib/api";
-	import Gauge from "@lucide/svelte/icons/gauge";
 
 	const isDev = import.meta.env.DEV;
 	const API_BASE = isDev ? "http://localhost:3850" : "";
@@ -24,28 +16,11 @@
 		trainingSessions: number;
 	}
 
-	interface DiagnosticsPredictor {
-		score: number;
-		status: string;
-	}
-
-	interface DiagnosticsIndex {
-		embeddingCoverage: number;
-	}
-
-	interface DiagnosticsStorage {
-		totalMemories: number;
-	}
-
-	interface DiagnosticsComposite {
-		score: number;
-	}
-
 	interface DiagnosticsData {
-		predictor?: DiagnosticsPredictor;
-		index?: DiagnosticsIndex;
-		storage?: DiagnosticsStorage;
-		composite?: DiagnosticsComposite;
+		predictor?: { score: number; status: string };
+		index?: { embeddingCoverage: number };
+		storage?: { totalMemories: number };
+		composite?: { score: number };
 	}
 
 	interface Props {
@@ -76,19 +51,12 @@
 		diagnostics?.composite?.score ?? 0,
 	);
 
-	const healthBadgeVariant = $derived.by(() => {
-		switch (healthStatus) {
-			case "healthy":
-				return "default" as const;
-			case "degraded":
-			case "cold_start":
-				return "secondary" as const;
-			case "unhealthy":
-				return "destructive" as const;
-			default:
-				return "outline" as const;
-		}
-	});
+	function statusColor(status: string): string {
+		if (status === "healthy") return "var(--sig-success)";
+		if (status === "degraded" || status === "cold_start") return "var(--sig-warning, #d4a017)";
+		if (status === "unhealthy") return "var(--sig-danger)";
+		return "var(--sig-text-muted)";
+	}
 
 	async function fetchData(): Promise<void> {
 		try {
@@ -116,83 +84,250 @@
 	});
 </script>
 
-<Card
-	class="flex flex-col overflow-hidden rounded-none
-		border-[var(--sig-border)] py-0
-		shadow-none"
-	style="background: var(--sig-surface);"
->
-	<CardHeader class="px-3 py-2.5">
-		<div class="flex items-center gap-2">
-			<Gauge class="size-3.5 text-[var(--sig-text-muted)]" />
-			<CardTitle
-				class="font-display text-[11px] font-bold uppercase tracking-[0.1em]
-					text-[var(--sig-text-bright)]"
-			>
-				Memory Scoring
-			</CardTitle>
-		</div>
-	</CardHeader>
+<div class="panel">
+	<div class="panel-header">
+		<span class="panel-title">MEMORY SCORING</span>
+		{#if loaded}
+			<span
+				class="status-indicator"
+				style="color: {statusColor(healthStatus)}"
+			>{healthStatus.toUpperCase()}</span>
+		{/if}
+	</div>
 
-	<CardContent class="px-3 pb-3 pt-0">
+	<div class="panel-body">
 		{#if !loaded}
-			<div class="h-12"></div>
+			<div class="empty-state">LOADING</div>
 		{:else if predictorAvailable}
-			<!-- Split bar: baseline vs predictor -->
-			<div class="space-y-1.5">
-				<div class="flex gap-px h-2 w-full overflow-hidden rounded-sm">
-					<div
-						class="transition-all duration-300"
-						style="width: {alpha * 100}%; background: var(--sig-text-muted)"
-					></div>
-					<div
-						class="transition-all duration-300"
-						style="width: {(1 - alpha) * 100}%; background: var(--sig-accent)"
-					></div>
-				</div>
-				<div class="flex justify-between">
-					<span class="sig-micro text-[var(--sig-text-muted)]">baseline</span>
-					<span class="sig-micro text-[var(--sig-accent)]">predictor</span>
+			<!-- Predictor active: split bar + stats -->
+			<div class="scoring-data">
+				<div class="split-bar-container">
+					<div class="split-bar">
+						<div
+							class="split-segment baseline"
+							style="width: {alpha * 100}%"
+						></div>
+						<div
+							class="split-segment predictor"
+							style="width: {(1 - alpha) * 100}%"
+						></div>
+					</div>
+					<div class="split-labels">
+						<span class="split-label">BASELINE {Math.round(alpha * 100)}%</span>
+						<span class="split-label accent">PREDICTOR {Math.round((1 - alpha) * 100)}%</span>
+					</div>
 				</div>
 
-				<div class="flex items-center gap-2 pt-1">
-					<span class="sig-meta text-[var(--sig-text-muted)]">
-						success {Math.round(successRate * 100)}%
-					</span>
-					<Badge variant={healthBadgeVariant} class="text-[8px] px-1.5 py-0">
-						{healthStatus}
-					</Badge>
+				<div class="stat-rows">
+					<div class="stat-row">
+						<span class="stat-label">SUCCESS RATE</span>
+						<span class="stat-fill"></span>
+						<span class="stat-value">{Math.round(successRate * 100)}%</span>
+					</div>
+					<div class="stat-row">
+						<span class="stat-label">MODEL VERSION</span>
+						<span class="stat-fill"></span>
+						<span class="stat-value">v{health?.modelVersion ?? "--"}</span>
+					</div>
+					<div class="stat-row">
+						<span class="stat-label">TRAINING SESSIONS</span>
+						<span class="stat-fill"></span>
+						<span class="stat-value">{health?.trainingSessions ?? "--"}</span>
+					</div>
 				</div>
 			</div>
 		{:else}
-			<!-- Baseline-only stats -->
-			<div class="space-y-2">
-				<div class="flex justify-between items-center">
-					<span class="sig-meta text-[var(--sig-text-muted)]">embedding coverage</span>
-					<span class="sig-meta text-[var(--sig-text)]">
-						{Math.round(embeddingCoverage * 100)}%
-					</span>
+			<!-- Baseline only -->
+			<div class="stat-rows">
+				<div class="stat-row">
+					<span class="stat-label">EMBEDDING COVERAGE</span>
+					<span class="stat-fill"></span>
+					<span class="stat-value">{Math.round(embeddingCoverage * 100)}%</span>
 				</div>
-				<div class="flex justify-between items-center">
-					<span class="sig-meta text-[var(--sig-text-muted)]">total memories</span>
-					<span class="sig-meta text-[var(--sig-text)]">
-						{totalMemories.toLocaleString()}
-					</span>
+				<div class="stat-row">
+					<span class="stat-label">TOTAL MEMORIES</span>
+					<span class="stat-fill"></span>
+					<span class="stat-value">{totalMemories.toLocaleString()}</span>
 				</div>
-				<div class="flex justify-between items-center">
-					<span class="sig-meta text-[var(--sig-text-muted)]">health score</span>
-					<span class="sig-meta text-[var(--sig-text)]">
-						{Math.round(compositeScore * 100)}%
-					</span>
+				<div class="stat-row">
+					<span class="stat-label">HEALTH SCORE</span>
+					<span class="stat-fill"></span>
+					<span class="stat-value">{Math.round(compositeScore * 100)}%</span>
 				</div>
 			</div>
 		{/if}
+	</div>
 
-		<button
-			class="mt-2 sig-meta text-[var(--sig-accent)] transition-opacity hover:opacity-80"
-			onclick={() => setTab("predictor")}
-		>
-			View predictor &rarr;
+	<div class="panel-footer">
+		<button class="panel-link" onclick={() => setTab("predictor")}>
+			VIEW PREDICTOR
 		</button>
-	</CardContent>
-</Card>
+	</div>
+</div>
+
+<style>
+	.panel {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		background: var(--sig-surface);
+		border: 1px solid var(--sig-border);
+		border-radius: var(--radius);
+		overflow: hidden;
+	}
+
+	.panel-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--space-sm) var(--space-md);
+		border-bottom: 1px solid var(--sig-border);
+		flex-shrink: 0;
+	}
+
+	.panel-title {
+		font-family: var(--font-display);
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		color: var(--sig-text-bright);
+	}
+
+	.status-indicator {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.1em;
+		font-weight: 600;
+	}
+
+	.panel-body {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		padding: var(--space-sm) var(--space-md);
+	}
+
+	.panel-footer {
+		padding: var(--space-sm) var(--space-md);
+		border-top: 1px solid var(--sig-border);
+		flex-shrink: 0;
+	}
+
+	.panel-link {
+		font-family: var(--font-mono);
+		font-size: 9px;
+		letter-spacing: 0.08em;
+		color: var(--sig-accent);
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		transition: color var(--dur) var(--ease);
+	}
+
+	.panel-link:hover {
+		color: var(--sig-highlight-text);
+	}
+
+	/* Split bar */
+	.scoring-data {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-sm);
+	}
+
+	.split-bar-container {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.split-bar {
+		display: flex;
+		gap: 1px;
+		height: 6px;
+		width: 100%;
+		overflow: hidden;
+		border-radius: 1px;
+	}
+
+	.split-segment {
+		transition: width 0.3s var(--ease);
+	}
+
+	.split-segment.baseline {
+		background: var(--sig-text-muted);
+	}
+
+	.split-segment.predictor {
+		background: var(--sig-highlight);
+	}
+
+	.split-labels {
+		display: flex;
+		justify-content: space-between;
+	}
+
+	.split-label {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.08em;
+		color: var(--sig-text-muted);
+	}
+
+	.split-label.accent {
+		color: var(--sig-highlight-text);
+	}
+
+	/* Stat rows — matching readout language */
+	.stat-rows {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+
+	.stat-row {
+		display: flex;
+		align-items: baseline;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		line-height: 2;
+		letter-spacing: 0.04em;
+	}
+
+	.stat-label {
+		color: var(--sig-text-muted);
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.stat-fill {
+		flex: 1;
+		min-width: 12px;
+		border-bottom: 1px dotted var(--sig-border-strong);
+		margin: 0 6px;
+		position: relative;
+		top: -3px;
+	}
+
+	.stat-value {
+		color: var(--sig-text-bright);
+		font-weight: 600;
+		white-space: nowrap;
+		flex-shrink: 0;
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* Empty state */
+	.empty-state {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 100%;
+		font-family: var(--font-mono);
+		font-size: 9px;
+		letter-spacing: 0.1em;
+		color: var(--sig-text-muted);
+	}
+</style>

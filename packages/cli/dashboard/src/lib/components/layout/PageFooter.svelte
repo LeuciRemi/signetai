@@ -35,47 +35,88 @@ function formatTimelineGeneratedFor(value: string): string {
 }
 
 const staticFooter = $derived(PAGE_FOOTERS[activeTab]);
+
+interface FooterSlot {
+	left: string;
+	right: string;
+}
+
+const content = $derived.by((): FooterSlot | null => {
+	if (activeTab === "skills") return null;
+	if (activeTab === "settings") return {
+		left: "SETTINGS",
+		right: "CTRL+S SAVE",
+	};
+	if (activeTab === "memory") return {
+		left: memoryFooterLabel.toUpperCase(),
+		right: memorySearching
+			? "SEARCHING"
+			: memorySimilarActive
+				? "SIMILARITY"
+				: "HYBRID INDEX",
+	};
+	if (activeTab === "timeline") return {
+		left: "TIMELINE",
+		right: timelineGeneratedFor
+			? formatTimelineGeneratedFor(timelineGeneratedFor).toUpperCase()
+			: "EVOLUTION VIEW",
+	};
+	if (activeTab === "tasks") return {
+		left: `${taskCount} TASKS`,
+		right: "SCHEDULER",
+	};
+	if (staticFooter) return {
+		left: staticFooter.left.toUpperCase(),
+		right: staticFooter.right.toUpperCase(),
+	};
+	return null;
+});
 </script>
 
-{#if activeTab !== "skills"}
-<div
-	class="flex items-center justify-between h-[26px] px-4
-		bg-[var(--sig-bg)]
-		sig-eyebrow shrink-0"
->
-	{#if activeTab === "settings"}
-		<span>Settings</span>
-		<span class="flex items-center gap-2">
-			<kbd class="px-1 py-px text-[10px] text-[var(--sig-text-muted)]
-				bg-[var(--sig-surface-raised)]"
-			>Ctrl+S</kbd> save
-		</span>
-	{:else if activeTab === "memory"}
-		<span>{memoryFooterLabel}</span>
-		<span>
-			{#if memorySearching}
-				semantic search in progress
-			{:else if memorySimilarActive}
-				similarity mode
-			{:else}
-				hybrid search index
-			{/if}
-		</span>
-	{:else if activeTab === "timeline"}
-		<span>timeline eras</span>
-		<span>
-			{#if timelineGeneratedFor}
-				As of {formatTimelineGeneratedFor(timelineGeneratedFor)}
-			{:else}
-				memory evolution view
-			{/if}
-		</span>
-	{:else if activeTab === "tasks"}
-		<span>{taskCount} scheduled tasks</span>
-		<span>cron scheduler</span>
-	{:else if staticFooter}
-		<span>{staticFooter.left}</span>
-		<span>{staticFooter.right}</span>
-	{/if}
+{#if content}
+<div class="footer">
+	<span class="footer-pip" aria-hidden="true"></span>
+	<span class="footer-text">{content.left}</span>
+	<span class="footer-fill"></span>
+	<span class="footer-text">{content.right}</span>
 </div>
 {/if}
+
+<style>
+	.footer {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		height: 22px;
+		padding: 0 12px;
+		background: var(--sig-bg);
+		border-top: 1px solid var(--sig-border);
+		flex-shrink: 0;
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.footer-pip {
+		width: 4px;
+		height: 4px;
+		border-radius: 50%;
+		background: var(--sig-highlight);
+		opacity: 0.5;
+		flex-shrink: 0;
+	}
+
+	.footer-text {
+		color: var(--sig-text-muted);
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.footer-fill {
+		flex: 1;
+		min-width: 8px;
+		height: 1px;
+		background: var(--sig-border);
+	}
+</style>

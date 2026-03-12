@@ -1,8 +1,12 @@
 <script lang="ts">
-	import type { Identity, DaemonStatus, ContinuityEntry } from "$lib/api";
-	import Database from "@lucide/svelte/icons/database";
-	import Cable from "@lucide/svelte/icons/cable";
-	import Cpu from "@lucide/svelte/icons/cpu";
+	import type {
+		Identity,
+		DaemonStatus,
+		ContinuityEntry,
+		DiagnosticsReport,
+		PipelineStatus,
+		MemoryStats,
+	} from "$lib/api";
 
 	interface Props {
 		identity: Identity;
@@ -11,15 +15,21 @@
 		connectorCount: number;
 		continuity: ContinuityEntry[];
 		memoryCount: number;
+		diagnostics?: DiagnosticsReport | null;
+		pipelineStatus?: PipelineStatus | null;
+		memoryStats?: MemoryStats | null;
 	}
 
 	const {
 		identity,
-		greeting,
+		greeting: _greeting,
 		daemonStatus,
 		connectorCount,
 		continuity,
 		memoryCount,
+		diagnostics = null,
+		pipelineStatus = null,
+		memoryStats = null,
 	}: Props = $props();
 
 	const ageDays = $derived.by(() => {
@@ -31,13 +41,14 @@
 	});
 
 	const ageLabel = $derived.by(() => {
-		if (ageDays === null) return null;
-		if (ageDays === 0) return "today";
-		if (ageDays === 1) return "1 day";
-		return `${ageDays} days`;
+		if (ageDays === null) return "--";
+		if (ageDays === 0) return "TODAY";
+		if (ageDays === 1) return "1 DAY";
+		return `${ageDays} DAYS`;
 	});
 
 	const activeSessions = $derived(daemonStatus?.activeSessions ?? 0);
+	const version = $derived(daemonStatus?.version ?? "--");
 
 	const latestProject = $derived.by(() => {
 		if (continuity.length === 0) return null;
@@ -52,157 +63,329 @@
 	function formatRecency(dateStr: string): string {
 		const diff = Date.now() - new Date(dateStr).getTime();
 		const mins = Math.floor(diff / 60_000);
-		if (mins < 1) return "just now";
-		if (mins < 60) return `${mins}m ago`;
+		if (mins < 1) return "JUST NOW";
+		if (mins < 60) return `${mins}M AGO`;
 		const hours = Math.floor(mins / 60);
-		if (hours < 24) return `${hours}h ago`;
+		if (hours < 24) return `${hours}H AGO`;
 		const days = Math.floor(hours / 24);
-		return `${days}d ago`;
+		return `${days}D AGO`;
 	}
+
+	const projectName = $derived(
+		latestProject?.project?.replace(/^\/.*\//, "").replace(/\/$/, "") ?? "--",
+	);
+
+	const recency = $derived(
+		latestProject ? formatRecency(latestProject.created_at) : "--",
+	);
+
+	/* use name from identity; daemon /api/identity sometimes returns empty
+	   strings even when agent.yaml has a name configured — fall back gracefully */
+	const agentName = $derived(
+		(identity.name && identity.name.trim()) || "SIGNET AGENT",
+	);
+
+	/* health metrics from diagnostics */
+	const healthScore = $derived(diagnostics?.composite?.score ?? null);
+	const healthStatus = $derived(diagnostics?.composite?.status ?? "UNKNOWN");
+
+	const embeddingPct = $derived.by(() => {
+		if (diagnostics?.index?.embeddingCoverage !== undefined) {
+			return Math.round(diagnostics.index.embeddingCoverage * 100);
+		}
+		if (!memoryStats || memoryStats.total === 0) return null;
+		return Math.round((memoryStats.withEmbeddings / memoryStats.total) * 100);
+	});
+
+	const pipelineMode = $derived.by(() => {
+		if (!pipelineStatus) return "UNKNOWN";
+		const mode = (pipelineStatus as Record<string, unknown>).mode;
+		if (typeof mode === "string") return mode.toUpperCase();
+		return "ACTIVE";
+	});
+
+	const warningCount = $derived.by(() => {
+		if (!diagnostics) return 0;
+		let count = 0;
+		const domains = ["queue", "storage", "index", "provider", "connector", "predictor"] as const;
+		for (const d of domains) {
+			const domain = diagnostics[d];
+			if (domain && typeof domain === "object" && "status" in domain) {
+				const status = (domain as { status: string }).status;
+				if (status === "degraded" || status === "unhealthy") count++;
+			}
+		}
+		return count;
+	});
+
+	function scoreColor(score: number | null): string {
+		if (score === null) return "var(--sig-text-muted)";
+		if (score >= 0.8) return "var(--sig-success)";
+		if (score >= 0.5) return "var(--sig-warning, #d4a017)";
+		return "var(--sig-danger)";
+	}
+
+	type Row = { idx: string; label: string; value: string; color?: string };
+
+	const leftRows: Row[] = $derived([
+		{ idx: "01", label: "UPTIME", value: ageLabel },
+		{ idx: "02", label: "PROJECT", value: projectName },
+		{ idx: "03", label: "LAST SEEN", value: recency },
+		{ idx: "04", label: "CONNECTORS", value: String(connectorCount) },
+		{ idx: "05", label: "SESSIONS", value: String(activeSessions) },
+	]);
+
+	const rightRows: Row[] = $derived([
+		{
+			idx: "06",
+			label: "HEALTH",
+			value: healthScore !== null ? `${healthScore.toFixed(2)} ${healthStatus.toUpperCase()}` : "--",
+			color: scoreColor(healthScore),
+		},
+		{
+			idx: "07",
+			label: "EMBEDDED",
+			value: embeddingPct !== null ? `${embeddingPct}%` : "--",
+		},
+		{
+			idx: "08",
+			label: "PIPELINE",
+			value: pipelineMode,
+		},
+		{
+			idx: "09",
+			label: "WARNINGS",
+			value: String(warningCount),
+			color: warningCount > 0 ? "var(--sig-danger)" : undefined,
+		},
+	]);
 </script>
 
-<div class="agent-header">
-	<div class="header-left">
-		<span class="greeting">{greeting}</span>
-		<div class="name-row">
-			<h1 class="agent-name">{identity.name ?? "Agent"}</h1>
-			{#if ageLabel}
-				<span class="sig-meta age-label">{ageLabel}</span>
-			{/if}
-			{#if latestProject}
-				<span class="sig-meta project-label">
-					{latestProject.project}
-					<span class="recency">{formatRecency(latestProject.created_at)}</span>
-				</span>
-			{/if}
-		</div>
-	</div>
+<div class="readout">
+	<!-- Scanline texture layer -->
+	<div class="readout-texture" aria-hidden="true"></div>
 
-	<div class="header-right">
-		<div class="chip">
-			<Database class="chip-icon" />
-			<span class="chip-value">{memoryCount.toLocaleString()}</span>
-			<span class="chip-label">memories</span>
+	<div class="readout-content">
+		<!-- Eyebrow -->
+		<div class="readout-eyebrow">
+			<span class="eyebrow-left">SIGNET AGENT READOUT</span>
+			<span class="eyebrow-right">v{version}</span>
 		</div>
-		<div class="chip">
-			<Cable class="chip-icon" />
-			<span class="chip-value">{connectorCount}</span>
-			<span class="chip-label">connectors</span>
+
+		<!-- Hero: agent name + memory count -->
+		<div class="readout-hero">
+			<h1 class="agent-name">{agentName}</h1>
+			<div class="hero-stat">
+				<span class="hero-number">{memoryCount.toLocaleString()}</span>
+				<span class="hero-unit">MEMORIES<br/>STORED</span>
+			</div>
 		</div>
-		<div class="chip">
-			<Cpu class="chip-icon" />
-			<span class="chip-value">{activeSessions}</span>
-			<span class="chip-label">active</span>
+
+		<!-- Divider -->
+		<div class="readout-divider" aria-hidden="true"></div>
+
+		<!-- Two-column data grid -->
+		<div class="readout-grid">
+			<div class="readout-col">
+				{#each leftRows as row}
+					<div class="data-row">
+						<span class="data-idx">{row.idx}</span>
+						<span class="data-label">{row.label}</span>
+						<span class="data-fill"></span>
+						<span
+							class="data-value"
+							style={row.color ? `color: ${row.color}` : ""}
+						>{row.value}</span>
+					</div>
+				{/each}
+			</div>
+			<div class="readout-col">
+				{#each rightRows as row}
+					<div class="data-row">
+						<span class="data-idx">{row.idx}</span>
+						<span class="data-label">{row.label}</span>
+						<span class="data-fill"></span>
+						<span
+							class="data-value"
+							style={row.color ? `color: ${row.color}` : ""}
+						>{row.value}</span>
+					</div>
+				{/each}
+			</div>
 		</div>
 	</div>
 </div>
 
 <style>
-	.agent-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-md);
-		padding: var(--space-sm) var(--space-md);
-		background:
-			repeating-conic-gradient(
-				rgba(255, 255, 255, 0.02) 0% 25%,
-				transparent 0% 50%
-			) 0 0 / 10px 10px,
-			repeating-conic-gradient(
-				transparent 0% 25%,
-				rgba(0, 0, 0, 0.03) 0% 50%
-			) 5px 5px / 10px 10px,
-			repeating-conic-gradient(
-				var(--sig-surface) 0% 25%,
-				color-mix(in srgb, var(--sig-surface) 96%, black) 0% 50%
-			) 0 0 / 10px 10px;
-		border: 1px solid var(--sig-border);
+	.readout {
+		position: relative;
+		overflow: hidden;
+		border: 1px solid var(--sig-border-strong);
 		border-radius: var(--radius);
+		background: var(--sig-bg);
 	}
 
-	.header-left {
+	.readout-texture {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		background:
+			repeating-linear-gradient(
+				0deg,
+				transparent 0px,
+				transparent 3px,
+				var(--sig-grid-line) 3px,
+				var(--sig-grid-line) 4px
+			);
+		z-index: 1;
+	}
+
+	.readout-content {
+		position: relative;
+		z-index: 2;
+		padding: var(--space-md) var(--space-lg);
+	}
+
+	/* --- Eyebrow --- */
+	.readout-eyebrow {
 		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		min-width: 0;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: var(--space-md);
 	}
 
-	.greeting {
+	.eyebrow-left {
 		font-family: var(--font-mono);
-		font-size: var(--font-size-xs);
+		font-size: 8px;
+		letter-spacing: 0.14em;
 		color: var(--sig-text-muted);
-		text-transform: lowercase;
 	}
 
-	.name-row {
+	.eyebrow-right {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.1em;
+		color: var(--sig-accent);
+	}
+
+	/* --- Hero --- */
+	.readout-hero {
 		display: flex;
-		align-items: baseline;
-		gap: var(--space-sm);
-		flex-wrap: wrap;
+		align-items: flex-end;
+		justify-content: space-between;
+		gap: var(--space-lg);
+		margin-bottom: var(--space-md);
 	}
 
 	.agent-name {
 		font-family: var(--font-display);
-		font-size: 18px;
+		font-size: 42px;
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		color: var(--sig-highlight);
 		margin: 0;
-		line-height: 1.1;
+		line-height: 0.9;
 	}
 
-	.age-label {
-		color: var(--sig-text-muted);
+	/* Neon glow only in dark mode */
+	:global(:root:not([data-theme="light"])) .agent-name {
+		text-shadow:
+			0 0 30px var(--sig-highlight-dim),
+			0 0 60px var(--sig-highlight-dim);
 	}
 
-	.project-label {
-		color: var(--sig-accent);
-	}
-
-	.recency {
-		color: var(--sig-text-muted);
-		margin-left: 4px;
-	}
-
-	.header-right {
+	.hero-stat {
 		display: flex;
-		align-items: center;
-		gap: var(--space-xs);
+		align-items: flex-end;
+		gap: var(--space-sm);
 		flex-shrink: 0;
 	}
 
-	.chip {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		padding: 3px 8px;
-		background: var(--sig-surface-raised);
-		border: 1px solid var(--sig-border);
-		border-radius: 1rem;
-		white-space: nowrap;
+	.hero-number {
+		font-family: var(--font-mono);
+		font-size: 36px;
+		font-weight: 700;
+		line-height: 0.9;
+		color: var(--sig-text-bright);
+		font-variant-numeric: tabular-nums;
+		letter-spacing: -0.02em;
 	}
 
-	:global(.chip-icon) {
-		width: 11px;
-		height: 11px;
+	.hero-unit {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		line-height: 1.4;
+		letter-spacing: 0.1em;
 		color: var(--sig-text-muted);
-		flex-shrink: 0;
+		padding-bottom: 4px;
 	}
 
-	.chip-value {
+	/* --- Divider --- */
+	.readout-divider {
+		height: 1px;
+		background: linear-gradient(
+			90deg,
+			var(--sig-highlight) 0%,
+			var(--sig-highlight-dim) 30%,
+			var(--sig-border) 60%,
+			transparent 100%
+		);
+		margin-bottom: var(--space-sm);
+	}
+
+	/* --- Data grid --- */
+	.readout-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0 var(--space-xl);
+	}
+
+	.readout-col {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+
+	.data-row {
+		display: flex;
+		align-items: baseline;
 		font-family: var(--font-mono);
 		font-size: 10px;
-		font-weight: 600;
-		color: var(--sig-highlight);
+		line-height: 2;
+		letter-spacing: 0.04em;
 	}
 
-	.chip-label {
-		font-family: var(--font-mono);
+	.data-idx {
+		width: 20px;
+		flex-shrink: 0;
+		color: var(--sig-highlight);
+		opacity: 0.4;
 		font-size: 9px;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.data-label {
 		color: var(--sig-text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.data-fill {
+		flex: 1;
+		min-width: 16px;
+		border-bottom: 1px dotted var(--sig-border-strong);
+		margin: 0 8px;
+		position: relative;
+		top: -3px;
+	}
+
+	.data-value {
+		color: var(--sig-text-bright);
+		font-weight: 600;
+		white-space: nowrap;
+		flex-shrink: 0;
+		font-variant-numeric: tabular-nums;
+		text-align: right;
 	}
 </style>

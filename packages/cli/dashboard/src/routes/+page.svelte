@@ -210,8 +210,7 @@ $effect(() => {
 		onprefetchembeddings={prefetchEmbeddingsTab}
 	/>
 	<main data-page-content="true" class="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden
-		mr-2 rounded-br-lg border border-[var(--sig-border-strong)] border-l-0 border-t-0 border-b-0
-		bg-[var(--sig-surface)]">
+		bg-[var(--sig-bg)]">
 
 		<UpgradeBanner {daemonStatus} />
 		<ExtensionBanner />

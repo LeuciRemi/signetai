@@ -1,10 +1,4 @@
 <script lang="ts">
-	import {
-		Card,
-		CardContent,
-		CardHeader,
-		CardTitle,
-	} from "$lib/components/ui/card/index.js";
 	import { setTab } from "$lib/stores/navigation.svelte";
 	import Network from "@lucide/svelte/icons/network";
 	import { onMount } from "svelte";
@@ -30,7 +24,7 @@
 				entities = data.entities ?? data.items ?? [];
 			}
 		} catch {
-			// endpoint may not exist yet — show empty state
+			// endpoint may not exist yet
 		}
 		loaded = true;
 	}
@@ -40,76 +34,183 @@
 	});
 </script>
 
-<Card
-	class="flex flex-1 flex-col overflow-hidden rounded-none
-		border-[var(--sig-border)] py-0
-		shadow-none"
-	style="background: var(--sig-surface);"
->
-	<CardHeader class="px-3 py-2.5">
-		<div class="flex items-center gap-2">
-			<Network class="size-3.5 text-[var(--sig-text-muted)]" />
-			<CardTitle
-				class="font-display text-[11px] font-bold uppercase tracking-[0.1em]
-					text-[var(--sig-text-bright)]"
-			>
-				Spotlight
-			</CardTitle>
-		</div>
-	</CardHeader>
+<div class="panel">
+	<div class="panel-header">
+		<span class="panel-title">SPOTLIGHT</span>
+		<span class="panel-count">{entities.length} PINNED</span>
+	</div>
 
-	<CardContent class="flex flex-1 flex-col px-3 pb-3 pt-0">
+	<div class="panel-body">
 		{#if !loaded}
-			<div class="flex-1"></div>
+			<div class="empty-state">LOADING</div>
 		{:else if entities.length === 0}
-			<!-- Empty state -->
-			<div class="flex flex-1 flex-col items-center justify-center gap-2 py-4">
-				<div
-					class="flex items-center justify-center rounded-md size-10"
-					style="background: var(--sig-surface-raised); border: 1px solid var(--sig-border)"
-				>
-					<Network class="size-5 text-[var(--sig-text-muted)]" />
-				</div>
-				<p
-					class="max-w-[180px] text-center font-[family-name:var(--font-mono)]
-						text-[10px] leading-4 text-[var(--sig-text-muted)]"
-				>
-					Pin an entity in Knowledge to set it as your spotlight
-				</p>
+			<div class="empty-state">
+				<Network class="empty-icon" />
+				<span>PIN AN ENTITY IN KNOWLEDGE<br/>TO SET YOUR SPOTLIGHT</span>
 			</div>
 		{:else}
-			<!-- Pinned entity list -->
-			<div class="flex flex-1 flex-col gap-1.5">
+			<div class="entity-list">
 				{#each entities as entity, idx (entity.id ?? `entity-${idx}`)}
-					<div
-						class="flex items-center gap-2 rounded-sm px-2 py-1.5"
-						style="background: var(--sig-surface-raised); border: 1px solid var(--sig-border)"
-					>
-						<div
-							class="size-2 shrink-0 rounded-full"
-							style="background: var(--sig-accent)"
-						></div>
+					<div class="entity-row">
+						<span class="entity-idx">{String(idx + 1).padStart(2, "0")}</span>
 						<span
-							class="min-w-0 truncate font-[family-name:var(--font-mono)]
-								text-[11px] text-[var(--sig-text)]"
-						>
-							{entity.name}
-						</span>
+							class="entity-dot"
+							style="background: var(--sig-highlight)"
+						></span>
+						<span class="entity-name">{entity.name}</span>
 						{#if entity.mentionCount !== undefined}
-							<span class="sig-micro ml-auto shrink-0 text-[var(--sig-text-muted)]">
-								{entity.mentionCount}
-							</span>
+							<span class="entity-count">{entity.mentionCount}</span>
 						{/if}
 					</div>
 				{/each}
 			</div>
 		{/if}
+	</div>
 
-		<button
-			class="mt-2 sig-meta text-[var(--sig-accent)] transition-opacity hover:opacity-80"
-			onclick={() => setTab("knowledge")}
-		>
-			View in Knowledge &rarr;
+	<div class="panel-footer">
+		<button class="panel-link" onclick={() => setTab("knowledge")}>
+			VIEW IN KNOWLEDGE
 		</button>
-	</CardContent>
-</Card>
+	</div>
+</div>
+
+<style>
+	.panel {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		background: var(--sig-surface);
+		border: 1px solid var(--sig-border);
+		border-radius: var(--radius);
+		overflow: hidden;
+	}
+
+	.panel-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--space-sm) var(--space-md);
+		border-bottom: 1px solid var(--sig-border);
+		flex-shrink: 0;
+	}
+
+	.panel-title {
+		font-family: var(--font-display);
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		color: var(--sig-text-bright);
+	}
+
+	.panel-count {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.1em;
+		color: var(--sig-text-muted);
+	}
+
+	.panel-body {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		padding: var(--space-sm) 0;
+	}
+
+	.panel-footer {
+		padding: var(--space-sm) var(--space-md);
+		border-top: 1px solid var(--sig-border);
+		flex-shrink: 0;
+	}
+
+	.panel-link {
+		font-family: var(--font-mono);
+		font-size: 9px;
+		letter-spacing: 0.08em;
+		color: var(--sig-accent);
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		transition: color var(--dur) var(--ease);
+	}
+
+	.panel-link:hover {
+		color: var(--sig-highlight-text);
+	}
+
+	/* Entity list */
+	.entity-list {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.entity-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 3px var(--space-md);
+		font-family: var(--font-mono);
+		font-size: 10px;
+		transition: background var(--dur) var(--ease);
+	}
+
+	.entity-row:hover {
+		background: var(--sig-surface-raised);
+	}
+
+	.entity-idx {
+		width: 16px;
+		flex-shrink: 0;
+		color: var(--sig-highlight);
+		opacity: 0.4;
+		font-size: 9px;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.entity-dot {
+		width: 4px;
+		height: 4px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.entity-name {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--sig-text);
+	}
+
+	.entity-count {
+		flex-shrink: 0;
+		font-size: 9px;
+		color: var(--sig-text-muted);
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* Empty state */
+	.empty-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-sm);
+		height: 100%;
+		font-family: var(--font-mono);
+		font-size: 9px;
+		letter-spacing: 0.08em;
+		color: var(--sig-text-muted);
+		text-align: center;
+		line-height: 1.6;
+		padding: var(--space-md);
+	}
+
+	:global(.empty-icon) {
+		width: 16px;
+		height: 16px;
+		color: var(--sig-border-strong);
+	}
+</style>

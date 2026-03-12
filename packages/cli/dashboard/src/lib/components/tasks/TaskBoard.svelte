@@ -24,7 +24,6 @@ let running = $derived(
 	),
 );
 
-// For completed/failed, show recent tasks that had runs with that status
 let completed = $derived(
 	tasks.filter(
 		(t) =>
@@ -42,10 +41,10 @@ let failed = $derived(
 let disabled = $derived(tasks.filter((t) => !t.enabled));
 
 const columns = [
-	{ key: "scheduled", label: "Scheduled", color: "var(--sig-accent)" },
-	{ key: "running", label: "Running", color: "var(--sig-warning, #f59e0b)" },
+	{ key: "scheduled", label: "Scheduled", color: "var(--sig-highlight)" },
+	{ key: "running", label: "Running", color: "var(--sig-warning)" },
 	{ key: "completed", label: "Completed", color: "var(--sig-success)" },
-	{ key: "failed", label: "Failed", color: "var(--sig-error, #ef4444)" },
+	{ key: "failed", label: "Failed", color: "var(--sig-danger)" },
 ] as const;
 
 function getColumnTasks(key: string): ScheduledTask[] {
@@ -65,36 +64,26 @@ function getColumnTasks(key: string): ScheduledTask[] {
 </script>
 
 {#if loading && tasks.length === 0}
-	<div
-		class="flex items-center justify-center h-full
-			text-[var(--sig-text-muted)] text-[12px]"
-	>
-		Loading tasks...
-	</div>
+	<div class="empty-state">LOADING</div>
 {:else if tasks.length === 0}
-	<div
-		class="flex flex-col items-center justify-center h-full gap-2
-			text-[var(--sig-text-muted)]"
-	>
-		<span class="text-[13px]">No scheduled tasks yet</span>
-		<span class="text-[11px]">
-			Create one to start automating agent workflows
-		</span>
+	<div class="empty-state">
+		<span>NO SCHEDULED TASKS</span>
+		<span class="empty-hint">PRESS N TO CREATE ONE</span>
 	</div>
 {:else}
 	<div class="board-grid">
 		{#each columns as col, colIndex (col.key)}
 			{@const colTasks = getColumnTasks(col.key)}
-			<div class="column-window" data-column-idx={colIndex}>
+			<div class="column" data-column-idx={colIndex}>
 				<div class="column-header">
 					<span
-						class="column-dot"
+						class="column-pip"
 						style="background: {col.color}"
 					></span>
 					<span class="column-label">{col.label}</span>
 					<span class="column-count">{colTasks.length}</span>
 				</div>
-				<div class="column-cards">
+				<div class="column-body">
 					{#each colTasks as task, taskIndex (task.id)}
 						<TaskCard
 							{task}
@@ -106,7 +95,7 @@ function getColumnTasks(key: string): ScheduledTask[] {
 						/>
 					{/each}
 					{#if colTasks.length === 0}
-						<div class="column-empty">No tasks</div>
+						<div class="column-empty">NO TASKS</div>
 					{/if}
 				</div>
 			</div>
@@ -115,9 +104,9 @@ function getColumnTasks(key: string): ScheduledTask[] {
 
 	{#if disabled.length > 0}
 		<div class="disabled-section">
-			<div class="column-window">
+			<div class="column">
 				<div class="column-header">
-					<span class="column-dot" style="background: var(--sig-text-muted)"></span>
+					<span class="column-pip" style="background: var(--sig-text-muted)"></span>
 					<span class="column-label">Disabled</span>
 					<span class="column-count">{disabled.length}</span>
 				</div>
@@ -143,31 +132,19 @@ function getColumnTasks(key: string): ScheduledTask[] {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
 		gap: var(--space-sm);
-		padding: var(--space-md);
+		padding: var(--space-sm);
 		min-height: 0;
 		flex: 1;
 	}
 
-	.column-window {
+	.column {
 		display: flex;
 		flex-direction: column;
 		min-height: 0;
-		border: 1px solid var(--sig-border-strong);
-		border-radius: 8px;
+		border: 1px solid var(--sig-border);
+		border-radius: var(--radius);
 		overflow: hidden;
-		background:
-			repeating-conic-gradient(
-				color-mix(in srgb, var(--sig-text) 1%, transparent) 0% 25%,
-				transparent 0% 50%
-			) 0 0 / 10px 10px,
-			repeating-conic-gradient(
-				transparent 0% 25%,
-				color-mix(in srgb, var(--sig-text) 1.5%, transparent) 0% 50%
-			) 5px 5px / 10px 10px,
-			repeating-conic-gradient(
-				var(--sig-surface) 0% 25%,
-				color-mix(in srgb, var(--sig-surface) 98%, var(--sig-bg)) 0% 50%
-			) 0 0 / 10px 10px;
+		background: var(--sig-surface);
 	}
 
 	.column-header {
@@ -179,10 +156,10 @@ function getColumnTasks(key: string): ScheduledTask[] {
 		flex-shrink: 0;
 	}
 
-	.column-dot {
+	.column-pip {
 		display: inline-block;
-		width: 6px;
-		height: 6px;
+		width: 4px;
+		height: 4px;
 		flex-shrink: 0;
 		border-radius: 50%;
 	}
@@ -198,16 +175,16 @@ function getColumnTasks(key: string): ScheduledTask[] {
 
 	.column-count {
 		font-family: var(--font-mono);
-		font-size: 10px;
+		font-size: 9px;
 		color: var(--sig-text-muted);
 		margin-left: auto;
+		font-variant-numeric: tabular-nums;
 	}
 
-	.column-cards {
+	.column-body {
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-sm);
-		padding: var(--space-sm);
+		gap: 1px;
 		overflow-y: auto;
 		min-height: 0;
 		flex: 1;
@@ -219,19 +196,38 @@ function getColumnTasks(key: string): ScheduledTask[] {
 		justify-content: center;
 		padding: var(--space-lg) var(--space-md);
 		font-family: var(--font-mono);
-		font-size: 10px;
+		font-size: 9px;
+		letter-spacing: 0.08em;
 		color: var(--sig-text-muted);
-		opacity: 0.5;
+		opacity: 0.4;
 	}
 
 	.disabled-section {
-		padding: 0 var(--space-md) var(--space-md);
+		padding: 0 var(--space-sm) var(--space-sm);
 	}
 
 	.disabled-cards {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-		gap: var(--space-sm);
-		padding: var(--space-sm);
+		gap: 1px;
+		padding: 0;
+	}
+
+	.empty-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		height: 100%;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.1em;
+		color: var(--sig-text-muted);
+	}
+
+	.empty-hint {
+		font-size: 8px;
+		opacity: 0.5;
 	}
 </style>

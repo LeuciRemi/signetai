@@ -128,25 +128,11 @@ let remainingCount = $derived(items.length - visibleCount);
 		flex: 1;
 		min-height: 0;
 		overflow-y: auto;
-		padding: var(--space-md);
+		padding: var(--space-sm);
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-sm);
-		border: 1px solid var(--sig-border-strong);
-		border-radius: 8px;
-		background:
-			repeating-conic-gradient(
-				rgba(255, 255, 255, 0.02) 0% 25%,
-				transparent 0% 50%
-			) 0 0 / 10px 10px,
-			repeating-conic-gradient(
-				transparent 0% 25%,
-				rgba(0, 0, 0, 0.03) 0% 50%
-			) 5px 5px / 10px 10px,
-			repeating-conic-gradient(
-				var(--sig-surface) 0% 25%,
-				color-mix(in srgb, var(--sig-surface) 96%, black) 0% 50%
-			) 0 0 / 10px 10px;
+		background: transparent;
 	}
 
 	.grid {

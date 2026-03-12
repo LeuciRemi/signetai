@@ -1,9 +1,6 @@
 <script lang="ts">
 import type { ScheduledTask } from "$lib/api";
-import * as Card from "$lib/components/ui/card/index.js";
-import { Badge } from "$lib/components/ui/badge/index.js";
 import { Switch } from "$lib/components/ui/switch/index.js";
-import { Button } from "$lib/components/ui/button/index.js";
 import Play from "@lucide/svelte/icons/play";
 
 interface Props {
@@ -18,7 +15,7 @@ interface Props {
 let { task, columnKey, isSelected = false, onclick, ontrigger, ontoggle }: Props = $props();
 
 function formatRelativeTime(iso: string | null): string {
-	if (!iso) return "—";
+	if (!iso) return "--";
 	const diff = new Date(iso).getTime() - Date.now();
 	const absDiff = Math.abs(diff);
 	if (absDiff < 60_000) return diff > 0 ? "< 1m" : "just now";
@@ -42,131 +39,167 @@ let nextRunLabel = $derived(formatRelativeTime(task.next_run_at));
 let lastRunLabel = $derived(formatRelativeTime(task.last_run_at));
 </script>
 
-<button
-	class="w-full text-left cursor-pointer bg-transparent border-none p-0 task-card"
-	class:selected={isSelected}
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="task-card"
+	class:task-card--selected={isSelected}
+	class:task-card--disabled={!task.enabled}
 	onclick={onclick}
+	onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onclick(); } }}
 	tabindex="0"
+	role="button"
 	data-task-id={task.id}
 	data-column={columnKey}
 >
-	<Card.Root
-		class="border-[var(--sig-border)]
-			transition-all duration-150
-			{!task.enabled ? 'opacity-50' : ''}"
-		style="background: radial-gradient(circle at 15% 120%, color-mix(in srgb, var(--sig-accent) 2%, transparent), transparent 40%), linear-gradient(to right, color-mix(in srgb, var(--sig-surface-raised) 99%, black) 0%, var(--sig-surface) 65%);"
-	>
-		<Card.Content class="p-3 space-y-2">
-			<div class="flex items-start justify-between gap-2">
-				<span
-					class="text-[12px] font-medium text-[var(--sig-text-bright)]
-						leading-tight line-clamp-2"
-				>
-					{task.name}
-				</span>
-				<Badge
-					variant="outline"
-					class="text-[9px] shrink-0 px-1.5 py-0
-						border-[var(--sig-border)]
-						text-[var(--sig-text-muted)]"
-				>
-					{harnessLabel}
-				</Badge>
-			</div>
+	<div class="task-top">
+		<span class="task-name">{task.name}</span>
+		<span class="task-harness">{harnessLabel}</span>
+	</div>
 
-			<div
-				class="text-[10px] text-[var(--sig-text-muted)]
-					font-[family-name:var(--font-mono)]
-					flex items-center gap-3"
-			>
-				<span>{task.cron_expression}</span>
-				{#if columnKey === "scheduled"}
-					<span>next: {nextRunLabel}</span>
-				{:else if columnKey === "running"}
-					<span class="text-[var(--sig-warning, #f59e0b)]">running...</span>
-				{:else if columnKey === "completed"}
-					<span>exit 0 · {lastRunLabel}</span>
-				{:else if columnKey === "failed"}
-					<span class="text-[var(--sig-error, #ef4444)]">
-						exit {task.last_run_exit_code ?? "?"} · {lastRunLabel}
-					</span>
-				{/if}
-			</div>
+	<div class="task-meta">
+		<span>{task.cron_expression}</span>
+		{#if columnKey === "scheduled"}
+			<span>next: {nextRunLabel}</span>
+		{:else if columnKey === "running"}
+			<span class="task-status-running">running</span>
+		{:else if columnKey === "completed"}
+			<span>exit 0 · {lastRunLabel}</span>
+		{:else if columnKey === "failed"}
+			<span class="task-status-failed">
+				exit {task.last_run_exit_code ?? "?"} · {lastRunLabel}
+			</span>
+		{/if}
+	</div>
 
-			<div class="flex items-center justify-between pt-1">
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div onclick={(e: MouseEvent) => e.stopPropagation()}>
-					<Switch
-						checked={!!task.enabled}
-						onCheckedChange={(v: unknown) => ontoggle(v === true)}
-						class="scale-75 origin-left"
-					/>
-				</div>
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div onclick={(e: MouseEvent) => e.stopPropagation()}>
-					<Button
-						variant="ghost"
-						size="sm"
-						class="h-6 w-6 p-0"
-						onclick={ontrigger}
-					>
-						<Play class="size-3" />
-					</Button>
-				</div>
-			</div>
-		</Card.Content>
-	</Card.Root>
-</button>
+	<div class="task-actions">
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div onclick={(e: MouseEvent) => e.stopPropagation()}>
+			<Switch
+				checked={!!task.enabled}
+				onCheckedChange={(v: unknown) => ontoggle(v === true)}
+				class="scale-75 origin-left"
+			/>
+		</div>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<button
+			class="trigger-btn"
+			onclick={(e: MouseEvent) => { e.stopPropagation(); ontrigger(); }}
+		>
+			<Play class="size-3" />
+		</button>
+	</div>
+</div>
 
 <style>
 	.task-card {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding: var(--space-sm) var(--space-md);
+		background: transparent;
+		border: none;
+		border-bottom: 1px solid var(--sig-border);
+		text-align: left;
+		cursor: pointer;
 		outline: none;
+		transition: background var(--dur) var(--ease);
+		width: 100%;
 	}
 
-	/* Hover state - prominent mouse indication with lift effect */
-	.task-card:hover :global(.card-root) {
-		border-color: var(--sig-border-strong);
-		background: color-mix(in srgb, var(--sig-surface-raised) 95%, var(--sig-accent) 5%);
-		transform: translateY(-1px);
-		box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.3);
+	.task-card:last-child {
+		border-bottom: none;
 	}
 
-	/* Keyboard focus-visible state - clear, distinct visual indication */
-	.task-card:focus-visible :global(.card-root) {
-		border-color: var(--sig-accent);
-		box-shadow:
-			0 0 0 2px var(--sig-accent),
-			0 0 0 4px color-mix(in srgb, var(--sig-accent) 30%, transparent);
-		background: color-mix(in srgb, var(--sig-surface-raised) 92%, var(--sig-accent) 8%);
+	.task-card:hover {
+		background: var(--sig-surface-raised);
 	}
 
-	/* Focus state (non-visible) - same as hover for consistency */
-	.task-card:focus:not(:focus-visible) :global(.card-root) {
-		border-color: var(--sig-border-strong);
+	.task-card--selected {
+		background: var(--sig-surface-raised);
+		border-left: 2px solid var(--sig-highlight);
 	}
 
-	/* Selected state (clicked/active) - strong accent indication */
-	.task-card.selected :global(.card-root) {
-		border-color: var(--sig-accent);
-		box-shadow: 0 0 0 2px var(--sig-accent);
-		background: color-mix(in srgb, var(--sig-surface-raised) 90%, var(--sig-accent) 10%);
+	.task-card:focus-visible {
+		background: var(--sig-surface-raised);
+		border-left: 2px solid var(--sig-highlight);
 	}
 
-	/* Combine hover + focus-visible - focus takes precedence */
-	.task-card:focus-visible:hover :global(.card-root) {
-		border-color: var(--sig-accent);
-		box-shadow:
-			0 0 0 2px var(--sig-accent),
-			0 0 0 4px color-mix(in srgb, var(--sig-accent) 30%, transparent);
-		transform: none;
+	.task-card--disabled {
+		opacity: 0.4;
 	}
 
-	/* Selected + hover - keep selected styling */
-	.task-card.selected:hover :global(.card-root) {
-		border-color: var(--sig-accent);
-		box-shadow: 0 0 0 2px var(--sig-accent);
-		transform: none;
+	.task-top {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 8px;
+	}
+
+	.task-name {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--sig-text-bright);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		min-width: 0;
+	}
+
+	.task-harness {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.06em;
+		color: var(--sig-text-muted);
+		padding: 1px 5px;
+		border: 1px solid var(--sig-border);
+		border-radius: 2px;
+		flex-shrink: 0;
+	}
+
+	.task-meta {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-family: var(--font-mono);
+		font-size: 9px;
+		letter-spacing: 0.04em;
+		color: var(--sig-text-muted);
+	}
+
+	.task-status-running {
+		color: var(--sig-warning);
+	}
+
+	.task-status-failed {
+		color: var(--sig-danger);
+	}
+
+	.task-actions {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding-top: 2px;
+	}
+
+	.trigger-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		background: none;
+		border: none;
+		color: var(--sig-text-muted);
+		cursor: pointer;
+		border-radius: 2px;
+		transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+	}
+
+	.trigger-btn:hover {
+		color: var(--sig-highlight);
+		background: var(--sig-surface-raised);
 	}
 </style>

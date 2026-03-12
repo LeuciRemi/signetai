@@ -11,15 +11,21 @@ import {
 	listOnePasswordVaults,
 	putSecret,
 } from "$lib/api";
-import { Button } from "$lib/components/ui/button/index.js";
 import { Input } from "$lib/components/ui/input/index.js";
+import { Checkbox } from "$lib/components/ui/checkbox/index.js";
 import { toast } from "$lib/stores/toast.svelte";
 import { returnToSidebar } from "$lib/stores/focus.svelte";
 import { nav } from "$lib/stores/navigation.svelte";
-import { Checkbox } from "$lib/components/ui/checkbox/index.js";
-import { ActionLabels } from "$lib/ui/action-labels";
 import { onMount } from "svelte";
-import PageBanner from "$lib/components/layout/PageBanner.svelte";
+import Plus from "@lucide/svelte/icons/plus";
+import Trash2 from "@lucide/svelte/icons/trash-2";
+import KeyRound from "@lucide/svelte/icons/key-round";
+import ChevronDown from "@lucide/svelte/icons/chevron-down";
+import ChevronRight from "@lucide/svelte/icons/chevron-right";
+import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+import Link from "@lucide/svelte/icons/link";
+import Unlink from "@lucide/svelte/icons/unlink";
+import Import from "@lucide/svelte/icons/import";
 
 let secrets = $state<string[]>([]);
 let secretsLoading = $state(false);
@@ -27,6 +33,7 @@ let newSecretName = $state("");
 let newSecretValue = $state("");
 let secretAdding = $state(false);
 let secretDeleting = $state<string | null>(null);
+let addFormOpen = $state(false);
 
 let onePasswordLoading = $state(false);
 let onePasswordStatus = $state<OnePasswordStatus>({
@@ -44,9 +51,11 @@ let onePasswordConnecting = $state(false);
 let onePasswordDisconnecting = $state(false);
 let onePasswordImporting = $state(false);
 let selectedVaultIds = $state<string[]>([]);
-let focusedSecretIndex = $state(-1); // -1 means no secret focused
-let focusArea = $state<'list' | '1password'>('list'); // Track which area has focus
-let focusedOnePasswordInput = $state(-1); // -1 means panel itself, 0+ = input index
+let onePasswordExpanded = $state(false);
+
+let focusedSecretIndex = $state(-1);
+let focusArea = $state<"list" | "1password">("list");
+let focusedOnePasswordInput = $state(-1);
 
 async function fetchSecrets() {
 	secretsLoading = true;
@@ -68,7 +77,8 @@ async function refreshOnePasswordStatus(): Promise<void> {
 		onePasswordStatus = await getOnePasswordStatus();
 		if (onePasswordStatus.connected) {
 			const fetchedVaults = await listOnePasswordVaults();
-			onePasswordVaults = fetchedVaults.length > 0 ? fetchedVaults : onePasswordStatus.vaults;
+			onePasswordVaults =
+				fetchedVaults.length > 0 ? fetchedVaults : onePasswordStatus.vaults;
 		} else {
 			onePasswordVaults = [];
 			selectedVaultIds = [];
@@ -89,6 +99,7 @@ async function addSecret() {
 		toast(`Secret ${newSecretName.trim()} added`, "success");
 		newSecretName = "";
 		newSecretValue = "";
+		addFormOpen = false;
 		await fetchSecrets();
 	} else {
 		toast("Failed to add secret", "error");
@@ -165,15 +176,15 @@ async function importFromOnePassword(): Promise<void> {
 	const importedCount = result.importedCount ?? 0;
 	const skippedCount = result.skippedCount ?? 0;
 	const errorCount = result.errorCount ?? 0;
-	toast(`Imported ${importedCount} secrets (skipped ${skippedCount}, errors ${errorCount})`, "success");
+	toast(
+		`Imported ${importedCount} secrets (skipped ${skippedCount}, errors ${errorCount})`,
+		"success",
+	);
 }
 
 // Keyboard navigation
 function handleGlobalKey(e: KeyboardEvent) {
-	// Only handle events when Secrets tab is active
 	if (nav.activeTab !== "secrets") return;
-
-	// Skip events already handled by local handlers
 	if (e.defaultPrevented) return;
 
 	const target = e.target as HTMLElement;
@@ -182,30 +193,57 @@ function handleGlobalKey(e: KeyboardEvent) {
 		target.tagName === "TEXTAREA" ||
 		target.isContentEditable;
 
+	// Escape: close add form or 1password panel first
+	if (e.key === "Escape") {
+		if (addFormOpen) {
+			e.preventDefault();
+			addFormOpen = false;
+			return;
+		}
+		if (focusArea === "1password") {
+			e.preventDefault();
+			if (document.activeElement instanceof HTMLElement) {
+				document.activeElement.blur();
+			}
+			focusArea = "list";
+			focusedSecretIndex = -1;
+			focusedOnePasswordInput = -1;
+			return;
+		}
+		e.preventDefault();
+		returnToSidebar();
+		return;
+	}
+
 	if (isInputFocused) return;
 
-	// Right Arrow to focus first secret or 1Password panel (only when at page level)
+	// N: open add form
+	if ((e.key === "n" || e.key === "N") && !addFormOpen) {
+		e.preventDefault();
+		addFormOpen = true;
+		return;
+	}
+
+	// Right Arrow to focus first secret
 	if (e.key === "ArrowRight" && focusArea === "list" && focusedSecretIndex === -1) {
 		e.preventDefault();
 		if (secrets.length > 0) {
 			focusedSecretIndex = 0;
 			focusSecretItem(0);
 		} else {
-			// No secrets — jump to 1Password panel
 			focusArea = "1password";
 			focusedOnePasswordInput = 0;
 			focusOnePasswordInputField(0);
 		}
 	}
 
-	// Arrow Up/Down to navigate secrets when in list area
+	// Arrow Up/Down to navigate secrets
 	if (e.key === "ArrowUp" && focusArea === "list" && focusedSecretIndex >= 0) {
 		e.preventDefault();
 		if (focusedSecretIndex > 0) {
 			focusedSecretIndex--;
 			focusSecretItem(focusedSecretIndex);
 		} else {
-			// At first secret — return to sidebar
 			focusedSecretIndex = -1;
 			returnToSidebar();
 		}
@@ -217,8 +255,7 @@ function handleGlobalKey(e: KeyboardEvent) {
 			focusedSecretIndex++;
 			focusSecretItem(focusedSecretIndex);
 		} else if (focusedSecretIndex === secrets.length - 1) {
-			// At last secret, blur then move to 1Password panel
-			const items = document.querySelectorAll('.secret-item');
+			const items = document.querySelectorAll(".secret-item");
 			if (items[focusedSecretIndex] instanceof HTMLElement) {
 				(items[focusedSecretIndex] as HTMLElement).blur();
 			}
@@ -229,15 +266,12 @@ function handleGlobalKey(e: KeyboardEvent) {
 		}
 	}
 
-	// Arrow Up from 1Password panel - return to last secret or exit panel
 	if (e.key === "ArrowUp" && focusArea === "1password") {
 		e.preventDefault();
 		if (focusedOnePasswordInput > 0) {
-			// Navigate to previous input in 1Password panel
 			focusedOnePasswordInput--;
 			focusOnePasswordInputField(focusedOnePasswordInput);
 		} else if (focusedOnePasswordInput === 0 && secrets.length > 0) {
-			// At first input, blur then return to last secret
 			if (document.activeElement instanceof HTMLElement) {
 				document.activeElement.blur();
 			}
@@ -246,7 +280,6 @@ function handleGlobalKey(e: KeyboardEvent) {
 			focusedOnePasswordInput = -1;
 			focusSecretItem(focusedSecretIndex);
 		} else if (focusedOnePasswordInput === 0 && secrets.length === 0) {
-			// No secrets — exit panel and return to sidebar
 			if (document.activeElement instanceof HTMLElement) {
 				document.activeElement.blur();
 			}
@@ -256,7 +289,6 @@ function handleGlobalKey(e: KeyboardEvent) {
 		}
 	}
 
-	// Arrow Down in 1Password panel (when panel itself or inputs focused)
 	if (e.key === "ArrowDown" && focusArea === "1password") {
 		e.preventDefault();
 		const targets = getOnePasswordFocusTargets();
@@ -267,19 +299,6 @@ function handleGlobalKey(e: KeyboardEvent) {
 		}
 	}
 
-	// Escape from 1Password panel returns to secrets list (not sidebar)
-	if (e.key === "Escape" && focusArea === "1password") {
-		e.preventDefault();
-		// Blur current element first
-		if (document.activeElement instanceof HTMLElement) {
-			document.activeElement.blur();
-		}
-		focusArea = "list";
-		focusedSecretIndex = -1;
-		focusedOnePasswordInput = -1;
-	}
-
-	// Left Arrow returns to sidebar (only when at page level in list area)
 	if (e.key === "ArrowLeft" && focusArea === "list" && focusedSecretIndex === -1) {
 		e.preventDefault();
 		returnToSidebar();
@@ -287,22 +306,21 @@ function handleGlobalKey(e: KeyboardEvent) {
 }
 
 function focusSecretItem(index: number): void {
-	const items = document.querySelectorAll('.secret-item');
+	const items = document.querySelectorAll(".secret-item");
 	if (items[index] instanceof HTMLElement) {
 		(items[index] as HTMLElement).focus();
 	}
 }
 
 function getOnePasswordFocusTargets(): HTMLElement[] {
-	const panel = document.querySelector('.onepassword-panel');
+	const panel = document.querySelector(".onepassword-panel");
 	if (!panel) return [];
-	// Get all focusable elements sorted by data-focus-index, filtering out disabled ones
-	const all = panel.querySelectorAll('[data-focus-index]');
+	const all = panel.querySelectorAll("[data-focus-index]");
 	return (Array.from(all) as HTMLElement[])
 		.filter((el) => !(el as HTMLButtonElement).disabled)
 		.sort((a, b) => {
-			const ai = parseInt(a.getAttribute('data-focus-index') ?? '0', 10);
-			const bi = parseInt(b.getAttribute('data-focus-index') ?? '0', 10);
+			const ai = parseInt(a.getAttribute("data-focus-index") ?? "0", 10);
+			const bi = parseInt(b.getAttribute("data-focus-index") ?? "0", 10);
 			return ai - bi;
 		});
 }
@@ -315,14 +333,12 @@ function focusOnePasswordInputField(index: number): void {
 }
 
 function handleOnePasswordPanelKeydown(e: KeyboardEvent): void {
-	// Arrow Up navigates within 1Password or returns to secrets
 	if (e.key === "ArrowUp") {
 		e.preventDefault();
 		if (focusedOnePasswordInput > 0) {
 			focusedOnePasswordInput--;
 			focusOnePasswordInputField(focusedOnePasswordInput);
 		} else if (focusedOnePasswordInput === 0 && secrets.length > 0) {
-			// At any input/button, blur then return to last secret
 			if (document.activeElement instanceof HTMLElement) {
 				document.activeElement.blur();
 			}
@@ -331,7 +347,6 @@ function handleOnePasswordPanelKeydown(e: KeyboardEvent): void {
 			focusedOnePasswordInput = -1;
 			focusSecretItem(focusedSecretIndex);
 		} else if (focusedOnePasswordInput === 0 && secrets.length === 0) {
-			// No secrets — exit panel and return to sidebar
 			if (document.activeElement instanceof HTMLElement) {
 				document.activeElement.blur();
 			}
@@ -340,7 +355,6 @@ function handleOnePasswordPanelKeydown(e: KeyboardEvent): void {
 			returnToSidebar();
 		}
 	}
-	// Arrow Down navigates within 1Password inputs
 	if (e.key === "ArrowDown") {
 		e.preventDefault();
 		const targets = getOnePasswordFocusTargets();
@@ -350,10 +364,8 @@ function handleOnePasswordPanelKeydown(e: KeyboardEvent): void {
 			focusOnePasswordInputField(focusedOnePasswordInput);
 		}
 	}
-	// Escape returns to secrets list (not sidebar)
 	if (e.key === "Escape") {
 		e.preventDefault();
-		// Blur current element first
 		if (document.activeElement instanceof HTMLElement) {
 			document.activeElement.blur();
 		}
@@ -361,7 +373,6 @@ function handleOnePasswordPanelKeydown(e: KeyboardEvent): void {
 		focusedSecretIndex = -1;
 		focusedOnePasswordInput = -1;
 	}
-	// Tab navigation within 1Password (let browser handle naturally but track state)
 	if (e.key === "Tab") {
 		const targets = getOnePasswordFocusTargets();
 		const maxIdx = Math.max(0, targets.length - 1);
@@ -370,7 +381,6 @@ function handleOnePasswordPanelKeydown(e: KeyboardEvent): void {
 		} else if (!e.shiftKey && focusedOnePasswordInput < maxIdx) {
 			focusedOnePasswordInput++;
 		}
-		// Don't prevent default - let browser handle tab navigation
 	}
 }
 
@@ -392,7 +402,6 @@ function handleSecretItemKeydown(e: KeyboardEvent, index: number): void {
 			focusedSecretIndex = index + 1;
 			focusSecretItem(focusedSecretIndex);
 		} else {
-			// Move to 1Password panel - blur current then focus first input
 			(e.target as HTMLElement).blur();
 			focusArea = "1password";
 			focusedSecretIndex = -1;
@@ -406,7 +415,6 @@ function handleSecretItemKeydown(e: KeyboardEvent, index: number): void {
 			focusedSecretIndex = index - 1;
 			focusSecretItem(focusedSecretIndex);
 		} else if (index === 0) {
-			// At first secret — return to sidebar
 			focusedSecretIndex = -1;
 			if (e.target instanceof HTMLElement) {
 				e.target.blur();
@@ -424,6 +432,22 @@ function handleSecretItemKeydown(e: KeyboardEvent, index: number): void {
 	}
 }
 
+let onePasswordStatusLabel = $derived(
+	onePasswordStatus.connected
+		? "CONNECTED"
+		: onePasswordStatus.configured
+			? "UNREACHABLE"
+			: "NOT CONFIGURED",
+);
+
+let onePasswordStatusColor = $derived(
+	onePasswordStatus.connected
+		? "var(--sig-success)"
+		: onePasswordStatus.configured
+			? "var(--sig-warning, #d4a017)"
+			: "var(--sig-text-muted)",
+);
+
 onMount(() => {
 	fetchSecrets();
 	refreshOnePasswordStatus();
@@ -432,276 +456,805 @@ onMount(() => {
 
 <svelte:window onkeydown={handleGlobalKey} />
 
-<div class="flex flex-col flex-1 min-h-0 overflow-hidden">
-	<PageBanner title="Secrets" />
-	<div
-		class="grid flex-1 gap-[var(--space-md)] overflow-hidden p-[var(--space-md)]
-			xl:grid-cols-[1.2fr_0.8fr]"
-	>
-		<div class="flex min-h-0 flex-col gap-[var(--space-sm)] overflow-hidden">
-			<div class="flex shrink-0 gap-[var(--space-sm)]">
+<div class="secrets-page">
+	<!-- Header -->
+	<div class="tab-header">
+		<div class="tab-header-left">
+			<span class="tab-header-title">SECRETS</span>
+			<span class="tab-header-count">{secrets.length} STORED</span>
+		</div>
+		<button class="new-secret-btn" onclick={() => { addFormOpen = !addFormOpen; }}>
+			<Plus class="size-3" />
+			<span>ADD SECRET</span>
+		</button>
+	</div>
+
+	<!-- Add form (collapsible) -->
+	{#if addFormOpen}
+		<div class="add-form">
+			<div class="add-form-row">
 				<Input
 					type="text"
-					class="flex-1 rounded-lg border-[var(--sig-border-strong)]
-						bg-[var(--sig-surface-raised)] font-[family-name:var(--font-mono)]
-						text-[13px] text-[var(--sig-text-bright)]
-						focus:border-[var(--sig-accent)]"
+					class="add-input"
 					bind:value={newSecretName}
-					placeholder="Secret name (e.g. OPENAI_API_KEY)"
+					placeholder="SECRET_NAME"
 				/>
 				<Input
 					type="password"
-					class="flex-1 rounded-lg border-[var(--sig-border-strong)]
-						bg-[var(--sig-surface-raised)] font-[family-name:var(--font-mono)]
-						text-[13px] text-[var(--sig-text-bright)]
-						focus:border-[var(--sig-accent)]"
+					class="add-input"
 					bind:value={newSecretValue}
-					placeholder="Secret value"
+					placeholder="value"
 				/>
-				<Button
-					class="rounded-lg bg-[var(--sig-text-bright)] text-[var(--sig-bg)]
-						hover:bg-[var(--sig-text)] text-[11px] font-medium"
-					size="sm"
+				<button
+					class="add-submit"
 					onclick={addSecret}
 					disabled={secretAdding || !newSecretName.trim() || !newSecretValue.trim()}
 				>
-					{secretAdding ? "Adding..." : ActionLabels.Add}
-				</Button>
+					{secretAdding ? "ADDING..." : "ADD"}
+				</button>
 			</div>
+		</div>
+	{/if}
 
-			<div class="flex flex-1 flex-col gap-[var(--space-sm)] overflow-y-auto">
+	<!-- Main content -->
+	<div class="secrets-content">
+		<!-- Secrets list panel -->
+		<div class="panel">
+			<div class="panel-header">
+				<span class="panel-pip" style="background: var(--sig-highlight)"></span>
+				<span class="panel-label">Stored Secrets</span>
+				<span class="panel-count">{secrets.length}</span>
+			</div>
+			<div class="panel-body">
 				{#if secretsLoading}
-					<div class="p-8 text-center text-[var(--sig-text-muted)]">
-						Loading secrets...
-					</div>
+					<div class="panel-empty">LOADING</div>
 				{:else if secrets.length === 0}
-					<div class="p-8 text-center text-[var(--sig-text-muted)]">
-						No secrets stored. Add one above.
+					<div class="panel-empty">
+						<span>NO SECRETS STORED</span>
+						<span class="panel-empty-hint">PRESS N TO ADD ONE</span>
 					</div>
 				{:else}
 					{#each secrets as name, index}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
+							class="secret-item"
+							class:secret-item--focused={focusArea === "list" && focusedSecretIndex === index}
+							tabindex="0"
 							role="listitem"
-							tabindex={0}
-							class="secret-item flex items-center gap-3 border border-[var(--sig-border-strong)]
-								bg-[var(--sig-surface-raised)] px-[var(--space-md)] py-3 rounded-lg
-								hover:bg-[var(--sig-surface)] hover:border-[var(--sig-accent)]
-								focus-visible:outline focus-visible:outline-2
-								focus-visible:outline-[var(--sig-accent)]
-								focus-visible:outline-offset-2
-								transition-colors cursor-pointer"
 							onkeydown={(e) => handleSecretItemKeydown(e, index)}
 							onfocus={() => handleSecretItemFocus(index)}
 						>
-							<span class="flex-1 font-[family-name:var(--font-mono)] text-[13px] text-[var(--sig-text-bright)]"
-								>{name}</span
-							>
-							<span class="font-[family-name:var(--font-mono)] text-[12px] text-[var(--sig-text-muted)]"
-								>••••••••</span
-							>
-							<Button
-								variant="outline"
-								size="sm"
-								class="rounded-lg border-[var(--sig-danger)] text-[var(--sig-danger)]
-									text-[11px] hover:bg-[var(--sig-danger)] hover:text-[var(--sig-text-bright)]"
+							<KeyRound class="secret-icon" />
+							<span class="secret-name">{name}</span>
+							<span class="secret-mask">········</span>
+							<button
+								class="secret-delete"
 								onclick={() => removeSecret(name)}
 								disabled={secretDeleting === name}
 							>
-								{secretDeleting === name ? "..." : ActionLabels.Delete}
-							</Button>
+								{#if secretDeleting === name}
+									<span class="secret-delete-text">...</span>
+								{:else}
+									<Trash2 class="size-3" />
+								{/if}
+							</button>
 						</div>
 					{/each}
 				{/if}
 			</div>
 		</div>
 
-		<div class="flex min-h-0 flex-col gap-[var(--space-sm)] overflow-hidden">
+		<!-- 1Password integration panel -->
+		<div class="panel" role="group" aria-label="1Password integration">
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				role="group"
-				aria-label="1Password settings"
-				class="onepassword-panel flex min-h-0 flex-1 flex-col gap-[var(--space-sm)] overflow-hidden
-					border border-[var(--sig-border-strong)] bg-[var(--sig-surface-raised)]
-					p-[var(--space-md)] rounded-lg
-					hover:bg-[var(--sig-surface)] hover:border-[var(--sig-accent)]
-					transition-colors"
-				onkeydown={handleOnePasswordPanelKeydown}
+				class="panel-header panel-header--toggle"
+				onclick={() => { onePasswordExpanded = !onePasswordExpanded; }}
+				onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onePasswordExpanded = !onePasswordExpanded; } }}
+				tabindex="0"
+				role="button"
 			>
-				<div class="flex items-center justify-between gap-3">
-					<div class="sig-label uppercase tracking-[0.08em]">
-						1Password
-					</div>
-					<Button
-						variant="outline"
-						size="sm"
-						class="rounded-lg text-[11px]
-							hover:bg-[var(--sig-surface)]
-							focus-visible:outline focus-visible:outline-2
-							focus-visible:outline-[var(--sig-accent)]
-							focus-visible:outline-offset-2"
-						onclick={refreshOnePasswordStatus}
-						disabled={onePasswordLoading}
-					>
-						{onePasswordLoading ? "Refreshing..." : "Refresh"}
-					</Button>
-				</div>
-
-				{#if onePasswordStatus.connected}
-					<div class="text-[12px] text-emerald-400">
-						Connected.
-						{#if typeof onePasswordStatus.vaultCount === "number"}
-							{onePasswordStatus.vaultCount} vaults available.
-						{/if}
-					</div>
-				{:else if onePasswordStatus.configured}
-					<div class="text-[12px] text-amber-400">
-						Token saved, but 1Password is not reachable.
-						{#if onePasswordStatus.error}
-							{onePasswordStatus.error}
-						{/if}
-					</div>
+				{#if onePasswordExpanded}
+					<ChevronDown class="panel-chevron" />
 				{:else}
-					<div class="text-[12px] text-[var(--sig-text-muted)]">
-						Connect a 1Password service account to import secrets.
-					</div>
+					<ChevronRight class="panel-chevron" />
 				{/if}
+				<span class="panel-label">1Password</span>
+				<span class="panel-status" style="color: {onePasswordStatusColor}">
+					{onePasswordStatusLabel}
+				</span>
+				<button
+					class="panel-action"
+					onclick={(e) => { e.stopPropagation(); refreshOnePasswordStatus(); }}
+					disabled={onePasswordLoading}
+				>
+					<RefreshCw class="size-3" style={onePasswordLoading ? "animation: spin 1s linear infinite" : ""} />
+				</button>
+			</div>
 
-				<div class="flex gap-[var(--space-sm)]">
-					<Input
-						type="password"
-						data-focus-index="0"
-						class="rounded-lg border-[var(--sig-border-strong)]
-							bg-[var(--sig-surface)] font-[family-name:var(--font-mono)]
-							text-[13px] text-[var(--sig-text-bright)]
-							hover:border-[var(--sig-accent)]
-							focus-visible:outline focus-visible:outline-2
-							focus-visible:outline-[var(--sig-accent)]
-							focus-visible:outline-offset-2"
-						bind:value={onePasswordToken}
-						placeholder={onePasswordStatus.connected
-							? "Replace service account token"
-							: "1Password service account token"}
-						onfocus={() => handleOnePasswordInputFocus(0)}
-					/>
-					<Button
-						size="sm"
-						data-focus-index="2"
-
-						class="rounded-lg bg-[var(--sig-text-bright)] text-[var(--sig-bg)] text-[11px]
-							hover:bg-[var(--sig-text)]
-							focus-visible:outline focus-visible:outline-2
-							focus-visible:outline-[var(--sig-accent)]
-							focus-visible:outline-offset-2"
-						onclick={connectOnePasswordAccount}
-						disabled={onePasswordConnecting || !onePasswordToken.trim()}
-						onfocus={() => handleOnePasswordInputFocus(2)}
-					>
-						{onePasswordConnecting
-							? "Connecting..."
-							: onePasswordStatus.connected
-								? "Update Token"
-								: "Connect"}
-					</Button>
-				</div>
-
-				<div class="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
-					<label for="op-prefix" class="text-[12px] text-[var(--sig-text-muted)]"
-						>Prefix</label
-					>
-					<Input
-						id="op-prefix"
-						type="text"
-						data-focus-index="1"
-
-						class="h-8 rounded-lg border-[var(--sig-border-strong)]
-							bg-[var(--sig-surface)] font-[family-name:var(--font-mono)]
-							text-[12px] text-[var(--sig-text-bright)]
-							hover:border-[var(--sig-accent)]
-							focus-visible:outline focus-visible:outline-2
-							focus-visible:outline-[var(--sig-accent)]
-							focus-visible:outline-offset-2"
-						bind:value={onePasswordImportOptions.prefix}
-						placeholder="OP"
-						onfocus={() => handleOnePasswordInputFocus(1)}
-					/>
-					<label class="text-[12px] text-[var(--sig-text-muted)]"
-						for="op-overwrite">Overwrite</label
-					>
-					<label id="op-overwrite" class="flex items-center gap-2 text-[12px] text-[var(--sig-text-muted)] cursor-pointer">
-						<Checkbox
-							bind:checked={onePasswordImportOptions.overwrite}
-							class="border-[var(--sig-border-strong)] data-[state=checked]:bg-[var(--sig-accent)] data-[state=checked]:border-[var(--sig-accent)]"
-						/>
-						Overwrite existing secret names
-					</label>
-				</div>
-
-				<div class="min-h-0 flex-1 overflow-y-auto border border-[var(--sig-border)] p-2 rounded-lg">
-					{#if !onePasswordStatus.connected}
-						<div class="px-2 py-3 text-[12px] text-[var(--sig-text-muted)]">
-							Connect first, then choose vaults to import. Leave all unchecked to import from every vault.
+			{#if onePasswordExpanded}
+				<div class="onepassword-panel" onkeydown={handleOnePasswordPanelKeydown}>
+					<!-- Status message -->
+					{#if onePasswordStatus.connected}
+						<div class="op-status op-status--ok">
+							Connected{#if typeof onePasswordStatus.vaultCount === "number"} · {onePasswordStatus.vaultCount} vaults{/if}
 						</div>
-					{:else if onePasswordVaults.length === 0}
-						<div class="px-2 py-3 text-[12px] text-[var(--sig-text-muted)]">
-							No accessible vaults found.
+					{:else if onePasswordStatus.configured}
+						<div class="op-status op-status--warn">
+							Token saved but unreachable{#if onePasswordStatus.error} · {onePasswordStatus.error}{/if}
 						</div>
 					{:else}
-						{#each onePasswordVaults as vault}
-							<label
-								class="flex cursor-pointer items-center gap-2 px-2 py-1 text-[12px]
-									text-[var(--sig-text)] hover:bg-[var(--sig-surface)]
-									focus-within:bg-[var(--sig-surface)] rounded transition-colors"
-							>
-								<Checkbox
-									checked={selectedVaultIds.includes(vault.id)}
-									onCheckedChange={() => toggleVaultSelection(vault.id)}
-									class="border-[var(--sig-border-strong)] data-[state=checked]:bg-[var(--sig-accent)] data-[state=checked]:border-[var(--sig-accent)]"
-								/>
-								<span class="font-[family-name:var(--font-mono)]">{vault.name}</span>
-								<span class="text-[var(--sig-text-dim)]">({vault.id})</span>
-							</label>
-						{/each}
+						<div class="op-status">
+							Connect a 1Password service account to import secrets
+						</div>
 					{/if}
+
+					<!-- Token input -->
+					<div class="op-row">
+						<Input
+							type="password"
+							data-focus-index="0"
+							class="op-input"
+							bind:value={onePasswordToken}
+							placeholder={onePasswordStatus.connected
+								? "Replace service account token"
+								: "Service account token"}
+							onfocus={() => handleOnePasswordInputFocus(0)}
+						/>
+						<button
+							class="op-btn"
+							data-focus-index="2"
+							onclick={connectOnePasswordAccount}
+							disabled={onePasswordConnecting || !onePasswordToken.trim()}
+							onfocus={() => handleOnePasswordInputFocus(2)}
+						>
+							<Link class="size-3" />
+							<span>{onePasswordConnecting ? "..." : onePasswordStatus.connected ? "UPDATE" : "CONNECT"}</span>
+						</button>
+					</div>
+
+					<!-- Options row -->
+					<div class="op-options">
+						<div class="op-option">
+							<span class="op-option-label">PREFIX</span>
+							<Input
+								type="text"
+								data-focus-index="1"
+								class="op-input-sm"
+								bind:value={onePasswordImportOptions.prefix}
+								placeholder="OP"
+								onfocus={() => handleOnePasswordInputFocus(1)}
+							/>
+						</div>
+						<label class="op-option op-option--check" for="op-overwrite">
+							<Checkbox
+								id="op-overwrite"
+								bind:checked={onePasswordImportOptions.overwrite}
+								class="op-checkbox"
+							/>
+							<span class="op-option-label">OVERWRITE</span>
+						</label>
+					</div>
+
+					<!-- Vault selector -->
+					{#if onePasswordStatus.connected && onePasswordVaults.length > 0}
+						<div class="op-vaults">
+							<span class="op-vaults-label">VAULTS</span>
+							<div class="op-vault-list">
+								{#each onePasswordVaults as vault}
+									<label class="op-vault">
+										<Checkbox
+											checked={selectedVaultIds.includes(vault.id)}
+											onCheckedChange={() => toggleVaultSelection(vault.id)}
+											class="op-checkbox"
+										/>
+										<span class="op-vault-name">{vault.name}</span>
+									</label>
+								{/each}
+							</div>
+						</div>
+					{:else if onePasswordStatus.connected}
+						<div class="op-vaults-empty">NO ACCESSIBLE VAULTS</div>
+					{/if}
+
+					<!-- Actions -->
+					<div class="op-actions">
+						<button
+							class="op-btn"
+							data-focus-index="3"
+							onclick={importFromOnePassword}
+							disabled={onePasswordImporting || !onePasswordStatus.connected}
+							onfocus={() => handleOnePasswordInputFocus(3)}
+						>
+							<Import class="size-3" />
+							<span>{onePasswordImporting ? "IMPORTING..." : "IMPORT"}</span>
+						</button>
+						<button
+							class="op-btn op-btn--danger"
+							data-focus-index="4"
+							onclick={disconnectOnePasswordAccount}
+							disabled={onePasswordDisconnecting || !onePasswordStatus.configured}
+							onfocus={() => handleOnePasswordInputFocus(4)}
+						>
+							<Unlink class="size-3" />
+							<span>{onePasswordDisconnecting ? "..." : "DISCONNECT"}</span>
+						</button>
+					</div>
+
+					<!-- Tip -->
+					<div class="op-tip">
+						TIP: MAP DIRECT REFS AS <code>op://vault/item/field</code>
+					</div>
 				</div>
-
-				<div class="flex flex-wrap gap-[var(--space-sm)]">
-					<Button
-						size="sm"
-						data-focus-index="3"
-
-						class="rounded-lg bg-[var(--sig-text-bright)] text-[var(--sig-bg)] text-[11px]
-							hover:bg-[var(--sig-text)]
-							focus-visible:outline focus-visible:outline-2
-							focus-visible:outline-[var(--sig-accent)]
-							focus-visible:outline-offset-2"
-						onclick={importFromOnePassword}
-						disabled={onePasswordImporting || !onePasswordStatus.connected}
-						onfocus={() => handleOnePasswordInputFocus(3)}
-					>
-						{onePasswordImporting ? "Importing..." : "Import Into Signet"}
-					</Button>
-					<Button
-						variant="outline"
-						size="sm"
-						data-focus-index="4"
-
-						class="rounded-lg border-[var(--sig-danger)] text-[var(--sig-danger)]
-							text-[11px] hover:bg-[var(--sig-danger)] hover:text-[var(--sig-text-bright)]
-							focus-visible:outline focus-visible:outline-2
-							focus-visible:outline-[var(--sig-accent)]
-							focus-visible:outline-offset-2"
-						onclick={disconnectOnePasswordAccount}
-						disabled={onePasswordDisconnecting || !onePasswordStatus.configured}
-						onfocus={() => handleOnePasswordInputFocus(4)}
-					>
-						{onePasswordDisconnecting ? "Disconnecting..." : "Disconnect"}
-					</Button>
-				</div>
-
-				<div class="text-[11px] text-[var(--sig-text-dim)]">
-					Tip: you can also map direct refs in command execution as
-					<span class="font-[family-name:var(--font-mono)]">op://vault/item/field</span>.
-				</div>
-			</div>
+			{/if}
 		</div>
 	</div>
+
+	<!-- Shortcut bar -->
+	<div class="shortcut-bar">
+		{#if !addFormOpen}
+			<span class="shortcut"><kbd>N</kbd> ADD</span>
+		{:else}
+			<span class="shortcut"><kbd>ESC</kbd> CANCEL</span>
+		{/if}
+	</div>
 </div>
+
+<style>
+	.secrets-page {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	/* Header — matches Tasks */
+	.tab-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--space-sm) var(--space-md);
+		border-bottom: 1px solid var(--sig-border);
+		flex-shrink: 0;
+	}
+
+	.tab-header-left {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+	}
+
+	.tab-header-title {
+		font-family: var(--font-display);
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		color: var(--sig-text-bright);
+	}
+
+	.tab-header-count {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.1em;
+		color: var(--sig-text-muted);
+	}
+
+	.new-secret-btn {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 3px 10px;
+		background: transparent;
+		border: 1px solid var(--sig-border-strong);
+		border-radius: var(--radius);
+		color: var(--sig-text-muted);
+		font-family: var(--font-mono);
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		cursor: pointer;
+		transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+	}
+
+	.new-secret-btn:hover {
+		color: var(--sig-highlight);
+		border-color: var(--sig-highlight);
+	}
+
+	/* Add form */
+	.add-form {
+		padding: var(--space-sm) var(--space-md);
+		border-bottom: 1px solid var(--sig-border);
+		flex-shrink: 0;
+	}
+
+	.add-form-row {
+		display: flex;
+		gap: var(--space-sm);
+		align-items: center;
+	}
+
+	:global(.add-input) {
+		flex: 1;
+		font-family: var(--font-mono) !important;
+		font-size: 11px !important;
+		background: var(--sig-surface) !important;
+		border-color: var(--sig-border) !important;
+		color: var(--sig-text-bright) !important;
+		height: 28px !important;
+	}
+
+	:global(.add-input:focus) {
+		border-color: var(--sig-highlight) !important;
+	}
+
+	.add-submit {
+		padding: 4px 12px;
+		height: 28px;
+		background: transparent;
+		border: 1px solid var(--sig-border-strong);
+		border-radius: var(--radius);
+		color: var(--sig-text-muted);
+		font-family: var(--font-mono);
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		cursor: pointer;
+		transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+		white-space: nowrap;
+	}
+
+	.add-submit:hover:not(:disabled) {
+		color: var(--sig-highlight);
+		border-color: var(--sig-highlight);
+	}
+
+	.add-submit:disabled {
+		opacity: 0.3;
+		cursor: not-allowed;
+	}
+
+	/* Content area */
+	.secrets-content {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-sm);
+		padding: var(--space-sm);
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	/* Panel — matches TaskBoard columns */
+	.panel {
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+		border: 1px solid var(--sig-border);
+		border-radius: var(--radius);
+		overflow: hidden;
+		background: var(--sig-surface);
+	}
+
+	.panel:first-child {
+		flex: 1;
+	}
+
+	.panel:last-child {
+		flex-shrink: 0;
+	}
+
+	.panel-header {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: var(--space-sm) var(--space-md);
+		border-bottom: 1px solid var(--sig-border);
+		flex-shrink: 0;
+	}
+
+	.panel-header--toggle {
+		cursor: pointer;
+		transition: background var(--dur) var(--ease);
+	}
+
+	.panel-header--toggle:hover {
+		background: var(--sig-surface-raised);
+	}
+
+	.panel-pip {
+		display: inline-block;
+		width: 4px;
+		height: 4px;
+		flex-shrink: 0;
+		border-radius: 50%;
+	}
+
+	:global(.panel-chevron) {
+		width: 12px;
+		height: 12px;
+		flex-shrink: 0;
+		color: var(--sig-text-muted);
+	}
+
+	.panel-label {
+		font-family: var(--font-display);
+		font-size: 10px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		color: var(--sig-text-muted);
+	}
+
+	.panel-count {
+		font-family: var(--font-mono);
+		font-size: 9px;
+		color: var(--sig-text-muted);
+		margin-left: auto;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.panel-status {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.08em;
+		margin-left: auto;
+	}
+
+	.panel-action {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		background: none;
+		border: none;
+		color: var(--sig-text-muted);
+		cursor: pointer;
+		border-radius: 2px;
+		transition: color var(--dur) var(--ease);
+		flex-shrink: 0;
+	}
+
+	.panel-action:hover {
+		color: var(--sig-highlight);
+	}
+
+	.panel-body {
+		display: flex;
+		flex-direction: column;
+		overflow-y: auto;
+		min-height: 0;
+		flex: 1;
+	}
+
+	.panel-empty {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		padding: var(--space-lg) var(--space-md);
+		font-family: var(--font-mono);
+		font-size: 9px;
+		letter-spacing: 0.08em;
+		color: var(--sig-text-muted);
+		opacity: 0.4;
+	}
+
+	.panel-empty-hint {
+		font-size: 8px;
+		opacity: 0.7;
+	}
+
+	/* Secret items — flat list like TaskCard */
+	.secret-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: var(--space-sm) var(--space-md);
+		background: transparent;
+		border-bottom: 1px solid var(--sig-border);
+		cursor: pointer;
+		outline: none;
+		transition: background var(--dur) var(--ease);
+	}
+
+	.secret-item:last-child {
+		border-bottom: none;
+	}
+
+	.secret-item:hover {
+		background: var(--sig-surface-raised);
+	}
+
+	.secret-item:focus-visible,
+	.secret-item--focused {
+		background: var(--sig-surface-raised);
+		border-left: 2px solid var(--sig-highlight);
+	}
+
+	:global(.secret-icon) {
+		width: 12px;
+		height: 12px;
+		color: var(--sig-highlight);
+		opacity: 0.4;
+		flex-shrink: 0;
+	}
+
+	.secret-name {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--sig-text-bright);
+		flex: 1;
+		min-width: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.secret-mask {
+		font-family: var(--font-mono);
+		font-size: 9px;
+		color: var(--sig-text-muted);
+		letter-spacing: 0.1em;
+		flex-shrink: 0;
+	}
+
+	.secret-delete {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		background: none;
+		border: none;
+		color: var(--sig-text-muted);
+		cursor: pointer;
+		border-radius: 2px;
+		transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+		flex-shrink: 0;
+	}
+
+	.secret-delete:hover:not(:disabled) {
+		color: var(--sig-danger);
+		background: var(--sig-surface-raised);
+	}
+
+	.secret-delete:disabled {
+		opacity: 0.3;
+	}
+
+	.secret-delete-text {
+		font-family: var(--font-mono);
+		font-size: 9px;
+	}
+
+	/* 1Password panel content */
+	.onepassword-panel {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-sm);
+		padding: var(--space-sm) var(--space-md) var(--space-md);
+	}
+
+	.op-status {
+		font-family: var(--font-mono);
+		font-size: 9px;
+		letter-spacing: 0.04em;
+		color: var(--sig-text-muted);
+	}
+
+	.op-status--ok {
+		color: var(--sig-success);
+	}
+
+	.op-status--warn {
+		color: var(--sig-warning, #d4a017);
+	}
+
+	.op-row {
+		display: flex;
+		gap: var(--space-sm);
+		align-items: center;
+	}
+
+	:global(.op-input) {
+		flex: 1;
+		font-family: var(--font-mono) !important;
+		font-size: 11px !important;
+		background: var(--sig-bg) !important;
+		border-color: var(--sig-border) !important;
+		color: var(--sig-text-bright) !important;
+		height: 28px !important;
+	}
+
+	:global(.op-input:focus) {
+		border-color: var(--sig-highlight) !important;
+	}
+
+	.op-btn {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 4px 10px;
+		height: 28px;
+		background: transparent;
+		border: 1px solid var(--sig-border-strong);
+		border-radius: var(--radius);
+		color: var(--sig-text-muted);
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.06em;
+		cursor: pointer;
+		transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.op-btn:hover:not(:disabled) {
+		color: var(--sig-highlight);
+		border-color: var(--sig-highlight);
+	}
+
+	.op-btn:disabled {
+		opacity: 0.3;
+		cursor: not-allowed;
+	}
+
+	.op-btn--danger:hover:not(:disabled) {
+		color: var(--sig-danger);
+		border-color: var(--sig-danger);
+	}
+
+	/* Options row */
+	.op-options {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+	}
+
+	.op-option {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.op-option--check {
+		cursor: pointer;
+	}
+
+	.op-option-label {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.08em;
+		color: var(--sig-text-muted);
+	}
+
+	:global(.op-input-sm) {
+		width: 60px !important;
+		font-family: var(--font-mono) !important;
+		font-size: 10px !important;
+		background: var(--sig-bg) !important;
+		border-color: var(--sig-border) !important;
+		color: var(--sig-text-bright) !important;
+		height: 24px !important;
+	}
+
+	:global(.op-checkbox) {
+		width: 14px !important;
+		height: 14px !important;
+		border-color: var(--sig-border-strong) !important;
+	}
+
+	/* Vault selector */
+	.op-vaults {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.op-vaults-label {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.08em;
+		color: var(--sig-text-muted);
+	}
+
+	.op-vault-list {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 4px;
+		border: 1px solid var(--sig-border);
+		border-radius: var(--radius);
+		max-height: 120px;
+		overflow-y: auto;
+	}
+
+	.op-vault {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 2px 4px;
+		border-radius: 2px;
+		cursor: pointer;
+		transition: background var(--dur) var(--ease);
+	}
+
+	.op-vault:hover {
+		background: var(--sig-surface-raised);
+	}
+
+	.op-vault-name {
+		font-family: var(--font-mono);
+		font-size: 10px;
+		color: var(--sig-text);
+	}
+
+	.op-vaults-empty {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.08em;
+		color: var(--sig-text-muted);
+		opacity: 0.4;
+		padding: 4px 0;
+	}
+
+	/* Actions row */
+	.op-actions {
+		display: flex;
+		gap: var(--space-sm);
+	}
+
+	/* Tip */
+	.op-tip {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.06em;
+		color: var(--sig-text-muted);
+		opacity: 0.5;
+	}
+
+	.op-tip code {
+		color: var(--sig-text);
+		opacity: 1;
+	}
+
+	/* Shortcut bar — matches Tasks */
+	.shortcut-bar {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		height: 22px;
+		padding: 0 12px;
+		border-top: 1px solid var(--sig-border);
+		flex-shrink: 0;
+		font-family: var(--font-mono);
+		font-size: 8px;
+		letter-spacing: 0.06em;
+		color: var(--sig-text-muted);
+	}
+
+	.shortcut {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.shortcut kbd {
+		font-family: var(--font-mono);
+		font-size: 8px;
+		padding: 0 3px;
+		background: var(--sig-surface-raised);
+		border: 1px solid var(--sig-border);
+		border-radius: 2px;
+		color: var(--sig-text-muted);
+	}
+
+	@keyframes spin {
+		from { transform: rotate(0deg); }
+		to { transform: rotate(360deg); }
+	}
+</style>

@@ -147,7 +147,7 @@ function activateItem(item: NavItem): void {
 }
 </script>
 
-<Sidebar.Root variant="sidebar" collapsible="icon">
+<Sidebar.Root variant="floating" collapsible="icon">
 	<Sidebar.Header>
 		<Sidebar.Menu>
 			<Sidebar.MenuItem>
@@ -163,7 +163,6 @@ function activateItem(item: NavItem): void {
 									before:bg-[var(--sig-highlight)]
 									after:absolute after:w-full after:h-px after:top-1/2
 									after:bg-[var(--sig-highlight)]"
-								style="filter: drop-shadow(0 0 3px var(--sig-highlight-dim));"
 								aria-hidden="true"
 							></span>
 							<div class="flex flex-col gap-0.5 leading-none overflow-hidden
@@ -241,7 +240,7 @@ function activateItem(item: NavItem): void {
 						class:bg-[var(--sig-highlight)]={!!daemonStatus}
 						class:border={!daemonStatus}
 						class:border-[var(--sig-text-muted)]={!daemonStatus}
-						style={daemonStatus ? "box-shadow: 0 0 6px var(--sig-highlight);" : ""}
+						style={daemonStatus ? "box-shadow: var(--sig-glow-highlight);" : ""}
 					></span>
 					<span
 						class="text-[10px] tracking-[0.1em] uppercase
@@ -340,123 +339,30 @@ function activateItem(item: NavItem): void {
 
 <style>
 	/*
-	 * "Blend into page" effect: the active sidebar item extends to the
-	 * right edge and visually merges with the main content area, using
-	 * rounded cutout corners above and below to form a tab shape.
+	 * Floating card sidebar: active item uses a contained highlight
+	 * with left accent border, no bleed-through to content area.
 	 */
 
 	.nav-blend-item {
 		position: relative;
-		margin-right: -8px; /* extend to the sidebar's right edge */
 		border-radius: 6px;
 		transition: background 0.2s ease, border-color 0.2s ease;
 	}
 
 	.nav-blend-item--active {
-		background: var(--sig-surface);
-		border-radius: 6px 0 0 6px;
+		background: var(--sig-surface-raised);
+		border-radius: 6px;
 		border-left: 2px solid var(--sig-highlight);
-		border-top: 1px solid var(--sig-border-strong);
-		border-bottom: 1px solid var(--sig-border-strong);
 	}
 
-	/* Rounded cutout above the active item */
-	.nav-blend-item--active::before {
-		content: "";
-		position: absolute;
-		right: 0;
-		bottom: 100%;
-		width: 10px;
-		height: 10px;
-		background: transparent;
-		border-bottom-right-radius: 8px;
-		box-shadow: 3px 3px 0 0 var(--sig-surface);
-		pointer-events: none;
-	}
-
-	/* Rounded cutout below the active item */
-	.nav-blend-item--active::after {
-		content: "";
-		position: absolute;
-		right: 0;
-		top: 100%;
-		width: 10px;
-		height: 10px;
-		background: transparent;
-		border-top-right-radius: 8px;
-		box-shadow: 3px -3px 0 0 var(--sig-surface);
-		pointer-events: none;
-	}
-
-	/* Override the active button styling to match the blend */
+	/* Override the active button styling */
 	:global(.nav-blend-item--active [data-sidebar="menu-button"]) {
 		background: transparent !important;
 		color: var(--sig-text-bright) !important;
 	}
 
-	/* When collapsed, disable the blend effect */
-	:global([data-collapsible="icon"][data-state="collapsed"]) .nav-blend-item {
-		margin-right: 0;
-	}
-	:global([data-collapsible="icon"][data-state="collapsed"]) .nav-blend-item--active {
-		background: transparent;
-		border-radius: 6px;
-		border-left: none;
-	}
-	:global([data-collapsible="icon"][data-state="collapsed"]) .nav-blend-item--active::before,
-	:global([data-collapsible="icon"][data-state="collapsed"]) .nav-blend-item--active::after {
-		display: none;
-	}
-
-	/* Carbon fiber texture on sidebar footer */
+	/* Sidebar footer separator */
 	:global(.sidebar-carbon-footer) {
-		position: relative;
-		border-top: none;
-	}
-	:global(.sidebar-carbon-footer)::before {
-		content: "";
-		position: absolute;
-		inset: 0;
-		pointer-events: none;
-		border-radius: inherit;
-		background:
-			repeating-conic-gradient(
-				rgba(255, 255, 255, 0.02) 0% 25%,
-				transparent 0% 50%
-			) 0 0 / 10px 10px,
-			repeating-conic-gradient(
-				transparent 0% 25%,
-				rgba(0, 0, 0, 0.03) 0% 50%
-			) 5px 5px / 10px 10px,
-			repeating-conic-gradient(
-				var(--sig-surface) 0% 25%,
-				color-mix(in srgb, var(--sig-surface) 96%, black) 0% 50%
-			) 0 0 / 10px 10px;
-		-webkit-mask-image: linear-gradient(to bottom, transparent, black 12px), linear-gradient(to right, black 50%, transparent 100%);
-		-webkit-mask-composite: source-in;
-		mask-image: linear-gradient(to bottom, transparent, black 12px), linear-gradient(to right, black 50%, transparent 100%);
-		mask-composite: intersect;
-		z-index: 0;
-	}
-	:global(.sidebar-carbon-footer > *) {
-		position: relative;
-		z-index: 1;
-	}
-
-	/* Light theme — darken the weave instead */
-	:global([data-theme="light"] .sidebar-carbon-footer)::before {
-		background:
-			repeating-conic-gradient(
-				rgba(0, 0, 0, 0.02) 0% 25%,
-				transparent 0% 50%
-			) 0 0 / 10px 10px,
-			repeating-conic-gradient(
-				transparent 0% 25%,
-				rgba(0, 0, 0, 0.03) 0% 50%
-			) 5px 5px / 10px 10px,
-			repeating-conic-gradient(
-				var(--sig-surface) 0% 25%,
-				color-mix(in srgb, var(--sig-surface) 96%, black) 0% 50%
-			) 0 0 / 10px 10px;
+		border-top: 1px solid var(--sig-border);
 	}
 </style>
