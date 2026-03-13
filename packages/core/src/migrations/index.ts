@@ -321,20 +321,23 @@ function currentVersion(db: MigrationDb): number {
 }
 
 /**
- * Detect and repair the v0.1.65 CLI bug where schema_migrations was
- * stamped at version 2 without actually running migration 002.
- *
- * If version >= 2 but the memories table lacks the `content_hash`
- * column (added by 002), the version rows are bogus. Delete them
- * so all migrations re-run. This is safe because every migration
- * uses CREATE IF NOT EXISTS / addColumnIfMissing.
+ * Read-only detector for the v0.1.65 CLI bug: version >= 2 stamped but
+ * memories table lacks the `content_hash` column added by migration 002.
+ */
+function hasBogusVersion(db: MigrationDb): boolean {
+	const current = currentVersion(db);
+	if (current < 2) return false;
+	const cols = db.prepare("PRAGMA table_info(memories)").all();
+	return !cols.filter(hasStringName).some((r) => r.name === "content_hash");
+}
+
+/**
+ * Repair the v0.1.65 CLI bug by deleting the bogus version records so all
+ * migrations re-run. Safe because every migration uses CREATE IF NOT EXISTS
+ * / addColumnIfMissing. Called only inside runMigrations.
  */
 function repairBogusVersion(db: MigrationDb): void {
-	const current = currentVersion(db);
-	if (current < 2) return;
-	const cols = db.prepare("PRAGMA table_info(memories)").all();
-	const hasContentHash = cols.filter(hasStringName).some((r) => r.name === "content_hash");
-	if (hasContentHash) return;
+	if (!hasBogusVersion(db)) return;
 	db.exec("DELETE FROM schema_migrations WHERE version > 0");
 }
 
@@ -496,22 +499,36 @@ function verifyArtifacts(db: MigrationDb, migration: Migration): void {
  * Check whether there are unapplied migrations without running them.
  * Useful for backup-before-migrate logic in the daemon.
  *
- * Read-only beyond the bogus-version repair (which predates this PR).
- * Uses findPhantomVersions for phantom detection without deleting rows —
- * that keeps the backup version label in db-accessor.ts accurate.
- * repairPhantomMigrations (which deletes rows) runs only inside runMigrations.
+ * Fully read-only: uses hasBogusVersion and findPhantomVersions for
+ * detection only — no deletes. All repairs run exclusively inside
+ * runMigrations so the daemon's backup version label stays accurate.
  */
 export function hasPendingMigrations(db: MigrationDb): boolean {
 	ensureMetaTables(db);
-	repairBogusVersion(db);
 	const applied = appliedVersions(db);
 	const hasNew = MIGRATIONS.some((m) => !applied.has(m.version));
-	return hasNew || findPhantomVersions(db).size > 0;
+	return hasBogusVersion(db) || hasNew || findPhantomVersions(db).size > 0;
 }
 
 /** The highest migration version defined. */
 export const LATEST_SCHEMA_VERSION =
 	MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;
+
+// Invariant: versions must be strictly increasing with no duplicates.
+// Catches registration mistakes (wrong order, copy-paste version number)
+// at module load time rather than silently at runtime.
+(function assertMigrationsSequence() {
+	for (let i = 1; i < MIGRATIONS.length; i++) {
+		const prev = MIGRATIONS[i - 1];
+		const curr = MIGRATIONS[i];
+		if (prev !== undefined && curr !== undefined && curr.version <= prev.version) {
+			throw new Error(
+				`MIGRATIONS invariant violated: version ${curr.version} (${curr.name}) ` +
+					`must be > ${prev.version} (${prev.name})`,
+			);
+		}
+	}
+})();
 
 /**
  * Run all pending migrations against `db`.
