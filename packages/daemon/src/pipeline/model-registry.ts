@@ -243,12 +243,17 @@ export function initModelRegistry(
 	}
 
 	// Run initial discovery
-	refreshRegistry(ollamaBaseUrl, anthropicApiKey).catch(() => {});
+	refreshRegistry(ollamaBaseUrl, anthropicApiKey).catch((err) => {
+		logger.warn("model-registry", "Initial registry refresh failed", { error: String(err) });
+	});
 
 	// Schedule periodic refresh
 	if (config.refreshIntervalMs > 0) {
 		state.refreshTimer = setInterval(
-			() => refreshRegistry(ollamaBaseUrl, anthropicApiKey).catch(() => {}),
+			() =>
+				refreshRegistry(ollamaBaseUrl, anthropicApiKey).catch((err) => {
+					logger.warn("model-registry", "Periodic registry refresh failed", { error: String(err) });
+				}),
 			config.refreshIntervalMs,
 		);
 	}
@@ -270,6 +275,8 @@ export async function refreshRegistry(ollamaBaseUrl?: string, anthropicApiKey?: 
 		discoverAnthropicModels(anthropicApiKey),
 	]);
 
+	if (!state) return; // registry may have been stopped during discovery
+
 	if (ollamaModels.length > 0) {
 		// Merge discovered with known, dedup by id
 		const known = KNOWN_MODELS.ollama ?? [];
@@ -281,39 +288,9 @@ export async function refreshRegistry(ollamaBaseUrl?: string, anthropicApiKey?: 
 
 	if (anthropicModels.length > 0) {
 		state.models.set("anthropic", anthropicModels);
-
-		// Also update claude-code aliases based on discovered models
-		const ccModels: ModelRegistryEntry[] = [];
-		const latestOpus = anthropicModels.find((m) => m.id.includes("opus") && !m.deprecated);
-		const latestSonnet = anthropicModels.find((m) => m.id.includes("sonnet") && !m.deprecated);
-		const latestHaiku = anthropicModels.find((m) => m.id.includes("haiku") && !m.deprecated);
-		if (latestOpus)
-			ccModels.push({
-				id: latestOpus.id,
-				provider: "claude-code",
-				label: latestOpus.label,
-				tier: "high",
-				deprecated: false,
-			});
-		if (latestSonnet)
-			ccModels.push({
-				id: latestSonnet.id,
-				provider: "claude-code",
-				label: latestSonnet.label,
-				tier: "mid",
-				deprecated: false,
-			});
-		if (latestHaiku)
-			ccModels.push({
-				id: latestHaiku.id,
-				provider: "claude-code",
-				label: latestHaiku.label,
-				tier: "low",
-				deprecated: false,
-			});
-		if (ccModels.length > 0) {
-			state.models.set("claude-code", ccModels);
-		}
+		// Do NOT overwrite "claude-code" — its IDs must match what the
+		// Claude Code CLI accepts (shorthand aliases, not dated Anthropic IDs).
+		// The seeded KNOWN_MODELS["claude-code"] entries use the correct shorthands.
 	}
 
 	state.lastRefreshAt = Date.now();

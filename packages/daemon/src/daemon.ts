@@ -9468,10 +9468,21 @@ async function main() {
 
 	// Initialize model registry for dynamic model discovery
 	if (memoryCfg.pipelineV2.modelRegistry.enabled) {
+		let registryAnthropicApiKey = anthropicApiKey;
+		if (!registryAnthropicApiKey) {
+			registryAnthropicApiKey = process.env.ANTHROPIC_API_KEY;
+			if (!registryAnthropicApiKey) {
+				try {
+					registryAnthropicApiKey = (await getSecret("ANTHROPIC_API_KEY")) ?? undefined;
+				} catch {
+					// ignore: registry can still run without Anthropic discovery
+				}
+			}
+		}
 		initModelRegistry(
 			memoryCfg.pipelineV2.modelRegistry,
 			effectiveExtractionProvider === "ollama" ? extractionOllamaBaseUrl : undefined,
-			anthropicApiKey,
+			registryAnthropicApiKey,
 		);
 	}
 
