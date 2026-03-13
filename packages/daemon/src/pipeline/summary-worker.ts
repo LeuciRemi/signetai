@@ -836,6 +836,8 @@ async function resolveProvider(cfg: ReturnType<typeof loadMemoryConfig>): Promis
 				defaultTimeoutMs: timeout,
 			});
 		default:
+			// Intentionally omit maxContextTokens here. When Ollama is explicitly
+			// configured (not fallback), users control context via model config.
 			return createOllamaProvider({
 				...(typeof model === "string" && model.trim().length > 0
 					? { model }

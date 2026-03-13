@@ -5,7 +5,15 @@
  */
 
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
-import { createOllamaProvider, createClaudeCodeProvider, createCodexProvider, createOpenCodeProvider } from "./provider";
+import {
+	DEFAULT_OLLAMA_FALLBACK_MAX_CONTEXT_TOKENS,
+	createOllamaProvider,
+	createClaudeCodeProvider,
+	createCodexProvider,
+	createOpenCodeProvider,
+	resolveDefaultOllamaFallbackMaxContextTokens,
+	resolveDefaultOllamaFallbackModel,
+} from "./provider";
 
 // ---------------------------------------------------------------------------
 // Fetch mock helpers
@@ -42,6 +50,24 @@ function streamFromString(value: string): ReadableStream<Uint8Array> {
 describe("createOllamaProvider", () => {
 	afterEach(() => restoreFetch());
 
+	function withEnvOverride<T>(
+		key: "SIGNET_OLLAMA_FALLBACK_MODEL" | "SIGNET_OLLAMA_FALLBACK_MAX_CTX",
+		value: string,
+		fn: () => T,
+	): T {
+		const prev = process.env[key];
+		process.env[key] = value;
+		try {
+			return fn();
+		} finally {
+			if (prev === undefined) {
+				delete process.env[key];
+			} else {
+				process.env[key] = prev;
+			}
+		}
+	}
+
 	it("returns a provider with the correct name", () => {
 		const provider = createOllamaProvider({ model: "llama3" });
 		expect(provider.name).toBe("ollama:llama3");
@@ -51,6 +77,27 @@ describe("createOllamaProvider", () => {
 		const provider = createOllamaProvider();
 		expect(provider.name).toContain("ollama:");
 		expect(provider.name.length).toBeGreaterThan("ollama:".length);
+	});
+
+	it("resolves fallback model from SIGNET_OLLAMA_FALLBACK_MODEL", () => {
+		withEnvOverride("SIGNET_OLLAMA_FALLBACK_MODEL", "mistral:7b", () => {
+			expect(resolveDefaultOllamaFallbackModel()).toBe("mistral:7b");
+		});
+	});
+
+	it("returns default max context when SIGNET_OLLAMA_FALLBACK_MAX_CTX is invalid", () => {
+		withEnvOverride("SIGNET_OLLAMA_FALLBACK_MAX_CTX", "abc", () => {
+			expect(resolveDefaultOllamaFallbackMaxContextTokens()).toBe(
+				DEFAULT_OLLAMA_FALLBACK_MAX_CONTEXT_TOKENS,
+			);
+		});
+	});
+
+	it("uses SIGNET_OLLAMA_FALLBACK_MODEL when model is not explicitly configured", () => {
+		withEnvOverride("SIGNET_OLLAMA_FALLBACK_MODEL", "llama3.1:8b", () => {
+			const provider = createOllamaProvider();
+			expect(provider.name).toBe("ollama:llama3.1:8b");
+		});
 	});
 
 	it("generate() returns trimmed response on success", async () => {
