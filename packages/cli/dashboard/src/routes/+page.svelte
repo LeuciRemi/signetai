@@ -241,7 +241,8 @@ $effect(() => {
 		onprefetchembeddings={prefetchEmbeddingsTab}
 	/>
 	<Sidebar.Trigger
-		class="mobile-sidebar-trigger fixed top-1.5 left-2 z-40 !h-[24px] !w-[62px] !p-0 !bg-transparent !border-none !shadow-none !rounded hover:!bg-[var(--sig-surface-raised)] hover:!shadow-[0_0_10px_rgba(255,255,255,0.15)] !transition-all !items-center !justify-start !pl-1.5 !hidden max-lg:!flex"
+		class="mobile-sidebar-trigger fixed left-2 z-40 !h-[24px] !w-[62px] !p-0 !bg-transparent !border-none !shadow-none !rounded hover:!bg-[var(--sig-surface-raised)] hover:!shadow-[0_0_10px_rgba(255,255,255,0.15)] !transition-all !items-center !justify-start !pl-1.5 !hidden max-lg:!flex"
+		style="top: calc(var(--titlebar-h, 0px) + 6px);"
 	>
 		<span
 			class="inline-block h-3.5 w-3.5 shrink-0 relative

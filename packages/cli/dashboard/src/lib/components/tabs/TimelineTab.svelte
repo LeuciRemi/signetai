@@ -615,7 +615,7 @@ onMount(() => {
 			</section>
 
 			<div class="timeline-content-split flex-1 min-h-0 gap-3">
-				<section class="timeline-detail-panel flex min-h-0 flex-col gap-3 overflow-hidden rounded-[10.5px] bg-[var(--sig-surface)] p-3" style="border: 2px solid var(--sig-border-strong);">
+				<section class="timeline-detail-panel flex min-h-0 flex-col gap-3 overflow-auto rounded-[10.5px] bg-[var(--sig-surface)] p-3" style="border: 2px solid var(--sig-border-strong);">
 					<div class="timeline-era-head">
 						<div class="timeline-era-title-row">
 							<p class="sig-heading timeline-era-title">
@@ -809,7 +809,7 @@ onMount(() => {
 	.timeline-hero-title {
 		margin: 0;
 		font-family: var(--font-display);
-		font-size: 40px;
+		font-size: clamp(1.5rem, 3vw, 2.5rem);
 		line-height: 1.05;
 		letter-spacing: 0.018em;
 		text-transform: uppercase;
@@ -973,6 +973,12 @@ onMount(() => {
 		border-color: var(--sig-accent);
 	}
 
+	@media (prefers-reduced-motion: reduce) {
+		.timeline-top-card {
+			transition: none;
+		}
+	}
+
 	.timeline-top-card-head {
 		display: flex;
 		align-items: center;
@@ -1048,9 +1054,6 @@ onMount(() => {
 			flex-shrink: 0;
 		}
 
-		.timeline-hero-title {
-			font-size: 24px;
-		}
 
 		.timeline-content-split {
 			grid-template-columns: minmax(0, 1fr);
