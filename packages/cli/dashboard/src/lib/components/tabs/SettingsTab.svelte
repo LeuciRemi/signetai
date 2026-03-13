@@ -295,8 +295,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		padding: var(--space-sm) var(--space-md);
-		background: var(--sig-surface);
+		padding: 2px var(--space-md) var(--space-sm);
+		background: transparent;
 		border-bottom: 1px solid var(--sig-border);
 		flex-shrink: 0;
 	}

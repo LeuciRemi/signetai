@@ -1380,10 +1380,11 @@ $effect(() => {
 		}
 	}
 
-	@media (max-width: 980px) {
+	@media (max-width: 1023px) {
 		.tab-header {
 			flex-wrap: wrap;
 			gap: var(--space-sm);
+			padding-left: 6.5rem;
 		}
 
 		.module-head {

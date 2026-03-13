@@ -240,6 +240,19 @@ $effect(() => {
 		onthemetoggle={toggleTheme}
 		onprefetchembeddings={prefetchEmbeddingsTab}
 	/>
+	<Sidebar.Trigger
+		class="mobile-sidebar-trigger fixed top-1.5 left-2 z-40 !h-[24px] !w-[62px] !p-0 !bg-transparent !border-none !shadow-none !rounded hover:!bg-[var(--sig-surface-raised)] hover:!shadow-[0_0_10px_rgba(255,255,255,0.15)] !transition-all !items-center !justify-start !pl-1.5 !hidden max-lg:!flex"
+	>
+		<span
+			class="inline-block h-3.5 w-3.5 shrink-0 relative
+				before:absolute before:w-px before:h-full before:left-1/2
+				before:bg-[var(--sig-highlight)]
+				after:absolute after:w-full after:h-px after:top-1/2
+				after:bg-[var(--sig-highlight)]"
+			style="filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.4));"
+			aria-hidden="true"
+		></span>
+	</Sidebar.Trigger>
 	<main data-page-content="true" class="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden
 		bg-[var(--sig-bg)]">
 
@@ -280,3 +293,4 @@ $effect(() => {
 		class: "!font-[family-name:var(--font-mono)] !text-[12px] !border-[var(--sig-border-strong)] !bg-[var(--sig-surface-raised)] !text-[var(--sig-text-bright)]",
 	}}
 />
+

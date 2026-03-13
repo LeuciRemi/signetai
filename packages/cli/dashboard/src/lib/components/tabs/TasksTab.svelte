@@ -379,4 +379,10 @@ const taskCount = $derived(ts.tasks.length);
 		border-radius: 2px;
 		color: var(--sig-text-muted);
 	}
+
+	@media (max-width: 1023px) {
+		.tab-header {
+			padding-left: 6.5rem;
+		}
+	}
 </style>
