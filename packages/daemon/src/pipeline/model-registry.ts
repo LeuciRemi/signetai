@@ -299,9 +299,9 @@ async function _refreshRegistryInner(ollamaBaseUrl?: string, anthropicApiKey?: s
 
 	logger.debug("model-registry", "Refreshing model registry");
 
-	// Discover Ollama models in parallel with Anthropic
+	// Discover models in parallel — only probe providers that are configured
 	const [ollamaModels, anthropicModels] = await Promise.all([
-		discoverOllamaModels(ollamaBaseUrl ?? "http://localhost:11434"),
+		ollamaBaseUrl ? discoverOllamaModels(ollamaBaseUrl) : Promise.resolve([]),
 		discoverAnthropicModels(anthropicApiKey),
 	]);
 
