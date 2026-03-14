@@ -12,6 +12,7 @@
   "workspaces": [
     "packages/*",
     "packages/adapters/*",
+    "packages/cli/dashboard",
     "web"
   ],
   "scripts": {

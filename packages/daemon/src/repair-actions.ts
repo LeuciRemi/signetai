@@ -1839,3 +1839,90 @@ export function structuralBackfill(
 		message: `created ${attributesCreated} stubs, enqueued ${classifyEnqueued} classify jobs`,
 	};
 }
+
+// ---------------------------------------------------------------------------
+// backfillSkippedSessions
+// ---------------------------------------------------------------------------
+
+/**
+ * Find summary_jobs that completed without producing a session summary
+ * (skipped by the significance gate) and re-enqueue them for extraction.
+ */
+export function backfillSkippedSessions(
+	accessor: DbAccessor,
+	cfg: PipelineV2Config,
+	ctx: RepairContext,
+	limiter: RateLimiter,
+	options?: { limit?: number; dryRun?: boolean },
+): RepairResult {
+	const action = "backfillSkippedSessions";
+	const gate = checkRepairGate(cfg, ctx, limiter, action, 60_000, 20);
+	if (!gate.allowed) {
+		return { action, success: false, affected: 0, message: gate.reason ?? "denied" };
+	}
+
+	const limit = options?.limit ?? 50;
+
+	const tableExists = accessor.withReadDb((db) => {
+		const jobs = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'summary_jobs'").get();
+		const summaries = db
+			.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_summaries'")
+			.get();
+		return jobs && summaries;
+	});
+	if (!tableExists) {
+		return { action, success: true, affected: 0, message: "required tables not found" };
+	}
+
+	const skipped = accessor.withReadDb((db) =>
+		db
+			.prepare(
+				`SELECT sj.id FROM summary_jobs sj
+				 LEFT JOIN session_summaries ss ON ss.session_key = sj.session_key
+				 WHERE sj.status = 'completed'
+				   AND ss.id IS NULL
+				 LIMIT ?`,
+			)
+			.all(limit) as Array<{ id: string }>,
+	);
+
+	if (skipped.length === 0 || options?.dryRun) {
+		return {
+			action,
+			success: true,
+			affected: skipped.length,
+			message: options?.dryRun
+				? `dry-run: would re-enqueue ${skipped.length} skipped session(s)`
+				: "no skipped sessions found",
+		};
+	}
+
+	const count = accessor.withWriteTx((db) => {
+		const placeholders = skipped.map(() => "?").join(", ");
+		const ids = skipped.map((r) => r.id);
+		const result = db
+			.prepare(
+				`UPDATE summary_jobs
+				 SET status = 'pending', attempts = 0, error = NULL
+				 WHERE id IN (${placeholders})`,
+			)
+			.run(...ids);
+		const affected = countChanges(result);
+		writeRepairAudit(db, action, ctx, affected, `re-enqueued ${affected} skipped session(s)`);
+		return affected;
+	});
+
+	limiter.record(action);
+	logger.info("pipeline", "repair: backfill skipped sessions", {
+		affected: count,
+		actor: ctx.actor,
+		reason: ctx.reason,
+	});
+
+	return {
+		action,
+		success: true,
+		affected: count,
+		message: `re-enqueued ${count} skipped session(s) for extraction`,
+	};
+}
