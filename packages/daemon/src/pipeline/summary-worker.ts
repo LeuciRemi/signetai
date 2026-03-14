@@ -174,7 +174,9 @@ ${factsPreview}`;
 
 // Split transcript into chunks on turn boundaries (User:/Assistant: lines).
 // Avoids splitting mid-turn so each chunk is a coherent conversation segment.
+// Hard cap at 3x target prevents a single giant turn from blowing context.
 function chunkTranscript(transcript: string, target: number): string[] {
+	const hardCap = target * 3;
 	const lines = transcript.split("\n");
 	const chunks: string[] = [];
 	let current: string[] = [];
@@ -182,7 +184,7 @@ function chunkTranscript(transcript: string, target: number): string[] {
 
 	for (const line of lines) {
 		const isNewTurn = /^(User|Assistant):\s/.test(line);
-		if (isNewTurn && chars >= target && current.length > 0) {
+		if (current.length > 0 && ((isNewTurn && chars >= target) || chars >= hardCap)) {
 			chunks.push(current.join("\n"));
 			current = [];
 			chars = 0;
@@ -548,15 +550,21 @@ async function processChunked(
 
 	if (chunkSummaries.length === 0) return null;
 
-	// Single chunk survived — no combine needed
-	if (chunkSummaries.length === 1) {
-		return { summary: chunkSummaries[0], facts: allFacts };
-	}
-
-	// Reduce: combine chunk summaries into unified result
+	// Reduce: combine chunk summaries into unified result.
+	// Even a single surviving chunk goes through combine to get the
+	// standard "# Date Session Notes" header format.
 	const combinePrompt = buildCombinePrompt(chunkSummaries, allFacts, date);
 	const combineRaw = await provider.generate(combinePrompt, opts);
-	return parseLlmResponse(combineRaw);
+	const combined = parseLlmResponse(combineRaw);
+
+	if (combined) return combined;
+
+	// Combine failed — preserve partial work rather than discarding
+	logger.warn("summary-worker", "Combine step failed, falling back to first chunk", {
+		chunks: chunkSummaries.length,
+		facts: allFacts.length,
+	});
+	return { summary: chunkSummaries[0], facts: allFacts };
 }
 
 // ---------------------------------------------------------------------------
