@@ -183,6 +183,19 @@ function chunkTranscript(transcript: string, target: number): string[] {
 	let chars = 0;
 
 	for (const line of lines) {
+		// Oversized single line — flush current, then split the line itself
+		if (line.length + 1 >= hardCap) {
+			if (current.length > 0) {
+				chunks.push(current.join("\n"));
+				current = [];
+				chars = 0;
+			}
+			for (let i = 0; i < line.length; i += hardCap) {
+				chunks.push(line.slice(i, i + hardCap));
+			}
+			continue;
+		}
+
 		const isNewTurn = /^(User|Assistant):\s/.test(line);
 		if (current.length > 0 && ((isNewTurn && chars >= target) || chars >= hardCap)) {
 			chunks.push(current.join("\n"));
@@ -550,13 +563,13 @@ async function processChunked(
 
 	if (chunkSummaries.length === 0) return null;
 
-	// Single chunk — run through processSingle for the standard header
-	// format without paying for a combine call
+	// Single chunk — prepend standard header directly instead of
+	// re-processing through an LLM call
 	if (chunkSummaries.length === 1) {
-		const formatted = await processSingle(
-			provider, chunkSummaries[0], date, opts,
-		);
-		return formatted ?? { summary: chunkSummaries[0], facts: allFacts };
+		return {
+			summary: `# ${date} Session Notes\n\n${chunkSummaries[0]}`,
+			facts: allFacts,
+		};
 	}
 
 	// Reduce: combine chunk summaries into unified result

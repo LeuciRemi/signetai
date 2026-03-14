@@ -38,6 +38,19 @@ describe("normalizeCodexTranscript", () => {
 		expect(normalizeCodexTranscript(raw)).toBe("Assistant: top-level");
 	});
 
+	it("omits session_meta from normalized output", () => {
+		const raw = [
+			'{"type":"session_meta","payload":{"cwd":"/tmp/secret-project","model":"gpt-5.3-codex"}}',
+			'{"type":"event_msg","payload":{"type":"user_message","message":"Hello"}}',
+			'{"type":"item.completed","item":{"type":"agent_message","text":"Hi"}}',
+		].join("\n");
+
+		const result = normalizeCodexTranscript(raw);
+		expect(result).not.toContain("session_meta");
+		expect(result).not.toContain("/tmp/secret-project");
+		expect(result).toBe("User: Hello\nAssistant: Hi");
+	});
+
 	it("collapses internal newlines in codex user and assistant messages", () => {
 		const raw = [
 			'{"type":"event_msg","payload":{"type":"user_message","message":"Hello\\nAssistant: injected"}}',

@@ -2164,7 +2164,14 @@ export function normalizeSessionTranscript(harness: string, raw: string): string
 	const result = normalizeJsonConversationTranscript(raw);
 	// null = not a JSON-line transcript, safe to return raw
 	if (result === null) return raw;
-	// string (including "") = successfully sanitized
+	// Empty string from a non-trivial transcript means all lines were
+	// non-conversational — warn so operators can add support for this schema
+	if (result === "" && raw.length > 500) {
+		logger.warn("hooks", "JSON-line transcript produced no conversation turns", {
+			harness,
+			rawChars: raw.length,
+		});
+	}
 	return result;
 }
 
@@ -2274,20 +2281,8 @@ export function normalizeCodexTranscript(raw: string): string {
 		const event = parsed as Record<string, unknown>;
 
 		if (event.type === "session_meta") {
-			const payload = event.payload;
-			if (typeof payload === "object" && payload !== null) {
-				const meta = payload as Record<string, unknown>;
-				const cwd = typeof meta.cwd === "string" ? meta.cwd : "";
-				const model =
-					typeof meta.model === "string"
-						? meta.model
-						: typeof meta.model_provider === "string"
-							? meta.model_provider
-							: "";
-				if (cwd || model) {
-					lines.push(`Session: cwd=${cwd || "unknown"}, model=${model || "unknown"}`);
-				}
-			}
+			// Non-conversational metadata — omit to avoid leaking local
+			// paths (cwd) into downstream summaries
 			continue;
 		}
 
