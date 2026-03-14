@@ -296,3 +296,11 @@ $effect(() => {
 	}}
 />
 
+<style>
+	@media (prefers-reduced-motion: reduce) {
+		:global(.mobile-sidebar-trigger) {
+			transition: none !important;
+		}
+	}
+</style>
+

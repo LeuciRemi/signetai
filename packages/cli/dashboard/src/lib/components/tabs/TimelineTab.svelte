@@ -1124,9 +1124,8 @@ onMount(() => {
 		.timeline-mix-card {
 			max-height: 180px;
 			overflow-y: auto;
-			border-bottom: 1px solid var(--sig-highlight-text);
-			border-left: 1px solid var(--sig-highlight-text);
-			border-right: 1px solid var(--sig-highlight-text);
+			border: 1px solid var(--sig-highlight-text);
+			border-top: none;
 			font-size: 10px;
 		}
 
