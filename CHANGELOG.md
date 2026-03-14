@@ -2,6 +2,14 @@
 
 All notable changes to Signet are documented here.
 
+## [0.57.0] - 2026-03-14
+
+### Bug Fixes
+
+- address PR review feedback on migration 030
+- make memory_jobs.memory_id nullable for document ingest jobs
+
+
 ## [0.56.2] - 2026-03-14
 
 ### Features
