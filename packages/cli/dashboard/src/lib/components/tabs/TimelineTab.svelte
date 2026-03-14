@@ -866,8 +866,6 @@ onMount(() => {
 		margin-left: -0.75rem;
 		margin-right: -0.75rem;
 		padding-bottom: 2rem;
-		flex: 1;
-		min-height: 0;
 	}
 
 	.timeline-mix-card {
@@ -1100,7 +1098,6 @@ onMount(() => {
 		.timeline-detail-panel {
 			overflow-y: auto;
 			min-height: 0;
-			max-height: 55vh;
 		}
 
 		.timeline-summary-grid {
@@ -1128,7 +1125,6 @@ onMount(() => {
 
 		.timeline-top-panel {
 			min-height: 0;
-			max-height: 45vh;
 			overflow-y: auto;
 		}
 
@@ -1138,6 +1134,17 @@ onMount(() => {
 
 		.timeline-top-card {
 			min-height: 0;
+		}
+	}
+
+	/* Portrait-only max-height constraints — landscape phones use flex layout */
+	@media (max-width: 900px) and (orientation: portrait) {
+		.timeline-detail-panel {
+			max-height: 55vh;
+		}
+
+		.timeline-top-panel {
+			max-height: 45vh;
 		}
 	}
 

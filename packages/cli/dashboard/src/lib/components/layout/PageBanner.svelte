@@ -120,6 +120,7 @@
 			justify-self: center;
 			flex-wrap: wrap;
 			justify-content: center;
+			padding-left: 4.5rem; /* clear fixed sidebar trigger */
 		}
 
 		.banner-right {
