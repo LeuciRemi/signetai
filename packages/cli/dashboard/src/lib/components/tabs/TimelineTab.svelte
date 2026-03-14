@@ -866,6 +866,7 @@ onMount(() => {
 		margin-left: calc(-1 * var(--panel-pad, 0.75rem));
 		margin-right: calc(-1 * var(--panel-pad, 0.75rem));
 		padding-bottom: 2rem;
+		border-bottom: 1px solid var(--sig-highlight-text);
 	}
 
 	.timeline-mix-card {
@@ -881,11 +882,6 @@ onMount(() => {
 
 	.timeline-mix-grid > .timeline-mix-card:nth-child(3n + 1) {
 		border-left: 1px solid var(--sig-highlight-text);
-	}
-
-	/* Bottom border closes the grid regardless of card count */
-	.timeline-mix-grid {
-		border-bottom: 1px solid var(--sig-highlight-text);
 	}
 
 	.timeline-mix-card--type {
