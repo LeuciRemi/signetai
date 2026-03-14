@@ -615,7 +615,7 @@ onMount(() => {
 			</section>
 
 			<div class="timeline-content-split flex-1 min-h-0 gap-3">
-				<section class="timeline-detail-panel flex min-h-0 flex-col gap-3 overflow-x-hidden overflow-y-auto rounded-[10.5px] border-2 border-[var(--sig-border-strong)] bg-[var(--sig-surface)] p-3">
+				<section class="timeline-detail-panel flex min-h-0 flex-col gap-3 overflow-x-hidden overflow-y-auto rounded-[10.5px] border-2 border-[var(--sig-border-strong)] bg-[var(--sig-surface)] p-3" style="--panel-pad: 0.75rem;">
 					<div class="timeline-era-head">
 						<div class="timeline-era-title-row">
 							<p class="sig-heading timeline-era-title">
@@ -863,8 +863,8 @@ onMount(() => {
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 0;
-		margin-left: -0.75rem;
-		margin-right: -0.75rem;
+		margin-left: calc(-1 * var(--panel-pad, 0.75rem));
+		margin-right: calc(-1 * var(--panel-pad, 0.75rem));
 		padding-bottom: 2rem;
 	}
 
@@ -917,8 +917,8 @@ onMount(() => {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 0.5rem;
-		margin-left: -0.75rem;
-		margin-right: -0.75rem;
+		margin-left: calc(-1 * var(--panel-pad, 0.75rem));
+		margin-right: calc(-1 * var(--panel-pad, 0.75rem));
 	}
 
 	.timeline-summary-line {
