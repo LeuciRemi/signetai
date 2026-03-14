@@ -64,6 +64,10 @@ existing, replace something outdated, or skip entirely. Your agent
 won't store "prefers dark mode" fourteen times. It recognizes the
 insight already exists and moves on.
 
+<p align="center">
+  <img src="public/memory-loop-v2.jpg" alt="Signet memory loop — extraction, decision, and retention flow" width="620" />
+</p>
+
 ### The knowledge graph
 
 Named entities — people, projects, tools, concepts — are extracted
@@ -72,6 +76,10 @@ text that sounds related. It traverses the graph: the project's
 architecture, the people involved, the tools it depends on, the
 constraints that apply. Context arrives structured, not as a pile of
 fragments hoping something useful is in there.
+
+<p align="center">
+  <img src="public/constellation.jpg" alt="Signet constellation view — knowledge graph visualization with entity clusters and force-directed layout" width="720" />
+</p>
 
 ### The index
 
