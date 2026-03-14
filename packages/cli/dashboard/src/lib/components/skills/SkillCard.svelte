@@ -64,6 +64,12 @@ function getMonogramBg(name: string): string {
 	return MONOGRAM_COLORS[Math.abs(hash) % MONOGRAM_COLORS.length] ?? MONOGRAM_COLORS[0];
 }
 
+function getHueRotate(name: string): number {
+	let hash = 0;
+	for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff;
+	return hash % 360;
+}
+
 function getMonogram(name: string): string {
 	// Split on hyphens, underscores, dots, spaces
 	const parts = name.split(/[-_.\s]+/).filter(Boolean);
@@ -89,6 +95,7 @@ function getAvatarUrl(): string | null {
 	return null;
 }
 
+let hueRotate = $derived(getHueRotate(item.name));
 let avatarUrl = $derived.by(() => {
 	void sk.catalog.length;
 	return getAvatarUrl();
@@ -118,7 +125,7 @@ let isInstalled = $derived(
 						src={avatarUrl}
 						alt={item.name}
 						class="monogram-avatar"
-						style="filter: hue-rotate({(() => { let h = 0; for (const c of item.name) h = (h * 31 + c.charCodeAt(0)) & 0xffff; return h % 360; })()}deg);"
+						style="filter: hue-rotate({hueRotate}deg);"
 						onerror={() => { avatarFailed = true; }}
 					/>
 				{:else}

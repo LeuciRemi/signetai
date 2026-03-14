@@ -1407,9 +1407,7 @@ $effect(() => {
 		.store-rail > :global(.rail-panel:last-child) {
 			right: 1rem;
 		}
-	}
 
-	@media (max-width: 767px) {
 		.tab-header {
 			flex-wrap: wrap;
 			gap: var(--space-sm);

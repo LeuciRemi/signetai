@@ -566,8 +566,8 @@ export function parseReferenceServersMarkdown(markdown: string): MarketplaceMcpC
 	const tpStart = markdown.indexOf("## 🤝 Third-Party Servers");
 	if (tpStart >= 0) {
 		const tpAfter = markdown.slice(tpStart);
-		const tpEnd = tpAfter.indexOf("## 📚 Frameworks");
-		const tpSection = tpEnd > 0 ? tpAfter.slice(0, tpEnd) : tpAfter;
+		const nextSection = tpAfter.indexOf("## ", 1);
+		const tpSection = nextSection > 0 ? tpAfter.slice(0, nextSection) : tpAfter;
 		const re = /^-\s+(?:<img[^>]*>\s*)?\*\*\[([^\]]+)\]\((https?:\/\/[^)]+)\)\*\*\s+-\s+(.+)$/gm;
 		let m: RegExpExecArray | null;
 		while ((m = re.exec(tpSection)) !== null) {
@@ -575,7 +575,8 @@ export function parseReferenceServersMarkdown(markdown: string): MarketplaceMcpC
 			const url = m[2].trim();
 			const desc = m[3].replace(/<[^>]*>/g, "").trim();
 			if (!name || !url) continue;
-			const slug = url.replace(/\/$/, "").split("/").at(-1) ?? name;
+			const ghMatch = url.match(/github\.com\/([^/]+\/[^/]+)/);
+			const slug = ghMatch ? ghMatch[1].replace(/\/$/, "") : (url.replace(/\/$/, "").split("/").at(-1) ?? name);
 			const id = makeCatalogEntryId("modelcontextprotocol/servers", slug);
 			if (seen.has(id)) continue;
 			seen.add(id);

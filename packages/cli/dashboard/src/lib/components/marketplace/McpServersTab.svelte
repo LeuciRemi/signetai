@@ -174,7 +174,8 @@ function getHueRotate(name: string): string {
 	return `hue-rotate(${hash % 360}deg)`;
 }
 
-const avatarErrors = $state(new Set<string>());
+const installedAvatarErrors = $state(new Set<string>());
+const catalogAvatarErrors = $state(new Set<string>());
 
 function openInstallSheet(entry: MarketplaceMcpCatalogEntry): void {
 	selectedCatalogEntry = entry;
@@ -353,9 +354,9 @@ async function removeFromDetail(serverId: string): Promise<void> {
 							onkeydown={(event) => onInstalledCardKeydown(event, server)}
 						>
 							<div class="catalog-top">
-								<div class="mcp-icon" style={`background: ${sAvatar && !avatarErrors.has(server.id) ? 'transparent' : getMonogramBg(server.name)};`}>
-									{#if sAvatar && !avatarErrors.has(server.id)}
-										<img src={sAvatar} alt={server.name} class="mcp-avatar" style="filter: {getHueRotate(server.name)};" onerror={() => { avatarErrors.add(server.id); }} />
+								<div class="mcp-icon" style={`background: ${sAvatar && !installedAvatarErrors.has(server.id) ? 'transparent' : getMonogramBg(server.name)};`}>
+									{#if sAvatar && !installedAvatarErrors.has(server.id)}
+										<img src={sAvatar} alt={server.name} class="mcp-avatar" style="filter: {getHueRotate(server.name)};" onerror={() => { installedAvatarErrors.add(server.id); }} />
 									{:else}
 										{getMonogram(server.name)}
 									{/if}
@@ -416,9 +417,9 @@ async function removeFromDetail(serverId: string): Promise<void> {
 						onkeydown={(event) => onCatalogCardKeydown(event, entry)}
 					>
 						<div class="catalog-top">
-							<div class="mcp-icon" style={`background: ${avatar && !avatarErrors.has(entry.id) ? 'transparent' : getMonogramBg(entry.name)};`}>
-								{#if avatar && !avatarErrors.has(entry.id)}
-									<img src={avatar} alt={entry.name} class="mcp-avatar" style="filter: {getHueRotate(entry.name)};" onerror={() => { avatarErrors.add(entry.id); }} />
+							<div class="mcp-icon" style={`background: ${avatar && !catalogAvatarErrors.has(entry.id) ? 'transparent' : getMonogramBg(entry.name)};`}>
+								{#if avatar && !catalogAvatarErrors.has(entry.id)}
+									<img src={avatar} alt={entry.name} class="mcp-avatar" style="filter: {getHueRotate(entry.name)};" onerror={() => { catalogAvatarErrors.add(entry.id); }} />
 								{:else}
 									{getMonogram(entry.name)}
 								{/if}
