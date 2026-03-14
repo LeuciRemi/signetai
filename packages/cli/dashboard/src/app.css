@@ -204,8 +204,6 @@ svg.lucide {
     --sig-log-category-git: #0d9488;
     --sig-log-category-scheduler: #9333ea;
     --sig-log-category-retention: #dc2626;
-
-    --mobile-header-inset: 2.5rem;
 }
 
 /* === Tailwind v4 theme registration === */
