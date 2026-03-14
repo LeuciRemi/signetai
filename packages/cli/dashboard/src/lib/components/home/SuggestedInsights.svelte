@@ -129,12 +129,12 @@
 	}
 </script>
 
-<div class="insights-panel">
-	<div class="insights-header">
+<div class="insights-panel sig-panel">
+	<div class="insights-header sig-panel-header">
 		<span class="insights-title">SUGGESTED INSIGHTS</span>
 		<div class="insights-header-right">
 			<span class="insights-count">{displayCards.length} OF {scoredPool.length}</span>
-			<button class="refresh-btn" onclick={handleRefresh} title="Refresh suggestions">
+			<button class="refresh-btn sig-switch" onclick={handleRefresh} title="Refresh suggestions">
 				<RefreshCw class="refresh-icon" />
 				<span>REFRESH</span>
 			</button>
@@ -175,11 +175,11 @@
 					<!-- Actions -->
 					<div class="entry-actions">
 						<button
-							class="action-btn accept"
+							class="action-btn accept sig-switch"
 							onclick={() => acceptMemory(m)}
 						>PIN</button>
 						<button
-							class="action-btn reject"
+							class="action-btn reject sig-switch"
 							onclick={() => rejectMemory(m)}
 						>DISMISS</button>
 						<Popover.Root>
@@ -187,7 +187,7 @@
 								{#snippet child({ props })}
 									<button
 										{...props}
-										class="action-btn edit"
+										class="action-btn edit sig-switch"
 										onclick={() => initEdit(m)}
 									>EDIT</button>
 								{/snippet}
@@ -245,9 +245,6 @@
 		flex-direction: column;
 		height: 100%;
 		background: var(--sig-surface);
-		border: 1px solid var(--sig-border);
-		border-radius: var(--radius);
-		overflow: hidden;
 	}
 
 	/* --- Header --- */
@@ -256,7 +253,6 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: var(--space-sm) var(--space-md);
-		border-bottom: 1px solid var(--sig-border);
 		flex-shrink: 0;
 	}
 
@@ -287,25 +283,11 @@
 		align-items: center;
 		gap: 4px;
 		padding: 3px 8px;
-		background: transparent;
-		border: 1px solid var(--sig-border);
-		border-radius: var(--radius);
 		color: var(--sig-text-muted);
 		font-family: var(--font-mono);
 		font-size: 8px;
 		letter-spacing: 0.08em;
 		cursor: pointer;
-		transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
-	}
-
-	.refresh-btn:hover {
-		color: var(--sig-text-bright);
-		border-color: var(--sig-border-strong);
-	}
-
-	.refresh-btn:focus-visible {
-		outline: 2px solid var(--sig-highlight);
-		outline-offset: 1px;
 	}
 
 	:global(.insights-panel .refresh-icon) {
@@ -417,17 +399,8 @@
 		font-size: 8px;
 		letter-spacing: 0.08em;
 		padding: 2px 8px;
-		background: transparent;
-		border: 1px solid var(--sig-border);
-		border-radius: 2px;
 		color: var(--sig-text-muted);
 		cursor: pointer;
-		transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), background var(--dur) var(--ease);
-	}
-
-	.action-btn:hover {
-		color: var(--sig-text-bright);
-		border-color: var(--sig-border-strong);
 	}
 
 	.action-btn.accept:hover {
@@ -443,11 +416,6 @@
 	.action-btn.edit:hover {
 		color: var(--sig-accent-hover);
 		border-color: var(--sig-accent);
-	}
-
-	.action-btn:focus-visible {
-		outline: 2px solid var(--sig-highlight);
-		outline-offset: 1px;
 	}
 
 	/* --- Empty state --- */

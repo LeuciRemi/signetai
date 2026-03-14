@@ -34,8 +34,8 @@
 	});
 </script>
 
-<div class="panel">
-	<div class="panel-header">
+<div class="panel sig-panel">
+	<div class="panel-header sig-panel-header">
 		<span class="panel-title">SPOTLIGHT</span>
 		<span class="panel-count">{entities.length} PINNED</span>
 	</div>
@@ -67,7 +67,7 @@
 		{/if}
 	</div>
 
-	<div class="panel-footer">
+	<div class="panel-footer sig-panel-footer">
 		<button class="panel-link" onclick={() => setTab("knowledge")}>
 			VIEW IN KNOWLEDGE
 		</button>
@@ -80,9 +80,6 @@
 		flex-direction: column;
 		height: 100%;
 		background: var(--sig-surface);
-		border: 1px solid var(--sig-border);
-		border-radius: var(--radius);
-		overflow: hidden;
 	}
 
 	.panel-header {
@@ -90,7 +87,6 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: var(--space-sm) var(--space-md);
-		border-bottom: 1px solid var(--sig-border);
 		flex-shrink: 0;
 	}
 
@@ -119,7 +115,6 @@
 
 	.panel-footer {
 		padding: var(--space-sm) var(--space-md);
-		border-top: 1px solid var(--sig-border);
 		flex-shrink: 0;
 	}
 

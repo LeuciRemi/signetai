@@ -234,28 +234,6 @@ function activateItem(item: NavItem): void {
 	<Sidebar.Footer class="sidebar-carbon-footer">
 		<Sidebar.Menu>
 			<Sidebar.MenuItem>
-				<div class="flex items-center gap-1.5 px-2 py-1">
-					<span
-						class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-						class:bg-[var(--sig-highlight)]={!!daemonStatus}
-						class:border={!daemonStatus}
-						class:border-[var(--sig-text-muted)]={!daemonStatus}
-						style={daemonStatus ? "box-shadow: var(--sig-glow-highlight);" : ""}
-					></span>
-					<span
-						class="text-[10px] tracking-[0.1em] uppercase
-							text-[var(--sig-text-muted)]
-							font-[family-name:var(--font-mono)]
-							overflow-hidden whitespace-nowrap
-							transition-opacity duration-200 ease-out
-							group-data-[collapsible=icon]:opacity-0"
-					>
-						{daemonStatus ? "ONLINE" : "OFFLINE"}
-					</span>
-				</div>
-			</Sidebar.MenuItem>
-
-			<Sidebar.MenuItem>
 			<Sidebar.MenuButton
 				data-sidebar-item="theme-toggle"
 				tabindex={getTabIndex("theme-toggle")}
@@ -339,20 +317,43 @@ function activateItem(item: NavItem): void {
 
 <style>
 	/*
-	 * Floating card sidebar: active item uses a contained highlight
-	 * with left accent border, no bleed-through to content area.
+	 * Machined aluminum nav items — recessed into the panel faceplate.
+	 * Sharp edges, inset shadows, physical toggle feel.
 	 */
 
 	.nav-blend-item {
 		position: relative;
+		display: flex;
+		align-items: center;
 		border-radius: 6px;
-		transition: background 0.2s ease, border-color 0.2s ease;
+		transition: background 0.15s ease, box-shadow 0.15s ease;
+	}
+
+	.nav-blend-item:hover:not(.nav-blend-item--active) {
+		background: rgba(255, 255, 255, 0.04);
+		box-shadow:
+			inset 0 1px 0 rgba(255, 255, 255, 0.06),
+			inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+	}
+
+	:root[data-theme="light"] .nav-blend-item:hover:not(.nav-blend-item--active) {
+		background: rgba(0, 0, 0, 0.04);
+		box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);
 	}
 
 	.nav-blend-item--active {
 		background: var(--sig-surface-raised);
 		border-radius: 6px;
-		border-left: 2px solid var(--sig-highlight);
+		box-shadow:
+			inset 0 1px 0 rgba(255, 255, 255, 0.07),
+			inset 0 -1px 2px rgba(0, 0, 0, 0.5),
+			0 1px 0 rgba(255, 255, 255, 0.03);
+	}
+
+	:root[data-theme="light"] .nav-blend-item--active {
+		box-shadow:
+			inset 0 1px 3px rgba(0, 0, 0, 0.1),
+			inset 0 0 0 1px rgba(0, 0, 0, 0.04);
 	}
 
 	/* Override the active button styling */
@@ -361,8 +362,14 @@ function activateItem(item: NavItem): void {
 		color: var(--sig-text-bright) !important;
 	}
 
-	/* Sidebar footer separator */
+
+	/* Sidebar footer separator — etched line */
 	:global(.sidebar-carbon-footer) {
-		border-top: 1px solid var(--sig-border);
+		border-top: 1px solid var(--sig-border-strong);
+		box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.02);
+	}
+
+	:root[data-theme="light"] :global(.sidebar-carbon-footer) {
+		box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.4);
 	}
 </style>

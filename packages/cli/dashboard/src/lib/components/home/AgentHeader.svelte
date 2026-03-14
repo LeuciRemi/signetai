@@ -159,7 +159,7 @@
 	]);
 </script>
 
-<div class="readout">
+<div class="readout sig-panel">
 	<!-- Scanline texture layer -->
 	<div class="readout-texture" aria-hidden="true"></div>
 
@@ -180,7 +180,7 @@
 		</div>
 
 		<!-- Divider -->
-		<div class="readout-divider" aria-hidden="true"></div>
+		<div class="readout-divider sig-groove" aria-hidden="true"></div>
 
 		<!-- Two-column data grid -->
 		<div class="readout-grid">
@@ -218,8 +218,6 @@
 	.readout {
 		position: relative;
 		overflow: hidden;
-		border: 1px solid var(--sig-border-strong);
-		border-radius: var(--radius);
 		background: var(--sig-bg);
 	}
 
@@ -319,16 +317,8 @@
 		padding-bottom: 4px;
 	}
 
-	/* --- Divider --- */
+	/* --- Divider — etched groove --- */
 	.readout-divider {
-		height: 1px;
-		background: linear-gradient(
-			90deg,
-			var(--sig-highlight) 0%,
-			var(--sig-highlight-dim) 30%,
-			var(--sig-border) 60%,
-			transparent 100%
-		);
 		margin-bottom: var(--space-sm);
 	}
 
