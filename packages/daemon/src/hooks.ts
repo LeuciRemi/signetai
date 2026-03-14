@@ -2111,8 +2111,9 @@ export function handleSessionEnd(req: SessionEndRequest): SessionEndResponse {
 		return { memoriesSaved: 0 };
 	}
 
-	// Safety cap: prevent unbounded transcripts from blowing LLM context.
-	// Sanitization handles most cases; this is a circuit breaker.
+	// Safety cap against degenerate inputs (corrupt files, etc).
+	// The summary worker handles long transcripts via chunked
+	// map-reduce summarization, so this is a last-resort guard.
 	const MAX_TRANSCRIPT_CHARS = 100_000;
 	if (transcript.length > MAX_TRANSCRIPT_CHARS) {
 		logger.warn("hooks", "Transcript exceeds safety cap, truncating", {
@@ -2146,6 +2147,7 @@ export function handleSessionEnd(req: SessionEndRequest): SessionEndResponse {
 		sessionKey,
 		transcriptPath: req.transcriptPath,
 		transcriptChars: transcript.length,
+		preview: transcript.slice(0, 500),
 	});
 
 	return { memoriesSaved: 0, queued: true, jobId };
@@ -2237,14 +2239,14 @@ function normalizeJsonConversationRecord(record: Record<string, unknown>): strin
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function extractString(record: Record<string, unknown>, keys: readonly string[]): string {
 	for (const key of keys) {
 		const value = record[key];
 		if (typeof value === "string") {
-			const trimmed = value.trim();
+			const trimmed = value.trim().replace(/[\r\n]+/g, " ");
 			if (trimmed.length > 0) return trimmed;
 		}
 	}

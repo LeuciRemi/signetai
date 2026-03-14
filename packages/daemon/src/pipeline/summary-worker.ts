@@ -69,6 +69,11 @@ const MEMORY_DIR = join(AGENTS_DIR, "memory");
 const POLL_INTERVAL_MS = 5_000;
 // Timeout is now configured per-provider via resolveProvider() and config.
 
+// Transcripts longer than this are split into chunks, each summarized
+// independently, then combined into a unified summary. 20k chars is
+// roughly 5k tokens — safe for even small context windows.
+const CHUNK_TARGET_CHARS = 20_000;
+
 // ---------------------------------------------------------------------------
 // Prompt
 // ---------------------------------------------------------------------------
@@ -100,6 +105,97 @@ Fact extraction guidelines:
 
 Conversation:
 ${transcript}`;
+}
+
+function buildChunkPrompt(chunk: string, index: number, total: number, date: string): string {
+	return `You are a session librarian. This is chunk ${index + 1} of ${total} from a long coding session on ${date}. Summarize this segment and extract key facts.
+
+Return ONLY a JSON object (no markdown fences, no other text):
+{
+  "summary": "Prose summary of this segment (100-300 words)...",
+  "facts": [{"content": "...", "importance": 0.3, "tags": "tag1,tag2", "type": "fact"}]
+}
+
+Summary guidelines:
+- Summarize what was discussed/worked on in this segment
+- Be concise but capture key decisions and context
+- Write in past tense, third person
+
+Fact extraction guidelines:
+- Each fact must be self-contained and understandable without this conversation
+- Include the specific subject (package name, file path, tool, component) in every fact
+- Only durable, reusable knowledge (skip ephemeral details)
+- Types: fact, preference, decision, learning, rule, issue
+- Importance: 0.3 (routine) to 0.5 (significant)
+- Max 10 facts per chunk
+
+Conversation segment:
+${chunk}`;
+}
+
+function buildCombinePrompt(
+	summaries: readonly string[],
+	allFacts: ReadonlyArray<LlmSummaryResult["facts"][number]>,
+	date: string,
+): string {
+	const factsPreview = allFacts
+		.slice(0, 30)
+		.map((f) => `- ${f.content}`)
+		.join("\n");
+
+	return `You are a session librarian. Below are summaries of ${summaries.length} consecutive segments from one coding session on ${date}, plus extracted facts. Produce a unified session summary and deduplicated fact list.
+
+Return ONLY a JSON object (no markdown fences, no other text):
+{
+  "summary": "# ${date} Session Notes\\n\\n## Topic Name\\n\\nProse summary...",
+  "facts": [{"content": "...", "importance": 0.3, "tags": "tag1,tag2", "type": "fact"}]
+}
+
+Summary guidelines:
+- Start with "# ${date} Session Notes"
+- Use ## headings for each distinct topic discussed
+- Merge overlapping content from segments — don't repeat
+- Include: what was worked on, key decisions, open threads
+- Be concise but complete (200-500 words)
+- Write in past tense, third person
+
+Fact guidelines:
+- Deduplicate facts that say the same thing in different words
+- Keep the most specific version of each fact
+- Max 15 facts total
+- Importance: 0.3 (routine) to 0.5 (significant)
+
+Segment summaries:
+${summaries.map((s, i) => `--- Segment ${i + 1} ---\n${s}`).join("\n\n")}
+
+Extracted facts from all segments:
+${factsPreview}`;
+}
+
+// Split transcript into chunks on turn boundaries (User:/Assistant: lines).
+// Avoids splitting mid-turn so each chunk is a coherent conversation segment.
+function chunkTranscript(transcript: string, target: number): string[] {
+	const lines = transcript.split("\n");
+	const chunks: string[] = [];
+	let current: string[] = [];
+	let chars = 0;
+
+	for (const line of lines) {
+		const isNewTurn = /^(User|Assistant):\s/.test(line);
+		if (isNewTurn && chars >= target && current.length > 0) {
+			chunks.push(current.join("\n"));
+			current = [];
+			chars = 0;
+		}
+		current.push(line);
+		chars += line.length + 1;
+	}
+
+	if (current.length > 0) {
+		chunks.push(current.join("\n"));
+	}
+
+	return chunks;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,15 +319,15 @@ async function processJob(
 	}
 
 	const today = new Date().toISOString().slice(0, 10);
-
-	const prompt = buildPrompt(job.transcript, today);
-
-	const raw = await provider.generate(prompt, {
+	const genOpts = {
 		timeoutMs: memoryCfg.pipelineV2.synthesis.timeout,
 		maxTokens: memoryCfg.pipelineV2.synthesis.maxTokens,
-	});
+	};
 
-	const result = parseLlmResponse(raw);
+	const result = job.transcript.length > CHUNK_TARGET_CHARS
+		? await processChunked(provider, job.transcript, today, genOpts)
+		: await processSingle(provider, job.transcript, today, genOpts);
+
 	if (!result) {
 		throw new Error("Failed to parse LLM summary response");
 	}
@@ -395,6 +491,72 @@ async function processJob(
 			});
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Single vs chunked summarization
+// ---------------------------------------------------------------------------
+
+interface GenerateOpts {
+	readonly timeoutMs: number;
+	readonly maxTokens: number;
+}
+
+async function processSingle(
+	provider: LlmProvider,
+	transcript: string,
+	date: string,
+	opts: GenerateOpts,
+): Promise<LlmSummaryResult | null> {
+	const raw = await provider.generate(buildPrompt(transcript, date), opts);
+	return parseLlmResponse(raw);
+}
+
+async function processChunked(
+	provider: LlmProvider,
+	transcript: string,
+	date: string,
+	opts: GenerateOpts,
+): Promise<LlmSummaryResult | null> {
+	const chunks = chunkTranscript(transcript, CHUNK_TARGET_CHARS);
+
+	logger.info("summary-worker", "Long transcript — chunked summarization", {
+		transcriptChars: transcript.length,
+		chunks: chunks.length,
+		chunkSizes: chunks.map((c) => c.length),
+	});
+
+	// Map: summarize each chunk sequentially to avoid RAM spikes
+	const chunkSummaries: string[] = [];
+	const allFacts: LlmSummaryResult["facts"][number][] = [];
+
+	for (let i = 0; i < chunks.length; i++) {
+		const prompt = buildChunkPrompt(chunks[i], i, chunks.length, date);
+		const raw = await provider.generate(prompt, opts);
+		const partial = parseLlmResponse(raw);
+
+		if (partial) {
+			chunkSummaries.push(partial.summary);
+			allFacts.push(...partial.facts);
+		} else {
+			logger.warn("summary-worker", "Chunk summarization failed, skipping", {
+				chunk: i + 1,
+				total: chunks.length,
+			});
+		}
+	}
+
+	if (chunkSummaries.length === 0) return null;
+
+	// Single chunk survived — no combine needed
+	if (chunkSummaries.length === 1) {
+		return { summary: chunkSummaries[0], facts: allFacts };
+	}
+
+	// Reduce: combine chunk summaries into unified result
+	const combinePrompt = buildCombinePrompt(chunkSummaries, allFacts, date);
+	const combineRaw = await provider.generate(combinePrompt, opts);
+	return parseLlmResponse(combineRaw);
 }
 
 // ---------------------------------------------------------------------------
