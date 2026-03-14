@@ -107,12 +107,12 @@ async function runLevel2Extraction(
 	content: string,
 	provider: LlmProvider,
 	maxEntities: number,
-	timeoutMs?: number,
+	opts?: { timeoutMs?: number; maxTokens?: number },
 ): Promise<ExtractionResult> {
 	const prompt = buildLevel2Prompt(content, maxEntities);
 	let rawOutput: string;
 	try {
-		rawOutput = await provider.generate(prompt, { timeoutMs });
+		rawOutput = await provider.generate(prompt, { timeoutMs: opts?.timeoutMs, maxTokens: opts?.maxTokens });
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		logger.warn("pipeline", "Level 2 extraction LLM call failed", {
@@ -231,7 +231,7 @@ export async function escalate(
 	accessor: DbAccessor,
 	agentId: string,
 	thresholds: PipelineEscalationConfig,
-	opts?: { timeoutMs?: number },
+	opts?: { timeoutMs?: number; maxTokens?: number },
 ): Promise<EscalatedExtraction> {
 	const originalEntityCount = extraction.entities.length;
 	const originalFactCount = extraction.facts.length;
@@ -253,7 +253,7 @@ export async function escalate(
 		content,
 		provider,
 		thresholds.level2MaxEntities,
-		opts?.timeoutMs,
+		opts,
 	);
 	const level2Needed = checkEscalationNeeded(level2, thresholds);
 	if (level2Needed === 1) {

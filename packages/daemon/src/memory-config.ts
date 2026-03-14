@@ -37,6 +37,7 @@ export const DEFAULT_PIPELINE_V2: PipelineV2Config = {
 	extraction: {
 		provider: "claude-code",
 		model: "haiku",
+		strength: "low",
 		endpoint: undefined,
 		timeout: 90000,
 		minConfidence: 0.7,
@@ -176,6 +177,10 @@ export const DEFAULT_PIPELINE_V2: PipelineV2Config = {
 		agentFeedback: true,
 		trainingTelemetry: false,
 	},
+	modelRegistry: {
+		enabled: true,
+		refreshIntervalMs: 3600_000,
+	},
 };
 
 export const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
@@ -201,6 +206,10 @@ function clampPositive(
 function clampFraction(raw: unknown, fallback: number): number {
 	if (typeof raw !== "number" || !Number.isFinite(raw)) return fallback;
 	return Math.max(0, Math.min(1, raw));
+}
+
+function isExtractionStrength(v: unknown): v is "low" | "medium" | "high" {
+	return typeof v === "string" && ["low", "medium", "high"].includes(v);
 }
 
 function parseOptionalUrl(raw: unknown): string | undefined {
@@ -242,6 +251,7 @@ export function loadPipelineConfig(
 	const significanceRaw = raw.significance as Record<string, unknown> | undefined;
 	const predictorRaw = raw.predictor as Record<string, unknown> | undefined;
 	const predictorPipelineRaw = raw.predictorPipeline as Record<string, unknown> | undefined;
+	const modelRegistryRaw = raw.modelRegistry as Record<string, unknown> | undefined;
 
 	// Helper: resolve with flat-fallback (non-extraction fields still nested-first)
 	const d = DEFAULT_PIPELINE_V2;
@@ -314,6 +324,11 @@ export function loadPipelineConfig(
 					: flatModelOnly
 						? flatModel
 						: d.extraction.model,
+			strength: (() => {
+				// Flat keys win when set (dashboard writes these); nested is fallback
+				const candidate = raw.extractionStrength ?? extractionRaw?.strength;
+				return isExtractionStrength(candidate) ? candidate : d.extraction.strength;
+			})(),
 			endpoint:
 				parseOptionalUrl(extractionRaw?.endpoint) ??
 				parseOptionalUrl(extractionRaw?.base_url) ??
@@ -866,6 +881,18 @@ export function loadPipelineConfig(
 			),
 			trainingTelemetry: resolveBool(
 				predictorPipelineRaw?.trainingTelemetry, undefined, d.predictorPipeline.trainingTelemetry,
+			),
+		},
+
+		modelRegistry: {
+			enabled: resolveBool(
+				modelRegistryRaw?.enabled, undefined, d.modelRegistry.enabled,
+			),
+			refreshIntervalMs: clampPositive(
+				modelRegistryRaw?.refreshIntervalMs,
+				60000,
+				86400000,
+				d.modelRegistry.refreshIntervalMs,
 			),
 		},
 	};

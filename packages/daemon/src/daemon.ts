@@ -150,6 +150,14 @@ import {
 	resolveDefaultOllamaFallbackMaxContextTokens,
 	stopOpenCodeServer,
 } from "./pipeline/provider";
+import {
+	initModelRegistry,
+	getAvailableModels,
+	getModelsByProvider,
+	getRegistryStatus,
+	refreshRegistry,
+	stopModelRegistry,
+} from "./pipeline/model-registry";
 import { type RerankCandidate, noopReranker, rerank } from "./pipeline/reranker";
 import { createEmbeddingReranker } from "./pipeline/reranker-embedding";
 import {
@@ -265,6 +273,15 @@ function normalizeRuntimeBaseUrl(url: string | undefined, fallback: string): str
 	} catch {
 		return base;
 	}
+}
+
+/**
+ * Resolve the Ollama base URL for the model registry, returning undefined
+ * when the current provider is not Ollama.
+ */
+function resolveRegistryOllamaBaseUrl(provider: string, endpoint: string | undefined): string | undefined {
+	if (provider !== "ollama") return undefined;
+	return normalizeRuntimeBaseUrl(endpoint, "http://127.0.0.1:11434");
 }
 
 function isManagedOpenCodeLocalEndpoint(baseUrl: string): boolean {
@@ -6616,6 +6633,53 @@ app.get("/api/pipeline/status", (c) => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// Model Registry endpoints
+// ---------------------------------------------------------------------------
+
+app.get("/api/pipeline/models", (c) => {
+	const provider = c.req.query("provider");
+	const includeDeprecated = c.req.query("deprecated") === "true";
+	return c.json({
+		models: getAvailableModels(provider ?? undefined, includeDeprecated),
+		registry: getRegistryStatus(),
+	});
+});
+
+app.get("/api/pipeline/models/by-provider", (c) => {
+	return c.json(getModelsByProvider());
+});
+
+let lastRefreshRequestAt = 0;
+const REFRESH_COOLDOWN_MS = 60_000;
+
+app.post("/api/pipeline/models/refresh", async (c) => {
+	const now = Date.now();
+	if (now - lastRefreshRequestAt < REFRESH_COOLDOWN_MS) {
+		return c.json({
+			models: getModelsByProvider(),
+			registry: getRegistryStatus(),
+			throttled: true,
+		}, 429);
+	}
+	lastRefreshRequestAt = now;
+	const cfg = loadMemoryConfig(AGENTS_DIR);
+	let anthropicKey: string | undefined = process.env.ANTHROPIC_API_KEY;
+	if (!anthropicKey) {
+		try {
+			anthropicKey = await getSecret("ANTHROPIC_API_KEY") ?? undefined;
+		} catch { /* ignore */ }
+	}
+	await refreshRegistry(
+		resolveRegistryOllamaBaseUrl(cfg.pipelineV2.extraction.provider, cfg.pipelineV2.extraction.endpoint),
+		anthropicKey,
+	);
+	return c.json({
+		models: getModelsByProvider(),
+		registry: getRegistryStatus(),
+	});
+});
+
 app.get("/api/predictor/status", async (c) => {
 	const cfg = loadMemoryConfig(AGENTS_DIR);
 	const predictorCfg = cfg.pipelineV2.predictor;
@@ -9183,6 +9247,7 @@ async function cleanup() {
 	closeLlmProvider();
 	closeSynthesisProvider();
 	stopOpenCodeServer();
+	stopModelRegistry();
 
 	// Stop git sync timer
 	stopGitSyncTimer();
@@ -9238,6 +9303,7 @@ async function main() {
 
 	// Migrations may have created traversal tables — clear the cache
 	invalidateTraversalCache();
+
 
 	// Write PID file
 	writeFileSync(PID_FILE, process.pid.toString());
@@ -9492,6 +9558,26 @@ async function main() {
 									: {}),
 							});
 	initLlmProvider(llmProvider);
+
+	// Initialize model registry for dynamic model discovery
+	if (memoryCfg.pipelineV2.modelRegistry.enabled) {
+		let registryAnthropicApiKey = anthropicApiKey;
+		if (!registryAnthropicApiKey) {
+			registryAnthropicApiKey = process.env.ANTHROPIC_API_KEY;
+			if (!registryAnthropicApiKey) {
+				try {
+					registryAnthropicApiKey = (await getSecret("ANTHROPIC_API_KEY")) ?? undefined;
+				} catch {
+					// ignore: registry can still run without Anthropic discovery
+				}
+			}
+		}
+		initModelRegistry(
+			memoryCfg.pipelineV2.modelRegistry,
+			effectiveExtractionProvider === "ollama" ? extractionOllamaBaseUrl : undefined,
+			registryAnthropicApiKey,
+		);
+	}
 
 	// Create synthesis provider — separate from extraction because synthesis
 	// needs a smarter model that can reason across long context

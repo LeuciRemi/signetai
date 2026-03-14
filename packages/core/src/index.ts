@@ -72,6 +72,8 @@ export type {
 	TaskMeta,
 	PipelineStructuralConfig,
 	PipelineSignificanceConfig,
+	PipelineModelRegistryConfig,
+	ModelRegistryEntry,
 } from "./types";
 export { parseManifest, generateManifest } from "./manifest";
 export { parseSoul, generateSoul } from "./soul";
