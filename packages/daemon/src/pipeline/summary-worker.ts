@@ -16,7 +16,13 @@ import { join } from "node:path";
 import type { Database } from "bun:sqlite";
 import type { DbAccessor } from "../db-accessor";
 import type { LlmProvider } from "@signet/core";
-import { createAnthropicProvider, createOllamaProvider, createClaudeCodeProvider, createOpenCodeProvider } from "./provider";
+import {
+	createAnthropicProvider,
+	createOllamaProvider,
+	createClaudeCodeProvider,
+	createOpenCodeProvider,
+	resolveDefaultOllamaFallbackMaxContextTokens,
+} from "./provider";
 
 import { isDuplicate, inferType } from "../hooks";
 import { loadMemoryConfig } from "../memory-config";
@@ -798,6 +804,8 @@ async function resolveProvider(cfg: ReturnType<typeof loadMemoryConfig>): Promis
 	const model = cfg.pipelineV2.synthesis.model;
 	const timeout = cfg.pipelineV2.synthesis.timeout;
 	const endpoint = cfg.pipelineV2.synthesis.endpoint;
+	const ollamaFallbackMaxContextTokens =
+		resolveDefaultOllamaFallbackMaxContextTokens();
 	switch (p) {
 		case "anthropic": {
 			let apiKey = process.env.ANTHROPIC_API_KEY;
@@ -810,7 +818,10 @@ async function resolveProvider(cfg: ReturnType<typeof loadMemoryConfig>): Promis
 			}
 			if (!apiKey) {
 				logger.error("summary-worker", "ANTHROPIC_API_KEY not found for summary worker — falling back to ollama. Set via env or `signet secrets set ANTHROPIC_API_KEY`");
-				return createOllamaProvider({ model: "qwen3:4b", defaultTimeoutMs: timeout });
+				return createOllamaProvider({
+					defaultTimeoutMs: timeout,
+					maxContextTokens: ollamaFallbackMaxContextTokens,
+				});
 			}
 			return createAnthropicProvider({ model: model || "haiku", apiKey, defaultTimeoutMs: timeout });
 		}
@@ -821,11 +832,16 @@ async function resolveProvider(cfg: ReturnType<typeof loadMemoryConfig>): Promis
 				model: model || "anthropic/claude-haiku-4-5-20251001",
 				baseUrl: endpoint ?? "http://127.0.0.1:4096",
 				ollamaFallbackBaseUrl: "http://127.0.0.1:11434",
+				ollamaFallbackMaxContextTokens,
 				defaultTimeoutMs: timeout,
 			});
 		default:
+			// Intentionally omit maxContextTokens here. When Ollama is explicitly
+			// configured (not fallback), users control context via model config.
 			return createOllamaProvider({
-				model: model || "qwen3:4b",
+				...(typeof model === "string" && model.trim().length > 0
+					? { model }
+					: {}),
 				...(endpoint ? { baseUrl: endpoint } : {}),
 				defaultTimeoutMs: timeout,
 			});

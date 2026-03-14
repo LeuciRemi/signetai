@@ -146,6 +146,7 @@ import {
 	createOllamaProvider,
 	createOpenCodeProvider,
 	ensureOpenCodeServer,
+	resolveDefaultOllamaFallbackMaxContextTokens,
 	stopOpenCodeServer,
 } from "./pipeline/provider";
 import { type RerankCandidate, noopReranker, rerank } from "./pipeline/reranker";
@@ -9275,6 +9276,8 @@ async function main() {
 		memoryCfg.pipelineV2.extraction.endpoint,
 		"http://127.0.0.1:4096",
 	);
+	const ollamaFallbackMaxContextTokens =
+		resolveDefaultOllamaFallbackMaxContextTokens();
 	const extractionOpenCodeShouldManage = isManagedOpenCodeLocalEndpoint(
 		extractionOpenCodeBaseUrl,
 	);
@@ -9355,6 +9358,9 @@ async function main() {
 	if (effectiveExtractionProvider === "ollama" && memoryCfg.pipelineV2.extraction.provider !== "ollama") {
 		effectiveExtractionModel = undefined;
 	}
+	const usingExtractionOllamaFallback =
+		effectiveExtractionProvider === "ollama" &&
+		memoryCfg.pipelineV2.extraction.provider !== "ollama";
 	providerRuntimeResolution.extraction = {
 		configured: providerHints.extraction,
 		resolved: memoryCfg.pipelineV2.extraction.provider,
@@ -9392,7 +9398,9 @@ async function main() {
 				? createOpenCodeProvider({
 						model: effectiveExtractionModel || "anthropic/claude-haiku-4-5-20251001",
 						baseUrl: extractionOpenCodeBaseUrl,
-						ollamaFallbackBaseUrl: "http://127.0.0.1:11434",
+						ollamaFallbackBaseUrl: extractionOllamaFallbackBaseUrl,
+						ollamaFallbackMaxContextTokens:
+							ollamaFallbackMaxContextTokens,
 						defaultTimeoutMs: memoryCfg.pipelineV2.extraction.timeout,
 					})
 				: effectiveExtractionProvider === "claude-code"
@@ -9406,9 +9414,17 @@ async function main() {
 								defaultTimeoutMs: memoryCfg.pipelineV2.extraction.timeout,
 							})
 						: createOllamaProvider({
-								model: effectiveExtractionModel || "qwen3:4b",
+								...(effectiveExtractionModel
+									? { model: effectiveExtractionModel }
+									: {}),
 								baseUrl: extractionOllamaFallbackBaseUrl,
 								defaultTimeoutMs: memoryCfg.pipelineV2.extraction.timeout,
+								...(usingExtractionOllamaFallback
+									? {
+										maxContextTokens:
+											ollamaFallbackMaxContextTokens,
+									}
+									: {}),
 							});
 	initLlmProvider(llmProvider);
 
@@ -9495,6 +9511,9 @@ async function main() {
 		if (effectiveSynthesisProvider === "ollama" && memoryCfg.pipelineV2.synthesis.provider !== "ollama") {
 			effectiveSynthesisModel = undefined;
 		}
+		const usingSynthesisOllamaFallback =
+			effectiveSynthesisProvider === "ollama" &&
+			memoryCfg.pipelineV2.synthesis.provider !== "ollama";
 
 		const synthesisProvider =
 			effectiveSynthesisProvider === "anthropic" && anthropicApiKey
@@ -9507,7 +9526,9 @@ async function main() {
 					? createOpenCodeProvider({
 							model: effectiveSynthesisModel || "anthropic/claude-haiku-4-5-20251001",
 							baseUrl: synthesisOpenCodeBaseUrl,
-							ollamaFallbackBaseUrl: "http://127.0.0.1:11434",
+							ollamaFallbackBaseUrl: synthesisOllamaFallbackBaseUrl,
+							ollamaFallbackMaxContextTokens:
+								ollamaFallbackMaxContextTokens,
 							defaultTimeoutMs: memoryCfg.pipelineV2.synthesis.timeout,
 						})
 					: effectiveSynthesisProvider === "claude-code"
@@ -9516,9 +9537,17 @@ async function main() {
 								defaultTimeoutMs: memoryCfg.pipelineV2.synthesis.timeout,
 							})
 					: createOllamaProvider({
-							model: effectiveSynthesisModel || "qwen3:4b",
+							...(effectiveSynthesisModel
+								? { model: effectiveSynthesisModel }
+								: {}),
 							baseUrl: synthesisOllamaFallbackBaseUrl,
 							defaultTimeoutMs: memoryCfg.pipelineV2.synthesis.timeout,
+							...(usingSynthesisOllamaFallback
+								? {
+									maxContextTokens:
+										ollamaFallbackMaxContextTokens,
+								}
+								: {}),
 						});
 		initSynthesisProvider(synthesisProvider);
 	} else {
