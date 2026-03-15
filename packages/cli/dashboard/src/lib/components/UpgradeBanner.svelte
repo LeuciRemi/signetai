@@ -32,19 +32,20 @@
 	// Fetch changelog and extract up to 3 items for the current version
 	$effect(() => {
 		if (!version || version === "0.0.0") return;
-		fetchChangelog().then((doc) => {
-			if (!doc?.html) return;
-			// Find the section for this version and grab list items
-			const anchor = doc.html.indexOf(`[${version}]`);
-			const slice = anchor >= 0
-				? doc.html.slice(anchor)
-				: doc.html;
-			const items = slice.match(/<li[^>]*>([\s\S]*?)<\/li>/gi);
-			if (!items) return;
-			notes = items.slice(0, 3).map((li) =>
-				li.replace(/<[^>]+>/g, "").trim(),
-			);
-		});
+		const v = version;
+		fetchChangelog()
+			.then((doc) => {
+				if (!doc?.html || version !== v) return;
+				const anchor = doc.html.indexOf(`[${v}]`);
+				if (anchor < 0) return;
+				const slice = doc.html.slice(anchor);
+				const items = slice.match(/<li[^>]*>([\s\S]*?)<\/li>/gi);
+				if (!items) return;
+				notes = items.slice(0, 3).map((li) =>
+					li.replace(/<[^>]+>/g, "").trim(),
+				);
+			})
+			.catch(() => {});
 	});
 
 	const visible = $derived(
