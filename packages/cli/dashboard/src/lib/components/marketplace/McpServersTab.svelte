@@ -109,12 +109,9 @@ onMount(() => {
 });
 
 function formatSourceLabel(source: string): string {
-	if (source === "modelcontextprotocol/servers") {
-		return "MCP GitHub";
-	}
-	if (source === "mcpservers.org") {
-		return "MCP Registry";
-	}
+	if (source === "modelcontextprotocol/servers") return "MCP GitHub";
+	if (source === "mcpservers.org") return "MCP Registry";
+	if (source === "github") return "GitHub";
 	return source;
 }
 
@@ -163,9 +160,11 @@ function getAvatarUrl(sourceUrl: string | undefined): string | null {
 	return null;
 }
 
-function getAvatarFromSource(source: string | undefined): string | null {
+function getAvatarFromSource(source: string | undefined, catalogId: string | undefined): string | null {
 	if (!source) return null;
 	if (source.includes("/")) return `https://github.com/${source.split("/")[0]}.png?size=40`;
+	// "github" source — catalogId is "org/repo"
+	if (source === "github" && catalogId?.includes("/")) return `https://github.com/${catalogId.split("/")[0]}.png?size=40`;
 	return null;
 }
 
@@ -346,7 +345,7 @@ async function removeFromDetail(serverId: string): Promise<void> {
 			{:else}
 				<div class="catalog-grid">
 					{#each mcpMarket.installed as server (server.id)}
-						{@const sAvatar = getAvatarFromSource(server.source)}
+						{@const sAvatar = getAvatarFromSource(server.source, server.catalogId)}
 						<div
 							class="catalog-card"
 							role="button"

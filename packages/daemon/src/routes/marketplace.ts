@@ -20,7 +20,7 @@ const CATALOG_TTL_MS = 10 * 60 * 1000;
 const TOOLS_TTL_MS = 30 * 1000;
 
 export type MarketplaceMcpTransport = "stdio" | "http";
-export type MarketplaceMcpCatalogSource = "mcpservers.org" | "modelcontextprotocol/servers";
+export type MarketplaceMcpCatalogSource = "mcpservers.org" | "modelcontextprotocol/servers" | "github";
 export type MarketplaceMcpExposureMode = "compact" | "hybrid" | "expanded";
 
 export interface MarketplaceMcpScope {
