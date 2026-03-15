@@ -1397,7 +1397,16 @@ $effect(() => {
 		}
 	}
 
+	/* Below 768px sidebar is hidden — override rail panel sizing */
 	@media (max-width: 767px) {
+		.store-rail > :global(.rail-panel) {
+			width: calc((100% - 1.5rem) / 2);
+		}
+
+		.store-rail > :global(.rail-panel:first-child) {
+			left: 0.5rem;
+		}
+
 		.tab-header {
 			flex-wrap: wrap;
 			gap: var(--space-sm);

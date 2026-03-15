@@ -54,24 +54,22 @@ function formatStat(n: number | undefined): string {
 let monogram = $derived(getMonogram(item.name));
 let monogramBg = $derived(getMonogramBg(item.name));
 
-function getAvatarUrl(): string | null {
+// Pre-built catalog lookup avoids O(n) scan per render
+const catalogByName = $derived(new Map(sk.catalog.map((c) => [c.name, c])));
+
+function getSkillAvatarUrl(): string | null {
 	let maintainer: string | undefined;
 	if (isSearchResult(item)) {
 		maintainer = item.maintainer;
 	} else {
-		// Look up maintainer from cached catalog for installed skills
-		const match = sk.catalog.find((c) => c.name === item.name);
-		maintainer = match?.maintainer;
+		maintainer = catalogByName.get(item.name)?.maintainer;
 	}
 	if (maintainer) return `https://github.com/${maintainer.split("/")[0]}.png?size=40`;
 	return null;
 }
 
 let hueRotate = $derived(getHueRotate(item.name));
-let avatarUrl = $derived.by(() => {
-	void sk.catalog.length;
-	return getAvatarUrl();
-});
+let avatarUrl = $derived(getSkillAvatarUrl());
 let avatarFailed = $state(false);
 $effect(() => { avatarUrl; avatarFailed = false; });
 
