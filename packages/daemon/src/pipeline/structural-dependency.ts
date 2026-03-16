@@ -59,7 +59,7 @@ const VALID_DEP_TYPES = new Set<string>(DEPENDENCY_TYPES);
 // One-line descriptions to steer the LLM toward consistent type selection.
 // Included in the extraction prompt so the model disambiguates similar pairs
 // (e.g. uses vs depends_on, informs vs teaches, precedes vs follows).
-const DEP_DESCRIPTIONS: Record<string, string> = {
+export const DEP_DESCRIPTIONS: Record<DependencyType, string> = {
 	uses: "actively calls or consumes at runtime",
 	requires: "cannot function without (hard prerequisite)",
 	owned_by: "maintained or governed by",
@@ -347,21 +347,19 @@ async function processDependencyBatch(
 
 			if (targetEntity) {
 				try {
-					deps.accessor.withWriteTx(() => {
-						const aspect = upsertAspect(deps.accessor, {
-							entityId: payload.entity_id,
-							agentId: "default",
-							name: result.aspect,
-						});
-						upsertDependency(deps.accessor, {
-							sourceEntityId: payload.entity_id,
-							targetEntityId: targetEntity.id,
-							agentId: "default",
-							aspectId: aspect.id,
-							dependencyType: result.dep_type as DependencyType,
-							strength: 0.5,
-							reason: result.reason,
-						});
+					const aspect = upsertAspect(deps.accessor, {
+						entityId: payload.entity_id,
+						agentId: "default",
+						name: result.aspect,
+					});
+					upsertDependency(deps.accessor, {
+						sourceEntityId: payload.entity_id,
+						targetEntityId: targetEntity.id,
+						agentId: "default",
+						aspectId: aspect.id,
+						dependencyType: result.dep_type as DependencyType,
+						strength: 0.5,
+						reason: result.reason,
 					});
 					depsCreated++;
 				} catch (e) {

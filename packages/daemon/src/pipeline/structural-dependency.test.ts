@@ -19,34 +19,7 @@ import { DEPENDENCY_TYPES } from "@signet/core";
 // Uses the actual pipeline parsing — validates that stripFences handles
 // verbose model output (unfenced JSON arrays, explanation-then-JSON, etc.)
 import { stripFences, tryParseJson } from "./extraction";
-
-// ---------------------------------------------------------------------------
-// Prompt descriptions (mirrored from structural-dependency.ts)
-// ---------------------------------------------------------------------------
-
-const DEP_DESCRIPTIONS: Record<string, string> = {
-	uses: "actively calls or consumes at runtime",
-	requires: "cannot function without (hard prerequisite)",
-	owned_by: "maintained or governed by",
-	blocks: "prevents progress of",
-	informs: "sends data or signals to",
-	built: "was created or constructed by",
-	depends_on: "needs but does not directly call (soft dependency)",
-	related_to: "associated loosely, no directional dependency",
-	learned_from: "acquired knowledge from",
-	teaches: "transfers knowledge to",
-	knows: "is aware of or references",
-	assumes: "presupposes as true without verifying",
-	contradicts: "conflicts with or negates",
-	supersedes: "replaces or obsoletes",
-	part_of: "is a component or subset of",
-	precedes: "must happen before (temporal)",
-	follows: "happens after (temporal)",
-	triggers: "causes to start or execute",
-	impacts: "change here affects (blast radius)",
-	produces: "generates as output",
-	consumes: "takes as input",
-};
+import { DEP_DESCRIPTIONS } from "./structural-dependency";
 
 function buildPrompt(
 	entity: string,
