@@ -14,13 +14,14 @@ use crate::migrations;
 // ---------------------------------------------------------------------------
 
 pub fn register_vec_extension() {
-    // SAFETY: sqlite3_vec_init is the standard SQLite extension entry point for
-    // sqlite-vec. Its actual C signature is:
-    //   int sqlite3_vec_init(sqlite3*, char**, sqlite3_api_routines*)
-    // which is exactly what sqlite3_auto_extension expects. The sqlite_vec crate
-    // exposes it as `fn()` for simplicity; the transmute is sound because the
-    // ABI matches and sqlite3_auto_extension never calls the pointer with the
-    // wrong arguments.
+    // SAFETY: sqlite3_vec_init is the canonical SQLite extension entry point for
+    // sqlite-vec. sqlite3_auto_extension DOES call this pointer during connection
+    // init, passing (sqlite3*, char**, sqlite3_api_routines*). The transmute is
+    // a type-level fiction required by rusqlite's FFI boundary: the sqlite_vec
+    // crate exposes the symbol as `fn()` but the underlying C function has the
+    // correct signature `int(sqlite3*, char**, sqlite3_api_routines*)` that
+    // sqlite3_auto_extension expects. The runtime ABI is correct; only the Rust
+    // type representation differs.
     unsafe {
         let func: unsafe extern "C" fn() = sqlite_vec::sqlite3_vec_init;
         #[allow(clippy::missing_transmute_annotations)]
