@@ -32,9 +32,9 @@
 	inset: -12px -48px -14px -48px;
 	background: radial-gradient(
 		ellipse at 50% 36%,
-		rgba(8, 8, 10, 0.35) 0%,
-		rgba(8, 8, 10, 0.12) 60%,
-		rgba(8, 8, 10, 0) 90%
+		rgba(6, 6, 8, 0.35) 0%,
+		rgba(6, 6, 8, 0.12) 60%,
+		rgba(6, 6, 8, 0) 90%
 	);
 	filter: blur(4px);
 	pointer-events: none;
@@ -43,9 +43,9 @@
 [data-theme="light"] .hero-grid::before {
 	background: radial-gradient(
 		ellipse at 50% 40%,
-		rgba(228, 223, 216, 0.7) 0%,
-		rgba(228, 223, 216, 0.3) 60%,
-		rgba(228, 223, 216, 0) 90%
+		rgba(230, 230, 230, 0.7) 0%,
+		rgba(230, 230, 230, 0.3) 60%,
+		rgba(230, 230, 230, 0) 90%
 	);
 }
 
@@ -90,6 +90,7 @@
 	width: 24px;
 	height: 1px;
 	background: var(--color-accent);
+	box-shadow: 0 0 8px var(--color-highlight-muted);
 }
 
 .hero-title {
@@ -138,7 +139,7 @@
 	color: var(--color-text-bright);
 	padding: 6px 12px;
 	border: 1px solid var(--color-border-strong);
-	border-radius: 0;
+	border-radius: 3px;
 	white-space: nowrap;
 }
 .hero-feat a {
@@ -146,12 +147,18 @@
 	text-decoration: none;
 }
 .hero-feat--highlight {
-	background: var(--color-text-bright);
+	background: var(--color-accent);
 	color: var(--color-bg);
-	border-color: var(--color-text-bright);
+	border-color: var(--color-accent);
 }
 .hero-feat--highlight a {
 	color: var(--color-bg);
+}
+[data-theme="light"] .hero-feat--highlight {
+	color: #fff;
+}
+[data-theme="light"] .hero-feat--highlight a {
+	color: #fff;
 }
 
 .hero-actions {
@@ -180,30 +187,11 @@
 	padding: 14px 18px;
 	position: relative;
 	gap: 12px;
-	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+	box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.5),
+		0 0 0 1px rgba(255,255,255,0.03);
 	width: max-content;
 	max-width: 100%;
-	border-radius: 0;
-}
-.install-box::before,
-.install-box::after {
-	content: "";
-	position: absolute;
-	width: 6px;
-	height: 6px;
-	border-color: var(--color-text-muted);
-	border-style: solid;
-	pointer-events: none;
-}
-.install-box::before {
-	top: -1px;
-	left: -1px;
-	border-width: 1px 0 0 1px;
-}
-.install-box::after {
-	bottom: -1px;
-	right: -1px;
-	border-width: 0 1px 1px 0;
+	border-radius: 0.5rem;
 }
 
 .install-prompt {
@@ -258,7 +246,7 @@
 	color: var(--color-text-muted);
 	cursor: pointer;
 	transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
-	border-radius: 0;
+	border-radius: 3px 3px 0 0;
 }
 .install-tab:hover {
 	color: var(--color-text-bright);
@@ -496,7 +484,8 @@
 .secrets-demo {
 	background: var(--color-surface);
 	border: 1px solid var(--color-border-strong);
-	border-radius: 0;
+	border-radius: 0.5rem;
+	box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
 	overflow: hidden;
 }
 .secrets-demo-header {
@@ -726,30 +715,10 @@
 .code-tabs {
 	background: var(--color-surface);
 	border: 1px solid var(--color-border-strong);
-	border-radius: 0;
+	border-radius: 0.5rem;
 	overflow: hidden;
 	position: relative;
-	box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
-}
-.code-tabs::before,
-.code-tabs::after {
-	content: "";
-	position: absolute;
-	width: 8px;
-	height: 8px;
-	border-color: var(--color-text-muted);
-	border-style: solid;
-	pointer-events: none;
-}
-.code-tabs::before {
-	top: -1px;
-	left: -1px;
-	border-width: 1px 0 0 1px;
-}
-.code-tabs::after {
-	bottom: -1px;
-	right: -1px;
-	border-width: 0 1px 1px 0;
+	box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
 }
 
 .code-tab-nav {
@@ -818,28 +787,10 @@
 .trust-card {
 	padding: var(--space-xl) var(--space-lg);
 	border: 1px solid var(--color-border-strong);
-	border-radius: 0;
+	border-radius: 0.5rem;
 	position: relative;
 	transition: background-color var(--dur) var(--ease);
-}
-.trust-card::before,
-.trust-card::after {
-	content: "";
-	position: absolute;
-	width: 5px;
-	height: 5px;
-	border-color: var(--color-text-muted);
-	border-style: solid;
-}
-.trust-card::before {
-	top: -1px;
-	left: -1px;
-	border-width: 1px 0 0 1px;
-}
-.trust-card::after {
-	bottom: -1px;
-	right: -1px;
-	border-width: 0 1px 1px 0;
+	box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
 }
 .trust-card:hover {
 	background-color: var(--color-surface);
@@ -886,29 +837,9 @@
 	background: var(--color-surface);
 	border: 1px solid var(--color-border-strong);
 	position: relative;
-	box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
-	border-radius: 0;
+	box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
+	border-radius: 0.5rem;
 	overflow: hidden;
-}
-.terminal-window::before,
-.terminal-window::after {
-	content: "";
-	position: absolute;
-	width: 8px;
-	height: 8px;
-	border-color: var(--color-text-muted);
-	border-style: solid;
-	pointer-events: none;
-}
-.terminal-window::before {
-	top: -1px;
-	left: -1px;
-	border-width: 1px 0 0 1px;
-}
-.terminal-window::after {
-	bottom: -1px;
-	right: -1px;
-	border-width: 0 1px 1px 0;
 }
 
 .term-header {
@@ -967,30 +898,9 @@
 	border: 1px solid var(--color-border-strong);
 	padding: clamp(28px, 7vw, 80px);
 	position: relative;
-	box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
-	border-radius: 0;
+	box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
+	border-radius: 0.5rem;
 	overflow: hidden;
-}
-.cta-panel::before,
-.cta-panel::after {
-	content: "";
-	position: absolute;
-	width: 8px;
-	height: 8px;
-	border-color: var(--color-text-muted);
-	border-style: solid;
-	pointer-events: none;
-	z-index: 2;
-}
-.cta-panel::before {
-	top: -1px;
-	left: -1px;
-	border-width: 1px 0 0 1px;
-}
-.cta-panel::after {
-	bottom: -1px;
-	right: -1px;
-	border-width: 0 1px 1px 0;
 }
 .cta-panel-barcode {
 	position: absolute;
@@ -1416,7 +1326,7 @@
 	font-size: 0.75rem;
 	font-weight: 600;
 	color: var(--color-text-bright);
-	border-radius: 0;
+	border-radius: 3px;
 }
 
 /* ==========================================================================
@@ -1535,6 +1445,10 @@
 	opacity: 1;
 }
 
+.harness-status-wip {
+	color: var(--color-text-muted);
+}
+
 /* ==========================================================================
    QUICK LINKS
    ========================================================================== */
@@ -1627,7 +1541,7 @@
 	font-family: var(--font-mono);
 	font-size: 0.875rem;
 	color: var(--color-text-bright);
-	border-radius: 0;
+	border-radius: 3px;
 }
 
 .cta-email-input:focus-visible {
@@ -1729,19 +1643,7 @@
 	z-index: 1;
 }
 
-.landing-page::before {
-	content: "";
-	position: fixed;
-	inset: 0;
-	pointer-events: none;
-	z-index: 0;
-	background: radial-gradient(
-			circle at 16% 11%,
-			color-mix(in srgb, var(--color-text-bright) 8%, transparent),
-			transparent 35%
-		), radial-gradient(circle at 84% 18%, color-mix(in srgb, var(--color-accent) 12%, transparent), transparent 32%);
-	opacity: 0.28;
-}
+/* Ambient glow removed — grain+scanline provide texture now */
 
 .landing-page section {
 	padding-block: clamp(32px, 4vw, 56px);

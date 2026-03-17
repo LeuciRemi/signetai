@@ -106,15 +106,6 @@ const imageUrl = new URL(image, Astro.site ?? 'https://signetai.sh');
     </script>
   </head>
   <body>
-    <!-- Noise SVG filter for CRT grain effect -->
-    <svg style="display:none;">
-      <filter id="noiseFilter">
-        <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch" />
-      </filter>
-    </svg>
-
-    <div class="bg-grid"></div>
-
     <div class="site-canvas-bg" aria-hidden="true">
       <canvas id="ascii-dither"></canvas>
       <canvas id="latent-topology"></canvas>

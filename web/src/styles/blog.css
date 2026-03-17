@@ -107,6 +107,7 @@
 	letter-spacing: 0.06em;
 	color: var(--color-text-muted);
 	border: 1px solid var(--color-border-strong);
+	border-radius: 3px;
 	text-decoration: none;
 	text-transform: lowercase;
 	transition: color var(--dur) var(--ease),
@@ -213,6 +214,7 @@
 	margin-bottom: var(--space-xl);
 	padding: var(--space-md) var(--space-lg);
 	border: 1px solid var(--color-border);
+	border-radius: 0.5rem;
 	background: var(--color-surface);
 }
 
@@ -276,7 +278,8 @@
 }
 
 .blog-prose a:hover {
-	text-decoration-color: var(--color-text-bright);
+	color: var(--color-accent);
+	text-decoration-color: var(--color-accent);
 }
 
 .blog-prose code {
@@ -306,6 +309,7 @@
 .blog-pager-spacer {
 	min-height: 74px;
 	border: 1px solid var(--color-border);
+	border-radius: 0.5rem;
 	background: none;
 }
 
@@ -406,6 +410,7 @@
 	aspect-ratio: 2 / 1;
 	object-fit: cover;
 	border: 1px solid var(--color-border);
+	border-radius: 3px;
 	margin-bottom: var(--space-sm);
 }
 
@@ -439,6 +444,11 @@
 	display: flex;
 	flex-wrap: wrap;
 	gap: var(--space-xs);
+}
+
+/* Prose readability at 13px base */
+.blog-prose {
+	font-size: 15px;
 }
 
 /* ==========================================================================
@@ -506,6 +516,7 @@
 	width: 32px;
 	height: 32px;
 	border: 1px solid var(--color-border-strong);
+	border-radius: 3px;
 	background: none;
 	color: var(--color-text-muted);
 	text-decoration: none;
@@ -605,6 +616,7 @@
 	margin-top: var(--space-xl);
 	padding: var(--space-lg);
 	border: 1px solid var(--color-border);
+	border-radius: 0.5rem;
 	background: var(--color-surface);
 }
 
