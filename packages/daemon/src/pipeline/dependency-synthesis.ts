@@ -113,10 +113,11 @@ function loadExistingTargets(db: ReadDb, entityId: string): ReadonlySet<string> 
 }
 
 function markSynthesized(accessor: DbAccessor, entityId: string): void {
+	const now = new Date().toISOString();
 	accessor.withWriteTx((db) => {
 		db.prepare(
-			"UPDATE entities SET last_synthesized_at = datetime('now') WHERE id = ?",
-		).run(entityId);
+			"UPDATE entities SET last_synthesized_at = ? WHERE id = ?",
+		).run(now, entityId);
 	});
 }
 
@@ -289,16 +290,20 @@ export function startDependencySynthesisWorker(
 	deps: DependencySynthesisDeps,
 ): DependencySynthesisHandle {
 	let running = true;
+	let ticking = false;
 	let timer: ReturnType<typeof setInterval> | null = null;
 	const interval = deps.pipelineCfg.structural.synthesisIntervalMs;
 
 	timer = setInterval(() => {
-		if (!running) return;
-		tick(deps).catch((e) => {
-			logger.warn("dependency-synthesis", "Tick error", {
-				error: String(e),
-			});
-		});
+		if (!running || ticking) return;
+		ticking = true;
+		tick(deps)
+			.catch((e) => {
+				logger.warn("dependency-synthesis", "Tick error", {
+					error: String(e),
+				});
+			})
+			.finally(() => { ticking = false; });
 	}, interval);
 
 	logger.info("dependency-synthesis", "Worker started", {
