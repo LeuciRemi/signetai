@@ -171,19 +171,45 @@ function extractBalancedJsonObject(raw: string): string | null {
 }
 
 /**
- * Find the first balanced JSON array in a string, scanning forward with
- * string-awareness so brackets inside quoted values are ignored.
- * Uses the same forward-scan approach as extractBalancedJsonObject.
+ * Find the last top-level JSON array in a string. Scans forward with
+ * string-awareness, recording every depth-0 '[' position, then extracts
+ * the balanced array starting from the last one. This handles both:
+ * - brackets in explanation text before JSON: "options: [a,b] ... [{...}]"
+ * - brackets inside JSON strings: [{"reason":"uses [auth]"}]
  */
 export function extractBalancedJsonArray(raw: string): string | null {
-	const start = raw.indexOf("[");
-	if (start < 0) return null;
-
+	// Pass 1: find the last top-level '[' (not inside a quoted string)
+	let last = -1;
 	let depth = 0;
 	let inString = false;
 	let escaping = false;
 
-	for (let i = start; i < raw.length; i++) {
+	for (let i = 0; i < raw.length; i++) {
+		const ch = raw[i];
+
+		if (inString) {
+			if (escaping) { escaping = false; continue; }
+			if (ch === "\\") { escaping = true; continue; }
+			if (ch === '"') inString = false;
+			continue;
+		}
+
+		if (ch === '"') { inString = true; continue; }
+		if (ch === "[") {
+			if (depth === 0) last = i;
+			depth++;
+		}
+		if (ch === "]") depth--;
+	}
+
+	if (last < 0) return null;
+
+	// Pass 2: extract balanced array from the last top-level '['
+	depth = 0;
+	inString = false;
+	escaping = false;
+
+	for (let i = last; i < raw.length; i++) {
 		const ch = raw[i];
 
 		if (inString) {
@@ -197,7 +223,7 @@ export function extractBalancedJsonArray(raw: string): string | null {
 		if (ch === "[") depth++;
 		if (ch === "]") {
 			depth--;
-			if (depth === 0) return raw.slice(start, i + 1);
+			if (depth === 0) return raw.slice(last, i + 1);
 		}
 	}
 

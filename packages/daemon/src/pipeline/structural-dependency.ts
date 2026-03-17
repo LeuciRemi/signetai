@@ -349,6 +349,8 @@ async function processDependencyBatch(
 				// Not wrapped in withWriteTx — both upsertAspect and upsertDependency
 				// acquire their own write tx internally, and DbAccessor uses
 				// BEGIN IMMEDIATE (no savepoints), so nesting throws.
+				// Orphaned aspects from a upsertDependency failure are benign —
+				// the job retries on next tick and upsertAspect is idempotent.
 				try {
 					const aspect = upsertAspect(deps.accessor, {
 						entityId: payload.entity_id,

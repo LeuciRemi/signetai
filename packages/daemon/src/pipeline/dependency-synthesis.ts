@@ -56,6 +56,7 @@ const VALID_DEP_TYPES = new Set<string>(DEPENDENCY_TYPES);
 // Queries
 // ---------------------------------------------------------------------------
 
+// TODO: thread agentId from DependencySynthesisDeps when multi-agent lands
 const AGENT_ID = "default";
 
 function findStaleEntities(db: ReadDb, limit: number): readonly StaleEntity[] {

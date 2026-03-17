@@ -197,8 +197,8 @@ const SCENARIOS: readonly Scenario[] = [
 // ---------------------------------------------------------------------------
 
 describe("structural-dependency types", () => {
-	test("DEPENDENCY_TYPES length is stable", () => {
-		expect(DEPENDENCY_TYPES.length).toBeGreaterThanOrEqual(21);
+	test("DEPENDENCY_TYPES has 21 entries", () => {
+		expect(DEPENDENCY_TYPES).toHaveLength(21);
 	});
 
 	test("all types have descriptions", () => {
