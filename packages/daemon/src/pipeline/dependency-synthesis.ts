@@ -103,7 +103,7 @@ function loadTopEntities(db: ReadDb, excludeId: string, limit: number): readonly
 function loadExistingTargets(db: ReadDb, entityId: string): ReadonlySet<string> {
 	const rows = db
 		.prepare(
-			`SELECT LOWER(TRIM(dst.name)) AS target_name
+			`SELECT dst.canonical_name AS target_name
 			 FROM entity_dependencies dep
 			 JOIN entities dst ON dst.id = dep.target_entity_id
 			 WHERE dep.source_entity_id = ? AND dep.agent_id = ?`,
