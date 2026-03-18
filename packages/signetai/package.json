@@ -20,8 +20,7 @@
     "build:cli": "bun build ../cli/src/cli.ts --outfile ./dist/cli.js --target node --external better-sqlite3",
     "build:daemon": "bun run build-daemon.ts",
     "build:dashboard": "rm -rf ./dashboard && cp -r ../cli/dashboard/build ./dashboard 2>/dev/null || echo 'Dashboard not built yet'",
-    "prepublishOnly": "bun run build",
-    "postinstall": "node ./bin/postinstall.cjs || true"
+    "prepublishOnly": "bun run build"
   },
   "keywords": [
     "ai",

@@ -7,6 +7,7 @@
 import { spawn, spawnSync } from "child_process";
 import {
 	appendFileSync,
+	chmodSync,
 	closeSync,
 	copyFileSync,
 	existsSync,
@@ -642,6 +643,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const OPENCLAW_PLUGIN_PACKAGE = "@signetai/signet-memory-openclaw";
 const OPENCLAW_PLUGIN_SYNC_FILENAME = "openclaw-plugin-version";
+const PREDICTOR_SYNC_FILENAME = "predictor-version";
 
 function getVersionFromPackageJson(packageJsonPath: string): string | null {
 	if (!existsSync(packageJsonPath)) {
@@ -714,6 +716,277 @@ function writeOpenClawPluginSyncVersion(basePath: string, version: string): void
 	const syncPath = getOpenClawPluginSyncPath(basePath);
 	mkdirSync(dirname(syncPath), { recursive: true });
 	writeFileSync(syncPath, `${version}\n`);
+}
+
+function predictorSyncPath(basePath: string): string {
+	return join(basePath, ".daemon", PREDICTOR_SYNC_FILENAME);
+}
+
+function readPredictorSyncVersion(basePath: string): string | null {
+	const path = predictorSyncPath(basePath);
+	if (!existsSync(path)) {
+		return null;
+	}
+
+	try {
+		return readFileSync(path, "utf-8").trim() || null;
+	} catch {
+		return null;
+	}
+}
+
+function writePredictorSyncVersion(basePath: string, version: string): void {
+	const path = predictorSyncPath(basePath);
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, `${version}\n`);
+}
+
+function predictorBinaryName():
+	| {
+		readonly name: string;
+		readonly tuple: string;
+	}
+	| null {
+	const host = process.platform;
+	const cpu = process.arch;
+	const tuple = `${host}:${cpu}`;
+	const supported = new Set(["linux:x64", "darwin:x64", "darwin:arm64", "win32:x64"]);
+	if (!supported.has(tuple)) {
+		return null;
+	}
+
+	const ext = host === "win32" ? ".exe" : "";
+	return {
+		name: `signet-predictor-${host}-${cpu}${ext}`,
+		tuple,
+	};
+}
+
+async function syncPredictorBinary(basePath: string): Promise<{
+	readonly status: "updated" | "current" | "skipped" | "error";
+	readonly message: string;
+}> {
+	const binary = predictorBinaryName();
+	if (binary === null) {
+		return {
+			status: "skipped",
+			message: `unsupported platform/arch: ${process.platform}:${process.arch}`,
+		};
+	}
+
+	const dir = join(basePath, ".daemon", "bin");
+	const dest = join(dir, binary.name);
+	const stamped = readPredictorSyncVersion(basePath) === VERSION;
+	if (stamped && existsSync(dest)) {
+		return {
+			status: "current",
+			message: binary.name,
+		};
+	}
+
+	const url = `https://github.com/Signet-AI/signetai/releases/download/v${VERSION}/${binary.name}`;
+	let res: Response;
+	try {
+		res = await fetch(url, { redirect: "follow" });
+	} catch (err) {
+		return {
+			status: "error",
+			message: err instanceof Error ? `network unavailable (${err.message})` : "network unavailable",
+		};
+	}
+
+	if (res.status === 404) {
+		return {
+			status: "skipped",
+			message: `binary not published for v${VERSION} (${binary.tuple})`,
+		};
+	}
+	if (!res.ok) {
+		return {
+			status: "error",
+			message: `download failed (HTTP ${res.status})`,
+		};
+	}
+
+	try {
+		const body = Buffer.from(await res.arrayBuffer());
+		if (body.length === 0) {
+			return {
+				status: "error",
+				message: "download returned empty payload",
+			};
+		}
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(dest, body);
+		if (process.platform !== "win32") {
+			chmodSync(dest, 0o755);
+		}
+		writePredictorSyncVersion(basePath, VERSION);
+	} catch (err) {
+		return {
+			status: "error",
+			message: err instanceof Error ? `write failed (${err.message})` : "write failed",
+		};
+	}
+
+	return {
+		status: "updated",
+		message: binary.name,
+	};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function embeddingProvider(basePath: string): "native" | "ollama" | "openai" | "none" {
+	const paths = ["agent.yaml", "AGENT.yaml", "config.yaml"].map((name) => join(basePath, name));
+	for (const path of paths) {
+		if (!existsSync(path)) continue;
+		try {
+			const parsed = parseSimpleYaml(readFileSync(path, "utf-8"));
+			if (!isRecord(parsed)) continue;
+			const direct = parsed.embedding;
+			if (isRecord(direct) && typeof direct.provider === "string") {
+				const provider = direct.provider;
+				if (provider === "native" || provider === "ollama" || provider === "openai" || provider === "none") {
+					return provider;
+				}
+			}
+			const mem = parsed.memory;
+			if (!isRecord(mem)) continue;
+			const nested = mem.embeddings;
+			if (isRecord(nested) && typeof nested.provider === "string") {
+				const provider = nested.provider;
+				if (provider === "native" || provider === "ollama" || provider === "openai" || provider === "none") {
+					return provider;
+				}
+			}
+		} catch {
+			// Ignore malformed config files and keep scanning fallbacks.
+		}
+	}
+	return "native";
+}
+
+function hasNativeModelCache(basePath: string): boolean {
+	const dir = join(basePath, ".models");
+	if (!existsSync(dir)) {
+		return false;
+	}
+	try {
+		return readdirSync(dir).length > 0;
+	} catch {
+		return false;
+	}
+}
+
+async function syncNativeEmbeddingModel(basePath: string): Promise<{
+	readonly status: "updated" | "current" | "skipped" | "error";
+	readonly message: string;
+}> {
+	const provider = embeddingProvider(basePath);
+	if (provider !== "native") {
+		return {
+			status: "skipped",
+			message: `embedding provider is '${provider}'`,
+		};
+	}
+
+	const hadCache = hasNativeModelCache(basePath);
+	const running = await isDaemonRunning();
+	let started = false;
+	if (!running) {
+		const ok = await startDaemon(basePath);
+		if (!ok) {
+			return {
+				status: "error",
+				message: "daemon is required to warm native embeddings (failed to start)",
+			};
+		}
+		started = true;
+	}
+
+	let result: {
+		readonly status: "updated" | "current" | "skipped" | "error";
+		readonly message: string;
+	} = {
+		status: "error",
+		message: "daemon unreachable",
+	};
+
+	try {
+		const urls = await getReachableDaemonUrls();
+		const url = urls[0];
+		if (!url) {
+			result = {
+				status: "error",
+				message: "daemon reachable URL not found",
+			};
+		} else {
+			const res = await fetch(`${url}/api/embeddings/status`, {
+				method: "GET",
+				signal: AbortSignal.timeout(10 * 60_000),
+			});
+			if (!res.ok) {
+				result = {
+					status: "error",
+					message: `warmup request failed (HTTP ${res.status})`,
+				};
+			} else {
+				const body: unknown = await res.json();
+				if (!isRecord(body)) {
+					result = {
+						status: "error",
+						message: "warmup response had invalid shape",
+					};
+				} else {
+					const active = typeof body.provider === "string" ? body.provider : "unknown";
+					const available = body.available === true;
+					const err = typeof body.error === "string" ? body.error : null;
+					if (active !== "native") {
+						result = {
+							status: "skipped",
+							message: `daemon embedding provider is '${active}'`,
+						};
+					} else if (!available) {
+						result = {
+							status: "error",
+							message: err ?? "native provider unavailable",
+						};
+					} else if (err?.toLowerCase().includes("fallback")) {
+						result = {
+							status: "error",
+							message: err,
+						};
+					} else {
+						const hasCache = hasNativeModelCache(basePath);
+						result = {
+							status: hadCache || !hasCache ? "current" : "updated",
+							message: "nomic-ai/nomic-embed-text-v1.5",
+						};
+					}
+				}
+			}
+		}
+	} catch (err) {
+		result = {
+			status: "error",
+			message: err instanceof Error ? `warmup failed (${err.message})` : "warmup failed",
+		};
+	} finally {
+		if (started) {
+			const stopped = await stopDaemon(basePath);
+			if (!stopped && result.status !== "error") {
+				result = {
+					status: "error",
+					message: "native model warmed but daemon could not be stopped cleanly",
+				};
+			}
+		}
+	}
+
+	return result;
 }
 
 async function ensureOpenClawPluginPackage(
@@ -3840,6 +4113,30 @@ program
 			console.log(chalk.green(`  ✓ skills/${skill} (updated)`));
 		}
 		synced += skillSyncResult.installed.length + skillSyncResult.updated.length;
+
+		const predictor = await syncPredictorBinary(basePath);
+		if (predictor.status === "updated") {
+			console.log(chalk.green(`  ✓ predictor sidecar (${predictor.message})`));
+			synced++;
+		} else if (predictor.status === "current") {
+			console.log(chalk.dim("  predictor sidecar is up to date"));
+		} else if (predictor.status === "skipped") {
+			console.log(chalk.dim(`  predictor sidecar skipped: ${predictor.message}`));
+		} else {
+			console.log(chalk.yellow(`  ⚠ predictor sidecar sync failed: ${predictor.message}`));
+		}
+
+		const native = await syncNativeEmbeddingModel(basePath);
+		if (native.status === "updated") {
+			console.log(chalk.green(`  ✓ native embedding model warmed (${native.message})`));
+			synced++;
+		} else if (native.status === "current") {
+			console.log(chalk.dim("  native embedding model is ready"));
+		} else if (native.status === "skipped") {
+			console.log(chalk.dim(`  native embedding warmup skipped: ${native.message}`));
+		} else {
+			console.log(chalk.yellow(`  ⚠ native embedding warmup failed: ${native.message}`));
+		}
 
 		// Re-register hooks for detected harnesses
 		const detectedHarnesses: string[] = [];
