@@ -25,7 +25,7 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from "fs";
-import { homedir, platform } from "os";
+import { homedir, platform, tmpdir } from "os";
 import { dirname, join, resolve as resolvePath } from "path";
 import { fileURLToPath } from "url";
 import { checkbox, confirm, input, password, select } from "@inquirer/prompts";
@@ -1275,6 +1275,7 @@ async function ensureOpenClawPluginPackage(
 	const result = spawnSync(installCommand.command, installCommand.args, {
 		stdio: options.silent ? "pipe" : "inherit",
 		timeout: 120_000,
+		cwd: tmpdir(),
 		env: process.env,
 		windowsHide: true,
 	});

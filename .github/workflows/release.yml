@@ -180,7 +180,9 @@ jobs:
           EXT=""
           [ "$RUNNER_OS" = "Windows" ] && EXT=".exe"
           BINARY="packages/predictor/target/${RELEASE_TARGET}/release/signet-predictor${EXT}"
+          openssl dgst -sha256 -hex "${BINARY}" | awk '{print $NF}' > "${BINARY}.sha256"
           gh release upload "v${RELEASE_VERSION}" "${BINARY}#${RELEASE_ASSET}"
+          gh release upload "v${RELEASE_VERSION}" "${BINARY}.sha256#${RELEASE_ASSET}.sha256"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

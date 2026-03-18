@@ -91,14 +91,15 @@ function listCargoFiles(): string[] {
 
 function readCargoVersion(filePath: string): string | null {
 	const raw = readFileSync(filePath, "utf8");
-	const match = raw.match(/\[package\][^\[]*version\s*=\s*"([^"]+)"/s);
+	// Match [package] or [workspace.package] section
+	const match = raw.match(/\[(?:workspace\.)?package\][^\[]*version\s*=\s*"([^"]+)"/s);
 	return match ? match[1] : null;
 }
 
 function updateCargoVersion(filePath: string, targetVersion: string): boolean {
 	const raw = readFileSync(filePath, "utf8");
-	// Anchor to [package] section to avoid matching dependency version strings
-	const versionPattern = /(\[package\][^\[]*version\s*=\s*")([^"]+)(")/s;
+	// Match [package] or [workspace.package] section
+	const versionPattern = /(\[(?:workspace\.)?package\][^\[]*version\s*=\s*")([^"]+)(")/s;
 	if (!versionPattern.test(raw)) {
 		throw new Error(`Could not find [package] version in ${filePath}`);
 	}
@@ -125,6 +126,36 @@ function regenerateCargoLock(cargoFile: string): void {
 			console.warn(`Warning: cargo update failed in ${dir}: ${msg}`);
 		}
 	}
+}
+
+function resolveWorkspaceProtocols(
+	files: readonly string[],
+	version: string,
+): string[] {
+	const patched: string[] = [];
+	for (const file of files) {
+		const raw = readFileSync(file, "utf8");
+		const pkg = JSON.parse(raw) as Record<string, unknown>;
+		// Only resolve for packages that will be published
+		if (!pkg.publishConfig && !pkg.private) continue;
+		if (pkg.publishConfig === undefined) continue;
+
+		let changed = raw;
+		// Replace workspace:* and workspace:^ with the resolved version
+		changed = changed.replace(
+			/"workspace:\*"/g,
+			`"${version}"`,
+		);
+		changed = changed.replace(
+			/"workspace:\^"/g,
+			`"^${version}"`,
+		);
+		if (changed !== raw) {
+			writeFileSync(file, changed);
+			patched.push(file);
+		}
+	}
+	return patched;
 }
 
 function getArg(name: string): string | null {
@@ -188,6 +219,10 @@ function main() {
 		);
 	}
 
+	// Resolve workspace: protocols in publishable packages so npm publish
+	// ships real version strings instead of "workspace:*".
+	const resolved = resolveWorkspaceProtocols(packageFiles, targetVersion);
+
 	// Sync Cargo.toml files under packages/
 	const cargoUpdated: string[] = [];
 	const cargoFiles = listCargoFiles();
@@ -212,7 +247,7 @@ function main() {
 		);
 	}
 
-	if (updated.length === 0 && cargoUpdated.length === 0) {
+	if (updated.length === 0 && cargoUpdated.length === 0 && resolved.length === 0) {
 		console.log(`All versions already aligned at ${targetVersion}.`);
 		return;
 	}
@@ -231,6 +266,15 @@ function main() {
 			`Aligned ${cargoUpdated.length} Cargo.toml files to ${targetVersion}:`,
 		);
 		for (const file of cargoUpdated) {
+			console.log(`- ${file}`);
+		}
+	}
+
+	if (resolved.length > 0) {
+		console.log(
+			`Resolved workspace: protocols in ${resolved.length} publishable package(s):`,
+		);
+		for (const file of resolved) {
 			console.log(`- ${file}`);
 		}
 	}
