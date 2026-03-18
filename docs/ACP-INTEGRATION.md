@@ -21,7 +21,7 @@ persistence, and a path toward the multi-agent vision described in
 References:
 - acpx: `references/acpx/`
 - ACP protocol: JSON-RPC 2.0 over NDJSON stdio
-- Research notes: `docs/RESEARCH-LCM-ACP.md`
+- Research notes: `docs/research/technical/RESEARCH-LCM-ACP.md`
 
 ---
 

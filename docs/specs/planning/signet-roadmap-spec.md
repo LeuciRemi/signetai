@@ -1,5 +1,8 @@
 ---
 title: "Signet Roadmap & Technical Spec"
+informed_by: []
+success_criteria: []
+scope_boundary: ""
 ---
 
 # Signet Roadmap & Technical Spec

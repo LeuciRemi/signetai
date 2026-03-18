@@ -52,6 +52,20 @@ in parallel, interfaces must align before merge).
 
 ---
 
+## Research Provenance
+
+Research documents inform spec design. Every spec traces back to the
+research that shaped it. Research lives in `docs/research/` (technical
+and market subdirectories). Reference repos live in `references/`.
+
+| Spec ID | Informed By | Key Question |
+|---|---|---|
+| `knowledge-architecture-schema` | RESEARCH-GITNEXUS-PATTERNS, RESEARCH-LCM-ACP | How should entities, aspects, and attributes be structured? |
+| `desire-paths-epic` | RESEARCH-LCM-ACP | How does retrieval evolve from flat search to graph traversal? |
+| `predictive-memory-scorer` | MSAM-COMPARISON | How should scoring balance structural vs behavioral signals? |
+
+---
+
 ## Cross-Cutting Invariants
 
 These rules apply to ALL approved specs. Any spec that contradicts
@@ -250,7 +264,7 @@ cannot suppress them. This is a hard retrieval invariant.
 - DP-9 (path feedback) changes training signal from "was this memory
   useful?" to "was this traversal path useful?" — propagating ratings
   along edges, upgrading/downgrading confidence/reason.
-- This is the convergence point described in `docs/DESIRE-PATHS.md`:
+- This is the convergence point described in `docs/specs/planning/DESIRE-PATHS.md`:
   the scorer provides learning signal, the graph provides structure
   to propagate it.
 
@@ -364,18 +378,57 @@ Legend:
 | `memory-pipeline-v2` | complete | `docs/specs/complete/memory-pipeline-plan.md` | - | `session-continuity-protocol`, `procedural-memory-plan`, `knowledge-architecture-schema`, `predictive-memory-scorer`, `signet-runtime` | |
 | `session-continuity-protocol` | complete | `docs/specs/complete/session-continuity-protocol.md` | `memory-pipeline-v2` | `knowledge-architecture-schema`, `predictive-memory-scorer` | |
 | `procedural-memory-plan` | approved | `docs/specs/approved/procedural-memory-plan.md` | `memory-pipeline-v2` | `knowledge-architecture-schema` | P1 complete (skill_meta, enrichment, reconciler, graph nodes); P2–P5 remaining |
-| `knowledge-architecture-schema` | complete | `docs/specs/approved/knowledge-architecture-schema.md` | `memory-pipeline-v2`, `session-continuity-protocol`, `procedural-memory-plan` | `predictive-memory-scorer` | KA-1 through KA-6 fully implemented |
+| `knowledge-architecture-schema` | complete | `docs/specs/complete/knowledge-architecture-schema.md` | `memory-pipeline-v2`, `session-continuity-protocol`, `procedural-memory-plan` | `predictive-memory-scorer` | KA-1 through KA-6 fully implemented |
 | `predictive-memory-scorer` | approved | `docs/specs/approved/predictive-memory-scorer.md` | `memory-pipeline-v2`, `knowledge-architecture-schema`, `session-continuity-protocol` | - | |
 | `multi-agent-support` | approved | `docs/specs/approved/multi-agent-support.md` | `memory-pipeline-v2` | - | |
 | `signet-runtime` | approved | `docs/specs/approved/signet-runtime.md` | `memory-pipeline-v2` | - | |
 | `daemon-refactor` | planning | `docs/specs/planning/daemon-refactor.md` | - | `daemon-refactor-plan` | |
 | `daemon-refactor-plan` | planning | `docs/specs/planning/daemon-refactor-plan.md` | `daemon-refactor` | - | |
-| `daemon-rust-rewrite` | planning | `docs/specs/planning/daemon-rust-rewrite.md` | `memory-pipeline-v2` | - | |
-| `signet-roadmap-spec` | planning | `docs/specs/planning/signet-roadmap-spec.md` | - | - | |
+| `daemon-rust-rewrite` | planning | `docs/specs/planning/daemon-rust-rewrite.md` | `memory-pipeline-v2` | - | deferred — complexity cost exceeds current benefit |
+| `signet-roadmap-spec` | planning | `docs/specs/planning/signet-roadmap-spec.md` | - | - | superseded by INDEX.md as active roadmap |
 | `openclaw-integration-strategy` | complete | `docs/specs/complete/openclaw-integration-strategy.md` | - | `openclaw-importance-scoring-pr` | |
 | `openclaw-importance-scoring-pr` | complete | `docs/specs/complete/openclaw-importance-scoring-pr.md` | `openclaw-integration-strategy` | - | |
 | `desire-paths-epic` | approved | `docs/specs/approved/desire-paths-epic.md` | `knowledge-architecture-schema`, `predictive-memory-scorer` | - | 15 stories across 5 phases; LCM foundation patterns (escalation, cold tier, summary DAG) already implemented |
-| `notebook-dump-2026-02-25` | reference | `docs/specs/planning/notebook-dump-2026-02-25.md` | - | - | |
+| `notebook-dump-2026-02-25` | reference | `docs/research/technical/notebook-dump-2026-02-25.md` | - | - | |
+| `marketplace-reviews-cloudflare-staging` | planning | `docs/specs/planning/marketplace-reviews-cloudflare-staging.md` | - | - | |
+| `predictor-agent-feedback` | approved | `docs/specs/approved/predictor-agent-feedback.md` | `predictive-memory-scorer` | - | |
+
+---
+
+## Success Criteria
+
+What "done" looks like for each spec — observable outcomes, not just
+code merged.
+
+**memory-pipeline-v2**: Memory extraction captures context that was
+previously lost between sessions. Pipeline processes hook payloads
+without blocking agent response time.
+
+**session-continuity-protocol**: Agent recovers meaningful context
+when resuming after session compaction or restart.
+
+**knowledge-architecture-schema**: Memory retrieval returns
+structurally related context, not just embedding-similar fragments.
+Entity graph traversal produces richer context than flat embedding
+search alone.
+
+**predictive-memory-scorer**: Session-start context relevance
+improves over time without manual curation. NDCG@10 on continuity
+scores is the quantitative metric.
+
+**desire-paths-epic**: Graph traversal discovers relevant memories
+that embedding search alone misses. Path feedback propagates learning
+signal through entity dependency edges.
+
+**procedural-memory-plan**: Installed skills are represented as graph
+entities with usage tracking and decay. Skill suggestions surface
+relevant capabilities during sessions.
+
+**signet-runtime**: Signet operates as a standalone runtime channel
+independent of harness-specific connectors.
+
+**multi-agent-support**: Multiple agents share one SQLite database
+without data collision via agent_id scoping.
 
 ---
 

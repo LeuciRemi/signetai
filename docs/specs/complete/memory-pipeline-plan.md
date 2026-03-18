@@ -1,5 +1,10 @@
 ---
 title: Signet Memory Pipeline v2 Implementation Specification
+informed_by: []
+success_criteria:
+  - "Memory extraction captures context that was previously lost between sessions"
+  - "Pipeline processes hook payloads without blocking agent response time"
+scope_boundary: "Does not define retrieval ranking or session continuity — those are separate specs"
 ---
 
 # Signet Memory Pipeline v2: Implementation Specification

@@ -1,5 +1,12 @@
 ---
 title: "Knowledge Architecture Schema and Traversal Spec"
+informed_by:
+  - "docs/research/technical/RESEARCH-GITNEXUS-PATTERNS.md"
+  - "docs/research/technical/RESEARCH-LCM-ACP.md"
+success_criteria:
+  - "Memory retrieval returns structurally related context, not just embedding-similar fragments"
+  - "Entity graph traversal produces richer context than flat embedding search alone"
+scope_boundary: "Does not define the predictive scorer or procedural memory — provides structural foundation for both"
 ---
 
 # Knowledge Architecture Schema and Traversal Spec

@@ -3,6 +3,10 @@ title: Signet Core Differentiators — What the Competitive Research Missed
 date: 2026-03-17
 source: Direct from Nicholai, correcting gaps in research agent output
 priority: HIGH — these two points are the sharpest edges in our positioning
+section: "Research"
+order: 90
+question: "What makes Signet unique compared to alternatives?"
+informs: []
 ---
 
 # Signet Core Differentiators

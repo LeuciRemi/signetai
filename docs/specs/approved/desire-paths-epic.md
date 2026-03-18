@@ -1,6 +1,12 @@
 ---
 title: "Epic: Graph-Native Memory Retrieval (Desire Paths)"
 status: approved
+informed_by:
+  - "docs/research/technical/RESEARCH-LCM-ACP.md"
+success_criteria:
+  - "Graph traversal discovers relevant memories that embedding search alone misses"
+  - "Path feedback propagates learning signal through entity dependency edges"
+scope_boundary: "Builds on KA and predictor foundations — does not redefine entity schema or scoring model"
 ---
 
 # Epic: Graph-Native Memory Retrieval
@@ -9,10 +15,10 @@ status: approved
 
 This epic unifies four documents into an incremental build plan:
 
-- `docs/DESIRE-PATHS.md` — the vision
-- `docs/LCM-PATTERNS.md` — five foundation patterns
+- `docs/specs/planning/DESIRE-PATHS.md` — the vision
+- `docs/specs/planning/LCM-PATTERNS.md` — five foundation patterns
 - `docs/KNOWLEDGE-GRAPH.md` — current implementation
-- `docs/RESEARCH-GITNEXUS-PATTERNS.md` — bootstrapping techniques
+- `docs/research/technical/RESEARCH-GITNEXUS-PATTERNS.md` — bootstrapping techniques
 
 Hard dependencies on existing specs:
 - `knowledge-architecture-schema` (KA-1 through KA-6) — COMPLETE

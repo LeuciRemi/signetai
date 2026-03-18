@@ -29,7 +29,7 @@ in scope, regardless of score rank.
 
 1. `docs/specs/INDEX.md` — Cross-Cutting Invariants (especially #5:
    constraints always surface)
-2. `docs/specs/approved/knowledge-architecture-schema.md` — section 7
+2. `docs/specs/complete/knowledge-architecture-schema.md` — section 7
    (retrieval contract)
 3. `docs/KNOWLEDGE-ARCHITECTURE.md` — conceptual model
 4. `docs/specs/SPRINT-BRIEF-KA1.md` — schema and helpers this depends on

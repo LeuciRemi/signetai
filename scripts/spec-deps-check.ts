@@ -10,6 +10,9 @@ interface SpecRecord {
 	hardDependsOn: string[];
 	softDependsOn: string[];
 	blocks: string[];
+	informedBy: string[];
+	successCriteria: string[];
+	decision: string | null;
 }
 
 interface ParsedDeps {
@@ -44,7 +47,7 @@ function parseDepsYaml(yaml: string): ParsedDeps {
 
 	let inSpecs = false;
 	let current: SpecRecord | null = null;
-	let currentArrayKey: "hardDependsOn" | "softDependsOn" | "blocks" | null = null;
+	let currentArrayKey: "hardDependsOn" | "softDependsOn" | "blocks" | "informedBy" | "successCriteria" | null = null;
 
 	for (const rawLine of lines) {
 		if (!rawLine.trim() || rawLine.trim().startsWith("#")) {
@@ -86,6 +89,9 @@ function parseDepsYaml(yaml: string): ParsedDeps {
 				hardDependsOn: [],
 				softDependsOn: [],
 				blocks: [],
+				informedBy: [],
+				successCriteria: [],
+				decision: null,
 			};
 			currentArrayKey = null;
 			continue;
@@ -110,6 +116,16 @@ function parseDepsYaml(yaml: string): ParsedDeps {
 			currentArrayKey = null;
 			continue;
 		}
+		if (/^\s{4}informed_by:\s*\[\s*\]\s*$/.test(rawLine)) {
+			current.informedBy = [];
+			currentArrayKey = null;
+			continue;
+		}
+		if (/^\s{4}success_criteria:\s*\[\s*\]\s*$/.test(rawLine)) {
+			current.successCriteria = [];
+			currentArrayKey = null;
+			continue;
+		}
 
 		if (/^\s{4}hard_depends_on:\s*$/.test(rawLine)) {
 			currentArrayKey = "hardDependsOn";
@@ -121,6 +137,14 @@ function parseDepsYaml(yaml: string): ParsedDeps {
 		}
 		if (/^\s{4}blocks:\s*$/.test(rawLine)) {
 			currentArrayKey = "blocks";
+			continue;
+		}
+		if (/^\s{4}informed_by:\s*$/.test(rawLine)) {
+			currentArrayKey = "informedBy";
+			continue;
+		}
+		if (/^\s{4}success_criteria:\s*$/.test(rawLine)) {
+			currentArrayKey = "successCriteria";
 			continue;
 		}
 
@@ -136,6 +160,7 @@ function parseDepsYaml(yaml: string): ParsedDeps {
 			const value = stripQuotes(valueRaw);
 			if (key === "status") current.status = value;
 			if (key === "path") current.path = value;
+			if (key === "decision") current.decision = value === "null" ? null : value;
 			currentArrayKey = null;
 		}
 	}
@@ -271,6 +296,33 @@ function main(): void {
 			failures.push(`missing path for ${spec.id}`);
 		} else if (!existsSync(resolve(ROOT, spec.path))) {
 			failures.push(`path does not exist for ${spec.id}: ${spec.path}`);
+		}
+	}
+
+	const allowedDecisions = new Set(["deferred", "superseded", "discarded"]);
+
+	const statusDirMap: Record<string, string> = {
+		complete: "docs/specs/complete/",
+		approved: "docs/specs/approved/",
+		planning: "docs/specs/planning/",
+	};
+
+	for (const spec of deps.specs) {
+		if (spec.decision !== null && !allowedDecisions.has(spec.decision)) {
+			failures.push(`invalid decision for ${spec.id}: ${spec.decision} (allowed: deferred|superseded|discarded)`);
+		}
+
+		for (const ref of spec.informedBy) {
+			if (!existsSync(resolve(ROOT, ref))) {
+				failures.push(`informed_by path does not exist for ${spec.id}: ${ref}`);
+			}
+		}
+
+		const expectedDir = statusDirMap[spec.status];
+		if (expectedDir && spec.path && !spec.path.startsWith(expectedDir)) {
+			if (spec.status !== "reference") {
+				failures.push(`status/directory mismatch for ${spec.id}: status=${spec.status} but path=${spec.path} (expected ${expectedDir})`);
+			}
 		}
 	}
 

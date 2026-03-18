@@ -1,5 +1,10 @@
 ---
 title: "Procedural Memory: Skills as Knowledge Graph Nodes"
+informed_by: []
+success_criteria:
+  - "Installed skills are represented as graph entities with usage tracking and decay"
+  - "Skill suggestions surface relevant capabilities during sessions"
+scope_boundary: "Creates skill entities and tracks usage — does not define the knowledge graph schema or scoring"
 ---
 
 # Procedural Memory: Skills as Knowledge Graph Nodes

@@ -1,5 +1,9 @@
 ---
 title: "Multi-agent support for Signet"
+informed_by: []
+success_criteria:
+  - "Multiple agents share one SQLite database without data collision via agent_id scoping"
+scope_boundary: "Adds agent_id infrastructure — does not define per-agent personality or cross-agent communication"
 ---
 
 Multi-agent support for Signet

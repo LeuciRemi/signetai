@@ -1,5 +1,9 @@
 ---
 title: "Notebook Dump - 2026-02-25"
+section: "Research"
+order: 90
+question: "Raw notebook capture of early design ideas and brainstorming"
+informs: []
 ---
 
 # Notebook Dump - 2026-02-25

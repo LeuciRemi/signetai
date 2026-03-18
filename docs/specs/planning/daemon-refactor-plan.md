@@ -1,5 +1,8 @@
 ---
 title: "Refactor daemon.ts (7194 LOC → ~800 LOC coordinator)"
+informed_by: []
+success_criteria: []
+scope_boundary: ""
 ---
 
 Refactor daemon.ts (7194 LOC → ~800 LOC coordinator)

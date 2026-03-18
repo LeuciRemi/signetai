@@ -37,7 +37,7 @@ panel and the flight recorder.
 
 1. `docs/specs/INDEX.md` — Integration Contracts, especially
    "Knowledge Architecture <-> Session Continuity"
-2. `docs/specs/approved/knowledge-architecture-schema.md` — sections
+2. `docs/specs/complete/knowledge-architecture-schema.md` — sections
    10 (continuity integration), 11 (phase plan, KA-5)
 3. `docs/specs/approved/predictive-memory-scorer.md` — section 4.6
    (dashboard predictor tab) for design patterns

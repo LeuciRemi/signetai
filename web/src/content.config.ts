@@ -8,6 +8,12 @@ const docs = defineCollection({
     description: z.string().optional(),
     order: z.number().optional(),
     section: z.string().optional(),
+    question: z.string().optional(),
+    informs: z.array(z.string()).optional(),
+    informed_by: z.array(z.string()).optional(),
+    success_criteria: z.array(z.string()).optional(),
+    scope_boundary: z.string().optional(),
+    status: z.string().optional(),
   }),
 });
 

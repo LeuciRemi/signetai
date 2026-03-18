@@ -323,8 +323,8 @@ Documentation
 - [Architecture](./docs/ARCHITECTURE.md)
 - [Knowledge Architecture](./docs/KNOWLEDGE-ARCHITECTURE.md)
 - [Knowledge Graph](./docs/KNOWLEDGE-GRAPH.md)
-- [Desire Paths](./docs/DESIRE-PATHS.md) — learned traversal through the knowledge graph
-- [Lossless Context Patterns](./docs/LCM-PATTERNS.md) — deterministic guarantees for the distillation layer
+- [Desire Paths](./docs/specs/planning/DESIRE-PATHS.md) — learned traversal through the knowledge graph
+- [Lossless Context Patterns](./docs/specs/planning/LCM-PATTERNS.md) — deterministic guarantees for the distillation layer
 - [ACP Integration](./docs/ACP-INTEGRATION.md) — Agent Client Protocol integration
 - [Spec Index](./docs/specs/INDEX.md) — build sequence and integration contracts
 
@@ -333,7 +333,7 @@ Research
 
 | Paper / Project | Relevance |
 |---|---|
-| [Lossless Context Management](https://papers.voltropy.com/LCM) (Voltropy, 2026) | Hierarchical summarization, guaranteed convergence, zero-cost continuity. Patterns adapted in [LCM-PATTERNS.md](./docs/LCM-PATTERNS.md). |
+| [Lossless Context Management](https://papers.voltropy.com/LCM) (Voltropy, 2026) | Hierarchical summarization, guaranteed convergence, zero-cost continuity. Patterns adapted in [LCM-PATTERNS.md](./docs/specs/planning/LCM-PATTERNS.md). |
 | [Recursive Language Models](https://arxiv.org/abs/2512.24601) (Zhang et al., 2026) | Active context management. LCM builds on and departs from RLM's approach. |
 | [acpx](https://github.com/openclaw/acpx) (OpenClaw) | Agent Client Protocol. Structured agent coordination, session persistence. |
 | [lossless-claw](https://github.com/Martian-Engineering/lossless-claw) (Martian Engineering) | LCM reference implementation as an OpenClaw plugin. |

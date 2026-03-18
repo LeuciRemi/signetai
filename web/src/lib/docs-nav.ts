@@ -8,6 +8,7 @@ export const SECTION_ORDER = [
 	"Features",
 	"Project",
 	"Specs",
+	"Research",
 ] as const;
 
 export interface DocNavItem {

@@ -3,6 +3,7 @@ node_modules/
 .pnpm-store/
 .bun-tmp/
 .bun-install/
+.gitnexus/
 
 # Build outputs
 dist/
@@ -16,6 +17,7 @@ packages/signetai/bin/signet-predictor-*
 *.png
 !web/public/blog/*.png
 .ruff_cache
+tmp/
 
 # TypeScript declaration files (generated in wrong locations)
 **/src/*.d.ts
@@ -35,6 +37,8 @@ packages/signetai/bin/signet-predictor-*
 .vscode/
 .playwright-mcp/
 .claude/
+.specstory/
+.cursorindexingignore
 
 # OS
 .DS_Store

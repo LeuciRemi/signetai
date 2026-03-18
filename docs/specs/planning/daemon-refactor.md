@@ -1,5 +1,8 @@
 ---
 title: "Refactor daemon.ts into Route Modules"
+informed_by: []
+success_criteria: []
+scope_boundary: ""
 ---
 
 # Refactor daemon.ts into Route Modules

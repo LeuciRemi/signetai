@@ -2,6 +2,10 @@
 title: Ecosystem Positioning & Content Strategy Research
 date: 2026-03-17
 source: SearXNG research (marketing analysis, developer community patterns, historical case studies)
+section: "Research"
+order: 90
+question: "How should Signet position itself in marketing content?"
+informs: []
 ---
 
 # Ecosystem Positioning Research Report for Signet

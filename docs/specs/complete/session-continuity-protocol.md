@@ -2,6 +2,10 @@
 title: Session Continuity Protocol
 description: Spec for capturing context at compaction boundaries so agents survive context window resets.
 section: Specs
+informed_by: []
+success_criteria:
+  - "Agent recovers meaningful context when resuming after session compaction or restart"
+scope_boundary: "Does not define memory extraction or scoring — depends on pipeline for raw data"
 ---
 
 # Session Continuity Protocol

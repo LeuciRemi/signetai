@@ -20,7 +20,7 @@ retrieval (KA-3) come later.
 
 1. `docs/specs/INDEX.md` — **read the Cross-Cutting Invariants section
    first.** These override anything in the individual spec.
-2. `docs/specs/approved/knowledge-architecture-schema.md` — sections
+2. `docs/specs/complete/knowledge-architecture-schema.md` — sections
    5 (data model) and 6 (extraction contracts, for context only)
 3. `docs/KNOWLEDGE-ARCHITECTURE.md` — conceptual north star
 

@@ -1,8 +1,10 @@
 ---
 title: "GitNexus Pattern Analysis"
 description: "Techniques from GitNexus applicable to Signet's architecture."
-order: 10
 section: "Research"
+order: 90
+question: "What techniques from GitNexus are applicable to Signet's git-native architecture?"
+informs: ["knowledge-architecture-schema"]
 ---
 
 GitNexus Pattern Analysis

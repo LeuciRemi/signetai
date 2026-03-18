@@ -1,6 +1,9 @@
 ---
 title: "Daemon Rust Rewrite"
 description: "Planning spec for incremental Rust rewrite of the Signet daemon"
+informed_by: []
+success_criteria: []
+scope_boundary: ""
 ---
 
 # Signet Daemon: Incremental Rust Rewrite

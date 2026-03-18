@@ -1,6 +1,10 @@
 ---
 title: "Signet Native Runtime"
 description: "Spec for the Signet reference agent runtime — a first-class execution harness owned and controlled by Signet"
+informed_by: []
+success_criteria:
+  - "Signet operates as a standalone runtime channel independent of harness-specific connectors"
+scope_boundary: "Runtime scaffold and CLI/HTTP channels — does not replace existing connectors or define memory logic"
 ---
 
 Signet Native Runtime

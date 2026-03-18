@@ -1,5 +1,9 @@
 ---
 title: "OpenClaw Upstream PR: Importance-Aware Score Blending"
+informed_by: []
+success_criteria:
+  - "OpenClaw importance scoring uses Signet's structural density rather than arbitrary floats"
+scope_boundary: "Scoped to scoring PR, does not change OpenClaw plugin architecture"
 ---
 
 # OpenClaw Upstream PR: Importance-Aware Score Blending

@@ -1,8 +1,10 @@
 ---
 title: "Research: LCM & ACP"
 description: "Research notes on Lossless Context Management, acpx, and lossless-claw."
-order: 99
 section: "Research"
+order: 90
+question: "How can Large Concept Models and Agent Communication Protocols inform Signet's memory pipeline?"
+informs: ["knowledge-architecture-schema", "desire-paths-epic"]
 ---
 
 # Research: Lossless Context Management & Agent Client Protocol
@@ -11,9 +13,9 @@ section: "Research"
 > References cloned to `references/acpx/` and `references/lossless-claw/`.
 >
 > **This research produced two specification documents:**
-> - `docs/LCM-PATTERNS.md` — Five patterns adapted for Signet's memory architecture
+> - `docs/specs/planning/LCM-PATTERNS.md` — Five patterns adapted for Signet's memory architecture
 > - `docs/ACP-INTEGRATION.md` — Phased integration plan for acpx and ACP
-> - `docs/DESIRE-PATHS.md` — Updated with LCM foundation section
+> - `docs/specs/planning/DESIRE-PATHS.md` — Updated with LCM foundation section
 
 ---
 

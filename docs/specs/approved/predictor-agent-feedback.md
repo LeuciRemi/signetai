@@ -2,6 +2,10 @@
 title: "Agent Relevance Feedback"
 description: "Spec addendum for agent-driven training signal quality in the predictive memory scorer."
 status: "approved"
+informed_by: []
+success_criteria:
+  - "Agent can provide explicit memory quality feedback via MCP tool call instead of raw JSON"
+scope_boundary: "Feedback mechanism only — does not change scoring model or training pipeline"
 ---
 
 # Agent Relevance Feedback -- Spec Addendum

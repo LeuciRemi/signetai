@@ -391,6 +391,71 @@ bun src/cli.ts status    # Check status
 - Daemon is the primary memory pipeline; Python scripts are optional batch tools
 - Connectors are idempotent - safe to run install multiple times
 
+## Specs Pipeline
+
+All feature design and research flows through a structured pipeline.
+The [Spec Index](docs/specs/INDEX.md) is the EPIC — it defines how
+approved specs compose into a coherent system. When deciding what
+ships next, start there.
+
+### Pipeline Tiers
+
+```
+research → planning → approved → complete
+```
+
+**`docs/research/`** — Raw material: papers, repo analyses, ideas,
+competitive intel. Repos cloned to `references/`. Every research doc
+MUST state what question it answers in frontmatter (`question` field).
+Research has two subdirectories: `technical/` and `market/`.
+
+**`docs/specs/planning/`** — Structured plans: how a capability
+integrates, which patterns apply, how it fits the taxonomy. Plans
+iterate freely. Each planning doc MUST link back to its research
+sources via `informed_by` frontmatter. A planning doc is NOT an
+implementation contract — it is a design exploration.
+
+**`docs/specs/approved/`** — Frozen contracts. A planning doc moves
+here when: (1) the INDEX accepts it with integration contracts defined,
+(2) cross-cutting invariants are respected, (3) success criteria are
+written in plain text. Once approved, the spec does NOT change —
+amendments go through the INDEX or a new planning doc.
+
+**`docs/specs/complete/`** — Delivered. The spec MOVES here (not
+copied) when the implementation ships. The `dependencies.yaml` path
+updates. The INDEX registry status updates.
+
+### Rules
+
+1. **No spec without research.** Every spec in planning/ or beyond
+   must trace back to at least one research source. If there is no
+   research doc, write one first — even a brief one stating the
+   question and known prior art.
+2. **No implementation without approval.** Do not begin feature
+   implementation from a planning doc. It must be in approved/ with
+   success criteria defined in the INDEX.
+3. **Move, don't copy.** When a spec graduates (planning → approved,
+   approved → complete), move the file. Update `dependencies.yaml`
+   path. Update INDEX registry. Never have the same spec in two tiers.
+4. **Success criteria are outcomes, not compilation.** The INDEX
+   defines what "done" looks like in terms of observable behavior
+   change, not "the code compiles" or "tests pass."
+5. **The INDEX is the EPIC.** It links approved specs, defines
+   integration contracts between them, tracks dependencies, and
+   sequences build waves. If a new spec introduces a dependency,
+   update both `dependencies.yaml` and the INDEX.
+6. **Sprint briefs live in `docs/specs/sprints/`.** These are
+   implementation breakdowns of approved specs, not standalone specs.
+
+### Dependency Tracking
+
+Source of truth: `docs/specs/dependencies.yaml`
+Validation: `bun scripts/spec-deps-check.ts`
+
+Every new spec gets a stable ID and entry in `dependencies.yaml`.
+Hard dependencies block merging. Soft dependencies can run in
+parallel but interfaces must lock before merge.
+
 ## Reference
 
 - [HTTP API](docs/API.md) — full endpoint catalog
@@ -398,3 +463,5 @@ bun src/cli.ts status    # Check status
 - [Dashboard](docs/DASHBOARD.md) — design tokens, component org, Svelte 5 conventions
 - [Architecture](docs/ARCHITECTURE.md) — deep system design
 - [Pipeline](docs/PIPELINE.md) — memory extraction internals
+- [Spec Index](docs/specs/INDEX.md) — EPIC: integration contract, dependency graph, build sequence
+- [Research](docs/research/) — reference material informing spec design

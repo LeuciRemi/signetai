@@ -31,7 +31,7 @@ working on signetai."
 
 1. `docs/specs/INDEX.md` — Integration Contracts, especially
    "Knowledge Architecture <-> Predictive Scorer"
-2. `docs/specs/approved/knowledge-architecture-schema.md` — section 8
+2. `docs/specs/complete/knowledge-architecture-schema.md` — section 8
    (predictor integration)
 3. `docs/specs/approved/predictive-memory-scorer.md` — sections on
    candidate features, scoring signals, and Phase 3

@@ -2,6 +2,10 @@
 title: AI Agent Memory & Identity Competitive Landscape
 date: 2026-03-17
 source: SearXNG research (GitHub, press, product sites, analyst reports)
+section: "Research"
+order: 90
+question: "Who are Signet's competitors and how do they compare?"
+informs: []
 ---
 
 # AI Agent Memory & Identity Competitive Landscape — March 2026

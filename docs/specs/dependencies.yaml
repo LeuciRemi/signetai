@@ -1,5 +1,5 @@
-version: 2
-updated_at: "2026-03-11"
+version: 3
+updated_at: "2026-03-18"
 
 specs:
   - id: memory-pipeline-v2
@@ -13,6 +13,11 @@ specs:
       - knowledge-architecture-schema
       - predictive-memory-scorer
       - signet-runtime
+    informed_by: []
+    success_criteria:
+      - "Memory extraction captures context that was previously lost between sessions"
+      - "Pipeline processes hook payloads without blocking agent response time"
+    decision: null
 
   - id: session-continuity-protocol
     status: complete
@@ -23,6 +28,10 @@ specs:
     blocks:
       - knowledge-architecture-schema
       - predictive-memory-scorer
+    informed_by: []
+    success_criteria:
+      - "Agent recovers meaningful context when resuming after session compaction or restart"
+    decision: null
 
   - id: procedural-memory-plan
     status: approved
@@ -32,10 +41,15 @@ specs:
     soft_depends_on: []
     blocks:
       - knowledge-architecture-schema
+    informed_by: []
+    success_criteria:
+      - "Installed skills are represented as graph entities with usage tracking and decay"
+      - "Skill suggestions surface relevant capabilities during sessions"
+    decision: null
 
   - id: knowledge-architecture-schema
     status: complete
-    path: docs/specs/approved/knowledge-architecture-schema.md
+    path: docs/specs/complete/knowledge-architecture-schema.md
     hard_depends_on:
       - memory-pipeline-v2
       - session-continuity-protocol
@@ -44,6 +58,13 @@ specs:
     blocks:
       - predictive-memory-scorer
       - desire-paths-epic
+    informed_by:
+      - docs/research/technical/RESEARCH-GITNEXUS-PATTERNS.md
+      - docs/research/technical/RESEARCH-LCM-ACP.md
+    success_criteria:
+      - "Memory retrieval returns structurally related context, not just embedding-similar fragments"
+      - "Entity graph traversal produces richer context than flat embedding search alone"
+    decision: null
 
   - id: predictive-memory-scorer
     status: approved
@@ -54,6 +75,11 @@ specs:
       - session-continuity-protocol
     soft_depends_on: []
     blocks: []
+    informed_by:
+      - docs/research/technical/MSAM-COMPARISON.md
+    success_criteria:
+      - "Session-start context relevance improves over time without manual curation (NDCG@10 on continuity scores)"
+    decision: null
 
   - id: multi-agent-support
     status: approved
@@ -62,6 +88,10 @@ specs:
       - memory-pipeline-v2
     soft_depends_on: []
     blocks: []
+    informed_by: []
+    success_criteria:
+      - "Multiple agents share one SQLite database without data collision via agent_id scoping"
+    decision: null
 
   - id: signet-runtime
     status: approved
@@ -70,6 +100,10 @@ specs:
       - memory-pipeline-v2
     soft_depends_on: []
     blocks: []
+    informed_by: []
+    success_criteria:
+      - "Signet operates as a standalone runtime channel independent of harness-specific connectors"
+    decision: null
 
   - id: daemon-refactor
     status: planning
@@ -78,6 +112,9 @@ specs:
     soft_depends_on: []
     blocks:
       - daemon-refactor-plan
+    informed_by: []
+    success_criteria: []
+    decision: null
 
   - id: daemon-refactor-plan
     status: planning
@@ -86,6 +123,9 @@ specs:
       - daemon-refactor
     soft_depends_on: []
     blocks: []
+    informed_by: []
+    success_criteria: []
+    decision: null
 
   - id: daemon-rust-rewrite
     status: planning
@@ -94,6 +134,9 @@ specs:
       - memory-pipeline-v2
     soft_depends_on: []
     blocks: []
+    informed_by: []
+    success_criteria: []
+    decision: deferred
 
   - id: signet-roadmap-spec
     status: planning
@@ -101,6 +144,9 @@ specs:
     hard_depends_on: []
     soft_depends_on: []
     blocks: []
+    informed_by: []
+    success_criteria: []
+    decision: superseded
 
   - id: openclaw-integration-strategy
     status: complete
@@ -109,6 +155,10 @@ specs:
     soft_depends_on: []
     blocks:
       - openclaw-importance-scoring-pr
+    informed_by: []
+    success_criteria:
+      - "Signet memory pipeline works within OpenClaw agents via runtime plugin"
+    decision: null
 
   - id: openclaw-importance-scoring-pr
     status: complete
@@ -117,6 +167,10 @@ specs:
       - openclaw-integration-strategy
     soft_depends_on: []
     blocks: []
+    informed_by: []
+    success_criteria:
+      - "OpenClaw importance scoring uses Signet's structural density rather than arbitrary floats"
+    decision: null
 
   - id: desire-paths-epic
     status: approved
@@ -126,10 +180,41 @@ specs:
       - predictive-memory-scorer
     soft_depends_on: []
     blocks: []
+    informed_by:
+      - docs/research/technical/RESEARCH-LCM-ACP.md
+    success_criteria:
+      - "Graph traversal discovers relevant memories that embedding search alone misses"
+      - "Path feedback propagates learning signal through entity dependency edges"
+    decision: null
 
   - id: notebook-dump-2026-02-25
     status: reference
-    path: docs/specs/planning/notebook-dump-2026-02-25.md
+    path: docs/research/technical/notebook-dump-2026-02-25.md
     hard_depends_on: []
     soft_depends_on: []
     blocks: []
+    informed_by: []
+    success_criteria: []
+    decision: null
+
+  - id: marketplace-reviews-cloudflare-staging
+    status: planning
+    path: docs/specs/planning/marketplace-reviews-cloudflare-staging.md
+    hard_depends_on: []
+    soft_depends_on: []
+    blocks: []
+    informed_by: []
+    success_criteria: []
+    decision: null
+
+  - id: predictor-agent-feedback
+    status: approved
+    path: docs/specs/approved/predictor-agent-feedback.md
+    hard_depends_on:
+      - predictive-memory-scorer
+    soft_depends_on: []
+    blocks: []
+    informed_by: []
+    success_criteria:
+      - "Agent can provide explicit memory quality feedback via MCP tool call instead of raw JSON"
+    decision: null

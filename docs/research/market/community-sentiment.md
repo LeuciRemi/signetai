@@ -2,6 +2,10 @@
 title: Community Sentiment Report — NemoClaw, OpenClaw, and Agent Memory
 date: 2026-03-17
 source: SearXNG research (Reddit, HN, Twitter/X, press, blogs)
+section: "Research"
+order: 90
+question: "How is the developer community responding to NemoClaw and OpenClaw?"
+informs: []
 ---
 
 # Developer Community Sentiment Report: NemoClaw, OpenClaw, and Agent Memory

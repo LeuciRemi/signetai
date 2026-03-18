@@ -3,6 +3,10 @@ title: "Desire Paths"
 description: "Graph-native memory retrieval through learned traversal."
 order: 3
 section: "Core Concepts"
+informed_by:
+  - "docs/research/technical/RESEARCH-LCM-ACP.md"
+success_criteria: []
+scope_boundary: ""
 ---
 
 Desire Paths

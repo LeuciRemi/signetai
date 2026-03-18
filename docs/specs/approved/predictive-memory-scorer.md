@@ -1,5 +1,10 @@
 ---
 title: "Signet Predictive Memory Scorer"
+informed_by:
+  - "docs/research/technical/MSAM-COMPARISON.md"
+success_criteria:
+  - "Session-start context relevance improves over time without manual curation (NDCG@10 on continuity scores)"
+scope_boundary: "Scores and ranks memories — does not define extraction, graph structure, or retrieval API"
 ---
 
 # Signet Predictive Memory Scorer

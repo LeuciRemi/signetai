@@ -98,7 +98,7 @@ than merely efficient.
    every deliverable in this sprint exists, not just what it does.
 2. `docs/specs/INDEX.md` — Integration Contracts, especially
    "Knowledge Architecture <-> Predictive Scorer"
-3. `docs/specs/approved/knowledge-architecture-schema.md` — sections
+3. `docs/specs/complete/knowledge-architecture-schema.md` — sections
    7 (retrieval contract) and 8 (predictor integration)
 4. `docs/specs/SPRINT-BRIEF-KA4.md` — predictor comparison slices
    (the behavioral signal source)

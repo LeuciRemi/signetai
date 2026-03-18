@@ -3,6 +3,10 @@ title: "Lossless Context Patterns"
 description: "Five patterns from LCM adapted for Signet's memory architecture."
 order: 4
 section: "Core Concepts"
+informed_by:
+  - "docs/research/technical/RESEARCH-LCM-ACP.md"
+success_criteria: []
+scope_boundary: ""
 ---
 
 Lossless Context Patterns
@@ -26,7 +30,7 @@ and each one strengthens the system on its own.
 References:
 - LCM paper: https://papers.voltropy.com/LCM (Ehrlich & Blackman, Feb 2026)
 - lossless-claw: `references/lossless-claw/`
-- Research notes: `docs/RESEARCH-LCM-ACP.md`
+- Research notes: `docs/research/technical/RESEARCH-LCM-ACP.md`
 
 ---
 

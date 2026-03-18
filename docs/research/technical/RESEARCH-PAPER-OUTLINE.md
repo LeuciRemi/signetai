@@ -3,6 +3,10 @@ title: "Research Paper Outline"
 description: "Skeleton for the Signet knowledge architecture paper."
 status: "collecting-data"
 target-venue: "EMNLP 2026 or NeurIPS workshop"
+section: "Research"
+order: 90
+question: "What would a research paper on Signet's cognitive persistence approach look like?"
+informs: []
 ---
 
 # Structured Traversal Over Knowledge Graphs as a Retrieval Floor for LLM Agent Memory

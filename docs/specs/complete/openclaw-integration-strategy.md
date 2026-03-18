@@ -1,5 +1,9 @@
 ---
 title: "Signet Strategy Split: Desktop Embeddings + OpenClaw Contributions"
+informed_by: []
+success_criteria:
+  - "Signet memory pipeline works within OpenClaw agents via runtime plugin"
+scope_boundary: "Does not modify OpenClaw core — integration via plugin and connector only"
 ---
 
 # Signet Strategy Split: Desktop Embeddings + OpenClaw Contributions

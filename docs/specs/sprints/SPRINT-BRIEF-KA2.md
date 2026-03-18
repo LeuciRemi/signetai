@@ -24,7 +24,7 @@ The architecture is two-pass:
 ## Required Reading
 
 1. `docs/specs/INDEX.md` — Cross-Cutting Invariants
-2. `docs/specs/approved/knowledge-architecture-schema.md` — section 6
+2. `docs/specs/complete/knowledge-architecture-schema.md` — section 6
    (structural assignment architecture)
 3. `docs/KNOWLEDGE-ARCHITECTURE.md` — conceptual model
 4. `docs/specs/SPRINT-BRIEF-KA1.md` — KA-1 deliverables (schema and
