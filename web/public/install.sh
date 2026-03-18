@@ -32,7 +32,8 @@ case "$OS" in
   Linux)  OS_NAME="Linux" ;;
   *)
     error "Unsupported OS: $OS"
-    info "Signet supports macOS and Linux. Windows users: install via WSL."
+    info "Signet supports macOS, Linux, and Windows."
+    info "Windows users: run ${CYAN}irm https://signetai.sh/install.ps1 | iex${RESET}"
     exit 1
     ;;
 esac

@@ -16,7 +16,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target node && bun run build:types",
+    "build": "bun build ./src/index.ts --outdir ./dist --target node --external better-sqlite3 && bun run build:types",
     "build:types": "tsc --emitDeclarationOnly --declaration --outDir dist",
     "dev": "bun --watch src/index.ts",
     "test": "bun test",
@@ -37,6 +37,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^22.0.0",
     "typescript": "^5.7.0"
   },
   "peerDependenciesMeta": {

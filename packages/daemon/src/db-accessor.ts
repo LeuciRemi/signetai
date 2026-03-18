@@ -18,24 +18,27 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync 
 // search. Use Homebrew's SQLite if available (supports extension loading).
 // ---------------------------------------------------------------------------
 
-const HOMEBREW_SQLITE_PATHS = [
-	"/opt/homebrew/opt/sqlite/lib/libsqlite3.dylib", // Apple Silicon
-	"/usr/local/opt/sqlite/lib/libsqlite3.dylib", // Intel
-];
+// Only attempt Homebrew SQLite override on macOS
+if (process.platform === "darwin") {
+	const HOMEBREW_SQLITE_PATHS = [
+		"/opt/homebrew/opt/sqlite/lib/libsqlite3.dylib", // Apple Silicon
+		"/usr/local/opt/sqlite/lib/libsqlite3.dylib", // Intel
+	];
 
-for (const sqlitePath of HOMEBREW_SQLITE_PATHS) {
-	if (existsSync(sqlitePath)) {
-		try {
-			Database.setCustomSQLite(sqlitePath);
-		} catch (e) {
-			// SQLite already loaded (e.g., in test environment) — skip.
-			// Log so users can diagnose extension-loading failures.
-			console.warn(
-				`[db-accessor] setCustomSQLite(${sqlitePath}) skipped:`,
-				e instanceof Error ? e.message : String(e),
-			);
+	for (const sqlitePath of HOMEBREW_SQLITE_PATHS) {
+		if (existsSync(sqlitePath)) {
+			try {
+				Database.setCustomSQLite(sqlitePath);
+			} catch (e) {
+				// SQLite already loaded (e.g., in test environment) — skip.
+				// Log so users can diagnose extension-loading failures.
+				console.warn(
+					`[db-accessor] setCustomSQLite(${sqlitePath}) skipped:`,
+					e instanceof Error ? e.message : String(e),
+				);
+			}
+			break;
 		}
-		break;
 	}
 }
 import { basename, dirname, join } from "node:path";

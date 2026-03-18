@@ -1,6 +1,6 @@
 /**
  * Signet Daemon Service Installation
- * Handles systemd (Linux) and launchd (macOS) service management
+ * Handles systemd (Linux), launchd (macOS), and Windows service management
  */
 
 import { homedir, platform } from "os";
@@ -69,13 +69,18 @@ function getDaemonPath(): string {
  */
 function getRuntime(): string {
 	try {
-		execSync("which bun", { encoding: "utf-8" });
+		const locator = platform() === "win32" ? "where" : "which";
+		execSync(`${locator} bun`, { encoding: "utf-8", windowsHide: true });
 		return "bun";
 	} catch {
 		console.error(
 			"Error: Bun is required to run Signet daemon (uses bun:sqlite)",
 		);
-		console.error("Install Bun: curl -fsSL https://bun.sh/install | bash");
+		console.error(
+			platform() === "win32"
+				? "Install Bun: powershell -c \"irm bun.sh/install.ps1 | iex\""
+				: "Install Bun: curl -fsSL https://bun.sh/install | bash",
+		);
 		process.exit(1);
 	}
 }
@@ -183,14 +188,14 @@ function resolveRuntimePath(): string {
 	if (execPath && existsSync(execPath)) {
 		return execPath;
 	}
-	// Fall back to which (hardcoded strings only — no user input)
+	const locator = platform() === "win32" ? "where" : "which";
 	try {
-		return execSync("which bun", { encoding: "utf-8" }).trim();
+		return execSync(`${locator} bun`, { encoding: "utf-8", windowsHide: true }).trim().split(/\r?\n/)[0];
 	} catch {
 		try {
-			return execSync("which node", { encoding: "utf-8" }).trim();
+			return execSync(`${locator} node`, { encoding: "utf-8", windowsHide: true }).trim().split(/\r?\n/)[0];
 		} catch {
-			return "/usr/bin/bun";
+			return platform() === "win32" ? "bun" : "/usr/bin/bun";
 		}
 	}
 }
@@ -455,6 +460,9 @@ export function isServiceInstalled(): boolean {
 		return existsSync(LAUNCHD_PLIST);
 	} else if (os === "linux") {
 		return existsSync(SYSTEMD_UNIT);
+	} else if (os === "win32") {
+		// On Windows, check if daemon is running via direct process management
+		return existsSync(PID_FILE);
 	}
 
 	return false;

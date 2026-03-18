@@ -55,27 +55,44 @@ export interface ExecResult {
  * Falls back to hostname + username if no machine-id is available.
  */
 function getMachineId(): string {
-	const candidates = ["/etc/machine-id", "/var/lib/dbus/machine-id"];
-	for (const p of candidates) {
-		try {
-			const id = readFileSync(p, "utf-8").trim();
-			if (id) return id;
-		} catch {
-			// try next
-		}
-	}
+	const isWindows = process.platform === "win32";
 
-	// macOS fallback
-	try {
-		const out = execSync("ioreg -rd1 -c IOPlatformExpertDevice | grep IOPlatformUUID | awk '{print $3}'", {
-			timeout: 2000,
-		})
-			.toString()
-			.trim()
-			.replace(/"/g, "");
-		if (out) return out;
-	} catch {
-		// ignore
+	if (!isWindows) {
+		// Linux: /etc/machine-id
+		const candidates = ["/etc/machine-id", "/var/lib/dbus/machine-id"];
+		for (const p of candidates) {
+			try {
+				const id = readFileSync(p, "utf-8").trim();
+				if (id) return id;
+			} catch {
+				// try next
+			}
+		}
+
+		// macOS fallback
+		try {
+			const out = execSync("ioreg -rd1 -c IOPlatformExpertDevice | grep IOPlatformUUID | awk '{print $3}'", {
+				timeout: 2000,
+			})
+				.toString()
+				.trim()
+				.replace(/"/g, "");
+			if (out) return out;
+		} catch {
+			// ignore
+		}
+	} else {
+		// Windows: use MachineGuid from registry
+		try {
+			const out = execSync(
+				'reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid',
+				{ encoding: "utf-8", timeout: 2000, windowsHide: true },
+			);
+			const match = out.match(/MachineGuid\s+REG_SZ\s+(\S+)/);
+			if (match?.[1]) return match[1];
+		} catch {
+			// ignore
+		}
 	}
 
 	// Last resort: hostname + username
@@ -232,8 +249,10 @@ export async function execWithSecrets(command: string, secretRefs: Record<string
 		return out;
 	}
 
+	const shell = process.platform === "win32" ? "cmd" : "sh";
+	const shellArgs = process.platform === "win32" ? ["/c", command] : ["-c", command];
 	return new Promise((resolve, reject) => {
-		const proc = spawn("sh", ["-c", command], {
+		const proc = spawn(shell, shellArgs, {
 			env: { ...process.env, ...resolved },
 			stdio: "pipe",
 			windowsHide: true,

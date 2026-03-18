@@ -129,6 +129,88 @@ exit "$EXIT_CODE"
 `;
 }
 
+/**
+ * Build a Windows .cmd wrapper that mirrors the Unix shell wrapper above.
+ *
+ * Design notes:
+ * - JSON payloads are built via PowerShell's ConvertTo-Json to safely escape
+ *   special characters (", &, |, %) that would break raw cmd echo piping.
+ * - Environment variables set with `set` inside `setlocal` are inherited by
+ *   child PowerShell processes and accessed via $env: — this avoids double-
+ *   expansion pitfalls in cmd's string interpolation.
+ * - All PowerShell invocations use -NoProfile -ErrorAction SilentlyContinue
+ *   to suppress stderr noise and prevent profile scripts from interfering.
+ * - Session-start/end hooks match the Unix wrapper's behavior: generate a
+ *   session key, capture model instructions, discover transcript files, and
+ *   pass structured context to the signet daemon.
+ */
+function buildWindowsWrapper(realCodexBin: string): string {
+	// Common PowerShell flags used across all invocations in the wrapper
+	const psFlags = "-NoProfile -ErrorAction SilentlyContinue";
+
+	return `@echo off
+setlocal
+
+set "REAL_CODEX_BIN=${realCodexBin}"
+set "SIGNET_BIN=signet"
+set "SESSION_ROOT=%USERPROFILE%\\.codex\\sessions"
+set "SESSION_KEY="
+set "INSTRUCTIONS_FILE="
+
+if "%SIGNET_NO_HOOKS%"=="1" goto :run_direct
+if "%SIGNET_CODEX_BYPASS_WRAPPER%"=="1" goto :run_direct
+
+REM Generate a session key (GUID preferred, timestamp+random fallback)
+for /f "tokens=*" %%i in ('powershell ${psFlags} -Command "[guid]::NewGuid().ToString()" 2^>nul') do set "SESSION_KEY=%%i"
+if "%SESSION_KEY%"=="" (
+	for /f "tokens=*" %%i in ('powershell ${psFlags} -Command "Get-Date -UFormat %%s" 2^>nul') do set "SESSION_KEY=codex-%%i-%RANDOM%"
+)
+
+REM Create temp directory for model instructions
+set "TMP_ROOT=%TEMP%\\signet-codex-%RANDOM%"
+mkdir "%TMP_ROOT%" >nul 2>&1
+set "INSTRUCTIONS_FILE=%TMP_ROOT%\\model-instructions.md"
+
+REM Session-start hook: build JSON via ConvertTo-Json for safe escaping of paths containing ", &, |, %
+set "HOOK_OK=0"
+for /f "delims=" %%j in ('powershell ${psFlags} -Command "ConvertTo-Json @{session_id=$env:SESSION_KEY;cwd=$PWD.Path} -Compress"') do (
+	echo %%j| "%SIGNET_BIN%" hook session-start -H codex --project "%CD%" > "%INSTRUCTIONS_FILE%" 2>nul && set "HOOK_OK=1"
+)
+if "%HOOK_OK%"=="0" (
+	set "INSTRUCTIONS_FILE="
+) else (
+	for %%A in ("%INSTRUCTIONS_FILE%") do if %%~zA==0 set "INSTRUCTIONS_FILE="
+)
+
+if defined INSTRUCTIONS_FILE (
+	"%REAL_CODEX_BIN%" -c "model_instructions_file=%INSTRUCTIONS_FILE%" %*
+) else (
+	"%REAL_CODEX_BIN%" %*
+)
+set "EXIT_CODE=%ERRORLEVEL%"
+
+REM Find newest transcript file created during this session
+set "TRANSCRIPT_PATH="
+if exist "%SESSION_ROOT%" (
+	for /f "tokens=*" %%f in ('powershell ${psFlags} -Command "Get-ChildItem -Path \\"%SESSION_ROOT%\\" -Filter *.jsonl -Recurse | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName" 2^>nul') do set "TRANSCRIPT_PATH=%%f"
+)
+
+REM Session-end hook: same ConvertTo-Json approach for consistent safe escaping
+for /f "delims=" %%j in ('powershell ${psFlags} -Command "ConvertTo-Json @{session_id=$env:SESSION_KEY;transcript_path=$env:TRANSCRIPT_PATH;cwd=$PWD.Path} -Compress"') do (
+	echo %%j| "%SIGNET_BIN%" hook session-end -H codex >nul 2>&1
+)
+
+REM Cleanup temp directory
+if exist "%TMP_ROOT%" rmdir /s /q "%TMP_ROOT%" >nul 2>&1
+
+exit /b %EXIT_CODE%
+
+:run_direct
+"%REAL_CODEX_BIN%" %*
+exit /b %ERRORLEVEL%
+`;
+}
+
 export class CodexConnector extends BaseConnector {
 	readonly name = "Codex";
 	readonly harnessId = "codex";
@@ -142,10 +224,12 @@ export class CodexConnector extends BaseConnector {
 	}
 
 	private getWrapperPath(): string {
-		return join(this.getWrapperDir(), "codex");
+		const name = process.platform === "win32" ? "codex.cmd" : "codex";
+		return join(this.getWrapperDir(), name);
 	}
 
 	private getShellConfigPaths(): string[] {
+		if (process.platform === "win32") return [];
 		return [
 			join(homedir(), ".zshrc"),
 			join(homedir(), ".bashrc"),
@@ -159,7 +243,9 @@ export class CodexConnector extends BaseConnector {
 
 	private resolveRealCodexBin(): string | null {
 		const wrapperPath = this.getWrapperPath();
-		const proc = Bun.spawnSync(["which", "-a", "codex"], {
+		const isWindows = process.platform === "win32";
+		const locatorCmd = isWindows ? ["where", "codex"] : ["which", "-a", "codex"];
+		const proc = Bun.spawnSync(locatorCmd, {
 			stdout: "pipe",
 			stderr: "pipe",
 		});
@@ -180,6 +266,7 @@ export class CodexConnector extends BaseConnector {
 	async install(basePath: string): Promise<InstallResult> {
 		const filesWritten: string[] = [];
 		const configsPatched: string[] = [];
+		const isWindows = process.platform === "win32";
 
 		const realCodexBin = this.resolveRealCodexBin();
 		if (!realCodexBin) {
@@ -190,7 +277,10 @@ export class CodexConnector extends BaseConnector {
 		mkdirSync(wrapperDir, { recursive: true });
 
 		const wrapperPath = this.getWrapperPath();
-		writeFileSync(wrapperPath, buildWrapper(realCodexBin), { mode: 0o755 });
+		const wrapperContent = isWindows
+			? buildWindowsWrapper(realCodexBin)
+			: buildWrapper(realCodexBin);
+		writeFileSync(wrapperPath, wrapperContent, isWindows ? {} : { mode: 0o755 });
 		filesWritten.push(wrapperPath);
 
 		for (const shellPath of this.getShellConfigPaths()) {
@@ -235,6 +325,8 @@ export class CodexConnector extends BaseConnector {
 
 	isInstalled(): boolean {
 		if (!existsSync(this.getWrapperPath())) return false;
+		// On Windows there are no shell configs to patch
+		if (process.platform === "win32") return true;
 		return this.getShellConfigPaths().some((shellPath) => {
 			if (!existsSync(shellPath)) return false;
 			try {

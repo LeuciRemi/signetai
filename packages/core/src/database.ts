@@ -120,12 +120,26 @@ function findSqliteVecExtension(): string | null {
 			extFile,
 		),
 		// Well-known npm global prefixes (when process.execPath is bun, not node)
-		join("/opt/homebrew/lib/node_modules", platformPkg, extFile),
-		join("/opt/homebrew/lib/node_modules", "signetai", "node_modules", platformPkg, extFile),
-		join("/usr/local/lib/node_modules", platformPkg, extFile),
-		join("/usr/local/lib/node_modules", "signetai", "node_modules", platformPkg, extFile),
-		join("/usr/lib/node_modules", platformPkg, extFile),
-		join("/usr/lib/node_modules", "signetai", "node_modules", platformPkg, extFile),
+		...(platform !== "win32"
+			? [
+					join("/opt/homebrew/lib/node_modules", platformPkg, extFile),
+					join("/opt/homebrew/lib/node_modules", "signetai", "node_modules", platformPkg, extFile),
+					join("/usr/local/lib/node_modules", platformPkg, extFile),
+					join("/usr/local/lib/node_modules", "signetai", "node_modules", platformPkg, extFile),
+					join("/usr/lib/node_modules", platformPkg, extFile),
+					join("/usr/lib/node_modules", "signetai", "node_modules", platformPkg, extFile),
+				]
+			: [
+					// Windows: npm global prefix is typically in AppData
+					join(
+						process.env.APPDATA || join(homedir(), "AppData", "Roaming"),
+						"npm", "node_modules", platformPkg, extFile,
+					),
+					join(
+						process.env.APPDATA || join(homedir(), "AppData", "Roaming"),
+						"npm", "node_modules", "signetai", "node_modules", platformPkg, extFile,
+					),
+				]),
 		// nvm global paths
 		join(homedir(), ".nvm", "versions", "node", "*", "lib", "node_modules", platformPkg, extFile),
 		join(homedir(), ".nvm", "versions", "node", "*", "lib", "node_modules", "signetai", "node_modules", platformPkg, extFile),
@@ -231,7 +245,9 @@ export class Database {
 			} catch {
 				throw new Error(
 					"Signet requires Bun (recommended) or the better-sqlite3 npm package. " +
-					"Install Bun: curl -fsSL https://bun.sh/install | bash\n" +
+					(platform === "win32"
+						? "Install Bun: powershell -c \"irm bun.sh/install.ps1 | iex\"\n"
+						: "Install Bun: curl -fsSL https://bun.sh/install | bash\n") +
 					"Or install better-sqlite3: npm install -g better-sqlite3",
 				);
 			}

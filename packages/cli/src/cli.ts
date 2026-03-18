@@ -3692,7 +3692,9 @@ async function restartOpenClaw(basePath: string): Promise<boolean> {
 
 	const spinner = ora("Restarting OpenClaw...").start();
 	try {
-		const result = spawnSync("sh", ["-c", restartCommand], {
+		const shell = process.platform === "win32" ? "cmd" : "sh";
+		const shellArgs = process.platform === "win32" ? ["/c", restartCommand] : ["-c", restartCommand];
+		const result = spawnSync(shell, shellArgs, {
 			timeout: 15_000,
 			stdio: "pipe",
 			windowsHide: true,

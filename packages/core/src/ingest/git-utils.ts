@@ -10,26 +10,31 @@ import { execFileSync } from "child_process";
  * Returns null if git is not found.
  */
 export function findGit(): string | null {
-	const candidates = [
-		"/usr/bin/git",
-		"/usr/local/bin/git",
-		"/opt/homebrew/bin/git",
-	];
+	const isWindows = process.platform === "win32";
 
-	for (const candidate of candidates) {
-		if (existsSync(candidate)) return candidate;
+	if (!isWindows) {
+		const candidates = [
+			"/usr/bin/git",
+			"/usr/local/bin/git",
+			"/opt/homebrew/bin/git",
+		];
+
+		for (const candidate of candidates) {
+			if (existsSync(candidate)) return candidate;
+		}
 	}
 
 	try {
-		const result = execFileSync("/usr/bin/which", ["git"], {
+		const locator = isWindows ? "where" : "/usr/bin/which";
+		const result = execFileSync(locator, ["git"], {
 			encoding: "utf-8",
 			timeout: 5000,
 			windowsHide: true,
 		});
-		const path = result.trim();
+		const path = result.trim().split(/\r?\n/)[0];
 		if (path && existsSync(path)) return path;
 	} catch {
-		// which not available
+		// locator not available
 	}
 
 	return null;

@@ -248,18 +248,19 @@ function npmLocalBinaryCandidate(): string {
 }
 
 function localBinaryCandidates(): ReadonlyArray<string> {
+	const ext = process.platform === "win32" ? ".exe" : "";
 	const monoRoot = join(import.meta.dir, "..", "..", "..");
 	const repoCandidates = [
-		join(monoRoot, "packages", "predictor", "target", "release", "signet-predictor"),
-		join(monoRoot, "packages", "predictor", "target", "release", "predictor"),
-		join(monoRoot, "packages", "predictor", "target", "debug", "signet-predictor"),
-		join(monoRoot, "packages", "predictor", "target", "debug", "predictor"),
+		join(monoRoot, "packages", "predictor", "target", "release", `signet-predictor${ext}`),
+		join(monoRoot, "packages", "predictor", "target", "release", `predictor${ext}`),
+		join(monoRoot, "packages", "predictor", "target", "debug", `signet-predictor${ext}`),
+		join(monoRoot, "packages", "predictor", "target", "debug", `predictor${ext}`),
 	];
 	const cwdCandidates = [
-		join(process.cwd(), "packages", "predictor", "target", "release", "signet-predictor"),
-		join(process.cwd(), "packages", "predictor", "target", "release", "predictor"),
-		join(process.cwd(), "packages", "predictor", "target", "debug", "signet-predictor"),
-		join(process.cwd(), "packages", "predictor", "target", "debug", "predictor"),
+		join(process.cwd(), "packages", "predictor", "target", "release", `signet-predictor${ext}`),
+		join(process.cwd(), "packages", "predictor", "target", "release", `predictor${ext}`),
+		join(process.cwd(), "packages", "predictor", "target", "debug", `signet-predictor${ext}`),
+		join(process.cwd(), "packages", "predictor", "target", "debug", `predictor${ext}`),
 	];
 	return [...new Set([...repoCandidates, ...cwdCandidates, npmLocalBinaryCandidate()])];
 }

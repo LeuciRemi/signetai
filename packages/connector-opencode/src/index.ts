@@ -477,11 +477,26 @@ export class OpenCodeConnector extends BaseConnector {
 			const existingMcp = isJsonObject(config.mcp)
 				? (config.mcp as JsonObject)
 				: {};
+			// On Windows, spawn() without shell:true cannot resolve .cmd
+			// wrappers, so use "node" + mcp-stdio.js path instead.
+			let mcpCommand: string[] = ["signet-mcp"];
+			if (process.platform === "win32") {
+				const cliEntry = process.argv[1] || "";
+				const mcpJs = join(cliEntry, "..", "..", "dist", "mcp-stdio.js");
+				if (existsSync(mcpJs)) {
+					mcpCommand = [process.execPath, mcpJs];
+				} else {
+					console.warn(
+						`[signet] Warning: could not resolve mcp-stdio.js from argv[1]="${cliEntry}". ` +
+						`MCP server config will use "signet-mcp" which may fail on Windows without shell:true.`,
+					);
+				}
+			}
 			config.mcp = {
 				...existingMcp,
 				signet: {
 					type: "local",
-					command: ["signet-mcp"],
+					command: mcpCommand,
 					enabled: true,
 				},
 			};

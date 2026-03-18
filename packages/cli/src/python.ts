@@ -328,7 +328,8 @@ export async function getCondaPython(envName: string): Promise<string | null> {
 
 	try {
 		const info = JSON.parse(result.stdout);
-		const envPath = info.envs?.find((e: string) => e.endsWith(`/${envName}`));
+		const sep = isWindows ? "\\" : "/";
+		const envPath = info.envs?.find((e: string) => e.endsWith(`${sep}${envName}`));
 		if (!envPath) return null;
 
 		return isWindows
