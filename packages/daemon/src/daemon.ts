@@ -9559,40 +9559,53 @@ async function main() {
 			});
 		}
 	} else if (effectiveExtractionProvider === "claude-code") {
-		try {
-			const exitCode = await new Promise<number>((resolve) => {
-				const proc = spawn("claude", ["--version"], {
-					stdio: "pipe",
-					windowsHide: true,
-					env: { ...process.env, SIGNET_NO_HOOKS: "1" },
-				});
-				proc.on("close", (code) => resolve(code ?? 1));
-				proc.on("error", () => resolve(1));
-			});
-			if (exitCode !== 0) throw new Error("non-zero exit");
-		} catch {
+		// Resolve full path so .cmd wrappers on Windows are found correctly.
+		const resolvedClaude = Bun.which("claude");
+		if (resolvedClaude === null) {
 			logger.warn("config", "Claude Code CLI not found, falling back to ollama for extraction");
 			effectiveExtractionProvider = "ollama";
+		} else {
+			try {
+				const exitCode = await new Promise<number>((resolve) => {
+					const proc = spawn(resolvedClaude, ["--version"], {
+						stdio: "pipe",
+						windowsHide: true,
+						env: { ...process.env, SIGNET_NO_HOOKS: "1" },
+					});
+					proc.on("close", (code) => resolve(code ?? 1));
+					proc.on("error", () => resolve(1));
+				});
+				if (exitCode !== 0) throw new Error("non-zero exit");
+			} catch {
+				logger.warn("config", "Claude Code CLI not found, falling back to ollama for extraction");
+				effectiveExtractionProvider = "ollama";
+			}
 		}
 	} else if (effectiveExtractionProvider === "codex") {
-		try {
-			const exitCode = await new Promise<number>((resolve) => {
-				const proc = spawn("codex", ["--version"], {
-					stdio: "pipe",
-					windowsHide: true,
-					env: {
-						...process.env,
-						SIGNET_NO_HOOKS: "1",
-						SIGNET_CODEX_BYPASS_WRAPPER: "1",
-					},
-				});
-				proc.on("close", (code) => resolve(code ?? 1));
-				proc.on("error", () => resolve(1));
-			});
-			if (exitCode !== 0) throw new Error("non-zero exit");
-		} catch {
+		const resolvedCodex = Bun.which("codex");
+		if (resolvedCodex === null) {
 			logger.warn("config", "Codex CLI not found, falling back to ollama for extraction");
 			effectiveExtractionProvider = "ollama";
+		} else {
+			try {
+				const exitCode = await new Promise<number>((resolve) => {
+					const proc = spawn(resolvedCodex, ["--version"], {
+						stdio: "pipe",
+						windowsHide: true,
+						env: {
+							...process.env,
+							SIGNET_NO_HOOKS: "1",
+							SIGNET_CODEX_BYPASS_WRAPPER: "1",
+						},
+					});
+					proc.on("close", (code) => resolve(code ?? 1));
+					proc.on("error", () => resolve(1));
+				});
+				if (exitCode !== 0) throw new Error("non-zero exit");
+			} catch {
+				logger.warn("config", "Codex CLI not found, falling back to ollama for extraction");
+				effectiveExtractionProvider = "ollama";
+			}
 		}
 	}
 	const keyCache = new Map<"ANTHROPIC_API_KEY" | "OPENROUTER_API_KEY", string | undefined>();
@@ -9795,20 +9808,27 @@ async function main() {
 				effectiveSynthesisProvider = "ollama";
 			}
 		} else if (effectiveSynthesisProvider === "claude-code") {
-			try {
-				const exitCode = await new Promise<number>((resolve) => {
-					const proc = spawn("claude", ["--version"], {
-						stdio: "pipe",
-						windowsHide: true,
-						env: { ...process.env, SIGNET_NO_HOOKS: "1" },
-					});
-					proc.on("close", (code) => resolve(code ?? 1));
-					proc.on("error", () => resolve(1));
-				});
-				if (exitCode !== 0) throw new Error("non-zero exit");
-			} catch {
+			// Re-resolve here; extraction and synthesis may use different providers.
+			const resolvedClaude = Bun.which("claude");
+			if (resolvedClaude === null) {
 				logger.warn("config", "Claude Code CLI not found, falling back to ollama for synthesis");
 				effectiveSynthesisProvider = "ollama";
+			} else {
+				try {
+					const exitCode = await new Promise<number>((resolve) => {
+						const proc = spawn(resolvedClaude, ["--version"], {
+							stdio: "pipe",
+							windowsHide: true,
+							env: { ...process.env, SIGNET_NO_HOOKS: "1" },
+						});
+						proc.on("close", (code) => resolve(code ?? 1));
+						proc.on("error", () => resolve(1));
+					});
+					if (exitCode !== 0) throw new Error("non-zero exit");
+				} catch {
+					logger.warn("config", "Claude Code CLI not found, falling back to ollama for synthesis");
+					effectiveSynthesisProvider = "ollama";
+				}
 			}
 		}
 		providerRuntimeResolution.synthesis = {
