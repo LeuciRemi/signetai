@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import {
 	existsSync,
 	mkdirSync,
@@ -245,11 +246,10 @@ export class CodexConnector extends BaseConnector {
 		const wrapperPath = this.getWrapperPath();
 		const isWindows = process.platform === "win32";
 		const locatorCmd = isWindows ? ["where", "codex"] : ["which", "-a", "codex"];
-		const proc = Bun.spawnSync(locatorCmd, {
-			stdout: "pipe",
-			stderr: "pipe",
+		const proc = spawnSync(locatorCmd[0], locatorCmd.slice(1), {
+			stdio: ["ignore", "pipe", "pipe"],
 		});
-		if (proc.exitCode !== 0) return null;
+		if (proc.status !== 0) return null;
 
 		const candidates = proc.stdout
 			.toString()
