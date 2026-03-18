@@ -2,6 +2,19 @@
 
 All notable changes to Signet are documented here.
 
+## [0.59.0] - 2026-03-18
+
+### Features
+
+- website-dashboard visual convergence — tokens, textures, fonts, and copy
+- add NemoClaw ecosystem positioning blog post, refine all existing content
+
+### Bug Fixes
+
+- eliminate budget duplication, fix CLI JSON shape (PR review)
+- fall back to static identity files when daemon is unreachable (#219)
+
+
 ## [0.58.3] - 2026-03-17
 
 ### Features
