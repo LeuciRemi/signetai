@@ -18,6 +18,7 @@ import {
 	readFileSync,
 	readdirSync,
 	readlinkSync,
+	renameSync,
 	rmSync,
 	statSync,
 	symlinkSync,
@@ -720,6 +721,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const OPENCLAW_PLUGIN_PACKAGE = "@signetai/signet-memory-openclaw";
 const OPENCLAW_PLUGIN_SYNC_FILENAME = "openclaw-plugin-version";
+const PREDICTOR_SYNC_FILENAME = "predictor-version";
+const NATIVE_SYNC_LOCK_FILENAME = "sync-native.lock";
+const PREDICTOR_DOWNLOAD_TIMEOUT_MS = 60_000;
 
 function getVersionFromPackageJson(packageJsonPath: string): string | null {
 	if (!existsSync(packageJsonPath)) {
@@ -792,6 +796,442 @@ function writeOpenClawPluginSyncVersion(basePath: string, version: string): void
 	const syncPath = getOpenClawPluginSyncPath(basePath);
 	mkdirSync(dirname(syncPath), { recursive: true });
 	writeFileSync(syncPath, `${version}\n`);
+}
+
+function predictorSyncPath(basePath: string): string {
+	return join(basePath, ".daemon", PREDICTOR_SYNC_FILENAME);
+}
+
+function readPredictorSyncVersion(basePath: string): string | null {
+	const path = predictorSyncPath(basePath);
+	if (!existsSync(path)) {
+		return null;
+	}
+
+	try {
+		return readFileSync(path, "utf-8").trim() || null;
+	} catch {
+		return null;
+	}
+}
+
+function writePredictorSyncVersion(basePath: string, version: string): void {
+	const path = predictorSyncPath(basePath);
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, `${version}\n`);
+}
+
+function predictorBinaryName():
+	| {
+		readonly name: string;
+		readonly tuple: string;
+	}
+	| null {
+	const host = process.platform;
+	const cpu = process.arch;
+	const tuple = `${host}:${cpu}`;
+	const supported = new Set(["linux:x64", "darwin:x64", "darwin:arm64", "win32:x64"]);
+	if (!supported.has(tuple)) {
+		return null;
+	}
+
+	const ext = host === "win32" ? ".exe" : "";
+	return {
+		name: `signet-predictor-${host}-${cpu}${ext}`,
+		tuple,
+	};
+}
+
+function readSha256(raw: string): string | null {
+	const hash = raw.trim().split(/\s+/)[0]?.toLowerCase();
+	if (!hash) return null;
+	return /^[a-f0-9]{64}$/.test(hash) ? hash : null;
+}
+
+async function syncPredictorBinary(basePath: string): Promise<{
+	readonly status: "updated" | "current" | "skipped" | "error";
+	readonly message: string;
+}> {
+	const binary = predictorBinaryName();
+	if (binary === null) {
+		return {
+			status: "skipped",
+			message: `unsupported platform/arch: ${process.platform}:${process.arch}`,
+		};
+	}
+
+	const dir = join(basePath, ".daemon", "bin");
+	const dest = join(dir, binary.name);
+	const stamped = readPredictorSyncVersion(basePath) === VERSION;
+	if (stamped && existsSync(dest)) {
+		return {
+			status: "current",
+			message: binary.name,
+		};
+	}
+
+	const url = `https://github.com/Signet-AI/signetai/releases/download/v${VERSION}/${binary.name}`;
+	let expected: string;
+	try {
+		const hashRes = await fetch(`${url}.sha256`, {
+			redirect: "follow",
+			signal: AbortSignal.timeout(PREDICTOR_DOWNLOAD_TIMEOUT_MS),
+		});
+		if (!hashRes.ok) {
+			return {
+				status: "error",
+				message: `checksum lookup failed (HTTP ${hashRes.status})`,
+			};
+		}
+		const hashRaw = await hashRes.text();
+		const hash = readSha256(hashRaw);
+		if (hash === null) {
+			return {
+				status: "error",
+				message: "checksum file is invalid",
+			};
+		}
+		expected = hash;
+	} catch (err) {
+		return {
+			status: "error",
+			message: err instanceof Error ? `checksum lookup failed (${err.message})` : "checksum lookup failed",
+		};
+	}
+
+	let res: Response;
+	try {
+		res = await fetch(url, {
+			redirect: "follow",
+			signal: AbortSignal.timeout(PREDICTOR_DOWNLOAD_TIMEOUT_MS),
+		});
+	} catch (err) {
+		return {
+			status: "error",
+			message: err instanceof Error ? `network unavailable (${err.message})` : "network unavailable",
+		};
+	}
+
+	if (res.status === 404) {
+		return {
+			status: "skipped",
+			message: `binary not published for v${VERSION} (${binary.tuple})`,
+		};
+	}
+	if (!res.ok) {
+		return {
+			status: "error",
+			message: `download failed (HTTP ${res.status})`,
+		};
+	}
+
+	let tmp = "";
+	try {
+		const body = Buffer.from(await res.arrayBuffer());
+		if (body.length === 0) {
+			return {
+				status: "error",
+				message: "download returned empty payload",
+			};
+		}
+		const actual = createHash("sha256").update(body).digest("hex");
+		if (actual !== expected) {
+			return {
+				status: "error",
+				message: "binary checksum mismatch",
+			};
+		}
+		mkdirSync(dir, { recursive: true });
+		tmp = `${dest}.tmp-${process.pid}-${Date.now()}`;
+		writeFileSync(tmp, body);
+		if (process.platform !== "win32") {
+			chmodSync(tmp, 0o755);
+		}
+		try {
+			renameSync(tmp, dest);
+		} catch {
+			rmSync(dest, { force: true });
+			renameSync(tmp, dest);
+		}
+		writePredictorSyncVersion(basePath, VERSION);
+	} catch (err) {
+		if (tmp.length > 0) {
+			rmSync(tmp, { force: true });
+		}
+		return {
+			status: "error",
+			message: err instanceof Error ? `write failed (${err.message})` : "write failed",
+		};
+	}
+
+	return {
+		status: "updated",
+		message: binary.name,
+	};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function embeddingProvider(basePath: string): "native" | "ollama" | "openai" | "none" {
+	const paths = ["agent.yaml", "AGENT.yaml", "config.yaml"].map((name) => join(basePath, name));
+	for (const path of paths) {
+		if (!existsSync(path)) continue;
+		try {
+			const parsed = parseSimpleYaml(readFileSync(path, "utf-8"));
+			if (!isRecord(parsed)) continue;
+			const direct = parsed.embedding;
+			if (isRecord(direct) && typeof direct.provider === "string") {
+				const provider = direct.provider;
+				if (provider === "native" || provider === "ollama" || provider === "openai" || provider === "none") {
+					return provider;
+				}
+			}
+			const mem = parsed.memory;
+			if (isRecord(mem)) {
+				const nested = mem.embeddings;
+				if (isRecord(nested) && typeof nested.provider === "string") {
+					const provider = nested.provider;
+					if (provider === "native" || provider === "ollama" || provider === "openai" || provider === "none") {
+						return provider;
+					}
+				}
+			}
+			const legacy = parsed.embeddings;
+			if (isRecord(legacy) && typeof legacy.provider === "string") {
+				const provider = legacy.provider;
+				if (provider === "native" || provider === "ollama" || provider === "openai" || provider === "none") {
+					return provider;
+				}
+			}
+		} catch {
+			// Ignore malformed config files and keep scanning fallbacks.
+		}
+	}
+	return "native";
+}
+
+function hasNativeModelCache(basePath: string): boolean {
+	const dir = join(basePath, ".models");
+	if (!existsSync(dir)) {
+		return false;
+	}
+	try {
+		return readdirSync(dir).length > 0;
+	} catch {
+		return false;
+	}
+}
+
+function isAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function nativeSyncLockPath(basePath: string): string {
+	return join(basePath, ".daemon", NATIVE_SYNC_LOCK_FILENAME);
+}
+
+function clearStaleNativeSyncLock(path: string): boolean {
+	try {
+		const raw = readFileSync(path, "utf-8");
+		const pid = Number.parseInt(raw.trim().split(/\s+/)[0] ?? "", 10);
+		if (Number.isInteger(pid) && pid > 0 && !isAlive(pid)) {
+			rmSync(path, { force: true });
+			return true;
+		}
+	} catch {
+		// Best-effort stale-lock detection.
+	}
+
+	try {
+		const age = Date.now() - statSync(path).mtimeMs;
+		if (age > 5 * 60_000) {
+			rmSync(path, { force: true });
+			return true;
+		}
+	} catch {
+		// Lock disappeared between checks.
+	}
+
+	return false;
+}
+
+async function acquireNativeSyncLock(basePath: string): Promise<{
+	readonly fd: number;
+	readonly path: string;
+} | null> {
+	const path = nativeSyncLockPath(basePath);
+	mkdirSync(dirname(path), { recursive: true });
+	const end = Date.now() + 15_000;
+
+	while (Date.now() < end) {
+		try {
+			const fd = openSync(path, "wx");
+			writeFileSync(fd, `${process.pid}\n${Date.now()}\n`);
+			return { fd, path };
+		} catch (err) {
+			const code = err instanceof Error && "code" in err ? String(err.code) : "";
+			if (code !== "EEXIST") {
+				return null;
+			}
+		}
+
+		if (clearStaleNativeSyncLock(path)) {
+			continue;
+		}
+
+		await sleep(200);
+	}
+
+	return null;
+}
+
+function releaseNativeSyncLock(lock: { readonly fd: number; readonly path: string }): void {
+	try {
+		closeSync(lock.fd);
+	} catch {
+		// Ignore.
+	}
+	rmSync(lock.path, { force: true });
+}
+
+async function syncNativeEmbeddingModel(basePath: string): Promise<{
+	readonly status: "updated" | "current" | "skipped" | "error";
+	readonly message: string;
+}> {
+	const provider = embeddingProvider(basePath);
+	if (provider !== "native") {
+		return {
+			status: "skipped",
+			message: `embedding provider is '${provider}'`,
+		};
+	}
+
+	const lock = await acquireNativeSyncLock(basePath);
+	if (lock === null) {
+		return {
+			status: "error",
+			message: "another sync is currently warming native embeddings",
+		};
+	}
+
+	const hadCache = hasNativeModelCache(basePath);
+	let started = false;
+	let blocked = false;
+	let result: {
+		readonly status: "updated" | "current" | "skipped" | "error";
+		readonly message: string;
+	} = {
+		status: "error",
+		message: "daemon unreachable",
+	};
+
+	try {
+		const running = await isDaemonRunning();
+		if (!running) {
+			const ok = await startDaemon(basePath);
+			if (!ok) {
+				result = {
+					status: "error",
+					message: "daemon is required to warm native embeddings (failed to start)",
+				};
+				blocked = true;
+			} else {
+				started = true;
+			}
+		}
+
+		if (!blocked) {
+			const urls = await getReachableDaemonUrls();
+			const url = urls[0];
+			if (!url) {
+				result = {
+					status: "error",
+					message: "daemon reachable URL not found",
+				};
+			} else {
+				const res = await fetch(`${url}/api/embeddings/status`, {
+					method: "GET",
+					signal: AbortSignal.timeout(10 * 60_000),
+				});
+				if (!res.ok) {
+					result = {
+						status: "error",
+						message: `warmup request failed (HTTP ${res.status})`,
+					};
+				} else {
+					const body: unknown = await res.json();
+					if (!isRecord(body)) {
+						result = {
+							status: "error",
+							message: "warmup response had invalid shape",
+						};
+					} else {
+						const active = typeof body.provider === "string" ? body.provider : "unknown";
+						const available = body.available === true;
+						const err = typeof body.error === "string" ? body.error : null;
+						const reported = body.modelCached === true;
+						if (active !== "native") {
+							result = {
+								status: "skipped",
+								message: `daemon embedding provider is '${active}'`,
+							};
+						} else if (!available) {
+							result = {
+								status: "error",
+								message: err ?? "native provider unavailable",
+							};
+						} else if (err?.toLowerCase().includes("fallback")) {
+							result = {
+								status: "error",
+								message: err,
+							};
+						} else {
+							const hasCache = hasNativeModelCache(basePath);
+							const ready = reported || hasCache;
+							if (!ready) {
+								result = {
+									status: "error",
+									message: "native provider responded but model cache was not detected",
+								};
+							} else {
+								result = {
+									status: !hadCache && hasCache ? "updated" : "current",
+									message: hasCache
+										? "nomic-ai/nomic-embed-text-v1.5"
+										: "nomic-ai/nomic-embed-text-v1.5 (runtime cache)",
+								};
+							}
+						}
+					}
+				}
+			}
+		}
+	} catch (err) {
+		result = {
+			status: "error",
+			message: err instanceof Error ? `warmup failed (${err.message})` : "warmup failed",
+		};
+	} finally {
+		if (started) {
+			const stopped = await stopDaemon(basePath);
+			if (!stopped && result.status !== "error") {
+				result = {
+					status: "error",
+					message: "native model warmed but daemon could not be stopped cleanly",
+				};
+			}
+		}
+		releaseNativeSyncLock(lock);
+	}
+
+	return result;
 }
 
 async function ensureOpenClawPluginPackage(
@@ -3918,6 +4358,30 @@ program
 			console.log(chalk.green(`  ✓ skills/${skill} (updated)`));
 		}
 		synced += skillSyncResult.installed.length + skillSyncResult.updated.length;
+
+		const predictor = await syncPredictorBinary(basePath);
+		if (predictor.status === "updated") {
+			console.log(chalk.green(`  ✓ predictor sidecar (${predictor.message})`));
+			synced++;
+		} else if (predictor.status === "current") {
+			console.log(chalk.dim("  predictor sidecar is up to date"));
+		} else if (predictor.status === "skipped") {
+			console.log(chalk.dim(`  predictor sidecar skipped: ${predictor.message}`));
+		} else {
+			console.log(chalk.yellow(`  ⚠ predictor sidecar sync failed: ${predictor.message}`));
+		}
+
+		const native = await syncNativeEmbeddingModel(basePath);
+		if (native.status === "updated") {
+			console.log(chalk.green(`  ✓ native embedding model warmed (${native.message})`));
+			synced++;
+		} else if (native.status === "current") {
+			console.log(chalk.dim("  native embedding model is ready"));
+		} else if (native.status === "skipped") {
+			console.log(chalk.dim(`  native embedding warmup skipped: ${native.message}`));
+		} else {
+			console.log(chalk.yellow(`  ⚠ native embedding warmup failed: ${native.message}`));
+		}
 
 		// Re-register hooks for detected harnesses
 		const detectedHarnesses: string[] = [];

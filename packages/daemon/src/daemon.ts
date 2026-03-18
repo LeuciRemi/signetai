@@ -616,6 +616,7 @@ interface EmbeddingStatus {
 	provider: "native" | "ollama" | "openai" | "none";
 	model: string;
 	available: boolean;
+	modelCached?: boolean;
 	dimensions?: number;
 	base_url: string;
 	error?: string;
@@ -1038,6 +1039,7 @@ async function checkEmbeddingProvider(cfg: EmbeddingConfig): Promise<EmbeddingSt
 			// Reuse the cached module from fetchEmbedding path
 			const mod = await import("./native-embedding");
 			const nativeStatus = await mod.checkNativeProvider();
+			status.modelCached = nativeStatus.modelCached;
 			if (nativeStatus.available) {
 				status.available = true;
 				status.dimensions = nativeStatus.dimensions;
