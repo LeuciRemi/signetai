@@ -5330,7 +5330,7 @@ hookCmd
 			if (fallback) {
 				process.stderr.write("[signet] daemon offline — using static identity\n");
 				if (options.json) {
-					console.log(JSON.stringify({ inject: fallback }));
+					console.log(JSON.stringify({ inject: fallback, identity: { name: "signet" }, memories: [] }));
 				} else {
 					console.log(fallback);
 				}
