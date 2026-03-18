@@ -106,13 +106,21 @@ function spawnHidden(cmd: string[], options?: { env?: Record<string, string | un
 	// Use Bun.spawn directly — it natively returns ReadableStreams and
 	// handles subprocess I/O correctly. The previous node:child_process
 	// wrapper had stream-closing issues that caused hangs.
+
+	// Resolve the binary via Bun.which() so that .cmd wrappers on Windows
+	// are found correctly (mirrors scheduler/spawn.ts pattern).
+	const [bin, ...args] = cmd;
+	const resolvedBin = Bun.which(bin);
+	if (resolvedBin === null) {
+		throw new Error(`spawnHidden: binary "${bin}" not found on PATH`);
+	}
 	const sanitizedEnv: Record<string, string> = {};
 	if (options?.env) {
 		for (const [k, v] of Object.entries(options.env)) {
 			if (v !== undefined) sanitizedEnv[k] = v;
 		}
 	}
-	const proc = Bun.spawn(cmd, {
+	const proc = Bun.spawn([resolvedBin, ...args], {
 		stdin: "ignore",
 		stdout: "pipe",
 		stderr: "pipe",
