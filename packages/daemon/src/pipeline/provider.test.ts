@@ -11,6 +11,7 @@ import {
 	createClaudeCodeProvider,
 	createCodexProvider,
 	createOpenCodeProvider,
+	createOpenRouterProvider,
 	resolveDefaultOllamaFallbackMaxContextTokens,
 	resolveDefaultOllamaFallbackModel,
 } from "./provider";
@@ -705,5 +706,131 @@ describe("createOpenCodeProvider", () => {
 		expect(
 			fallbackOptions ? getNumberField(fallbackOptions, "num_ctx") : undefined,
 		).toBe(2048);
+	});
+});
+
+describe("createOpenRouterProvider", () => {
+	afterEach(() => restoreFetch());
+
+	it("returns provider name with configured model", () => {
+		const provider = createOpenRouterProvider({
+			model: "google/gemini-2.5-flash",
+			apiKey: "sk-or-test",
+		});
+		expect(provider.name).toBe("openrouter:google/gemini-2.5-flash");
+	});
+
+	it("generate() returns message text on success", async () => {
+		mockFetch(async (_url, init) => {
+			const body = parseJsonObjectBody(init?.body);
+			expect(body.model).toBe("anthropic/claude-3.5-haiku");
+			return Response.json({
+				choices: [
+					{
+						message: {
+							content: "hello from openrouter",
+						},
+					},
+				],
+				usage: {
+					prompt_tokens: 12,
+					completion_tokens: 7,
+				},
+			});
+		});
+
+		const provider = createOpenRouterProvider({
+			model: "anthropic/claude-3.5-haiku",
+			apiKey: "sk-or-test",
+		});
+		const result = await provider.generate("test");
+		expect(result).toBe("hello from openrouter");
+	});
+
+	it("generateWithUsage() maps usage fields", async () => {
+		mockFetch(async () =>
+			Response.json({
+				choices: [{ message: { content: "ok" } }],
+				usage: {
+					prompt_tokens: 120,
+					completion_tokens: 45,
+					cost: 0.00123,
+					prompt_tokens_details: { cached_tokens: 30 },
+				},
+			}),
+		);
+
+		const provider = createOpenRouterProvider({
+			model: "openai/gpt-4o-mini",
+			apiKey: "sk-or-test",
+		});
+		const result = await provider.generateWithUsage?.("test");
+		expect(result?.usage?.inputTokens).toBe(120);
+		expect(result?.usage?.outputTokens).toBe(45);
+		expect(result?.usage?.cacheReadTokens).toBe(30);
+		expect(result?.usage?.totalCost).toBe(0.00123);
+	});
+
+	it("sends optional attribution headers", async () => {
+		let headers: HeadersInit | undefined;
+		mockFetch(async (_url, init) => {
+			headers = init?.headers;
+			return Response.json({
+				choices: [{ message: { content: "ok" } }],
+			});
+		});
+
+		const provider = createOpenRouterProvider({
+			model: "openai/gpt-4o-mini",
+			apiKey: "sk-or-test",
+			referer: "https://example.com",
+			title: "Signet",
+		});
+		await provider.generate("test");
+
+		const h = new Headers(headers);
+		expect(h.get("HTTP-Referer")).toBe("https://example.com");
+		expect(h.get("X-OpenRouter-Title")).toBe("Signet");
+		expect(h.get("X-Title")).toBe("Signet");
+	});
+
+	it("generate() throws timeout on slow responses", async () => {
+		mockFetch((_url, init) => {
+			return new Promise((_resolve, reject) => {
+				const signal = init?.signal;
+				if (signal) {
+					signal.addEventListener("abort", () =>
+						reject(new DOMException("aborted", "AbortError")),
+					);
+				}
+			});
+		});
+
+		const provider = createOpenRouterProvider({
+			model: "openai/gpt-4o-mini",
+			apiKey: "sk-or-test",
+			defaultTimeoutMs: 50,
+			maxRetries: 0,
+		});
+		await expect(provider.generate("test")).rejects.toThrow(/timeout/i);
+	});
+
+	it("available() returns true when /models responds 200", async () => {
+		mockFetch(async () => Response.json({ data: [] }));
+		const provider = createOpenRouterProvider({
+			model: "openai/gpt-4o-mini",
+			apiKey: "sk-or-test",
+		});
+		const ok = await provider.available();
+		expect(ok).toBe(true);
+	});
+
+	it("throws when apiKey is missing", () => {
+		expect(() =>
+			createOpenRouterProvider({
+				model: "openai/gpt-4o-mini",
+				apiKey: "",
+			}),
+		).toThrow(/requires an API key/);
 	});
 });

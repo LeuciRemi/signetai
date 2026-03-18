@@ -9,6 +9,7 @@
  * Discovery strategies per provider:
  * - Ollama: GET /api/tags (lists locally pulled models)
  * - Anthropic: known model catalog with version probing
+ * - OpenRouter: GET /models (OpenAI-compatible catalog endpoint)
  * - Claude Code: `claude --version` + known model aliases
  * - Codex: `codex --version` + known model catalog
  * - OpenCode: routes through configured model list
@@ -16,6 +17,7 @@
 
 import type { ModelRegistryEntry, PipelineModelRegistryConfig } from "@signet/core";
 import { logger } from "../logger";
+import { trimTrailingSlash } from "./url";
 
 // ---------------------------------------------------------------------------
 // Known model catalogs (seed data, updated by discovery)
@@ -51,6 +53,14 @@ const KNOWN_MODELS: Record<string, ModelRegistryEntry[]> = {
 		{ id: "anthropic/claude-sonnet-4-6", provider: "opencode", label: "Claude Sonnet 4.6", tier: "mid", deprecated: false },
 		{ id: "anthropic/claude-haiku-4-5-20251001", provider: "opencode", label: "Claude Haiku 4.5", tier: "low", deprecated: false },
 		{ id: "google/gemini-2.5-flash", provider: "opencode", label: "Gemini 2.5 Flash", tier: "low", deprecated: false },
+	],
+	openrouter: [
+		// Keep these slugs valid for no-discovery fallback mode.
+		{ id: "openai/gpt-4o-mini", provider: "openrouter", label: "GPT-4o Mini", tier: "low", deprecated: false },
+		{ id: "openai/gpt-4o", provider: "openrouter", label: "GPT-4o", tier: "mid", deprecated: false },
+		{ id: "anthropic/claude-haiku-4-5-20251001", provider: "openrouter", label: "Claude Haiku 4.5", tier: "low", deprecated: false },
+		{ id: "anthropic/claude-sonnet-4-6", provider: "openrouter", label: "Claude Sonnet 4.6", tier: "mid", deprecated: false },
+		{ id: "google/gemini-2.5-flash", provider: "openrouter", label: "Gemini 2.5 Flash", tier: "low", deprecated: false },
 	],
 	ollama: [
 		{ id: "qwen3:4b", provider: "ollama", label: "Qwen3 4B", tier: "low", deprecated: false },
@@ -221,6 +231,85 @@ async function discoverAnthropicModels(apiKey: string | undefined): Promise<Mode
 	}
 }
 
+function inferOpenRouterTier(id: string): "high" | "mid" | "low" {
+	const normalized = id.toLowerCase();
+	if (
+		normalized.includes("-mini") ||
+		normalized.includes(":mini") ||
+		normalized.endsWith("mini")
+	) {
+		return "low";
+	}
+	if (
+		normalized.includes("opus") ||
+		normalized.includes("gpt-5") ||
+		normalized.includes("claude-4") ||
+		normalized.includes("o1")
+	) {
+		return "high";
+	}
+	if (
+		normalized.includes("sonnet") ||
+		normalized.includes("gpt-4") ||
+		normalized.includes("r1")
+	) {
+		return "mid";
+	}
+	return "low";
+}
+
+async function discoverOpenRouterModels(
+	apiKey: string | undefined,
+	baseUrl: string | undefined,
+): Promise<ModelRegistryEntry[]> {
+	if (!apiKey) return markDeprecatedVersions(KNOWN_MODELS.openrouter ?? []);
+
+	const host = trimTrailingSlash(baseUrl ?? "https://openrouter.ai/api/v1");
+	try {
+		const res = await fetch(`${host}/models`, {
+			headers: {
+				Authorization: `Bearer ${apiKey}`,
+			},
+			signal: AbortSignal.timeout(10000),
+		});
+		if (!res.ok) {
+			return markDeprecatedVersions(KNOWN_MODELS.openrouter ?? []);
+		}
+
+		const data = (await res.json()) as {
+			data?: Array<{ id?: string; name?: string }>;
+		};
+		if (!Array.isArray(data.data)) {
+			return markDeprecatedVersions(KNOWN_MODELS.openrouter ?? []);
+		}
+
+		const entries = data.data
+			.filter(
+				(model): model is { id: string; name?: string } =>
+					typeof model.id === "string" && model.id.trim().length > 0,
+			)
+			.map((model) => ({
+				id: model.id,
+				provider: "openrouter",
+				label:
+					typeof model.name === "string" && model.name.trim().length > 0
+						? model.name
+						: model.id,
+				tier: inferOpenRouterTier(model.id),
+				deprecated: false,
+			}));
+
+		if (entries.length === 0) {
+			return markDeprecatedVersions(KNOWN_MODELS.openrouter ?? []);
+		}
+
+		return markDeprecatedVersions(entries);
+	} catch {
+		logger.debug("model-registry", "OpenRouter model discovery failed, using known list");
+		return markDeprecatedVersions(KNOWN_MODELS.openrouter ?? []);
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -229,6 +318,8 @@ export function initModelRegistry(
 	config: PipelineModelRegistryConfig,
 	ollamaBaseUrl?: string,
 	anthropicApiKey?: string,
+	openRouterApiKey?: string,
+	openRouterBaseUrl?: string,
 ): void {
 	if (!config.enabled) {
 		logger.info("model-registry", "Model registry disabled");
@@ -254,7 +345,12 @@ export function initModelRegistry(
 	}
 
 	// Run initial discovery
-	refreshRegistry(ollamaBaseUrl, anthropicApiKey).catch((err) => {
+	refreshRegistry(
+		ollamaBaseUrl,
+		anthropicApiKey,
+		openRouterApiKey,
+		openRouterBaseUrl,
+	).catch((err) => {
 		logger.warn("model-registry", "Initial registry refresh failed", { error: String(err) });
 	});
 
@@ -262,7 +358,12 @@ export function initModelRegistry(
 	if (config.refreshIntervalMs > 0) {
 		state.refreshTimer = setInterval(
 			() =>
-				refreshRegistry(ollamaBaseUrl, anthropicApiKey).catch((err) => {
+				refreshRegistry(
+					ollamaBaseUrl,
+					anthropicApiKey,
+					openRouterApiKey,
+					openRouterBaseUrl,
+				).catch((err) => {
 					logger.warn("model-registry", "Periodic registry refresh failed", { error: String(err) });
 				}),
 			config.refreshIntervalMs,
@@ -275,7 +376,12 @@ export function initModelRegistry(
 	});
 }
 
-export async function refreshRegistry(ollamaBaseUrl?: string, anthropicApiKey?: string): Promise<void> {
+export async function refreshRegistry(
+	ollamaBaseUrl?: string,
+	anthropicApiKey?: string,
+	openRouterApiKey?: string,
+	openRouterBaseUrl?: string,
+): Promise<void> {
 	if (!state) return;
 
 	// Serialize refreshes to prevent stale out-of-order writes
@@ -284,7 +390,12 @@ export async function refreshRegistry(ollamaBaseUrl?: string, anthropicApiKey?: 
 	}
 
 	const doRefresh = async (): Promise<void> => {
-		await _refreshRegistryInner(ollamaBaseUrl, anthropicApiKey);
+		await _refreshRegistryInner(
+			ollamaBaseUrl,
+			anthropicApiKey,
+			openRouterApiKey,
+			openRouterBaseUrl,
+		);
 	};
 	refreshInFlight = doRefresh();
 	try {
@@ -294,16 +405,22 @@ export async function refreshRegistry(ollamaBaseUrl?: string, anthropicApiKey?: 
 	}
 }
 
-async function _refreshRegistryInner(ollamaBaseUrl?: string, anthropicApiKey?: string): Promise<void> {
+async function _refreshRegistryInner(
+	ollamaBaseUrl?: string,
+	anthropicApiKey?: string,
+	openRouterApiKey?: string,
+	openRouterBaseUrl?: string,
+): Promise<void> {
 	if (!state) return;
 	const startEpoch = state.epoch;
 
 	logger.debug("model-registry", "Refreshing model registry");
 
 	// Discover models in parallel — only probe providers that are configured
-	const [ollamaModels, anthropicModels] = await Promise.all([
+	const [ollamaModels, anthropicModels, openRouterModels] = await Promise.all([
 		ollamaBaseUrl ? discoverOllamaModels(ollamaBaseUrl) : Promise.resolve([]),
 		discoverAnthropicModels(anthropicApiKey),
+		discoverOpenRouterModels(openRouterApiKey, openRouterBaseUrl),
 	]);
 
 	// Bail if registry was stopped or re-initialized during discovery
@@ -323,6 +440,10 @@ async function _refreshRegistryInner(ollamaBaseUrl?: string, anthropicApiKey?: s
 		// Do NOT overwrite "claude-code" — its IDs must match what the
 		// Claude Code CLI accepts (shorthand aliases, not dated Anthropic IDs).
 		// The seeded KNOWN_MODELS["claude-code"] entries use the correct shorthands.
+	}
+
+	if (openRouterModels.length > 0) {
+		state.models.set("openrouter", openRouterModels);
 	}
 
 	state.lastRefreshAt = Date.now();

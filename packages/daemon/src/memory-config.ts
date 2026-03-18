@@ -273,9 +273,15 @@ export function loadPipelineConfig(
 	const flatProvider = raw.extractionProvider;
 	const flatModel = raw.extractionModel;
 
-	type ProviderKind = "ollama" | "claude-code" | "opencode" | "codex" | "anthropic";
+	type ProviderKind =
+		| "ollama"
+		| "claude-code"
+		| "opencode"
+		| "codex"
+		| "anthropic"
+		| "openrouter";
 	const VALID_PROVIDERS: ReadonlySet<string> = new Set<ProviderKind>([
-		"codex", "opencode", "claude-code", "ollama", "anthropic",
+		"codex", "opencode", "claude-code", "ollama", "anthropic", "openrouter",
 	]);
 
 	function isValidProvider(v: unknown): v is ProviderKind {
@@ -680,7 +686,15 @@ export function loadPipelineConfig(
 			enabled: resolveBool(synthesisRaw?.enabled, undefined, d.synthesis.enabled),
 			provider: (() => {
 				const p = synthesisRaw?.provider;
-				if (p === "ollama" || p === "claude-code" || p === "opencode" || p === "anthropic") return p;
+				if (
+					p === "ollama" ||
+					p === "claude-code" ||
+					p === "opencode" ||
+					p === "anthropic" ||
+					p === "openrouter"
+				) {
+					return p;
+				}
 				return d.synthesis.provider;
 			})(),
 			model:

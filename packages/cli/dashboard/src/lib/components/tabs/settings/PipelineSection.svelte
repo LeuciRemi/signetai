@@ -32,6 +32,7 @@ const EXTRACTION_PROVIDER_OPTIONS = [
 	{ value: "codex", label: "codex" },
 	{ value: "opencode", label: "opencode" },
 	{ value: "anthropic", label: "anthropic" },
+	{ value: "openrouter", label: "openrouter" },
 ] as const;
 
 // Hardcoded fallback presets — used when the registry API is unavailable
@@ -65,6 +66,13 @@ const FALLBACK_MODEL_PRESETS: Record<string, Array<{ value: string; label: strin
 		{ value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
 		{ value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
 		{ value: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku" },
+	],
+	"openrouter": [
+		{ value: "openai/gpt-4o-mini", label: "GPT-4o Mini" },
+		{ value: "openai/gpt-4o", label: "GPT-4o" },
+		{ value: "anthropic/claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
+		{ value: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+		{ value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
 	],
 };
 
@@ -210,7 +218,7 @@ const ADVANCED_FEATURE_KEYS = ["autonomousFrozen"] as const;
 			<Switch checked={st.aBool(["memory", "pipelineV2", PIPELINE_CORE_BOOLS[0].key])} onCheckedChange={setBool(["memory", "pipelineV2", PIPELINE_CORE_BOOLS[0].key])} />
 		</FormField>
 
-		<FormField label="Extraction provider" description="LLM backend for fact extraction. Ollama runs locally; claude-code uses Claude Code CLI; codex uses the local Codex CLI; opencode uses the OpenCode server; anthropic uses direct API.">
+		<FormField label="Extraction provider" description="LLM backend for fact extraction. Ollama runs locally; claude-code uses Claude Code CLI; codex uses the local Codex CLI; opencode uses the OpenCode server; anthropic uses direct API; openrouter uses the OpenRouter API.">
 			<Select.Root
 				type="single"
 				value={st.aStr(["memory", "pipelineV2", "extractionProvider"])}

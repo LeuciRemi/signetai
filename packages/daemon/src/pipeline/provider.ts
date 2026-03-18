@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 // node:child_process removed — using Bun.spawn directly for reliable I/O
 import { logger } from "../logger";
+import { trimTrailingSlash } from "./url";
 
 // ---------------------------------------------------------------------------
 // Global concurrency semaphore for CLI subprocess providers
@@ -206,10 +207,6 @@ export function resolveDefaultOllamaFallbackMaxContextTokens(): number {
 		parseOptionalPositiveInt(process.env.SIGNET_OLLAMA_FALLBACK_MAX_CTX)
 		?? DEFAULT_OLLAMA_FALLBACK_MAX_CONTEXT_TOKENS
 	);
-}
-
-function trimTrailingSlash(url: string): string {
-	return url.endsWith("/") ? url.slice(0, -1) : url;
 }
 
 interface OllamaGenerateResponse {
@@ -786,6 +783,276 @@ export function createAnthropicProvider(
 				return res.ok;
 			} catch {
 				logger.debug("pipeline", "Anthropic API not reachable");
+				return false;
+			}
+		},
+	};
+}
+
+// ---------------------------------------------------------------------------
+// OpenRouter via direct HTTP API
+// ---------------------------------------------------------------------------
+
+export interface OpenRouterProviderConfig {
+	readonly model: string;
+	readonly apiKey: string;
+	readonly baseUrl: string;
+	readonly defaultTimeoutMs: number;
+	readonly maxRetries: number;
+	readonly referer?: string;
+	readonly title?: string;
+}
+
+const DEFAULT_OPENROUTER_CONFIG: OpenRouterProviderConfig = {
+	model: "openai/gpt-4o-mini",
+	apiKey: "",
+	baseUrl: "https://openrouter.ai/api/v1",
+	defaultTimeoutMs: 60000,
+	maxRetries: 2,
+	referer: undefined,
+	title: undefined,
+};
+
+interface OpenRouterContentPart {
+	readonly type?: string;
+	readonly text?: string;
+}
+
+interface OpenRouterChoice {
+	readonly message?: {
+		readonly content?: string | readonly OpenRouterContentPart[];
+	};
+}
+
+interface OpenRouterUsage {
+	readonly prompt_tokens?: number;
+	readonly completion_tokens?: number;
+	readonly cost?: number;
+	readonly prompt_tokens_details?: {
+		readonly cached_tokens?: number;
+	};
+}
+
+interface OpenRouterErrorBody {
+	readonly error?: {
+		readonly message?: string;
+		readonly code?: number | string;
+	};
+}
+
+interface OpenRouterResponse {
+	readonly choices?: readonly OpenRouterChoice[];
+	readonly usage?: OpenRouterUsage;
+}
+
+function extractOpenRouterText(content: string | readonly OpenRouterContentPart[] | undefined): string {
+	if (typeof content === "string") return content.trim();
+	if (!Array.isArray(content)) return "";
+	const parts: string[] = [];
+	for (const part of content) {
+		if (part?.type !== "text") continue;
+		if (typeof part.text !== "string") continue;
+		const text = part.text.trim();
+		if (text.length > 0) parts.push(text);
+	}
+	return parts.join("\n").trim();
+}
+
+export function createOpenRouterProvider(
+	config?: Partial<OpenRouterProviderConfig>,
+): LlmProvider {
+	const cfg = {
+		...DEFAULT_OPENROUTER_CONFIG,
+		...config,
+		baseUrl: trimTrailingSlash(config?.baseUrl ?? DEFAULT_OPENROUTER_CONFIG.baseUrl),
+	};
+
+	if (!cfg.apiKey) {
+		throw new Error(
+			"OpenRouter provider requires an API key. Set OPENROUTER_API_KEY env var or configure it in Signet secrets.",
+		);
+	}
+
+	async function callOpenRouter(
+		prompt: string,
+		opts?: { timeoutMs?: number; maxTokens?: number },
+	): Promise<{ text: string; usage: OpenRouterUsage | null }> {
+		const timeoutMs = opts?.timeoutMs ?? cfg.defaultTimeoutMs;
+		const maxTokens = opts?.maxTokens ?? 4096;
+		const url = `${cfg.baseUrl}/chat/completions`;
+		const body = JSON.stringify({
+			model: cfg.model,
+			messages: [{ role: "user", content: prompt }],
+			max_tokens: maxTokens,
+		});
+
+		let lastError: Error | null = null;
+		const deadline = Date.now() + timeoutMs;
+
+		for (let attempt = 0; attempt <= cfg.maxRetries; attempt++) {
+			if (attempt > 0) {
+				const backoffMs = Math.min(1000 * (2 ** (attempt - 1)), 8000);
+				await new Promise((r) => setTimeout(r, backoffMs));
+				logger.debug("pipeline", "OpenRouter API retry", {
+					attempt,
+					maxRetries: cfg.maxRetries,
+					backoffMs,
+				});
+			}
+
+			if (deadline - Date.now() <= 0) {
+				const reason = lastError ? `last error: ${lastError.message}` : "no successful attempt";
+				throw new Error(`OpenRouter timeout after ${timeoutMs}ms (deadline exceeded before attempt ${attempt}; ${reason})`);
+			}
+
+			const result = await withSemaphore(async () => {
+				const remainingMs = deadline - Date.now();
+				if (remainingMs <= 0) {
+					const reason = lastError ? `last error: ${lastError.message}` : "no successful attempt";
+					throw new Error(`OpenRouter timeout after ${timeoutMs}ms (deadline exceeded waiting for semaphore; ${reason})`);
+				}
+
+				const controller = new AbortController();
+				const timer = setTimeout(() => controller.abort(), remainingMs);
+
+				try {
+					const headers: Record<string, string> = {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${cfg.apiKey}`,
+					};
+					if (cfg.referer) headers["HTTP-Referer"] = cfg.referer;
+					if (cfg.title) {
+						headers["X-OpenRouter-Title"] = cfg.title;
+						headers["X-Title"] = cfg.title;
+					}
+
+					const res = await fetch(url, {
+						method: "POST",
+						headers,
+						body,
+						signal: controller.signal,
+					});
+
+					if (!res.ok) {
+						const rawBody = await res.text().catch(() => "");
+						let detail = rawBody.slice(0, 300);
+						try {
+							const parsed = JSON.parse(rawBody) as OpenRouterErrorBody;
+							if (parsed.error?.message) {
+								detail = parsed.error.message;
+							}
+						} catch {
+							// Use raw body snippet
+						}
+
+						if (res.status === 401 || res.status === 403) {
+							throw new NonRetryableError(
+								`OpenRouter auth failed (${res.status}): ${detail}. Check your OPENROUTER_API_KEY.`,
+							);
+						}
+
+						if (isRetryableStatus(res.status) && attempt < cfg.maxRetries) {
+							lastError = new Error(`OpenRouter HTTP ${res.status}: ${detail}`);
+							logger.warn("pipeline", "OpenRouter API retryable error", {
+								status: res.status,
+								attempt,
+								detail: detail.slice(0, 100),
+							});
+							return { retry: true } as const;
+						}
+
+						throw new NonRetryableError(`OpenRouter HTTP ${res.status}: ${detail}`);
+					}
+
+					const data = (await res.json()) as OpenRouterResponse;
+					const first = Array.isArray(data.choices) ? data.choices[0] : undefined;
+					const text = extractOpenRouterText(first?.message?.content);
+					if (text.length === 0) {
+						throw new NonRetryableError("OpenRouter returned empty response");
+					}
+
+					return {
+						retry: false,
+						text,
+						usage: data.usage ?? null,
+					} as const;
+				} catch (e) {
+					if (e instanceof DOMException && e.name === "AbortError") {
+						throw new NonRetryableError(`OpenRouter timeout after ${timeoutMs}ms`);
+					}
+					if (e instanceof NonRetryableError) {
+						throw e;
+					}
+
+					lastError = e instanceof Error ? e : new Error(String(e));
+					if (attempt < cfg.maxRetries) {
+						logger.warn("pipeline", "OpenRouter API network error", {
+							attempt,
+							error: lastError.message.slice(0, 100),
+						});
+						return { retry: true } as const;
+					}
+					throw lastError;
+				} finally {
+					clearTimeout(timer);
+				}
+			});
+
+			if (!result.retry) {
+				return { text: result.text, usage: result.usage };
+			}
+		}
+
+		throw lastError ?? new Error("OpenRouter call failed after retries");
+	}
+
+	return {
+		name: `openrouter:${cfg.model}`,
+
+		async generate(prompt, opts): Promise<string> {
+			const { text } = await callOpenRouter(prompt, opts);
+			return text;
+		},
+
+		async generateWithUsage(prompt, opts): Promise<LlmGenerateResult> {
+			const { text, usage } = await callOpenRouter(prompt, opts);
+			return {
+				text,
+				usage: usage
+					? {
+							inputTokens: usage.prompt_tokens ?? null,
+							outputTokens: usage.completion_tokens ?? null,
+							cacheReadTokens: usage.prompt_tokens_details?.cached_tokens ?? null,
+							cacheCreationTokens: null,
+							totalCost: usage.cost ?? null,
+							totalDurationMs: null,
+						}
+					: null,
+			};
+		},
+
+		async available(): Promise<boolean> {
+			const headers: Record<string, string> = {
+				Authorization: `Bearer ${cfg.apiKey}`,
+			};
+			if (cfg.referer) headers["HTTP-Referer"] = cfg.referer;
+			if (cfg.title) {
+				headers["X-OpenRouter-Title"] = cfg.title;
+				headers["X-Title"] = cfg.title;
+			}
+
+			try {
+				const res = await fetch(`${cfg.baseUrl}/models`, {
+					headers,
+					signal: AbortSignal.timeout(10_000),
+				});
+				if (res.status === 401 || res.status === 403) {
+					logger.warn("pipeline", `OpenRouter API key is invalid (${res.status})`);
+					return false;
+				}
+				return res.ok;
+			} catch {
+				logger.debug("pipeline", "OpenRouter API not reachable");
 				return false;
 			}
 		},

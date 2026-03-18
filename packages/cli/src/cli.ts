@@ -961,7 +961,13 @@ function formatDetectionSummary(detection: SetupDetection): string {
 
 type HarnessChoice = "claude-code" | "opencode" | "openclaw" | "codex";
 type EmbeddingProviderChoice = "native" | "ollama" | "openai" | "none";
-type ExtractionProviderChoice = "claude-code" | "ollama" | "opencode" | "codex" | "none";
+type ExtractionProviderChoice =
+	| "claude-code"
+	| "ollama"
+	| "opencode"
+	| "codex"
+	| "openrouter"
+	| "none";
 type OpenClawRuntimeChoice = "plugin" | "legacy";
 
 interface SetupWizardOptions {
@@ -983,7 +989,7 @@ interface SetupWizardOptions {
 
 const SETUP_HARNESS_CHOICES: readonly HarnessChoice[] = ["claude-code", "opencode", "openclaw", "codex"];
 const EMBEDDING_PROVIDER_CHOICES: readonly EmbeddingProviderChoice[] = ["native", "ollama", "openai", "none"];
-const EXTRACTION_PROVIDER_CHOICES: readonly ExtractionProviderChoice[] = ["claude-code", "ollama", "opencode", "codex", "none"];
+const EXTRACTION_PROVIDER_CHOICES: readonly ExtractionProviderChoice[] = ["claude-code", "ollama", "opencode", "codex", "openrouter", "none"];
 const OPENCLAW_RUNTIME_CHOICES: readonly OpenClawRuntimeChoice[] = ["plugin", "legacy"];
 
 function collectListOption(value: string, previous: string[]): string[] {
@@ -1878,6 +1884,8 @@ async function existingSetupWizard(
 								? "gpt-5.3-codex"
 							: options.extractionProvider === "opencode"
 								? "anthropic/claude-haiku-4-5-20251001"
+							: options.extractionProvider === "openrouter"
+								? "openai/gpt-4o-mini"
 								: "glm-4.7-flash"),
 				},
 				semanticContradictionEnabled: true,
@@ -2246,7 +2254,7 @@ async function setupWizard(options: SetupWizardOptions) {
 				);
 			}
 			if (!migrationExtractionProvider) {
-				failNonInteractiveSetup("Non-interactive setup requires --extraction-provider (claude-code, codex, ollama, opencode, or none).");
+				failNonInteractiveSetup("Non-interactive setup requires --extraction-provider (claude-code, codex, ollama, opencode, openrouter, or none).");
 			}
 
 			await existingSetupWizard(basePath, existing, existingConfig, {
@@ -2437,7 +2445,7 @@ async function setupWizard(options: SetupWizardOptions) {
 	}
 
 	if (nonInteractive && !requestedExtractionProvider) {
-		failNonInteractiveSetup("Non-interactive setup requires --extraction-provider (claude-code, codex, ollama, opencode, or none).");
+		failNonInteractiveSetup("Non-interactive setup requires --extraction-provider (claude-code, codex, ollama, opencode, openrouter, or none).");
 	}
 
 	let embeddingProvider: EmbeddingProviderChoice;
@@ -2535,6 +2543,8 @@ async function setupWizard(options: SetupWizardOptions) {
 			? "codex"
 			: hasCommand("opencode")
 				? "opencode"
+				: !!normalizeStringValue(process.env.OPENROUTER_API_KEY)
+					? "openrouter"
 				: hasCommand("ollama")
 					? "ollama"
 					: "none";
@@ -2560,6 +2570,10 @@ async function setupWizard(options: SetupWizardOptions) {
 			{
 				value: "opencode" as const,
 				name: `OpenCode (uses the OpenCode CLI or local server)${detectedProvider === "opencode" ? " — detected" : ""}`,
+			},
+			{
+				value: "openrouter" as const,
+				name: `OpenRouter (cloud API, requires OPENROUTER_API_KEY)${detectedProvider === "openrouter" ? " — detected" : ""}`,
 			},
 			{
 				value: "ollama" as const,
@@ -2630,6 +2644,36 @@ async function setupWizard(options: SetupWizardOptions) {
 					{
 						value: "google/gemini-2.5-flash",
 						name: "Gemini 2.5 Flash (fast, multimodal)",
+					},
+				],
+			})) as string;
+		}
+	} else if (extractionProvider === "openrouter") {
+		if (nonInteractive) {
+			extractionModel =
+				normalizeStringValue(options.extractionModel) ||
+				normalizeStringValue(existingMemory.pipelineV2?.extractionModel) ||
+				"openai/gpt-4o-mini";
+		} else {
+			console.log();
+			extractionModel = (await select({
+				message: "Which OpenRouter model for extraction? (provider/model format)",
+				choices: [
+					{
+						value: "openai/gpt-4o-mini",
+						name: "openai/gpt-4o-mini (fast, recommended)",
+					},
+					{
+						value: "openai/gpt-4o",
+						name: "openai/gpt-4o (higher quality)",
+					},
+					{
+						value: "anthropic/claude-sonnet-4-6",
+						name: "anthropic/claude-sonnet-4-6 (high quality)",
+					},
+					{
+						value: "google/gemini-2.5-flash",
+						name: "google/gemini-2.5-flash (balanced)",
 					},
 				],
 			})) as string;
@@ -3546,7 +3590,7 @@ program
 	)
 	.option("--embedding-provider <provider>", "Embedding provider in non-interactive mode (ollama, openai, none)")
 	.option("--embedding-model <model>", "Embedding model in non-interactive mode")
-	.option("--extraction-provider <provider>", "Extraction provider in non-interactive mode (claude-code, codex, ollama, opencode, none)")
+	.option("--extraction-provider <provider>", "Extraction provider in non-interactive mode (claude-code, codex, ollama, opencode, openrouter, none)")
 	.option("--extraction-model <model>", "Extraction model in non-interactive mode")
 	.option("--search-balance <alpha>", "Search balance alpha in non-interactive mode (0-1)")
 	.option("--openclaw-runtime-path <mode>", "OpenClaw runtime path in non-interactive mode (plugin, legacy)")

@@ -247,6 +247,22 @@ describe("loadMemoryConfig", () => {
 		expect(cfg.pipelineV2.extraction.provider).toBe("codex");
 		expect(cfg.pipelineV2.extraction.model).toBe("gpt-5.3-codex");
 	});
+
+	it("loads openrouter extraction settings from agent.yaml", () => {
+		const agentsDir = makeTempAgentsDir();
+		writeFileSync(
+			join(agentsDir, "agent.yaml"),
+			`memory:
+  pipelineV2:
+    extractionProvider: openrouter
+    extractionModel: openai/gpt-4o-mini
+`,
+		);
+
+		const cfg = loadMemoryConfig(agentsDir);
+		expect(cfg.pipelineV2.extraction.provider).toBe("openrouter");
+		expect(cfg.pipelineV2.extraction.model).toBe("openai/gpt-4o-mini");
+	});
 });
 
 describe("loadPipelineConfig", () => {
@@ -307,6 +323,21 @@ describe("loadPipelineConfig", () => {
 			},
 		});
 		expect(result.synthesis.endpoint).toBe("http://172.17.0.1:11434");
+	});
+
+	it("accepts openrouter synthesis provider", () => {
+		const result = loadPipelineConfig({
+			memory: {
+				pipelineV2: {
+					synthesis: {
+						provider: "openrouter",
+						model: "openai/gpt-4o-mini",
+					},
+				},
+			},
+		});
+		expect(result.synthesis.provider).toBe("openrouter");
+		expect(result.synthesis.model).toBe("openai/gpt-4o-mini");
 	});
 
 	it("flat provider without flat model uses provider default", () => {

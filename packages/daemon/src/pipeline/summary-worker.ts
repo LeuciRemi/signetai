@@ -21,6 +21,7 @@ import {
 	createOllamaProvider,
 	createClaudeCodeProvider,
 	createOpenCodeProvider,
+	createOpenRouterProvider,
 	resolveDefaultOllamaFallbackMaxContextTokens,
 } from "./provider";
 
@@ -1014,6 +1015,31 @@ async function resolveProvider(cfg: ReturnType<typeof loadMemoryConfig>): Promis
 				});
 			}
 			return createAnthropicProvider({ model: model || "haiku", apiKey, defaultTimeoutMs: timeout });
+		}
+		case "openrouter": {
+			let apiKey = process.env.OPENROUTER_API_KEY;
+			if (!apiKey) {
+				try {
+					apiKey = await getSecret("OPENROUTER_API_KEY") ?? undefined;
+				} catch {
+					// secrets store unavailable
+				}
+			}
+			if (!apiKey) {
+				logger.error("summary-worker", "OPENROUTER_API_KEY not found for summary worker — falling back to ollama. Set via env or `signet secrets set OPENROUTER_API_KEY`");
+				return createOllamaProvider({
+					defaultTimeoutMs: timeout,
+					maxContextTokens: ollamaFallbackMaxContextTokens,
+				});
+			}
+			return createOpenRouterProvider({
+				model: model || "openai/gpt-4o-mini",
+				apiKey,
+				baseUrl: endpoint ?? "https://openrouter.ai/api/v1",
+				referer: process.env.OPENROUTER_HTTP_REFERER,
+				title: process.env.OPENROUTER_TITLE,
+				defaultTimeoutMs: timeout,
+			});
 		}
 		case "claude-code":
 			return createClaudeCodeProvider({ model: model || "haiku", defaultTimeoutMs: timeout });
