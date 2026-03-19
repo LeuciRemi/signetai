@@ -2,6 +2,28 @@
 
 All notable changes to Signet are documented here.
 
+## [0.63.3] - 2026-03-19
+
+### Features
+
+- deploy Signet logo across all surfaces
+
+### Bug Fixes
+
+- handle malformed timestamps in log formatter
+- swap logo variants for correct theme visibility
+- use white logo variant in README for dark mode visibility
+- replace ASCII art with clean h1 header
+- remove pre tag spacing, match image heights in table
+- center ASCII art with pre tag, side-by-side poster images
+
+### Docs
+
+- add Discord badge and nav link to README
+- refactor README and add Why Signet to quickstart
+- add AI policy, PR template, and GitHub Discussions setup
+
+
 ## [0.63.2] - 2026-03-18
 
 ### Bug Fixes
