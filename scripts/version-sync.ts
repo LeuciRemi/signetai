@@ -97,7 +97,8 @@ function readCargoVersion(filePath: string): string | null {
 }
 
 function usesWorkspaceVersion(raw: string): boolean {
-	return /version\.workspace\s*=\s*true/.test(raw);
+	// Only match version.workspace inside [package], not in dependency tables
+	return /\[package\][^\[]*version\.workspace\s*=\s*true/s.test(raw);
 }
 
 function updateCargoVersion(filePath: string, targetVersion: string): boolean {
