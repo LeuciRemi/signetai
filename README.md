@@ -8,9 +8,10 @@
 <a href="https://github.com/Signet-AI/signetai/releases"><img src="https://img.shields.io/github/v/release/Signet-AI/signetai?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
 <a href="https://www.npmjs.com/package/signetai"><img src="https://img.shields.io/npm/v/signetai?style=for-the-badge" alt="npm"></a>
 <a href="https://github.com/Signet-AI/signetai/discussions"><img src="https://img.shields.io/github/discussions/Signet-AI/signetai?style=for-the-badge" alt="Discussions"></a>
+<a href="https://discord.gg/pHa5scah9C"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge" alt="Apache-2.0 License"></a>
 
-[Website](https://signetai.sh) · [Docs](https://signetai.sh/docs) · [Vision](VISION.md) · [Discussions](https://github.com/Signet-AI/signetai/discussions) · [Contributing](docs/CONTRIBUTING.md) · [AI Policy](AI_POLICY.md)
+[Website](https://signetai.sh) · [Docs](https://signetai.sh/docs) · [Vision](VISION.md) · [Discussions](https://github.com/Signet-AI/signetai/discussions) · [Discord](https://discord.gg/pHa5scah9C) · [Contributing](docs/CONTRIBUTING.md) · [AI Policy](AI_POLICY.md)
 
 </div>
 
