@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.65.6] - 2026-03-19
+
+### Bug Fixes
+
+- prevent CMD window flashing and fix workspace path matching on Windows (#241)
+
+
 ## [0.65.5] - 2026-03-19
 
 ### Bug Fixes
