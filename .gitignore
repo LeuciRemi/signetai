@@ -17,6 +17,8 @@ packages/signetai/bin/signet-predictor-*
 *.png
 !web/public/blog/*.png
 !web/public/apple-touch-icon.png
+!web/public/Signet-Logo-White.png
+!web/public/Signet-Logo-Black.png
 !public/Signet-Logo-Black.png
 !public/Signet-Logo-White.png
 !public/discord-icon.png
