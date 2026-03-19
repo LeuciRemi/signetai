@@ -37,6 +37,7 @@ import { up as losslessRetention } from "./028-lossless-retention";
 import { up as sessionSummaryDag } from "./029-session-summary-dag";
 import { up as nullableMemoryJobMemoryId } from "./030-nullable-memory-job-memory-id";
 import { up as dependencyReason } from "./031-dependency-reason";
+import { up as embeddingsVectorColumn } from "./032-embeddings-vector-column";
 
 // -- Public interface consumed by Database.init() --
 
@@ -318,6 +319,11 @@ export const MIGRATIONS: readonly Migration[] = [
 				{ table: "entities", column: "last_synthesized_at" },
 			],
 		},
+	},
+	{
+		version: 32,
+		name: "embeddings-vector-column",
+		up: embeddingsVectorColumn,
 	},
 ];
 

@@ -4665,7 +4665,13 @@ async function secretApiCall(method: string, path: string, body?: unknown, timeo
 		body: body ? JSON.stringify(body) : undefined,
 		signal: AbortSignal.timeout(timeoutMs),
 	});
-	const data = await res.json();
+	const text = await res.text();
+	let data: unknown;
+	try {
+		data = JSON.parse(text);
+	} catch {
+		data = { error: text || "Request failed" };
+	}
 	return { ok: res.ok, data };
 }
 
