@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.66.1] - 2026-03-19
+
+### Features
+
+- add scope column for memory isolation (#245)
+
+
 ## [0.66.0] - 2026-03-19
 
 ### Bug Fixes
