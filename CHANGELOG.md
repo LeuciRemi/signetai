@@ -2,6 +2,17 @@
 
 All notable changes to Signet are documented here.
 
+## [0.65.5] - 2026-03-19
+
+### Bug Fixes
+
+- Windows compatibility across daemon, core, and connectors (#238)
+
+### Docs
+
+- add BusyBee3333, stephenwoska2-cpu, and PatchyToes to contributors (#240)
+
+
 ## [0.65.4] - 2026-03-19
 
 ### Bug Fixes
