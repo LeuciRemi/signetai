@@ -226,8 +226,15 @@ pub async fn run_with_secrets(
     // Run command with secrets as env vars. Uses execFile-style
     // argument passing to avoid shell expansion of secret values.
     let cwd = body.cwd.as_deref().unwrap_or(".");
-    let output = tokio::process::Command::new("sh")
-        .args(["-c", &body.command])
+    #[cfg(unix)]
+    let mut cmd = tokio::process::Command::new("sh");
+    #[cfg(unix)]
+    cmd.args(["-c", &body.command]);
+    #[cfg(windows)]
+    let mut cmd = tokio::process::Command::new("cmd");
+    #[cfg(windows)]
+    cmd.args(["/C", &body.command]);
+    let output = cmd
         .current_dir(cwd)
         .envs(&env)
         .env("SIGNET_NO_HOOKS", "1")

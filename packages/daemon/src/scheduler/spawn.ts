@@ -114,7 +114,7 @@ export async function spawnTask(
 		// Force kill after 5s if still alive
 		setTimeout(() => {
 			try {
-				child.kill("SIGKILL");
+				child.kill();
 			} catch {
 				// already dead
 			}

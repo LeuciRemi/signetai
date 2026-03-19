@@ -142,6 +142,17 @@ function spawnHidden(cmd: string[], options?: { env?: Record<string, string | un
 		stderr: proc.stderr,
 		exited: proc.exited,
 		kill(signal?: string) {
+			if (process.platform === "win32") {
+				// On Windows, numeric signals don't work. kill() with no
+				// args terminates unconditionally (equivalent to SIGKILL).
+				// SIGTERM is supported as a string on Windows in Node/Bun.
+				if (signal === "SIGKILL") {
+					proc.kill();
+				} else {
+					proc.kill("SIGTERM");
+				}
+				return;
+			}
 			const sigMap: Record<string, number | undefined> = { SIGTERM: 15, SIGKILL: 9 };
 			const sigNum = signal ? sigMap[signal] : 15;
 			if (signal && sigNum === undefined) {
@@ -1289,19 +1300,9 @@ const DEFAULT_OPENCODE_CONFIG: OpenCodeProviderConfig = {
  * then falls back to the well-known install location.
  */
 function resolveOpenCodeBin(): string | null {
-	// Check PATH first
-	try {
-		const proc = Bun.spawnSync(["which", "opencode"], {
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		if (proc.exitCode === 0) {
-			const path = proc.stdout.toString().trim();
-			if (path.length > 0) return path;
-		}
-	} catch {
-		// which not available or failed
-	}
+	// Check PATH first (Bun.which works cross-platform)
+	const found = Bun.which("opencode");
+	if (found) return found;
 
 	// Fall back to ~/.opencode/bin/opencode
 	const fallback = `${homedir()}/.opencode/bin/opencode`;

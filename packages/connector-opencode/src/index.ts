@@ -228,7 +228,7 @@ export class OpenCodeConnector extends BaseConnector {
 	}
 
 	private getPluginConfigEntry(opencodePath: string): string {
-		return `./${relative(opencodePath, this.getPluginFilePath(opencodePath))}`;
+		return `./${relative(opencodePath, this.getPluginFilePath(opencodePath)).replaceAll("\\", "/")}`;
 	}
 
 	/**

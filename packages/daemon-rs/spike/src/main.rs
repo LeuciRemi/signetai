@@ -302,7 +302,9 @@ fn main() {
 
     // Test against existing TS-created DB if available
     let db_path = env::var("SIGNET_TEST_DB").unwrap_or_else(|_| {
-        let home = env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+        let home = env::var("HOME")
+            .or_else(|_| env::var("USERPROFILE"))
+            .unwrap_or_else(|_| ".".into());
         format!("{home}/.agents/memory/memories.db")
     });
     if let Err(e) = test_existing_db(&db_path) {

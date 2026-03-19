@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 
 /**
  * Specification for an identity file
@@ -177,7 +178,7 @@ export function detectExistingSetup(basePath: string): SetupDetection {
 	}
 
 	// Detect harnesses
-	const home = process.env.HOME || "";
+	const home = homedir();
 
 	return {
 		basePath,

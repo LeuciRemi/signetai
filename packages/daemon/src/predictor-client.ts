@@ -598,7 +598,7 @@ export function createPredictorClient(
 				await new Promise<void>((resolve) => {
 					const killTimer = setTimeout(() => {
 						try {
-							child.kill("SIGKILL");
+							child.kill();
 						} catch {
 							// already dead
 						}

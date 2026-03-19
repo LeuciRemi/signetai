@@ -482,7 +482,9 @@ mod tests {
     #[tokio::test]
     async fn existing_db_compat() {
         // Test against the real DB if available
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_else(|_| ".".into());
         let db_path = std::path::PathBuf::from(&home).join(".agents/memory/memories.db");
 
         if !db_path.exists() {

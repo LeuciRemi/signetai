@@ -12,8 +12,12 @@ use anyhow::{Context, Result, bail};
 
 fn home() -> PathBuf {
     std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/root"))
+        .unwrap_or_else(|_| {
+            eprintln!("warning: neither HOME nor USERPROFILE is set; falling back to current directory");
+            PathBuf::from(".")
+        })
 }
 
 fn agents_dir() -> PathBuf {
@@ -249,7 +253,9 @@ pub fn install(port: u16) -> Result<()> {
     } else if cfg!(target_os = "linux") {
         install_systemd(port)
     } else {
-        bail!("service install not supported on this platform")
+        // Windows: no system service manager integration yet;
+        // the TS daemon layer handles start-on-demand via startDirect().
+        Ok(())
     }
 }
 
@@ -260,7 +266,7 @@ pub fn uninstall() -> Result<()> {
     } else if cfg!(target_os = "linux") {
         uninstall_systemd()
     } else {
-        bail!("service uninstall not supported on this platform")
+        Ok(())
     }
 }
 

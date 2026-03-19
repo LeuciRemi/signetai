@@ -72,7 +72,9 @@ fn flag_str(args: &[String], name: &str) -> Option<String> {
 }
 
 fn dirs_log() -> std::path::PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".into());
     let base = std::env::var("SIGNET_PATH").unwrap_or_else(|_| format!("{home}/.agents"));
     let dir = std::path::PathBuf::from(base).join(".daemon/logs");
     let _ = std::fs::create_dir_all(&dir);

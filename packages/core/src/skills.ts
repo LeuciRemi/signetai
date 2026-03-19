@@ -14,6 +14,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { symlinkDir } from "./symlinks.js";
 
 /**
@@ -83,7 +84,7 @@ export interface SkillsResult {
 	skipped: number;
 }
 
-const home = process.env.HOME || "";
+const home = homedir();
 
 /**
  * Raw skill data from lock.json files

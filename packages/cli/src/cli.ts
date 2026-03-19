@@ -1415,7 +1415,7 @@ function createExtensionSymlink(
 	}
 
 	try {
-		symlinkSync(globalPath, symlinkPath, "dir");
+		symlinkSync(globalPath, symlinkPath, process.platform === "win32" ? "junction" : "dir");
 		if (!silent) {
 			console.log(
 				chalk.green("  ✓ OpenClaw extension symlink created"),

@@ -551,7 +551,7 @@ export class OpenClawConnector extends BaseConnector {
 	private validateWorkspacePath(p: string): void {
 		const resolved = resolve(this.expandPath(p));
 		const tmp = tmpdir();
-		if (resolved.startsWith(tmp) || resolved.startsWith("/tmp/")) {
+		if (resolved.startsWith(tmp)) {
 			throw new Error(`Refusing to set workspace to temp directory: ${resolved}`);
 		}
 	}

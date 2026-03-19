@@ -16,9 +16,27 @@ use serde_json::json;
 struct TestServer {
     #[allow(dead_code)] // kept for debugging
     port: u16,
+    pid: u32,
     base: String,
     client: reqwest::Client,
     _tmpdir: tempfile::TempDir,
+}
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        if self.pid > 0 {
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(self.pid as i32, libc::SIGTERM);
+            }
+            #[cfg(windows)]
+            {
+                let _ = std::process::Command::new("taskkill")
+                    .args(["/PID", &self.pid.to_string(), "/F"])
+                    .output();
+            }
+        }
+    }
 }
 
 impl TestServer {
@@ -77,24 +95,13 @@ impl TestServer {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
-        // Register cleanup
         let test_server = Self {
             port,
+            pid,
             base,
             client,
             _tmpdir: tmpdir,
         };
-
-        // Kill daemon on drop via PID (since we can't easily store the child handle)
-        if pid > 0 {
-            // We'll rely on tmpdir cleanup and process termination
-            unsafe {
-                libc::kill(pid as i32, libc::SIGTERM);
-            }
-        }
-
-        // Re-wait for health after potential restart
-        tokio::time::sleep(Duration::from_millis(200)).await;
 
         test_server
     }
