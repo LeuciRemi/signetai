@@ -2,6 +2,16 @@
 
 All notable changes to Signet are documented here.
 
+## [0.65.1] - 2026-03-19
+
+### Bug Fixes
+
+- support optional column artifacts for conditional migrations
+- scope workspace version check to [package] section only
+- add migration for missing embeddings.vector column on older DBs
+- release pipeline — skip workspace-inherited Cargo versions and clobber duplicate assets
+
+
 ## [0.64.0] - 2026-03-19
 
 ### Features
