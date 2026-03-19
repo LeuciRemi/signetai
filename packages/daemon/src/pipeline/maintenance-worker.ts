@@ -232,6 +232,19 @@ export function startMaintenanceWorker(
 						});
 					}
 					feedbackPropagatedAttributes += propagateMemoryStatus(accessor, agentId);
+
+					// Retroactive supersession sweep — runs regardless of maintenance health
+					if (cfg.structural.supersessionSweepEnabled) {
+						const { sweepRetroactiveSupersession } = await import("./supersession");
+						const sweep = await sweepRetroactiveSupersession(accessor, agentId, cfg, getLlmProvider());
+						if (sweep.candidates.length > 0) {
+							logger.info("maintenance", "Supersession sweep", {
+								agentId,
+								superseded: sweep.superseded,
+								proposals: sweep.candidates.length,
+							});
+						}
+					}
 				}
 				recordFeedbackTelemetry({
 					feedbackDecayedAspects,
@@ -311,6 +324,20 @@ export function startMaintenanceWorker(
 					});
 				}
 				feedbackPropagatedAttributes += propagateMemoryStatus(accessor, agentId);
+
+				// Retroactive supersession sweep
+				if (cfg.structural.supersessionSweepEnabled) {
+					const { sweepRetroactiveSupersession } = await import("./supersession");
+					const provider = getLlmProvider();
+					const sweep = await sweepRetroactiveSupersession(accessor, agentId, cfg, provider);
+					if (sweep.candidates.length > 0) {
+						logger.info("maintenance", "Supersession sweep", {
+							agentId,
+							superseded: sweep.superseded,
+							proposals: sweep.candidates.length,
+						});
+					}
+				}
 			}
 			recordFeedbackTelemetry({
 				feedbackDecayedAspects,

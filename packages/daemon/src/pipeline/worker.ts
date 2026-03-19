@@ -24,6 +24,13 @@ import { txPersistEntities } from "./graph-transactions";
 import type { AnalyticsCollector } from "../analytics";
 import type { TelemetryCollector } from "../telemetry";
 import { generateWithTracking } from "./provider";
+import {
+	PROSPECTIVE_ANTONYM_PAIRS,
+	tokenize,
+	hasNegation,
+	overlapCount,
+	hasAntonymConflict,
+} from "./antonyms";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -67,75 +74,6 @@ interface AppliedWriteStats {
 	dedupedFacts: WrittenFact[];
 }
 
-const NEGATION_TOKENS = new Set([
-	"not",
-	"no",
-	"never",
-	"cannot",
-	"cant",
-	"doesnt",
-	"dont",
-	"isnt",
-	"wasnt",
-	"wont",
-	"without",
-]);
-
-const CONTRADICTION_ANTONYM_PAIRS: ReadonlyArray<readonly [string, string]> = [
-	["enabled", "disabled"],
-	["allow", "deny"],
-	["accept", "reject"],
-	["always", "never"],
-	["on", "off"],
-	["true", "false"],
-];
-
-function tokenize(text: string): string[] {
-	return text
-		.toLowerCase()
-		.replace(/[^a-z0-9\s]/g, " ")
-		.split(/\s+/)
-		.filter((token) => token.length >= 2);
-}
-
-function hasNegation(tokens: readonly string[]): boolean {
-	return tokens.some((token) => NEGATION_TOKENS.has(token));
-}
-
-function overlapCount(
-	left: readonly string[],
-	right: readonly string[],
-): number {
-	const rightSet = new Set(right);
-	let overlap = 0;
-	for (const token of left) {
-		if (rightSet.has(token)) overlap++;
-	}
-	return overlap;
-}
-
-function hasAntonymConflict(
-	leftTokens: ReadonlySet<string>,
-	rightTokens: ReadonlySet<string>,
-): boolean {
-	for (const [leftWord, rightWord] of CONTRADICTION_ANTONYM_PAIRS) {
-		const leftHasLeft = leftTokens.has(leftWord);
-		const leftHasRight = leftTokens.has(rightWord);
-		const rightHasLeft = rightTokens.has(leftWord);
-		const rightHasRight = rightTokens.has(rightWord);
-
-		const leftExclusive = leftHasLeft !== leftHasRight;
-		const rightExclusive = rightHasLeft !== rightHasRight;
-		const oppositePolarity =
-			(leftHasLeft && rightHasRight) || (leftHasRight && rightHasLeft);
-
-		if (leftExclusive && rightExclusive && oppositePolarity) {
-			return true;
-		}
-	}
-	return false;
-}
-
 function detectContradictionRisk(
 	factContent: string,
 	targetContent: string | undefined,
@@ -155,7 +93,7 @@ function detectContradictionRisk(
 		return true;
 	}
 
-	return hasAntonymConflict(new Set(factTokens), new Set(targetTokens));
+	return hasAntonymConflict(new Set(factTokens), new Set(targetTokens), PROSPECTIVE_ANTONYM_PAIRS);
 }
 
 function zeroWriteStats(): AppliedWriteStats {
@@ -863,8 +801,8 @@ function runStructuralPass1(
 			// Resolve source entity ID from the entities table
 			const canonical = matchedTriple.source.trim().toLowerCase().replace(/\s+/g, " ");
 			const entityRow = db
-				.prepare("SELECT id, entity_type FROM entities WHERE canonical_name = ? LIMIT 1")
-				.get(canonical) as { id: string; entity_type: string } | undefined;
+				.prepare("SELECT id, entity_type, agent_id FROM entities WHERE canonical_name = ? LIMIT 1")
+				.get(canonical) as { id: string; entity_type: string; agent_id: string } | undefined;
 			if (!entityRow) continue;
 
 			// Skip if this memory already has a structural attribute row (classified or stub)
@@ -880,9 +818,9 @@ function runStructuralPass1(
 				`INSERT INTO entity_attributes
 				 (id, aspect_id, agent_id, memory_id, kind, content, normalized_content,
 				  confidence, importance, status, created_at, updated_at)
-				 VALUES (?, NULL, 'default', ?, 'attribute', ?, ?, ?, 0.5, 'active', ?, ?)`,
+				 VALUES (?, NULL, ?, ?, 'attribute', ?, ?, ?, 0.5, 'active', ?, ?)`,
 			).run(
-				attrId, fact.memoryId, fact.content, fact.normalizedContent,
+				attrId, entityRow.agent_id, fact.memoryId, fact.content, fact.normalizedContent,
 				fact.confidence, now, now,
 			);
 			stats.attributesCreated++;
@@ -895,6 +833,7 @@ function runStructuralPass1(
 				entity_type: entityRow.entity_type,
 				fact_content: fact.content,
 				attribute_id: attrId,
+				agent_id: entityRow.agent_id,
 			});
 			enqueueStructuralJob(db, fact.memoryId, "structural_classify", classifyPayload);
 			stats.classifyEnqueued++;
