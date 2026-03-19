@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.64.0] - 2026-03-19
+
+### Features
+
+- Signet OS — browser, MCP app dashboard, event bus, ambient awareness
+
+
 ## [0.63.3] - 2026-03-19
 
 ### Features
