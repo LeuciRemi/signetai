@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.68.3] - 2026-03-20
+
+### Features
+
+- homepage spotlights, dynamic insights, and health consistency (#250)
+
+
 ## [0.68.2] - 2026-03-20
 
 ### Bug Fixes
