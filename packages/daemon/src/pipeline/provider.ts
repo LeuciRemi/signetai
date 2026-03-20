@@ -105,6 +105,10 @@ interface SpawnResult {
 	kill(signal?: string): void;
 }
 
+// Module-level helper to avoid allocating a new closure per spawnHidden call.
+const toWebStream = (nodeStream: import("node:stream").Readable): ReadableStream<Uint8Array> =>
+	Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
+
 function spawnHidden(cmd: string[], options?: { env?: Record<string, string | undefined> }): SpawnResult {
 	// Resolve the binary via Bun.which() so that .cmd wrappers on Windows
 	// are found correctly (mirrors scheduler/spawn.ts pattern).
@@ -123,15 +127,26 @@ function spawnHidden(cmd: string[], options?: { env?: Record<string, string | un
 	// On Windows, use node:child_process with windowsHide to prevent
 	// console window flashing. Bun.spawn doesn't support windowsHide.
 	if (process.platform === "win32") {
-		const child = nodeSpawn(resolvedBin, args, {
-			stdio: ["ignore", "pipe", "pipe"],
-			env: options?.env ? sanitizedEnv : undefined,
-			windowsHide: true,
-		});
-
-		// Convert Node.js Readable streams to Web ReadableStreams
-		const toWebStream = (nodeStream: import("node:stream").Readable): ReadableStream<Uint8Array> =>
-			Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
+		// .cmd wrappers (e.g. claude.cmd, codex.cmd from npm) are batch scripts,
+		// not PE executables. Instead of shell: true (which exposes args to
+		// cmd.exe metacharacter interpretation — injection risk), invoke cmd.exe
+		// explicitly with properly quoted arguments.
+		let child: import("node:child_process").ChildProcess;
+		if (resolvedBin.endsWith(".cmd")) {
+			const quote = (s: string) => `"${s.replace(/%/g, "%%").replace(/"/g, '""')}"`;
+			const cmdLine = [quote(resolvedBin), ...args.map(quote)].join(" ");
+			child = nodeSpawn(process.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", `"${cmdLine}"`], {
+				stdio: ["ignore", "pipe", "pipe"],
+				env: options?.env ? sanitizedEnv : undefined,
+				windowsHide: true,
+			});
+		} else {
+			child = nodeSpawn(resolvedBin, args, {
+				stdio: ["ignore", "pipe", "pipe"],
+				env: options?.env ? sanitizedEnv : undefined,
+				windowsHide: true,
+			});
+		}
 
 		const exitPromise = new Promise<number>((resolve, reject) => {
 			child.on("exit", (code) => resolve(code ?? 1));
