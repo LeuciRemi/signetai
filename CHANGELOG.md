@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.69.0] - 2026-03-20
+
+### Bug Fixes
+
+- use local timezone for timeline Today boundaries (#252)
+
+
 ## [0.68.3] - 2026-03-20
 
 ### Features
