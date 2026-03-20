@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.68.1] - 2026-03-20
+
+### Bug Fixes
+
+- remove provider icon tinting and auto-sync pre-installed apps (#249)
+
+
 ## [0.68.0] - 2026-03-20
 
 ### Bug Fixes
