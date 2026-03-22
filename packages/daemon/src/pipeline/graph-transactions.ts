@@ -7,9 +7,10 @@
  * All functions expect to run inside a withWriteTx closure.
  */
 
-import type { WriteDb } from "../db-accessor";
 import type { ExtractedEntity } from "@signet/core";
+import type { WriteDb } from "../db-accessor";
 import { countChanges } from "../db-helpers";
+import { isDecisionContent } from "../inline-entity-linker";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -79,9 +80,7 @@ function upsertEntity(
 			 WHERE (canonical_name = ? AND agent_id = ?) OR name = ?
 			 LIMIT 1`,
 		)
-		.get(canonical, agentId, rawName) as
-		| { id: string; mentions: number; entity_type: string }
-		| undefined;
+		.get(canonical, agentId, rawName) as { id: string; mentions: number; entity_type: string } | undefined;
 
 	if (existing) {
 		db.prepare(
@@ -91,9 +90,10 @@ function upsertEntity(
 		).run(now, existing.id);
 		// Upgrade entity_type if currently "extracted" and we have a real type
 		if (entityType !== "extracted" && existing.entity_type === "extracted") {
-			db.prepare(
-				`UPDATE entities SET entity_type = ? WHERE id = ? AND entity_type = 'extracted'`,
-			).run(entityType, existing.id);
+			db.prepare(`UPDATE entities SET entity_type = ? WHERE id = ? AND entity_type = 'extracted'`).run(
+				entityType,
+				existing.id,
+			);
 		}
 		return { id: existing.id, inserted: false };
 	}
@@ -112,9 +112,9 @@ function upsertEntity(
 		const msg = e instanceof Error ? e.message : String(e);
 		if (!msg.includes("UNIQUE constraint")) throw e;
 
-		const fallback = db
-			.prepare("SELECT id FROM entities WHERE name = ? LIMIT 1")
-			.get(rawName) as { id: string } | undefined;
+		const fallback = db.prepare("SELECT id FROM entities WHERE name = ? LIMIT 1").get(rawName) as
+			| { id: string }
+			| undefined;
 
 		if (fallback) {
 			db.prepare(
@@ -156,8 +156,7 @@ function upsertRelation(
 	if (existing) {
 		// Running average: new_avg = (old_avg * n + new_val) / (n + 1)
 		const newMentions = existing.mentions + 1;
-		const newConfidence =
-			(existing.confidence * existing.mentions + confidence) / newMentions;
+		const newConfidence = (existing.confidence * existing.mentions + confidence) / newMentions;
 
 		db.prepare(
 			`UPDATE relations
@@ -190,10 +189,7 @@ function upsertRelation(
  *
  * Call inside `accessor.withWriteTx(db => txPersistEntities(db, input))`.
  */
-export function txPersistEntities(
-	db: WriteDb,
-	input: PersistEntitiesInput,
-): PersistEntitiesResult {
+export function txPersistEntities(db: WriteDb, input: PersistEntitiesInput): PersistEntitiesResult {
 	let entitiesInserted = 0;
 	let entitiesUpdated = 0;
 	let relationsInserted = 0;
@@ -220,14 +216,7 @@ export function txPersistEntities(
 		if (target.inserted) entitiesInserted++;
 		else entitiesUpdated++;
 
-		const isNewRelation = upsertRelation(
-			db,
-			source.id,
-			target.id,
-			triple.relationship,
-			triple.confidence,
-			now,
-		);
+		const isNewRelation = upsertRelation(db, source.id, target.id, triple.relationship, triple.confidence, now);
 		if (isNewRelation) relationsInserted++;
 		else relationsUpdated++;
 
@@ -251,16 +240,184 @@ export function txPersistEntities(
 	return { entitiesInserted, entitiesUpdated, relationsInserted, relationsUpdated, mentionsLinked };
 }
 
+// ---------------------------------------------------------------------------
+// Structured persistence (Remember API bypass)
+// ---------------------------------------------------------------------------
+
+export interface StructuredAspect {
+	readonly entityName: string;
+	readonly aspect: string;
+	readonly attributes: ReadonlyArray<{
+		readonly content: string;
+		readonly confidence?: number;
+		readonly importance?: number;
+	}>;
+}
+
+export interface PersistStructuredInput {
+	readonly entities: readonly ExtractedEntity[];
+	readonly aspects: readonly StructuredAspect[];
+	readonly sourceMemoryId: string;
+	readonly content: string;
+	readonly agentId: string;
+	readonly now: string;
+}
+
+export interface PersistStructuredResult {
+	readonly entitiesInserted: number;
+	readonly entitiesUpdated: number;
+	readonly relationsInserted: number;
+	readonly relationsUpdated: number;
+	readonly mentionsLinked: number;
+	readonly aspectsCreated: number;
+	readonly attributesCreated: number;
+}
+
+/**
+ * Write pre-computed entities, aspects, and attributes in a single
+ * transaction. Used when callers provide a `structured` payload to
+ * the Remember API, bypassing the async pipeline.
+ *
+ * Call inside `accessor.withWriteTx(db => txPersistStructured(db, input))`.
+ */
+export function txPersistStructured(db: WriteDb, input: PersistStructuredInput): PersistStructuredResult {
+	// Step 1: Persist entity triples via existing logic
+	const base = txPersistEntities(db, {
+		entities: input.entities,
+		sourceMemoryId: input.sourceMemoryId,
+		extractedAt: input.now,
+		agentId: input.agentId,
+	});
+
+	let aspectsCreated = 0;
+	let attributesCreated = 0;
+
+	// Decision detection: promote attributes to constraints when
+	// the source memory contains decision-indicating language.
+	const decision = isDecisionContent(input.content);
+	const kind = decision ? "constraint" : "attribute";
+	const baseImportance = decision ? 0.85 : 0.5;
+
+	// Collect resolved entity ids for dependency linking
+	const resolved: string[] = [];
+
+	// Step 2: Upsert aspects and attributes
+	for (const sa of input.aspects) {
+		const canonical = toCanonicalName(sa.entityName);
+		const row = db
+			.prepare(
+				`SELECT id FROM entities
+				 WHERE canonical_name = ? AND agent_id = ?
+				 LIMIT 1`,
+			)
+			.get(canonical, input.agentId) as { id: string } | undefined;
+
+		if (!row) continue;
+		resolved.push(row.id);
+
+		// Upsert aspect
+		const aspectCanon = toCanonicalName(sa.aspect);
+		const aspectId = crypto.randomUUID();
+		db.prepare(
+			`INSERT INTO entity_aspects
+			 (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, 0.5, ?, ?)
+			 ON CONFLICT(entity_id, canonical_name) DO UPDATE
+			 SET updated_at = excluded.updated_at`,
+		).run(aspectId, row.id, input.agentId, sa.aspect, aspectCanon, input.now, input.now);
+
+		// Read back the actual id (may differ on conflict)
+		const stored = db
+			.prepare(
+				`SELECT id FROM entity_aspects
+				 WHERE entity_id = ? AND canonical_name = ?
+				 LIMIT 1`,
+			)
+			.get(row.id, aspectCanon) as { id: string };
+
+		aspectsCreated++;
+
+		// Insert attributes with dedup
+		for (const attr of sa.attributes) {
+			const normalized = attr.content.trim().toLowerCase();
+			const dup = db
+				.prepare(
+					`SELECT id FROM entity_attributes
+					 WHERE aspect_id = ? AND agent_id = ? AND normalized_content = ?
+					   AND status = 'active'
+					 LIMIT 1`,
+				)
+				.get(stored.id, input.agentId, normalized) as { id: string } | undefined;
+
+			if (dup) continue;
+
+			const confidence = attr.confidence ?? 0.7;
+			const importance = attr.importance ?? baseImportance;
+			try {
+				db.prepare(
+					`INSERT INTO entity_attributes
+					 (id, aspect_id, agent_id, memory_id, kind, content,
+					  normalized_content, confidence, importance, status,
+					  created_at, updated_at)
+					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+				).run(
+					crypto.randomUUID(),
+					stored.id,
+					input.agentId,
+					input.sourceMemoryId,
+					kind,
+					attr.content,
+					normalized,
+					confidence,
+					importance,
+					input.now,
+					input.now,
+				);
+				attributesCreated++;
+			} catch {
+				// Constraint violation — skip
+			}
+		}
+	}
+
+	// Step 3: Create dependencies between co-occurring entities
+	if (resolved.length >= 2) {
+		for (let i = 0; i < resolved.length - 1; i++) {
+			for (let j = i + 1; j < resolved.length; j++) {
+				if (resolved[i] === resolved[j]) continue;
+				try {
+					db.prepare(
+						`INSERT INTO entity_dependencies
+						 (id, source_entity_id, target_entity_id, agent_id,
+						  dependency_type, strength, confidence, created_at, updated_at)
+						 VALUES (?, ?, ?, ?, 'related_to', 0.3, 0.5, ?, ?)
+						 ON CONFLICT DO NOTHING`,
+					).run(crypto.randomUUID(), resolved[i], resolved[j], input.agentId, input.now, input.now);
+				} catch {
+					// Already exists
+				}
+			}
+		}
+	}
+
+	return {
+		entitiesInserted: base.entitiesInserted,
+		entitiesUpdated: base.entitiesUpdated,
+		relationsInserted: base.relationsInserted,
+		relationsUpdated: base.relationsUpdated,
+		mentionsLinked: base.mentionsLinked,
+		aspectsCreated,
+		attributesCreated,
+	};
+}
+
 /**
  * Decrement entity mention counts after memory purge. Entities that
  * drop to 0 mentions are deleted, and dangling relations are cleaned.
  *
  * Call inside `accessor.withWriteTx(db => txDecrementEntityMentions(db, input))`.
  */
-export function txDecrementEntityMentions(
-	db: WriteDb,
-	input: DecrementInput,
-): DecrementResult {
+export function txDecrementEntityMentions(db: WriteDb, input: DecrementInput): DecrementResult {
 	if (input.entityIds.length === 0) return { entitiesOrphaned: 0 };
 
 	// Decrement mentions (floor at 0)
@@ -273,11 +430,7 @@ export function txDecrementEntityMentions(
 	}
 
 	// Delete orphaned entities (mentions = 0)
-	const orphaned = db
-		.prepare(
-			"SELECT id FROM entities WHERE mentions = 0",
-		)
-		.all() as Array<{ id: string }>;
+	const orphaned = db.prepare("SELECT id FROM entities WHERE mentions = 0").all() as Array<{ id: string }>;
 
 	if (orphaned.length > 0) {
 		const placeholders = orphaned.map(() => "?").join(", ");
@@ -297,9 +450,7 @@ export function txDecrementEntityMentions(
 		).run(...ids);
 
 		// Delete the entities themselves
-		db.prepare(
-			`DELETE FROM entities WHERE id IN (${placeholders})`,
-		).run(...ids);
+		db.prepare(`DELETE FROM entities WHERE id IN (${placeholders})`).run(...ids);
 	}
 
 	return { entitiesOrphaned: orphaned.length };

@@ -232,16 +232,25 @@ export function extractBalancedJsonArray(raw: string): string | null {
 
 function parseExtractionOutput(rawOutput: string): unknown | null {
 	const stripped = stripFences(rawOutput);
+
+	// Try the most complete candidate first: a balanced JSON object
+	// extracted from the raw output. This handles bare JSON without
+	// code fences, where stripFences may incorrectly extract a nested
+	// array (e.g. entities:[]) instead of the full object.
+	const rawObject = extractBalancedJsonObject(rawOutput);
+	if (rawObject) {
+		const parsed = tryParseJson(rawObject);
+		if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+			return parsed;
+		}
+	}
+
+	// Fall back to stripped output (handles code-fenced responses)
 	const candidates: string[] = [stripped];
 
 	const strippedObject = extractBalancedJsonObject(stripped);
 	if (strippedObject && strippedObject !== stripped) {
 		candidates.push(strippedObject);
-	}
-
-	const rawObject = extractBalancedJsonObject(rawOutput);
-	if (rawObject && !candidates.includes(rawObject)) {
-		candidates.push(rawObject);
 	}
 
 	for (const candidate of candidates) {

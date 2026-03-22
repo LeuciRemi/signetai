@@ -10,31 +10,27 @@ Status markers: `[done]` shipped, `[wip]` in progress, `[next]` planned,
 `[idea]` exploring.
 
 
-Current Focus (0.42.x)
+Current Focus (0.71.x)
 ---
 
+- [wip] Desire Paths Phase 4 — path-level feedback propagation and
+  traversal path scoring; evolves the predictor from ranking individual
+  memories to ranking traversal paths through the knowledge graph
 - [wip] Procedural memory P2–P5 — usage tracking, implicit relation
-  computation, suggestion endpoints, dashboard visualization
-- [wip] Predictive memory scorer — QA phase (three critical bugs under
-  fix before enabling by default: feature vector mismatch, cold-start
-  exit condition, stale traversal cache)
-- [wip] Dashboard settings refactor — unified settings/config page
-  replacing tab layout; resizable identity panel, per-section advanced
-  collapsibles
-- [wip] Knowledge graph constellation — entity-centric force simulation
-  (hexagon nodes sized by mention density), four known visualization
-  bugs being fixed
-- [wip] Multi-agent support — agent_id scoping across all data tables,
-  agent registry, per-agent skill graph nodes and usage stats
-- [wip] Daemon refactor — spec in planning; extract 7000+ LOC daemon.ts
-  into Hono sub-routers
+  computation, retrieval and suggestion endpoints, dashboard visualization
+- [wip] Multi-agent support — multiple agent identities per daemon,
+  shared skills pool, fully scoped memory isolation via agent_id
+- [wip] Signet Runtime — standalone runtime channel independent of
+  harness-specific connectors; built-in tool registry, pre-generation
+  research phase
 
 
 Planned
 ---
 
-- [next] Signet Runtime — autonomous tool execution layer, pre-generation
-  research phase, built-in tool registry, HTTP channel
+- [next] Desire Paths Phase 5 — explorer bees (autonomous graph
+  exploration), cross-entity boundary traversal, discovered principles
+  as first-class entity type, entity health dashboard
 - [next] Federated predictor training — community base model ships with
   new installs, local fine-tuning on user interaction patterns; cold
   start eliminated
@@ -45,8 +41,7 @@ Planned
 - [next] Agent branching — version-control-like identity branching
   and merging (one agent across multiple concurrent sessions converges
   back to a single history)
-- [next] Daemon Rust rewrite — systems language migration; test suite
-  and specs in docs/specs/ define the rewrite contract
+- [next] Gemini CLI connector — platform adapter
 
 
 Exploring
@@ -56,51 +51,41 @@ Exploring
   agents; enabled by standardized identity and EIP-8004
 - [idea] Collaborative memory — shared memory pools across agent teams
   with scoped access control
-- [idea] Plugin system — extend daemon with custom pipeline stages
-  without forking
 - [idea] Mobile companion — lightweight agent presence on iOS/Android
-- [idea] Compass connector — platform adapter for Compass IDE
+- [idea] Daemon Rust rewrite — systems language migration; shadow proxy
+  runs both in parallel and logs divergences
 
 
 Recently Shipped
 ---
 
-- [done] 0.42.x — OpenClaw recall query pollution fix; hybrid recall
-  for prompt-submit; guard legacy hook path from envelope contamination
-- [done] 0.41.0 — Native Rust vector ops with SIMD acceleration
-  (`@signet/native` napi-rs crate)
-- [done] 0.40.0 — Codex harness connector with transcript normalization
-  and timeout reporting
-- [done] 0.39.0 — Session-activity-based MEMORY.md synthesis on schedule;
-  daemon-driven synthesis provider
-- [done] 0.38.x — Entity evolution timeline view; doc drift detection
-  script and agent prompt; constellation none-mode polish
-- [done] KA-6 — Entity pinning and behavioral feedback loop (FTS overlap
-  → aspect weight, per-entity predictor win rates, superseded propagation)
-- [done] KA-5 — Session continuity integration into knowledge graph
-  dashboard; continuity scoring over time
-- [done] KA-4 — Predictive scorer coupling; structural features
-  (entity_slot, aspect_slot, is_constraint, structural_density) in
-  scorer payload
-- [done] KA-3 — Traversal retrieval path wired into session-start and
-  recall; constraint surfacing invariant enforced
-- [done] KA-1 + KA-2 — Knowledge architecture schema (entity_aspects,
-  entity_attributes, entity_dependencies, task_meta); structural
-  assignment stage in extraction pipeline
-- [done] Predictive memory scorer — all four build sprints complete;
-  Rust crate with autograd, training pipeline, daemon integration,
-  observability dashboard (in QA)
-- [done] Session continuity protocol — session_checkpoints table,
-  checkpoint digests, recovery injection, continuity scoring
-- [done] Auth module — token-based middleware, policy rules, rate
-  limiting for daemon API routes
-- [done] Scheduler — cron-based task worker with SSE output streaming
-  and run history
-- [done] Server-side UMAP — dimensionality reduction moved from browser
-  to daemon with pre-computed projections and cache
-- [done] 1Password WASM integration — lazy-loaded secret resolution
-  without native binaries
-- [done] OpenClaw connector — full integration strategy, importance
-  scoring, recall, plugin runtime path
-- [done] Dashboard redesign — shadcn-svelte component system, hash
-  navigation, Svelte 5 rune stores, skills marketplace UI
+- [done] 0.71.0 — Desire Paths Phase 3: traversal-primary retrieval
+  (DP-6), constructed memories with path provenance (DP-7), prospective
+  indexing at write time (DP-6.1), cosine re-scoring of traversal
+  results (DP-6.2), scoped vector search with 2x over-fetch (DP-6.3),
+  predictor bug fixes (DP-8)
+- [done] 0.70.x — Desire Paths Phase 1–2: significance gate (DP-1),
+  edge confidence + reason on entity dependencies (DP-2), bounded
+  traversal parameters (DP-3), MCP tool registration and blast radius
+  endpoint (DP-4), Louvain community detection (DP-5)
+- [done] 0.69.x — Predictive memory scorer all four sprints complete
+  and enabled; Rust crate with autograd, ListNet loss, training
+  pipeline, daemon integration, observability dashboard
+- [done] 0.68.x — Knowledge Architecture KA-1 through KA-6 complete:
+  entity/aspect/attribute schema, graph traversal, predictor coupling,
+  session continuity integration, entity pinning and behavioral feedback
+  loop (FTS overlap → aspect weight, per-entity predictor win rates)
+- [done] 0.67.x — Session continuity: session_checkpoints table,
+  checkpoint digests, recovery injection, 2000-char recovery budget
+- [done] 0.66.x — ClawHub marketplace integration; skills.sh + ClawHub
+  aggregated catalog in dashboard
+- [done] 0.65.x — Codex connector with transcript normalization and
+  timeout reporting
+- [done] 0.64.x — OpenClaw runtime plugin; NemoClaw compatibility
+- [done] 0.63.x — Auth module: token-based middleware, policy rules,
+  rate limiting; scheduler with cron worker and SSE output streaming
+- [done] 0.62.x — Native Rust vector ops with SIMD acceleration
+  (`@signet/native` napi-rs crate); server-side UMAP with pre-computed
+  projections and cache
+- [done] 0.61.x — Memory Pipeline V2: LLM-based extraction, knowledge
+  graph, retention decay, document ingest, session summary worker

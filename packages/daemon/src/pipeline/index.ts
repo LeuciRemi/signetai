@@ -18,6 +18,7 @@ import { type StructuralClassifyHandle, startStructuralClassifyWorker } from "./
 import { type StructuralDependencyHandle, startStructuralDependencyWorker } from "./structural-dependency";
 import { type DependencySynthesisHandle, startDependencySynthesisWorker } from "./dependency-synthesis";
 import { type SynthesisWorkerHandle, startSynthesisWorker } from "./synthesis-worker";
+import { type HintsWorkerHandle, startHintsWorker } from "./prospective-index";
 import { type WorkerHandle, type WorkerStats, startWorker } from "./worker";
 
 export { enqueueExtractionJob } from "./worker";
@@ -56,6 +57,7 @@ let synthesisWorkerHandle: SynthesisWorkerHandle | null = null;
 let structuralClassifyHandle: StructuralClassifyHandle | null = null;
 let structuralDependencyHandle: StructuralDependencyHandle | null = null;
 let dependencySynthesisHandle: DependencySynthesisHandle | null = null;
+let hintsWorkerHandle: HintsWorkerHandle | null = null;
 
 /** Snapshot of running state for each worker — used by /api/pipeline/status */
 export function getPipelineWorkerStatus(): Record<
@@ -75,6 +77,7 @@ export function getPipelineWorkerStatus(): Record<
 		structuralClassify: { running: structuralClassifyHandle !== null },
 		structuralDependency: { running: structuralDependencyHandle !== null },
 		dependencySynthesis: { running: dependencySynthesisHandle !== null },
+		hints: { running: hintsWorkerHandle !== null },
 	};
 }
 
@@ -181,6 +184,12 @@ export function startPipeline(
 		}
 	}
 
+	// Prospective indexing worker — generates hypothetical future queries
+	// for memories to improve search recall.
+	if (!hintsWorkerHandle && pipelineCfg.hints?.enabled && !pipelineCfg.mutationsFrozen) {
+		hintsWorkerHandle = startHintsWorker({ accessor, provider, pipelineCfg });
+	}
+
 	logger.info("pipeline", "Pipeline started", {
 		mode:
 			pipelineCfg.enabled && !pipelineCfg.shadowMode && !pipelineCfg.mutationsFrozen ? "controlled-write" : "shadow",
@@ -188,6 +197,10 @@ export function startPipeline(
 }
 
 export async function stopPipeline(): Promise<void> {
+	if (hintsWorkerHandle) {
+		await hintsWorkerHandle.stop();
+		hintsWorkerHandle = null;
+	}
 	if (synthesisWorkerHandle) {
 		synthesisWorkerHandle.stop();
 		const drainResult = await synthesisWorkerHandle.drain();

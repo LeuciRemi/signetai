@@ -207,6 +207,35 @@ the unique key, and memory inserts check it to avoid exact-content
 duplicates.
 
 
+Inline Entity Linker
+---
+
+Before any async pipeline job runs, the inline entity linker
+(`packages/daemon/src/inline-entity-linker.ts`) performs a fast,
+synchronous extraction pass at memory write time. This is the "fast
+path" that complements the "deep path" of LLM-based extraction.
+
+The linker runs without an LLM call. It scans the memory's content
+text using regex patterns to extract entities, aspects, and attributes.
+Extracted entities are inserted or matched against `canonical_name` in
+the `entities` table, and corresponding `memory_entity_mentions` and
+`entity_attributes` rows are written in the same transaction as the
+memory itself.
+
+The key benefit is immediacy: entities are queryable via knowledge
+graph traversal the moment the memory is committed — there is no
+waiting for the async extraction worker to pick up the job. When the
+extraction pipeline processes the same memory later, it performs deeper
+analysis: supersession detection, dependency synthesis, and confidence
+calibration. The async pass may refine or extend the entities the
+inline linker created, but the fast path ensures baseline graph
+connectivity is never delayed by queue depth or LLM availability.
+
+Because the linker runs inside the write transaction, it must be fast
+and deterministic. There are no network calls, no LLM inference, and
+no blocking I/O — only regex matching and SQLite writes.
+
+
 Structural Classification
 ---
 
@@ -761,6 +790,143 @@ zero/empty, out-of-range scores are clamped to [0, 1], and sessions
 without `session_memories` data still get a valid score row.
 
 
+Prospective Indexing (Hints)
+---
+
+After a memory is written, a `prospective_index` job is enqueued in
+`memory_jobs`. The hints worker
+(`packages/daemon/src/pipeline/prospective-index.ts`) processes these
+jobs as a background polling loop, generating hypothetical future
+queries — "hints" — that the memory might answer.
+
+The approach is inspired by Kumiho (arXiv:2603.17244) prospective
+indexing. Rather than relying solely on the memory's literal content
+for retrieval, the pipeline asks the extraction LLM to imagine what
+questions a user might ask that this memory would help answer. The LLM
+returns up to `hints.max` (default 5) hint strings per memory.
+
+Hints are stored in the `memory_hints` table, each linking back to the
+source `memory_id`. A companion `memory_hints_fts` FTS5 index makes
+hints searchable with BM25 scoring.
+
+At search time, the hints FTS5 table is queried alongside the content
+FTS5 table. When a hint matches, its BM25 score is merged with the
+memory's content score using `Math.max` — a hint match elevates its
+parent memory but does not stack additively with the content score.
+This prevents a memory with both a content match and a hint match from
+being double-boosted; instead, the stronger of the two signals wins.
+
+Configuration lives under `hints` in the pipeline config:
+
+| Field | Default | Range | Description |
+|-------|---------|-------|-------------|
+| `enabled` | `false` | — | Master switch |
+| `max` | `5` | 1–20 | Max hints generated per memory |
+| `timeout` | `45000` | 5000–300000 ms | LLM generation timeout |
+| `poll` | `5000` | 1000–60000 ms | Worker polling interval |
+
+```yaml
+memory:
+  pipelineV2:
+    hints:
+      enabled: true
+      max: 5
+```
+
+
+Post-Fusion Dampening
+---
+
+After hybrid recall combines traversal, FTS, and vector results into a
+fused score list, the dampening pipeline
+(`packages/daemon/src/pipeline/dampening.ts`) applies three corrections
+before the final sort. The goal is to break score bunching where relevant
+and irrelevant results land at similar fusion scores.
+
+**Stage 1: Gravity dampening** penalizes results that arrived via a
+semantic path (vector, hybrid, or traversal) but share zero query-term
+overlap with the actual content. These are "semantic hallucinations" —
+the embedding model thinks they are related but the surface words have
+nothing in common. Results with a score above 0.3 from a semantic source
+are tokenized (lowercase, stop-word stripped) and checked against the
+query tokens. Zero overlap halves the score (default `gravityPenalty:
+0.5`).
+
+**Stage 2: Hub dampening** penalizes results whose linked entities are
+all high-degree hubs. Entity mention counts from
+`memory_entity_mentions` are sorted to compute a P90 threshold (default
+`hubPercentile: 0.9`). If every entity linked to a memory sits above
+that threshold, the memory's score is multiplied by `hubPenalty` (default
+0.7). This prevents popular entities like "Signet" or "Nicholai" from
+dominating recall when the query targets something specific.
+
+**Stage 3: Resolution boost** rewards actionable, specific memories.
+Memories with type `constraint` or `decision` receive a 1.2x multiplier
+(default `resolutionBoost: 1.2`). Other memories with temporal anchors
+(ISO dates or month names) receive a lighter boost: `1 + (boost - 1) *
+0.5`, which is 1.1x at default settings. Short or vague content (under
+50 characters) receives no boost.
+
+All three stages are independently togglable. After dampening, results
+are re-sorted by adjusted score descending.
+
+
+Lossless Session Transcripts
+---
+
+After the summary worker extracts facts from a session, it also writes
+the raw transcript to the `session_transcripts` table (migration 040).
+This preserves completeness — extraction creates the search surface, but
+the full conversation text is never lost.
+
+The table schema (`session_key TEXT PRIMARY KEY, content TEXT NOT NULL,
+harness TEXT, project TEXT, agent_id TEXT, created_at TEXT`) is indexed
+on `project` and `created_at`. The summary worker writes one row per
+session via `INSERT OR IGNORE`, keyed on `session_key`.
+
+The `/api/memory/remember` endpoint accepts an optional `transcript`
+field. When present and a `sourceId` (session key) is available, the
+transcript is written to `session_transcripts` in a separate write
+transaction. This allows connectors to push the raw conversation text
+alongside memories without waiting for session-end summary processing.
+
+At recall time, the `/api/memory/recall` endpoint supports `expand:
+true`. When set, session keys from the result set are batch-looked up
+in `session_transcripts` and the transcript content is joined into the
+response. This lets callers retrieve the full conversation context
+behind a recalled memory without a separate API call.
+
+
+Decision Auto-Protection
+---
+
+The inline entity linker (`packages/daemon/src/inline-entity-linker.ts`)
+runs a 14-pattern regex battery on memory content at write time. When
+decision language is detected, extracted attributes are promoted from
+`kind='attribute'` to `kind='constraint'` with `importance=0.85`
+(default attributes use `importance=0.5`).
+
+The patterns cover common decision-indicating phrases:
+
+- "chose/chosen to use X over Y", "decided to/on/against"
+- "switched from/to", "migrated from/to/away"
+- "picked X over Y", "went with", "sticking with"
+- "committed to", "settled on", "will use/go with/stick with"
+- "prefers X over/instead/rather", "adopted"
+- "architecture decision", "design decision"
+
+The detection function `isDecisionContent` returns true if any pattern
+matches. The linker then sets `kind='constraint'` on all attributes
+extracted from that memory's clauses, ensuring they receive the
+resolution boost during dampening (see Post-Fusion Dampening, Stage 3)
+and always surface in recall per INDEX.md invariant 5: constraints must
+be retrievable.
+
+This is a write-time classification — no LLM call is involved. The
+regex battery is fast and deterministic, consistent with the inline
+linker's contract of no network calls inside the write transaction.
+
+
 Configuration Reference
 ---
 
@@ -852,6 +1018,21 @@ embeddingTracker:
   enabled: true
   pollMs: 5000                   # ms, range 1s–60s
   batchSize: 8                   # range 1–20
+
+hints:
+  enabled: false
+  max: 5                         # range 1–20
+  timeout: 45000                 # ms, range 5000–300000
+  poll: 5000                     # ms, range 1000–60000
+
+dampening:
+  gravityEnabled: true
+  hubEnabled: true
+  resolutionEnabled: true
+  hubPercentile: 0.9             # fraction 0.0–1.0
+  hubPenalty: 0.7                # fraction 0.0–1.0
+  gravityPenalty: 0.5            # fraction 0.0–1.0
+  resolutionBoost: 1.2           # multiplier
 ```
 
 ### Example configurations

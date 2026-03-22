@@ -39,6 +39,13 @@ import { up as nullableMemoryJobMemoryId } from "./030-nullable-memory-job-memor
 import { up as dependencyReason } from "./031-dependency-reason";
 import { up as embeddingsVectorColumn } from "./032-embeddings-vector-column";
 import { up as scope } from "./033-scope";
+import { up as scopeAwareDedup } from "./034-scope-aware-dedup";
+import { up as entityFts } from "./035-entity-fts";
+import { up as dependencyConfidence } from "./036-dependency-confidence";
+import { up as entityCommunities } from "./037-entity-communities";
+import { up as memoryHints } from "./038-memory-hints";
+import { up as dedupEntityDependencies } from "./039-dedup-entity-dependencies";
+import { up as sessionTranscripts } from "./040-session-transcripts";
 
 // -- Public interface consumed by Database.init() --
 
@@ -341,6 +348,52 @@ export const MIGRATIONS: readonly Migration[] = [
 		artifacts: {
 			columns: [{ table: "memories", column: "scope" }],
 		},
+	},
+	{
+		version: 34,
+		name: "scope-aware-dedup",
+		up: scopeAwareDedup,
+	},
+	{
+		version: 35,
+		name: "entity-fts",
+		up: entityFts,
+	},
+	{
+		version: 36,
+		name: "dependency-confidence",
+		up: dependencyConfidence,
+		artifacts: {
+			columns: [
+				{ table: "entity_dependencies", column: "confidence" },
+			],
+		},
+	},
+	{
+		version: 37,
+		name: "entity-communities",
+		up: entityCommunities,
+		artifacts: {
+			tables: ["entity_communities"],
+			columns: [{ table: "entities", column: "community_id" }],
+		},
+	},
+	{
+		version: 38,
+		name: "memory-hints",
+		up: memoryHints,
+		artifacts: { tables: ["memory_hints"] },
+	},
+	{
+		version: 39,
+		name: "dedup-entity-dependencies",
+		up: dedupEntityDependencies,
+	},
+	{
+		version: 40,
+		name: "session-transcripts",
+		up: sessionTranscripts,
+		artifacts: { tables: ["session_transcripts"] },
 	},
 ];
 

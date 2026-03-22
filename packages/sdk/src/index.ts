@@ -136,6 +136,7 @@ export class SignetClient extends SignetClientHelpers {
       readonly importance_min?: number;
       readonly since?: string;
       readonly minScore?: number;
+      readonly expand?: boolean;
     },
   ): Promise<RecallResponse> {
     return this.transport.post<RecallResponse>("/api/memory/recall", {

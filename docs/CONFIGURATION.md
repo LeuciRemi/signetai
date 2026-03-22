@@ -314,6 +314,85 @@ from extracted facts and uses them to boost search relevance.
 | `boostTimeoutMs` | `500` | 50-5000 ms | Timeout for graph lookup during search |
 
 
+### Hints (`hints`)
+
+Prospective indexing generates hypothetical future queries at write
+time. These "hints" are indexed in FTS5 so memories match by
+anticipated cue, not just stored content. For example, a memory about
+"switched from PostgreSQL to SQLite" might generate hints like
+"database migration", "why SQLite", and "storage engine decision" —
+queries the user is likely to ask later.
+
+| Field | Default | Range | Description |
+|-------|---------|-------|-------------|
+| `enabled` | `true` | — | Enable prospective indexing |
+| `max` | `5` | 1-20 | Maximum hints generated per memory |
+| `timeout` | `30000` | 5000-120000 ms | Hint generation LLM timeout |
+| `maxTokens` | `256` | 32-1024 | Max tokens for hint generation |
+| `poll` | `5000` | 1000-60000 ms | Job polling interval |
+
+```yaml
+memory:
+  pipelineV2:
+    hints:
+      enabled: true
+      max: 5
+      timeout: 30000
+      maxTokens: 256
+      poll: 5000
+```
+
+
+### Traversal (`traversal`)
+
+Graph traversal controls how the knowledge graph is walked during
+retrieval. When `primary: true`, graph traversal produces the base
+candidate pool and flat search fills gaps. When `primary: false`,
+traditional hybrid search runs first with graph boost as
+supplementary.
+
+| Field | Default | Range | Description |
+|-------|---------|-------|-------------|
+| `enabled` | `true` | — | Enable graph traversal |
+| `primary` | `true` | — | Use traversal as primary retrieval strategy |
+| `maxAspectsPerEntity` | `10` | 1-50 | Max aspects to collect per entity |
+| `maxAttributesPerAspect` | `20` | 1-100 | Max attributes per aspect |
+| `maxDependencyHops` | `10` | 1-50 | Max hops for dependency walking |
+| `minDependencyStrength` | `0.3` | 0.0-1.0 | Minimum edge strength to follow |
+| `maxBranching` | `4` | 1-20 | Max branching factor during traversal |
+| `maxTraversalPaths` | `50` | 1-500 | Max paths to explore |
+| `minConfidence` | `0.5` | 0.0-1.0 | Minimum confidence for results |
+| `timeoutMs` | `500` | 50-5000 ms | Traversal timeout |
+| `boostWeight` | `0.2` | 0.0-1.0 | Weight for traversal boost in hybrid search |
+| `constraintBudgetChars` | `1000` | 100-10000 | Character budget for constraint injection |
+
+```yaml
+memory:
+  pipelineV2:
+    traversal:
+      enabled: true
+      primary: true
+      maxAspectsPerEntity: 10
+      maxAttributesPerAspect: 20
+      maxDependencyHops: 10
+      minDependencyStrength: 0.3
+      maxBranching: 4
+      maxTraversalPaths: 50
+      minConfidence: 0.5
+      timeoutMs: 500
+      boostWeight: 0.2
+      constraintBudgetChars: 1000
+```
+
+The `primary` flag determines the retrieval strategy. In primary mode,
+entities are extracted from the query, the graph is walked to collect
+related memories, and flat hybrid search only runs to fill remaining
+slots. In supplementary mode (`primary: false`), the standard hybrid
+search runs first and traversal results are blended in using
+`boostWeight`. Primary mode is faster for entity-dense queries;
+supplementary mode is more conservative and better for freeform text.
+
+
 ### Reranker (`reranker`)
 
 An optional reranking pass that runs after initial retrieval. An

@@ -3,6 +3,7 @@ title: "Epic: Graph-Native Memory Retrieval (Desire Paths)"
 status: approved
 informed_by:
   - "docs/research/technical/RESEARCH-LCM-ACP.md"
+  - "docs/research/technical/RESEARCH-REFERENCE-REPOS.md"
 success_criteria:
   - "Graph traversal discovers relevant memories that embedding search alone misses"
   - "Path feedback propagates learning signal through entity dependency edges"
@@ -43,10 +44,39 @@ running. They are not stories — they are the floor this epic stands on.
 | Behavioral Feedback Loop | COMPLETE | `aspect-feedback.ts` — FTS overlap feedback, aspect weight decay, telemetry |
 | Entity Pinning | COMPLETE | Migration 022, pin/unpin, always-focal during traversal |
 | Relations Confidence | COMPLETE | Migration 005, `relations.confidence` column |
+| Inline Entity Linking | COMPLETE | `inline-entity-linker.ts` — write-time entity/aspect/attribute derivation (see DP-6a) |
+| Traversal-Primary Flow | COMPLETE | `memory-search.ts` — graph walk as primary channel, FTS as gap-fill |
+| Mention-Based Traversal Fallback | COMPLETE | `graph-traversal.ts` — `memory_entity_mentions` fallback when `entity_attributes` empty |
+| Community Detection (Louvain) | COMPLETE | `community-detection.ts` — Louvain clustering, `entity_communities` table |
 
 ---
 
-## Phase 1: Complete the Foundation
+## Benchmark Findings (E15–E23, March 2026)
+
+*20 experiments on LoCoMo 50-question benchmark. Key learnings that
+shaped the implementation decisions below.*
+
+**Fair baseline (E23):** Signet 62% vs RAG 68% on identical 50 questions.
+Prior invalid comparison (different question sets) showed 54% vs 66%.
+
+| Finding | Evidence | Implication |
+|---------|----------|-------------|
+| Traversal was a no-op | E15-E20: 0 traversal candidates | Without write-time structure, `entity_attributes` pointed at wrong scopes |
+| Write-time structure is required | DP-6a fix → entity/aspect/attribute at remember-time | Pipeline extraction is too late — remember endpoint must derive KA structure |
+| Vector search is irrelevant for scoped queries | E20b = E15 (identical 54%) | sqlite-vec can't pre-filter scope; already skipped |
+| Constructed memories are critical | E16: removing them → 42% | Never remove, only improve |
+| OR-everywhere hurts precision | E21: gained single-hop, lost multi-hop/adversarial (net -2%) | AND for short queries, OR for long |
+| Prompt tuning hits ceiling fast | E9, E13, E19 all regressed | Retrieval quality is the bottleneck |
+| 8/12 Signet failures shared with RAG | E15 failure analysis | Extraction/answer ceiling, not retrieval-specific |
+| Data variance confounds results | E20 fresh data: 34%; E20b same data: 54% | Always reuse `dataSourceRunId` |
+
+**Known issue:** Benchmark data mixes with real memories. Scope filtering
+at hydration prevents cross-contamination in results, but the entity
+graph accumulates benchmark entities alongside real ones.
+
+---
+
+## Phase 1: Complete the Foundation -- COMPLETE
 
 *Finish the partially-built pieces and close remaining gaps in the
 signal-cleaning pipeline.*
@@ -198,27 +228,28 @@ No blast radius / impact analysis endpoint exists.
 ---
 
 
-## Phase 2: Bootstrap Topology
+## Phase 2: Bootstrap Topology -- COMPLETE
 
 *Give the graph navigable structure before behavioral feedback
 accumulates.*
 
 Depends on: Phase 1 (edges have confidence, traversal is bounded).
 
-### DP-5: Leiden Community Detection
+### DP-5: Louvain Community Detection — PARTIALLY COMPLETE
 
 **Goal:** Cluster the entity graph into functional neighborhoods.
 Give the scorer routing landmarks.
 
-**What exists:** No clustering. All entities are structurally
-equidistant.
+**What exists:** `community-detection.ts` implements Louvain clustering
+via graphology. `entity_communities` table exists. `/api/repair/cluster-entities`
+endpoint works. Constellation view integration in progress.
 
 **What to build:**
 
-1. Install `graphology` + `graphology-communities-leiden` (MIT-licensed).
+1. Install `graphology` + `graphology-communities-louvain` (MIT-licensed).
 2. Build graphology graph from `entity_dependencies` +
    `memory_entity_mentions` tables.
-3. Run Leiden with `resolution: 1.0`, `randomness: 0.01`.
+3. Run Louvain with `resolution: 1.0`.
 4. Migration: create `entity_communities` table (id, name, cohesion,
    member_count, created_at, updated_at). Add `community_id` column
    to `entities`.
@@ -240,7 +271,7 @@ equidistant.
 ---
 
 
-## Phase 3: Graph-Native Retrieval
+## Phase 3: Graph-Native Retrieval -- COMPLETE
 
 *Change how retrieval works. Search finds the door; the graph walk
 goes through it.*
@@ -248,34 +279,101 @@ goes through it.*
 Depends on: Phase 2 (topology exists to traverse). DP-7 depends on
 DP-6.
 
-### DP-6: Entity-Anchored Search
+### DP-6: Entity-Anchored Search — PARTIALLY COMPLETE
 
-**Goal:** Hybrid search identifies *entities*, not memories.
+**Goal:** Hybrid search identifies *entities*, not memories. Graph walk
+is the primary retrieval path.
 
-**What exists:** `resolveFocalEntities` in `graph-traversal.ts` uses
-project path matching, query token matching via LIKE queries, checkpoint
-entities, and pinned entities. This is heuristic-based — it matches
-path components and normalized tokens against entity names. It does not
-use FTS5 or embeddings to find entities, and cannot rank entity
-relevance by structural signals.
+**Status:** Core flow is implemented and benchmarked. Entity-anchored
+search via FTS5 against entities is not yet built (the resolution still
+uses heuristic token matching). But the architectural inversion —
+traversal-primary, flat-gap-fill — is live and producing results.
 
-**What to build:**
+**What was built (March 2026):**
 
-1. Add entity-resolution via FTS5 + embedding search against `entities`
-   (in addition to `memories`).
-2. Score entity matches by: name match strength, mention count,
-   community membership (DP-5), pinned status, structural density.
-3. Return ranked focal entities. The current heuristic resolution
-   becomes fallback for when entity-anchored search produces no results.
-4. Flat memory search still runs as secondary channel — merged with
-   traversal results during reranking. But graph walk is now the
-   primary retrieval path.
+1. **Traversal-primary flow** in `memory-search.ts`: graph traversal
+   runs as Channel A (primary), FTS5 keyword search runs as Channel B
+   (gap-fill). Traversal memories scored by structural importance from
+   `entity_attributes`. Flat search only contributes memories the
+   graph didn't find. Graceful degradation: when entity resolution
+   finds no focal entities, Channel B gets full result limit.
+2. **FTS5 stop-word filtering** in `graph-search.ts`: shared stop-word
+   list prevents common tokens from matching garbage entities.
+3. **Mention-based traversal fallback** in `graph-traversal.ts`: when
+   `entity_attributes` yields no memories for an entity (e.g., before
+   pipeline extraction runs), falls back to `memory_entity_mentions`
+   joined with `memories` for scope filtering.
+4. **Scope-filtered attribute collection**: traversal joins with
+   `memories` table to pre-filter out-of-scope results during
+   collection, not after hydration.
+
+**What remains:**
+
+1. Entity-resolution via FTS5 + embedding search against `entities`
+   (not just LIKE-based token matching).
+2. Entity ranking by structural signals: mention count, community
+   membership (DP-5), pinned status, structural density.
+3. Current heuristic resolution becomes fallback for when entity-
+   anchored search produces no results.
 
 **Files:**
-- `packages/daemon/src/pipeline/graph-traversal.ts` — new resolution path
-- `packages/core/src/search.ts` — entity search additions
+- `packages/daemon/src/memory-search.ts` — traversal-primary flow (DONE)
+- `packages/daemon/src/pipeline/graph-search.ts` — stop-word filtering (DONE)
+- `packages/daemon/src/pipeline/graph-traversal.ts` — mention fallback, scope filter (DONE)
+- `packages/daemon/src/pipeline/graph-traversal.ts` — FTS5 entity resolution (TODO)
+- `packages/core/src/search.ts` — entity search additions (TODO)
 
-**Estimate:** 2-3 days.
+---
+
+### DP-6a: Inline Entity Linking (Write-Time Structure) — COMPLETE
+
+**Goal:** The `/api/memory/remember` endpoint derives full entity →
+aspect → attribute structure from memory content at write time, without
+LLM calls. This ensures traversal can find the memory immediately.
+
+**Motivation:** Benchmark experiments (E15-E22) revealed that traversal
+produced zero candidates because entity_attributes only existed after
+async pipeline extraction — which runs later and may never complete for
+scoped/benchmark memories. The remember endpoint must be self-sufficient.
+
+**What was built:**
+
+1. `inline-entity-linker.ts` — new module with:
+   - **Aspect inference from verb patterns**: 12 regex patterns mapping
+     sentence verbs to aspect categories (preferences, events,
+     properties, activities, perspectives, background, relationships,
+     decision patterns).
+   - **Name extraction**: proper noun detection from capitalized words,
+     multi-word name grouping, SKIP_WORDS filter for false positives.
+     Includes sentence-initial proper nouns (critical for "Caroline
+     attended..." patterns).
+   - **Clause extraction**: entity-predicate pairs from sentence
+     structure. "Caroline attended an LGBTQ support group" → entity:
+     Caroline, aspect: events, predicate: "attended an LGBTQ support
+     group."
+   - **Entity/aspect/attribute resolution**: find-or-create with
+     UNIQUE constraint handling, canonical name normalization, duplicate
+     attribute detection via `normalized_content`.
+   - **Co-occurrence dependencies**: entities mentioned in the same
+     memory get `related_to` dependency edges.
+2. `daemon.ts` — remember endpoint calls `linkMemoryToEntities()` inside
+   the write transaction, immediately after memory insert.
+3. `LinkResult` interface returns counts: `linked`, `created`,
+   `entityIds`, `aspects`, `attributes`.
+
+**Key design decisions:**
+- No LLM — sentence grammar is sufficient for aspect inference at the
+  "this is probably an attribute that needs sorting into an aspect of
+  an entity" level.
+- Runs synchronously inside the write transaction. KA traversal finds
+  the memory immediately.
+- Pipeline extraction still runs later for deeper analysis (supersession,
+  dependency synthesis, confidence calibration). This is complementary,
+  not redundant.
+
+**Files:**
+- `packages/daemon/src/inline-entity-linker.ts` — new module (COMPLETE)
+- `packages/daemon/src/daemon.ts` — integration at remember endpoint (COMPLETE)
 
 ---
 
@@ -368,13 +466,27 @@ which paths through those aspects were useful.
    (Requires DP-2 for confidence/reason columns.)
 4. Store path feedback history for scorer training data.
 5. Integrate with existing FTS overlap feedback as complementary signal.
+6. **Co-occurrence edge creation (Hebbian growth):** When memories are
+   co-retrieved across multiple sessions, create new `entity_dependencies`
+   edges between their parent entities. Use NPMI normalization to filter
+   noise (co-retrieval must exceed base rate). New edges start at
+   confidence `pattern-matched` (0.5). Per-entity homeostasis cap
+   prevents hub entities from accumulating unbounded edge weight.
+   (Informed by Ori-Mnemos co-occurrence model.)
+7. **Q-value reward vocabulary:** Extend feedback beyond binary
+   positive/negative. Track reward signals: forward citation (memory
+   referenced later in session, +1.0), update after retrieval (memory
+   modified after being surfaced, +0.5), downstream creation (new
+   memory created referencing retrieved one, +0.6), dead-end (retrieved
+   but session ended without engagement, -0.15). Accumulate via EMA
+   (alpha=0.1) per path. (Informed by Ori-Mnemos Q-value reranking.)
 
 **Files:**
 - `packages/daemon/src/pipeline/aspect-feedback.ts` — path-level feedback
 - `packages/daemon/src/pipeline/graph-transactions.ts` — edge updates
 - `packages/daemon/src/pipeline/knowledge-graph.ts` — confidence updates
 
-**Estimate:** 2-3 days.
+**Estimate:** 3-5 days.
 
 ---
 
@@ -431,6 +543,14 @@ of week, recency) but applies them to flat memories, not paths.
    pre-traverse at session start before any query arrives.
 3. Temporal decay: paths not traversed in N days fade in temporal
    relevance (distinct from structural aspect decay).
+4. **Intent-aware signal weighting:** Classify incoming queries into
+   intent categories (episodic, procedural, semantic, decision) via
+   heuristic pattern matching. Apply per-intent weight profiles to
+   traversal signals: episodic queries lean temporal features,
+   procedural queries lean structural importance, decision queries
+   balance entity name and aspect coverage. Intent classification
+   is cheap (regex, no LLM) and runs before traversal begins.
+   (Informed by Ori-Mnemos intent routing.)
 
 Depends on: DP-10 (path scoring).
 
@@ -439,7 +559,7 @@ Depends on: DP-10 (path scoring).
 - `packages/daemon/src/pipeline/graph-traversal.ts` — pre-warming
 - `packages/daemon/src/pipeline/worker.ts` — session-start pre-traversal
 
-**Estimate:** 2-3 days.
+**Estimate:** 3-4 days.
 
 ---
 
@@ -497,12 +617,23 @@ connections.
    propose a cross-entity dependency edge.
 3. New edges start with low confidence (`inferred`, 0.4), upgradeable
    by feedback (DP-9).
+4. **Reconsolidation on retrieval:** When a retrieved memory's context
+   has shifted significantly (embedding distance > 0.3 from stored
+   representation, or parent entity has gained new aspects since last
+   access), trigger reconsolidation: merge new context into the
+   memory's entity/aspect/attribute links. High mismatch (> 0.7)
+   archives the old representation and creates a fresh one.
+   Reconsolidation respects constraints (kind='constraint' never
+   auto-reconsolidated) and protected memories. Track plasticity
+   (increases on access, decays with 6-hour half-life) and stability
+   (increases with successful retrieval) per memory.
+   (Informed by Zikkaron reconsolidation model.)
 
 **Files:**
 - `packages/daemon/src/pipeline/worker.ts` — post-dedup bridge check
 - `packages/daemon/src/pipeline/graph-transactions.ts` — bridge edges
 
-**Estimate:** 1-2 days.
+**Estimate:** 2-3 days.
 
 ---
 
@@ -558,29 +689,233 @@ entities earn their keep?
 
 ---
 
+### DP-16: Post-Fusion Dampening Pipeline
+
+**Goal:** Filter retrieval noise after fusion scoring. Catch false
+positives from cosine similarity ghosts and hub entity domination.
+
+**What exists:** DP-6.2 (cosine re-scoring) reranks traversal results
+by semantic relevance. But two failure modes remain: (1) high cosine
+similarity with zero query-term overlap (semantic ghosts), and (2) hub
+entities with many edges dominating results regardless of query fit.
+
+**What to build:**
+
+1. **Gravity dampening:** After fusion scoring, check each result for
+   query-term overlap. Results with zero overlapping tokens (excluding
+   stop words) get their score halved. Prevents semantic embedding
+   matches that share no actual vocabulary with the query.
+2. **Hub dampening:** Compute P90 edge count across result set. Results
+   from entities above P90 receive a degree-proportional penalty.
+   Prevents well-connected entities (Signet, Nicholai, etc.) from
+   appearing in every query regardless of relevance.
+3. **Resolution boost:** Results tagged as actionable knowledge types
+   (decisions, constraints, procedures) receive a 1.25x multiplier.
+   Surfacing actionable context is more valuable than surfacing
+   descriptive context.
+4. All three stages are independently toggleable via config. Ablation
+   testing against LoCoMo benchmark required before enabling.
+
+(Informed by Ori-Mnemos dampening pipeline, ablation-validated.)
+
+**Config additions** (in traversal config):
+- `dampening.gravityEnabled` (default true)
+- `dampening.hubEnabled` (default true)
+- `dampening.hubPercentile` (default 0.9)
+- `dampening.resolutionBoost` (default 1.25)
+
+**Files:**
+- `packages/daemon/src/pipeline/dampening.ts` -- new module
+- `packages/daemon/src/memory-search.ts` -- post-fusion integration
+- `packages/core/src/types.ts` -- config additions
+
+**Estimate:** 1-2 days.
+
+---
+
+### DP-17: Compaction Resilience (Hippocampal Replay)
+
+**Goal:** Survive context window compaction without losing critical
+working state. When the harness compacts conversation history, Signet
+captures a checkpoint before and reconstructs intelligently after.
+
+**What exists:** Session continuity protocol (complete) handles session
+restarts but not mid-session compaction events. When Claude Code
+compacts context, nuance evaporates: task state, active decisions,
+open questions, files being edited. The agent loses track of what it
+was doing.
+
+**What to build:**
+
+1. **PreCompact checkpoint:** Hook that fires before compaction.
+   Drains working state into `session_checkpoints` table: current
+   task description, key decisions made this session, files being
+   edited, active errors, open questions. Mark critical facts as
+   anchored (survive any compression).
+2. **PostCompact reconstruction:** Hook that fires after compaction.
+   Reconstructs session context from: latest checkpoint, anchored
+   memories, hot memories (high access count) for current directory,
+   recent tool actions (last 10), and predicted next needs based on
+   task state.
+3. **Micro-checkpointing:** Auto-checkpoint on significant events
+   (errors, decisions, architecture changes) and every N tool calls
+   (configurable, default 50). Checkpoints are lightweight (JSON
+   blob, not full context).
+4. **Connector integration:** Claude Code connector registers
+   PreCompact and PostCompact hook types. Other connectors that
+   support compaction events wire in similarly.
+
+(Informed by Zikkaron hippocampal replay model.)
+
+**Files:**
+- `packages/daemon/src/pipeline/checkpoint.ts` -- new module
+- `packages/daemon/src/daemon.ts` -- checkpoint endpoints
+- `packages/core/src/migrations/` -- checkpoint schema additions
+- `packages/connector-claude-code/` -- compaction hook registration
+
+**Estimate:** 3-5 days.
+
+---
+
+### DP-18: Decision Auto-Protection
+
+**Goal:** Automatically detect and protect architectural decisions
+from decay and compression. Decisions are the most valuable memory
+type but currently receive no special treatment.
+
+**What to build:**
+
+1. **Decision detection regex:** Pattern matching for decision
+   language: "chose X over Y", "decided to use", "switched from X
+   to Y", "migrated from", "going with", "opted for", "selected
+   because", "picking X strategy". Runs during inline entity linking
+   (DP-6a) and pipeline extraction.
+2. **Auto-protection:** Detected decisions get: `kind='constraint'`
+   on their entity_attribute (constraints always surface per
+   invariant 5), high initial importance, protection from
+   compression/archival.
+3. **Decision history tracking:** When a new decision contradicts an
+   existing one on the same entity/aspect, both are preserved with
+   temporal ordering. "Switched from Redis to Memcached" followed by
+   "switched back to Redis" creates a decision chain, not a
+   supersession.
+
+(Informed by Zikkaron decision auto-protection.)
+
+**Files:**
+- `packages/daemon/src/inline-entity-linker.ts` -- decision regex
+- `packages/daemon/src/pipeline/graph-transactions.ts` -- protection
+- `packages/core/src/types.ts` -- decision chain type
+
+**Estimate:** 1-2 days.
+
+---
+
+### DP-19: Adaptive Write Gate
+
+**Goal:** Evolve DP-1's session-level significance gate into a
+per-memory surprisal filter. Only store information that violates
+the system's expectations.
+
+**What exists:** DP-1 gates at session level (skip extraction for
+low-significance sessions). But within significant sessions, every
+extracted memory is written regardless of novelty. Redundant and
+near-duplicate memories accumulate.
+
+**What to build:**
+
+1. **Per-memory surprisal scoring:** Before writing a memory, compute
+   surprise = 1 - max_similarity against existing memories in the
+   same entity scope. Memories below threshold (default 0.4) are
+   skipped.
+2. **Task continuity discount:** When the user is working on the same
+   task (same directory, recent stores, semantic similarity to last
+   5 memories), lower the threshold by 0.15. Captures incremental
+   progress without blocking it.
+3. **Bypass conditions:** Errors, decisions (DP-18), and constraint
+   updates always pass the gate regardless of surprisal score.
+4. **Telemetry:** Track gate pass/block ratio per session. Alert if
+   block rate exceeds 80% (threshold may be too aggressive) or falls
+   below 20% (threshold too permissive).
+
+(Informed by Zikkaron predictive coding write gate.)
+
+**Config additions:**
+- `pipeline.writeGateThreshold` (default 0.4)
+- `pipeline.writeGateContinuityDiscount` (default 0.15)
+
+**Files:**
+- `packages/daemon/src/pipeline/write-gate.ts` -- new module
+- `packages/daemon/src/pipeline/worker.ts` -- integration
+- `packages/core/src/types.ts` -- config additions
+
+**Estimate:** 1-2 days.
+
+---
+
+### DP-20: Sleep Replay (Background Consolidation)
+
+**Goal:** Background process that discovers latent connections by
+comparing random memory pairs during idle periods. Insurance against
+missed cross-entity links.
+
+**What to build:**
+
+1. **Idle trigger:** After configurable idle timeout (default 300s of
+   no API activity), run one consolidation cycle.
+2. **Random pair comparison:** Sample N random memory pairs (default
+   20). For each pair, compute embedding similarity. Pairs above
+   threshold (0.7) that lack entity_dependency edges get proposed
+   edges created at confidence `inferred` (0.4).
+3. **Duplicate detection sweep:** Check for near-duplicate memories
+   (similarity > 0.95) and flag for merging.
+4. **Community re-clustering:** If new edges were created, trigger
+   Louvain re-clustering (DP-5) to update community assignments.
+5. **Telemetry:** Track connections discovered per cycle, false
+   positive rate (edges later downgraded by feedback).
+
+(Informed by Zikkaron astrocyte pool sleep replay.)
+
+**Config additions:**
+- `consolidation.idleTimeoutMs` (default 300000)
+- `consolidation.pairsPerCycle` (default 20)
+- `consolidation.similarityThreshold` (default 0.7)
+
+**Files:**
+- `packages/daemon/src/pipeline/sleep-replay.ts` -- new module
+- `packages/daemon/src/daemon.ts` -- idle timer integration
+
+**Estimate:** 2-3 days.
+
+---
+
 
 ## Story Dependency Graph
 
 ```mermaid
 flowchart TD
   subgraph P1["Phase 1: Complete the Foundation"]
-    DP1[DP-1: Significance Gate]
-    DP2[DP-2: Edge Confidence]
-    DP3[DP-3: Bounded Traversal]
-    DP4[DP-4: MCP Tools + Impact]
+    DP1[DP-1: Significance Gate]:::done
+    DP2[DP-2: Edge Confidence]:::done
+    DP3[DP-3: Bounded Traversal]:::done
+    DP4[DP-4: MCP Tools + Impact]:::done
   end
 
   subgraph P2["Phase 2: Bootstrap Topology"]
-    DP5[DP-5: Leiden Clustering]
+    DP5[DP-5: Louvain Clustering]:::done
   end
 
   subgraph P3["Phase 3: Graph-Native Retrieval"]
-    DP6[DP-6: Entity-Anchored Search]
-    DP7[DP-7: Constructed Memories]
+    DP6a[DP-6a: Inline Entity Linking]:::done
+    DP6[DP-6: Entity-Anchored Search]:::done
+    DP61[DP-6.1: Prospective Indexing]:::done
+    DP62[DP-6.2: Cosine Re-Scoring]:::done
+    DP63[DP-6.3: Scoped Vector Search]:::done
+    DP7[DP-7: Constructed Memories]:::done
   end
 
   subgraph P4["Phase 4: Path Learning"]
-    DP8[DP-8: Predictor Bug Fixes]
+    DP8[DP-8: Predictor Bug Fixes]:::done
     DP9[DP-9: Path Feedback]
     DP10[DP-10: Path Scoring]
     DP11[DP-11: Temporal Reinforcement]
@@ -591,12 +926,21 @@ flowchart TD
     DP13[DP-13: Cross-Entity Bridges]
     DP14[DP-14: Discovered Principles]
     DP15[DP-15: Entity Health]
+    DP16[DP-16: Post-Fusion Dampening]
+    DP17[DP-17: Compaction Resilience]
+    DP18[DP-18: Decision Auto-Protection]
+    DP19[DP-19: Adaptive Write Gate]
+    DP20[DP-20: Sleep Replay]
   end
 
   DP2 --> DP3
   DP2 --> DP4
   P1 --> P2
   DP5 --> DP6
+  DP6a --> DP6
+  DP6 --> DP61
+  DP6 --> DP62
+  DP6 --> DP63
   DP6 --> DP7
   DP8 --> DP10
   DP7 --> DP9
@@ -606,20 +950,27 @@ flowchart TD
   P4 --> P5
   DP13 --> DP14
   DP12 --> DP14
+  DP6 --> DP16
+  DP1 --> DP19
+  DP5 --> DP20
+  DP18 --> DP19
+
+  classDef done fill:#2d5a2d,stroke:#4a8c4a
+  classDef partial fill:#5a4a2d,stroke:#8c7a4a
 ```
 
 ## Effort Summary
 
-| Phase | Stories | Estimate |
-|-------|---------|----------|
-| 1: Complete the Foundation | DP-1, DP-2, DP-3, DP-4 | 4-7 days |
-| 2: Bootstrap Topology | DP-5 | 2-3 days |
-| 3: Graph-Native Retrieval | DP-6, DP-7 | 4-6 days |
-| 4: Path Learning | DP-8, DP-9, DP-10, DP-11 | 8-13 days |
-| 5: Emergence | DP-12, DP-13, DP-14, DP-15 | 8-12 days |
-| **Total** | **15 stories** | **26-41 days** |
+| Phase | Stories | Status | Remaining |
+|-------|---------|--------|-----------|
+| 1: Foundation | DP-1, DP-2, DP-3, DP-4 | COMPLETE | 0 days |
+| 2: Topology | DP-5 | COMPLETE | 0 days |
+| 3: Graph-Native | DP-6a, DP-6, DP-6.1, DP-6.2, DP-6.3, DP-7 | COMPLETE | 0 days |
+| 4: Path Learning | DP-8, DP-9, DP-10, DP-11 | DP-8 COMPLETE | 9-14 days |
+| 5: Emergence | DP-12 through DP-20 | NOT STARTED | 14-23 days |
+| **Total** | **21 stories** | **13 complete** | **~23-37 days** |
 
-With parallelism within phases, critical path is ~18-25 working days.
+Critical path runs through: DP-9 (path feedback + co-occurrence + Q-values) -> DP-10 (path scoring) -> DP-11 (temporal + intent routing).
 
 ---
 
@@ -646,3 +997,4 @@ convergence point described in DESIRE-PATHS.md.
 ---
 
 *Written by Nicholai and Mr. Claude. March 11, 2026.*
+*Updated March 22, 2026: Reference repo patterns (Ori-Mnemos, Zikkaron) folded in as DP-16 through DP-20. Phase 1-3 marked complete. DP-9, DP-11, DP-13 amended with co-occurrence growth, intent routing, and reconsolidation.*

@@ -123,12 +123,14 @@ bun run deploy   # Deploy to Cloudflare (wrangler)
 | `@signet/connector-claude-code` | Claude Code connector: hooks, CLAUDE.md generation | node |
 | `@signet/connector-opencode` | OpenCode connector: plugin, AGENTS.md sync | node |
 | `@signet/connector-openclaw` | OpenClaw connector: config patching, hook handlers | node |
+| `@signet/connector-codex` | Codex CLI connector: hooks and plugin | node |
 | `@signet/opencode-plugin` | OpenCode runtime plugin: memory tools and session hooks | node |
 | `@signetai/signet-memory-openclaw` | OpenClaw runtime plugin for calling Signet daemon | node |
 | `@signet/tray` | System tray application | node |
 | `signetai` | Meta-package bundling CLI + daemon | - |
 | `@signet/web` | Marketing website (Astro static, Cloudflare Pages) | cloudflare |
-| `predictor` | Predictive memory scorer sidecar (WIP) | rust |
+| `@signet/native` | Native accelerators (SIMD vector ops, napi-rs) | node |
+| `predictor` | Predictive memory scorer sidecar (Rust) | rust |
 
 
 ### Package Responsibilities
@@ -255,9 +257,9 @@ not the daemon's process working directory.
 ### Database Migrations
 
 `packages/core/src/migrations/` contains numbered migrations
-(001-baseline through 010-umap-cache). These run automatically on
-daemon startup. Add new migrations as sequential `.ts` files and
-register them in the migrations index.
+(001-baseline through 039-dedup-entity-dependencies). These run
+automatically on daemon startup. Add new migrations as sequential
+`.ts` files and register them in the migrations index.
 
 ### Auth Middleware
 

@@ -269,6 +269,7 @@ export function resolveDefaultOllamaFallbackMaxContextTokens(): number {
 
 interface OllamaGenerateResponse {
 	readonly response?: string;
+	readonly thinking?: string;
 	readonly eval_count?: number;
 	readonly prompt_eval_count?: number;
 	readonly total_duration?: number;
@@ -346,16 +347,21 @@ export function createOllamaProvider(
 
 		async generate(prompt, opts): Promise<string> {
 			const data = await callOllama(prompt, opts);
-			return (data.response ?? "").trim();
+			// Thinking models (qwen3, deepseek) may put content in `thinking`
+			// field and leave `response` empty when using /api/generate
+			const text = (data.response ?? "").trim();
+			if (text.length > 0) return text;
+			return (data.thinking ?? "").trim();
 		},
 
 		async generateWithUsage(prompt, opts): Promise<LlmGenerateResult> {
 			const data = await callOllama(prompt, opts);
 			const nsToMs = (ns: number | undefined): number | null =>
 				typeof ns === "number" ? Math.round(ns / 1_000_000) : null;
+			const text = (data.response ?? "").trim();
 
 			return {
-				text: (data.response ?? "").trim(),
+				text: text.length > 0 ? text : (data.thinking ?? "").trim(),
 				usage: {
 					inputTokens: data.prompt_eval_count ?? null,
 					outputTokens: data.eval_count ?? null,

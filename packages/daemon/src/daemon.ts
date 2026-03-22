@@ -119,8 +119,9 @@ import {
 import { closeLlmProvider, getLlmProvider, initLlmProvider } from "./llm";
 import { type LogEntry, logger } from "./logger";
 import { type EmbeddingConfig, loadMemoryConfig } from "./memory-config";
-import { type RecallParams, hybridRecall } from "./memory-search";
+import { walkImpact } from "./graph-impact";
 import { buildMemoryTimeline } from "./memory-timeline";
+import { type RecallParams, hybridRecall } from "./memory-search";
 import { ONEPASSWORD_SERVICE_ACCOUNT_SECRET, importOnePasswordSecrets, listOnePasswordVaults } from "./onepassword.js";
 import {
 	DEFAULT_RETENTION,
@@ -134,8 +135,10 @@ import {
 	startRetentionWorker,
 	stopPipeline,
 } from "./pipeline";
+import { clusterEntities } from "./pipeline/community-detection";
 import { getFeedbackTelemetry } from "./pipeline/aspect-feedback";
 import { getGraphBoostIds } from "./pipeline/graph-search";
+import { linkMemoryToEntities } from "./inline-entity-linker";
 import {
 	getTraversalStatus,
 	invalidateTraversalCache,
@@ -699,27 +702,28 @@ function blobToVector(blob: Buffer, dimensions: number | null): number[] {
  * Single sentences exceeding 2x target get hard-split at targetChars.
  */
 function chunkBySentence(text: string, targetChars: number): readonly string[] {
-	// Split on sentence-ending punctuation followed by whitespace/newline
-	const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
-	const chunks: string[] = [];
+	// Split on sentence-ending punctuation followed by whitespace/newline,
+	// or on markdown bullet/heading boundaries (preserves list items as units)
+	const sentences = text.split(/(?<=[.!?])\s+|(?=^[-*] |\n## )/m).filter(Boolean);
+	const raw: string[] = [];
 	let current = "";
 
 	for (const sentence of sentences) {
 		// If a single sentence exceeds 2x target, hard-split it
 		if (sentence.length > targetChars * 2) {
 			if (current.length > 0) {
-				chunks.push(current.trim());
+				raw.push(current.trim());
 				current = "";
 			}
 			for (let i = 0; i < sentence.length; i += targetChars) {
-				chunks.push(sentence.slice(i, i + targetChars).trim());
+				raw.push(sentence.slice(i, i + targetChars).trim());
 			}
 			continue;
 		}
 
 		const combined = current.length > 0 ? `${current} ${sentence}` : sentence;
 		if (combined.length > targetChars && current.length > 0) {
-			chunks.push(current.trim());
+			raw.push(current.trim());
 			current = sentence;
 		} else {
 			current = combined;
@@ -727,10 +731,26 @@ function chunkBySentence(text: string, targetChars: number): readonly string[] {
 	}
 
 	if (current.trim().length > 0) {
-		chunks.push(current.trim());
+		raw.push(current.trim());
 	}
 
-	return chunks.filter((c) => c.length > 0);
+	const filtered = raw.filter((c) => c.length > 0);
+	if (filtered.length <= 1) return filtered;
+
+	// Add overlap: append the first ~25% of the next chunk to each chunk.
+	// This ensures information near boundaries appears in both chunks,
+	// improving recall when search queries match boundary content.
+	const chunks: string[] = [];
+	for (let i = 0; i < filtered.length; i++) {
+		if (i < filtered.length - 1) {
+			const overlap = filtered[i + 1].slice(0, Math.floor(targetChars * 0.25));
+			chunks.push(`${filtered[i]} ${overlap}`.trim());
+		} else {
+			chunks.push(filtered[i]);
+		}
+	}
+
+	return chunks;
 }
 
 function parseTagsField(raw: string | null): string[] {
@@ -1495,6 +1515,12 @@ app.use("/api/sessions/summaries", async (c, next) => {
 	return requirePermission("recall", authConfig)(c, next);
 });
 app.use("/api/knowledge/expand", async (c, next) => {
+	return requirePermission("recall", authConfig)(c, next);
+});
+app.use("/api/knowledge/expand/session", async (c, next) => {
+	return requirePermission("recall", authConfig)(c, next);
+});
+app.use("/api/graph/impact", async (c, next) => {
 	return requirePermission("recall", authConfig)(c, next);
 });
 
@@ -2556,6 +2582,28 @@ app.post("/api/memory/remember", async (c) => {
 		sourceType?: string;
 		sourceId?: string;
 		scope?: string | null;
+		hints?: string[];
+		transcript?: string;
+		structured?: {
+			entities?: Array<{
+				source: string;
+				sourceType?: string;
+				relationship: string;
+				target: string;
+				targetType?: string;
+				confidence: number;
+			}>;
+			aspects?: Array<{
+				entityName: string;
+				aspect: string;
+				attributes: Array<{
+					content: string;
+					confidence?: number;
+					importance?: number;
+				}>;
+			}>;
+			hints?: string[];
+		};
 	};
 
 	try {
@@ -2576,8 +2624,10 @@ app.post("/api/memory/remember", async (c) => {
 	}
 
 	// --- Auto-chunking for oversized memories ---
+	// Skip chunking when structured data is provided — the caller has
+	// already processed the content and provides entities/aspects/hints.
 	const guardrails = pipelineCfg.guardrails;
-	if (raw.length > guardrails.maxContentChars) {
+	if (!body.structured && raw.length > guardrails.maxContentChars) {
 		const chunks = chunkBySentence(raw, guardrails.chunkTargetChars);
 		if (chunks.length === 0) {
 			return c.json({ error: "content produced no valid chunks" }, 400);
@@ -2621,11 +2671,13 @@ app.post("/api/memory/remember", async (c) => {
 			const memType = inferType(chunk);
 
 			try {
-				// Dedup check + insert
+				// Dedup check + insert (scope-aware: same content in different scopes is not a duplicate)
 				const inserted = getDbAccessor().withWriteTx((db) => {
-					const byHash = db
-						.prepare("SELECT id FROM memories WHERE content_hash = ? AND is_deleted = 0 LIMIT 1")
-						.get(chunkNormalized.contentHash) as { id: string } | undefined;
+					const byHash = scope !== null
+						? db.prepare(`SELECT id FROM memories WHERE content_hash = ? AND scope = ? AND is_deleted = 0 LIMIT 1`)
+							.get(chunkNormalized.contentHash, scope) as { id: string } | undefined
+						: db.prepare(`SELECT id FROM memories WHERE content_hash = ? AND scope IS NULL AND is_deleted = 0 LIMIT 1`)
+							.get(chunkNormalized.contentHash) as { id: string } | undefined;
 					if (byHash) return false;
 
 					txIngestEnvelope(db, {
@@ -2677,6 +2729,12 @@ app.post("/api/memory/remember", async (c) => {
 						} else {
 							const embId = crypto.randomUUID();
 							const blob = vectorToBlob(vec);
+							// Use memory-scoped content hash for embeddings so the same
+							// content in different scopes each gets its own vector row
+							// (vector search joins on source_id, not content_hash)
+							const embHash = scope
+								? `${chunkNormalized.contentHash}:${scope}`
+								: chunkNormalized.contentHash;
 							getDbAccessor().withWriteTx((db) => {
 								syncVecDeleteBySourceId(db, "memory", chunkId);
 								db.prepare(`DELETE FROM embeddings WHERE source_type = 'memory' AND source_id = ?`).run(chunkId);
@@ -2686,7 +2744,7 @@ app.post("/api/memory/remember", async (c) => {
 									VALUES (?, ?, ?, ?, 'memory', ?, ?, ?)
 								`).run(
 									embId,
-									chunkNormalized.contentHash,
+									embHash,
 									blob,
 									vec.length,
 									chunkId,
@@ -2706,6 +2764,15 @@ app.post("/api/memory/remember", async (c) => {
 						chunkId,
 						error: String(e),
 					});
+				}
+
+				// Inline entity linking for chunk
+				try {
+					getDbAccessor().withWriteTx((db) => {
+						linkMemoryToEntities(db, chunkId, chunk, "default");
+					});
+				} catch {
+					// Non-fatal — pipeline extraction handles deeper linking
 				}
 
 				// Enqueue pipeline extraction if enabled
@@ -2779,28 +2846,34 @@ app.post("/api/memory/remember", async (c) => {
 		// On UNIQUE constraint race (two concurrent inserts with same
 		// content_hash), catch the error and re-read the winner.
 		const result = getDbAccessor().withWriteTx((db) => {
-			// Check sourceId-based dedupe first
+			// Check sourceId-based dedupe first (scope-aware)
 			if (sourceId) {
-				const bySource = db
-					.prepare(
+				const bySource = (scope !== null
+					? db.prepare(
 						`SELECT id, type, tags, pinned, importance, content
-						 FROM memories WHERE source_type = ? AND source_id = ? AND is_deleted = 0 LIMIT 1`,
-					)
-					.get(sourceType, sourceId) as DedupeRow | undefined;
+						 FROM memories WHERE source_type = ? AND source_id = ? AND scope = ? AND is_deleted = 0 LIMIT 1`,
+					).get(sourceType, sourceId, scope)
+					: db.prepare(
+						`SELECT id, type, tags, pinned, importance, content
+						 FROM memories WHERE source_type = ? AND source_id = ? AND scope IS NULL AND is_deleted = 0 LIMIT 1`,
+					).get(sourceType, sourceId)) as DedupeRow | undefined;
 				if (bySource) return { deduped: true as const, row: bySource };
 			}
 
-			// Check content_hash dedupe
-			const byHash = db
-				.prepare(
+			// Check content_hash dedupe (scope-aware: same content in different scopes is not a duplicate)
+			const byHash = (scope !== null
+				? db.prepare(
 					`SELECT id, type, tags, pinned, importance, content
-					 FROM memories
-					 WHERE content_hash = ? AND is_deleted = 0 LIMIT 1`,
-				)
-				.get(contentHash) as DedupeRow | undefined;
+					 FROM memories WHERE content_hash = ? AND scope = ? AND is_deleted = 0 LIMIT 1`,
+				).get(contentHash, scope)
+				: db.prepare(
+					`SELECT id, type, tags, pinned, importance, content
+					 FROM memories WHERE content_hash = ? AND scope IS NULL AND is_deleted = 0 LIMIT 1`,
+				).get(contentHash)) as DedupeRow | undefined;
 			if (byHash) return { deduped: true as const, row: byHash };
 
 			// No duplicate — insert
+			const hasStructured = !!body.structured;
 			txIngestEnvelope(db, {
 				id,
 				content: normalizedContent.storageContent,
@@ -2814,9 +2887,9 @@ app.post("/api/memory/remember", async (c) => {
 				tags,
 				pinned,
 				isDeleted: 0,
-				extractionStatus: pipelineEnqueueEnabled ? "pending" : "none",
+				extractionStatus: hasStructured ? "complete" : (pipelineEnqueueEnabled ? "pending" : "none"),
 				embeddingModel: null,
-				extractionModel: pipelineEnqueueEnabled ? pipelineCfg.extractionModel : null,
+				extractionModel: hasStructured ? "structured-passthrough" : (pipelineEnqueueEnabled ? pipelineCfg.extractionModel : null),
 				updatedBy: who,
 				sourceType,
 				sourceId,
@@ -2870,6 +2943,22 @@ app.post("/api/memory/remember", async (c) => {
 		return c.json({ error: "Failed to save memory" }, 500);
 	}
 
+	// Lossless transcript storage: write raw conversation text to
+	// session_transcripts so expand=true can join it at recall time.
+	if (body.transcript && sourceId) {
+		try {
+			getDbAccessor().withWriteTx((db) => {
+				db.prepare(
+					`INSERT OR IGNORE INTO session_transcripts
+					 (session_key, content, harness, project, agent_id, created_at)
+					VALUES (?, ?, ?, ?, 'default', ?)`,
+				).run(sourceId, body.transcript, sourceType, project, now);
+			});
+		} catch {
+			// Non-fatal — table may not exist pre-migration
+		}
+	}
+
 	// Generate embedding asynchronously — save memory first so failures are
 	// non-fatal (memory is still usable via keyword search)
 	let embedded = false;
@@ -2884,7 +2973,9 @@ app.post("/api/memory/remember", async (c) => {
 					memoryId: id,
 				});
 			} else {
-				const hash = contentHash;
+				// Scope-qualify content hash so same content in different scopes
+				// each gets its own embedding row for vector search
+				const embHash = scope ? `${contentHash}:${scope}` : contentHash;
 				const blob = vectorToBlob(vec);
 				const embId = crypto.randomUUID();
 
@@ -2895,7 +2986,7 @@ app.post("/api/memory/remember", async (c) => {
 						INSERT INTO embeddings
 						  (id, content_hash, vector, dimensions, source_type, source_id, chunk_text, created_at)
 						VALUES (?, ?, ?, ?, 'memory', ?, ?, ?)
-					`).run(embId, hash, blob, vec.length, id, normalizedContent.storageContent, now);
+					`).run(embId, embHash, blob, vec.length, id, normalizedContent.storageContent, now);
 					syncVecInsert(db, embId, vec);
 					db.prepare("UPDATE memories SET embedding_model = ? WHERE id = ?").run(cfg.embedding.model, id);
 				});
@@ -2909,22 +3000,151 @@ app.post("/api/memory/remember", async (c) => {
 		});
 	}
 
-	// Enqueue pipeline extraction if enabled
-	if (pipelineEnqueueEnabled) {
+	// --- Structured vs pipeline path ---
+	// When a structured payload is provided, write entities/aspects/attributes/hints
+	// synchronously and skip the async pipeline entirely. This is the path used by
+	// benchmarks and clients that pre-compute their own extraction.
+	let entitiesLinked = 0;
+	let hintsWritten = 0;
+
+	if (body.structured) {
+		const { txPersistStructured } = await import("./pipeline/graph-transactions.js");
 		try {
-			enqueueExtractionJob(getDbAccessor(), id);
+			const result = getDbAccessor().withWriteTx((db) =>
+				txPersistStructured(db, {
+					entities: (body.structured?.entities ?? []).map((e) => ({
+						source: e.source,
+						sourceType: e.sourceType,
+						relationship: e.relationship,
+						target: e.target,
+						targetType: e.targetType,
+						confidence: e.confidence ?? 0.7,
+					})),
+					aspects: body.structured?.aspects ?? [],
+					sourceMemoryId: id,
+					content: body.content,
+					agentId: "default",
+					now,
+				}),
+			);
+			entitiesLinked = result.mentionsLinked;
+			logger.debug("memory", "Structured payload persisted", {
+				id,
+				entities: result.entitiesInserted + result.entitiesUpdated,
+				relations: result.relationsInserted,
+				aspects: result.aspectsCreated,
+				attributes: result.attributesCreated,
+				mentions: result.mentionsLinked,
+			});
 		} catch (e) {
-			getDbAccessor().withWriteTx((db) => {
-				db.prepare(
-					`UPDATE memories
-						 SET extraction_status = 'failed', extraction_model = ?
-						 WHERE id = ?`,
-				).run(pipelineCfg.extractionModel, id);
+			logger.warn("memory", "Structured payload persistence failed (non-fatal)", {
+				id,
+				error: e instanceof Error ? e.message : String(e),
 			});
-			logger.warn("pipeline", "Failed to enqueue extraction job", {
-				memoryId: id,
-				error: String(e),
+		}
+
+		// Write structured hints
+		const allHints = [...(body.structured?.hints ?? []), ...(body.hints ?? [])];
+		if (allHints.length > 0) {
+			try {
+				getDbAccessor().withWriteTx((db) => {
+					const stmt = db.prepare(
+						`INSERT OR IGNORE INTO memory_hints (id, memory_id, agent_id, hint, created_at)
+						 VALUES (?, ?, ?, ?, ?)`,
+					);
+					for (const hint of allHints) {
+						const h = typeof hint === "string" ? hint.trim() : "";
+						if (h.length < 5 || h.length > 300) continue;
+						stmt.run(crypto.randomUUID(), id, "default", h, now);
+						hintsWritten++;
+					}
+				});
+			} catch (e) {
+				logger.warn("memory", "Structured hints write failed (non-fatal)", {
+					id,
+					error: e instanceof Error ? e.message : String(e),
+				});
+			}
+		}
+	} else {
+		// --- Default path: inline entity linking + async pipeline ---
+
+		// Inline entity linking — immediate KG integration so KA traversal
+		// can find this memory without waiting for async pipeline extraction.
+		try {
+			const linkResult = getDbAccessor().withWriteTx((db) =>
+				linkMemoryToEntities(db, id, normalizedContent.storageContent, "default"),
+			);
+			entitiesLinked = linkResult.linked;
+			if (linkResult.linked > 0) {
+				logger.debug("memory", "Inline entity linking", {
+					id,
+					linked: linkResult.linked,
+					aspects: linkResult.aspects,
+					attributes: linkResult.attributes,
+				});
+			}
+		} catch (e) {
+			logger.warn("memory", "Inline entity linking failed (non-fatal)", {
+				id,
+				error: e instanceof Error ? e.message : String(e),
 			});
+		}
+
+		// Enqueue pipeline extraction if enabled
+		if (pipelineEnqueueEnabled) {
+			try {
+				enqueueExtractionJob(getDbAccessor(), id);
+			} catch (e) {
+				getDbAccessor().withWriteTx((db) => {
+					db.prepare(
+						`UPDATE memories
+							 SET extraction_status = 'failed', extraction_model = ?
+							 WHERE id = ?`,
+					).run(pipelineCfg.extractionModel, id);
+				});
+				logger.warn("pipeline", "Failed to enqueue extraction job", {
+					memoryId: id,
+					error: String(e),
+				});
+			}
+		}
+
+		// Prospective hints: if client provides hints, write them directly.
+		// Otherwise the pipeline worker will generate them asynchronously.
+		if (Array.isArray(body.hints) && body.hints.length > 0 && pipelineCfg.hints?.enabled) {
+			try {
+				getDbAccessor().withWriteTx((db) => {
+					const stmt = db.prepare(
+						`INSERT OR IGNORE INTO memory_hints (id, memory_id, agent_id, hint, created_at)
+						 VALUES (?, ?, ?, ?, ?)`,
+					);
+					for (const hint of body.hints ?? []) {
+						const h = typeof hint === "string" ? hint.trim() : "";
+						if (h.length < 5 || h.length > 300) continue;
+						stmt.run(crypto.randomUUID(), id, "default", h, now);
+						hintsWritten++;
+					}
+				});
+			} catch (e) {
+				logger.warn("memory", "Client-side hints write failed (non-fatal)", {
+					id,
+					error: e instanceof Error ? e.message : String(e),
+				});
+			}
+		} else if (pipelineCfg.hints?.enabled && pipelineEnqueueEnabled) {
+			// No client hints — enqueue async generation
+			try {
+				const { enqueueHintsJob } = await import("./pipeline/prospective-index.js");
+				getDbAccessor().withWriteTx((db) => {
+					enqueueHintsJob(db, id, normalizedContent.storageContent);
+				});
+			} catch (e) {
+				logger.warn("memory", "Hints job enqueue failed (non-fatal)", {
+					id,
+					error: e instanceof Error ? e.message : String(e),
+				});
+			}
 		}
 	}
 
@@ -2933,6 +3153,9 @@ app.post("/api/memory/remember", async (c) => {
 		type: memType,
 		pinned: !!pinned,
 		embedded,
+		entities: entitiesLinked,
+		hints: hintsWritten,
+		structured: !!body.structured,
 	});
 
 	return c.json({
@@ -2943,6 +3166,9 @@ app.post("/api/memory/remember", async (c) => {
 		importance,
 		content: normalizedContent.storageContent,
 		embedded,
+		entities_linked: entitiesLinked,
+		hints_written: hintsWritten,
+		structured: !!body.structured,
 	});
 });
 
@@ -3822,6 +4048,7 @@ app.get("/api/memory/search", async (c) => {
 	const pinned = c.req.query("pinned");
 	const importanceMin = c.req.query("importance_min");
 	const since = c.req.query("since");
+	const expand = c.req.query("expand");
 
 	const cfg = loadMemoryConfig(AGENTS_DIR);
 	try {
@@ -3835,6 +4062,7 @@ app.get("/api/memory/search", async (c) => {
 				pinned: pinned === "1" || pinned === "true",
 				importance_min: importanceMin ? Number.parseFloat(importanceMin) : undefined,
 				since,
+				expand: expand === "1" || expand === "true",
 			},
 			cfg,
 			fetchEmbedding,
@@ -5170,8 +5398,6 @@ import {
 	type SynthesisRequest,
 	type UserPromptSubmitRequest,
 	handlePreCompaction,
-	handleRecall,
-	handleRemember,
 	handleSessionEnd,
 	handleSessionStart,
 	handleSynthesisRequest,
@@ -5418,8 +5644,17 @@ app.post("/api/hooks/remember", async (c) => {
 			return c.json({ success: true, memories: [], bypassed: true });
 		}
 
-		const result = handleRemember(body);
-		return c.json(result);
+		// Forward to the full remember endpoint for transcript, structured,
+		// and pipeline support instead of the bare handleRemember path.
+		const auth = c.req.header("authorization");
+		const headers = auth
+			? { "Content-Type": "application/json", Authorization: auth }
+			: { "Content-Type": "application/json" };
+		return fetch(`http://${INTERNAL_SELF_HOST}:${PORT}/api/memory/remember`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify(body),
+		});
 	} catch (e) {
 		logger.error("hooks", "Remember hook failed", e as Error);
 		return c.json({ error: "Hook execution failed" }, 500);
@@ -5448,7 +5683,12 @@ app.post("/api/hooks/recall", async (c) => {
 			return c.json({ memories: [], count: 0, bypassed: true });
 		}
 
-		const result = handleRecall(body);
+		const agentId = c.req.header("x-signet-agent-id") ?? "default";
+		const result = await hybridRecall(
+			{ query: body.query, limit: body.limit, scope: body.project, agentId },
+			cfg,
+			fetchEmbedding,
+		);
 		return c.json(result);
 	} catch (e) {
 		logger.error("hooks", "Recall hook failed", e as Error);
@@ -7357,6 +7597,130 @@ app.get("/api/repair/cold-stats", (c) => {
 	);
 });
 
+app.post("/api/repair/cluster-entities", (c) => {
+	const agentId = c.req.query("agent_id") ?? "default";
+	const result = getDbAccessor().withWriteTx((db) =>
+		clusterEntities(db, agentId),
+	);
+	return c.json(result);
+});
+
+app.post("/api/repair/relink-entities", async (c) => {
+	const agentId = c.req.query("agent_id") ?? "default";
+	let batchSize = 500;
+	try {
+		const body = await c.req.json();
+		if (typeof body?.batchSize === "number") batchSize = body.batchSize;
+	} catch {
+		// defaults
+	}
+	const accessor = getDbAccessor();
+
+	// Find memories with no entity mentions
+	const unlinked = accessor.withReadDb((db) =>
+		db.prepare(
+			`SELECT id, content FROM memories
+			 WHERE is_deleted = 0
+			   AND id NOT IN (SELECT DISTINCT memory_id FROM memory_entity_mentions)
+			 LIMIT ?`,
+		).all(batchSize) as Array<{ id: string; content: string }>,
+	);
+
+	if (unlinked.length === 0) {
+		return c.json({ action: "relink-entities", linked: 0, remaining: 0, message: "all memories linked" });
+	}
+
+	let linked = 0;
+	let entities = 0;
+	let aspects = 0;
+	let attributes = 0;
+
+	for (const mem of unlinked) {
+		const result = accessor.withWriteTx((db) =>
+			linkMemoryToEntities(db, mem.id, mem.content, agentId),
+		);
+		linked += result.linked;
+		entities += result.entityIds.length;
+		aspects += result.aspects;
+		attributes += result.attributes;
+	}
+
+	// Check how many remain
+	const remaining = accessor.withReadDb((db) =>
+		(db.prepare(
+			`SELECT COUNT(*) as cnt FROM memories
+			 WHERE is_deleted = 0
+			   AND id NOT IN (SELECT DISTINCT memory_id FROM memory_entity_mentions)`,
+		).get() as { cnt: number }).cnt,
+	);
+
+	return c.json({
+		action: "relink-entities",
+		processed: unlinked.length,
+		linked,
+		entities,
+		aspects,
+		attributes,
+		remaining,
+		message: remaining > 0 ? `${remaining} memories still need linking — call again` : "all memories linked",
+	});
+});
+
+app.post("/api/repair/backfill-hints", async (c) => {
+	const cfg = loadMemoryConfig(AGENTS_DIR);
+	if (!cfg.pipelineV2.hints?.enabled) {
+		return c.json({ error: "Hints disabled in pipeline config" }, 400);
+	}
+
+	let batchSize = 50;
+	try {
+		const body = await c.req.json();
+		if (typeof body?.batchSize === "number") batchSize = Math.min(body.batchSize, 200);
+	} catch {
+		// defaults
+	}
+
+	const accessor = getDbAccessor();
+	// Find unscoped memories that have no hints yet
+	const unhinted = accessor.withReadDb((db) =>
+		db.prepare(
+			`SELECT m.id, m.content FROM memories m
+			 WHERE m.is_deleted = 0 AND m.scope IS NULL
+			   AND m.id NOT IN (SELECT DISTINCT memory_id FROM memory_hints)
+			 ORDER BY m.created_at DESC
+			 LIMIT ?`,
+		).all(batchSize) as Array<{ id: string; content: string }>,
+	);
+
+	if (unhinted.length === 0) {
+		return c.json({ action: "backfill-hints", enqueued: 0, remaining: 0, message: "all unscoped memories have hints" });
+	}
+
+	const { enqueueHintsJob: enqueue } = await import("./pipeline/prospective-index.js");
+	let enqueued = 0;
+	accessor.withWriteTx((db) => {
+		for (const mem of unhinted) {
+			enqueue(db, mem.id, mem.content);
+			enqueued++;
+		}
+	});
+
+	const remaining = accessor.withReadDb((db) =>
+		(db.prepare(
+			`SELECT COUNT(*) as cnt FROM memories
+			 WHERE is_deleted = 0 AND scope IS NULL
+			   AND id NOT IN (SELECT DISTINCT memory_id FROM memory_hints)`,
+		).get() as { cnt: number }).cnt,
+	);
+
+	return c.json({
+		action: "backfill-hints",
+		enqueued,
+		remaining,
+		message: remaining > 0 ? `${remaining} unscoped memories still need hints — call again` : "all unscoped memories have hints",
+	});
+});
+
 // ============================================================================
 // Troubleshooter — live terminal command execution
 // ============================================================================
@@ -7689,6 +8053,28 @@ app.get("/api/knowledge/stats", (c) => {
 	return c.json(getKnowledgeStats(getDbAccessor(), agentId));
 });
 
+app.get("/api/knowledge/communities", (c) => {
+	const agentId = c.req.query("agent_id") ?? "default";
+	const rows = getDbAccessor().withReadDb((db) => {
+		return db
+			.prepare(
+				`SELECT id, name, cohesion, member_count, created_at, updated_at
+				 FROM entity_communities
+				 WHERE agent_id = ?
+				 ORDER BY member_count DESC`,
+			)
+			.all(agentId) as ReadonlyArray<{
+			id: string;
+			name: string | null;
+			cohesion: number;
+			member_count: number;
+			created_at: string;
+			updated_at: string;
+		}>;
+	});
+	return c.json({ items: rows, count: rows.length });
+});
+
 app.get("/api/knowledge/traversal/status", (c) => {
 	return c.json({
 		status: getTraversalStatus(),
@@ -7737,8 +8123,11 @@ app.post("/api/knowledge/expand", async (c) => {
 	const traversalCfg = cfg.pipelineV2.traversal ?? {
 		maxAspectsPerEntity: 10,
 		maxAttributesPerAspect: 20,
-		maxDependencyHops: 30,
+		maxDependencyHops: 10,
 		minDependencyStrength: 0.3,
+		maxBranching: 4,
+		maxTraversalPaths: 50,
+		minConfidence: 0.5,
 		timeoutMs: 500,
 	};
 
@@ -7750,6 +8139,9 @@ app.post("/api/knowledge/expand", async (c) => {
 			maxAttributesPerAspect: traversalCfg.maxAttributesPerAspect,
 			maxDependencyHops: traversalCfg.maxDependencyHops,
 			minDependencyStrength: traversalCfg.minDependencyStrength,
+			maxBranching: traversalCfg.maxBranching,
+			maxTraversalPaths: traversalCfg.maxTraversalPaths,
+			minConfidence: traversalCfg.minConfidence,
 			timeoutMs: traversalCfg.timeoutMs,
 			aspectFilter: aspectFilter || undefined,
 		});
@@ -7871,6 +8263,143 @@ app.post("/api/knowledge/expand", async (c) => {
 			memories: hydratedMemories,
 		});
 	});
+});
+
+// ============================================================================
+// Session Expansion (DP-4)
+// ============================================================================
+
+app.post("/api/knowledge/expand/session", async (c) => {
+	const body = await c.req.json().catch(() => ({}));
+	const entityName =
+		typeof body.entityName === "string" ? body.entityName.trim() : "";
+	const sessionId =
+		typeof body.sessionId === "string" ? body.sessionId.trim() : undefined;
+	const timeRange =
+		typeof body.timeRange === "string" ? body.timeRange.trim() : undefined;
+	const maxResults =
+		typeof body.maxResults === "number"
+			? Math.max(1, Math.min(body.maxResults, 50))
+			: 10;
+
+	if (!entityName) {
+		return c.json({ error: "entityName is required" }, 400);
+	}
+
+	return getDbAccessor().withReadDb((db) => {
+		// Check if session_summaries table exists
+		const tbl = db
+			.prepare(
+				"SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_summaries'",
+			)
+			.get() as { name: string } | undefined;
+		if (!tbl) {
+			return c.json({ entityName, summaries: [], total: 0 });
+		}
+
+		// Resolve entity by canonical_name match
+		const entity = db
+			.prepare(
+				`SELECT id, name FROM entities
+				 WHERE canonical_name LIKE ?
+				   AND agent_id = 'default'
+				 ORDER BY mentions DESC, updated_at DESC
+				 LIMIT 1`,
+			)
+			.get(`%${entityName.toLowerCase()}%`) as
+			| { id: string; name: string }
+			| undefined;
+
+		if (!entity) {
+			return c.json({ entityName, summaries: [], total: 0 });
+		}
+
+		// Build query: session_summaries ← session_summary_memories
+		//   ← memory_entity_mentions → entities
+		const conditions = [
+			"mem.entity_id = ?",
+			"ss.kind = 'session'",
+		];
+		const args: Array<string | number> = [entity.id];
+
+		if (sessionId) {
+			conditions.push("ss.session_key = ?");
+			args.push(sessionId);
+		}
+
+		if (timeRange === "last_week") {
+			conditions.push(
+				"ss.latest_at >= datetime('now', '-7 days')",
+			);
+		} else if (timeRange === "last_month") {
+			conditions.push(
+				"ss.latest_at >= datetime('now', '-30 days')",
+			);
+		} else if (timeRange && timeRange.length > 0) {
+			conditions.push("ss.latest_at >= ?");
+			args.push(timeRange);
+		}
+
+		const rows = db
+			.prepare(
+				`SELECT DISTINCT ss.id, ss.content, ss.session_key,
+				        ss.harness, ss.earliest_at, ss.latest_at
+				 FROM session_summaries ss
+				 JOIN session_summary_memories ssm
+				   ON ssm.summary_id = ss.id
+				 JOIN memory_entity_mentions mem
+				   ON mem.memory_id = ssm.memory_id
+				 WHERE ${conditions.join(" AND ")}
+				 ORDER BY ss.latest_at DESC
+				 LIMIT ?`,
+			)
+			.all(...args, maxResults) as Array<{
+			id: string;
+			content: string;
+			session_key: string | null;
+			harness: string | null;
+			earliest_at: string;
+			latest_at: string;
+		}>;
+
+		return c.json({
+			entityName: entity.name,
+			summaries: rows.map((row) => ({
+				id: row.id,
+				sessionKey: row.session_key,
+				harness: row.harness,
+				earliestAt: row.earliest_at,
+				latestAt: row.latest_at,
+				content: row.content,
+			})),
+			total: rows.length,
+		});
+	});
+});
+
+// ============================================================================
+// Graph Impact Analysis (DP-4)
+// ============================================================================
+
+app.post("/api/graph/impact", async (c) => {
+	const body = await c.req.json().catch(() => ({}));
+	const entityId =
+		typeof body.entityId === "string" ? body.entityId.trim() : "";
+	const direction =
+		body.direction === "upstream" ? "upstream" : "downstream";
+	const maxDepth =
+		typeof body.maxDepth === "number"
+			? Math.max(1, Math.min(body.maxDepth, 10))
+			: 3;
+
+	if (!entityId) {
+		return c.json({ error: "entityId is required" }, 400);
+	}
+
+	const result = getDbAccessor().withReadDb((db) =>
+		walkImpact(db, { entityId, direction, maxDepth, timeoutMs: 200 }),
+	);
+	return c.json(result);
 });
 
 // ============================================================================

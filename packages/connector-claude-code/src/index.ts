@@ -41,6 +41,7 @@ export interface SessionContext {
 	projectPath?: string;
 	sessionId?: string;
 	harness?: string;
+	transcriptPath?: string;
 }
 
 export interface SessionStartResult {
@@ -245,6 +246,7 @@ export class ClaudeCodeConnector extends BaseConnector {
 				body: JSON.stringify({
 					harness: "claude-code",
 					sessionId: ctx.sessionId,
+					transcriptPath: ctx.transcriptPath,
 				}),
 				signal: AbortSignal.timeout(10000),
 			});

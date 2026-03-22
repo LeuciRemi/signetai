@@ -83,14 +83,20 @@ The path from a conversation event to a searchable memory is:
 Harness hook fires (session-start / user-prompt / session-end)
     → connector calls daemon HTTP API
     → /api/hooks/remember enqueues memory_jobs row (type: extract)
+    → inline entity linker runs synchronously at write time
+      (no LLM — proper noun extraction, aspect/attribute creation)
     → extraction worker leases job, calls LLM for facts + entities
     → decision worker evaluates each fact against existing memories
     → controlled writes: new memories inserted via txIngestEnvelope
+    → hints worker generates hypothetical future queries per memory,
+      indexes them in FTS5 for prospective matching
     → graph persistence: entities and relations written in a
       separate transaction
     → embeddings prefetched outside write lock, stored atomically
     → memory_history records every proposal (shadow or applied)
-    → /api/memory/recall runs hybrid search (BM25 + vector + graph)
+    → /api/memory/recall runs traversal-primary search:
+      graph traversal produces the base candidate pool,
+      flat FTS5/vector search fills remaining slots
 ```
 
 The database is the source of truth. The daemon's file watcher is
@@ -146,9 +152,37 @@ blocked in the current implementation — they are recorded in history
 with a `blockedDestructive` reason. Contradiction detection (negation
 and antonym analysis) flags high-risk cases for review.
 
+**Inline entity linking** (`inline-entity-linker.ts`): runs
+synchronously at write time inside `withWriteTx`, before any async
+pipeline work. It extracts candidate proper nouns from memory
+content, resolves or creates entities, infers aspects from verb
+patterns, and writes entity → aspect → attribute structures plus
+`memory_entity_mentions` rows. This makes entities immediately
+queryable via KA traversal without waiting for the async extraction
+worker. The linker also auto-detects decision language (14 regex
+patterns in `DECISION_PATTERNS`) and promotes matching attributes to
+`constraint` kind with elevated importance (0.85), ensuring decisions
+always surface in recall per invariant 5. The async pipeline still
+runs later for deeper analysis (supersession, dependency synthesis,
+confidence calibration).
+
+**Hints worker** (`prospective-index.ts`): generates hypothetical
+future queries ("hints") for each memory at write time. For each new
+memory, it prompts the LLM for diverse questions a user might ask
+when the fact would be helpful. Hints are indexed in `memories_fts`
+so search can match memories by anticipated cue — bridging the
+semantic gap between stored facts and natural-language queries.
+Gated on `hints.enabled` in pipeline config.
+
 **Graph persistence** happens in a separate transaction after fact
 writes complete. A failure here is non-fatal — it logs a warning and
 does not revert the extracted memories.
+
+**Lossless transcripts**: at session end, the raw conversation text
+is stored in `session_transcripts` (migration 040) alongside the
+extracted memories. This preserves context that extraction may
+discard. The recall endpoint's `expand: true` flag joins transcript
+content back into search results via `source_id`.
 
 **Shadow mode**: when `shadowMode = true`, all proposals are logged
 to `memory_history` under the `pipeline-shadow` actor but no
@@ -165,6 +199,7 @@ would do before enabling writes.
 | `graphEnabled` | Run graph entity persistence |
 | `autonomousEnabled` | Allow agent-triggered repairs |
 | `autonomousFrozen` | Hard stop on all autonomous actions |
+| `hints.enabled` | Run prospective hint generation at write time |
 | `maintenanceMode` | `observe` or `execute` for maintenance worker |
 
 ---
@@ -232,15 +267,46 @@ relations are upserted by the (source, target, type) triplet with
 mention counts incremented. Mention links are inserted into
 `memory_entity_mentions`.
 
-**Graph-augmented search** (`graph-search.ts`): `getGraphBoostIds`
-is called at query time with a deadline. It tokenizes the query,
-resolves matching entities by `canonical_name LIKE ?` (ordered by
-`mentions DESC`, limit 20), then expands one hop through `relations`
-in both directions (limit 50 neighbors). Finally it collects all
-`memory_id` values from `memory_entity_mentions` for the expanded
-entity set (limit 200). The result is a set of IDs that can be
-boosted or pre-included in search results. Any error returns an
-empty set — the graph never degrades core search.
+**Traversal-primary search** (`memory-search.ts`,
+`graph-traversal.ts`): when `traversal.primary` is enabled (the
+default when both `graph.enabled` and `traversal.enabled` are true),
+graph traversal is the PRIMARY retrieval path. It resolves focal
+entities from query tokens, traverses the knowledge graph through
+aspects, attributes, and dependency hops, and produces a scored
+candidate pool blended with cosine similarity (70% cosine, 30%
+structural importance). Flat FTS5/vector search fills remaining
+slots — at least 40% of the result budget is reserved for flat
+candidates so hub entities cannot exclude keyword/vector matches
+entirely. After merging, the combined pool is score-sorted. When
+traversal is disabled or the graph has no matching entities, the
+system falls back to the legacy path: flat BM25 + vector search
+with optional graph boost (`getGraphBoostIds`).
+
+**Post-fusion dampening** (`dampening.ts`): three corrections run
+after fusion scoring but before the final sort/return. (1) *Gravity*
+penalizes high-cosine results that share zero query-term overlap
+with the actual content (0.5x). (2) *Hub* penalizes results whose
+linked entities are all in the top-10% by degree (P90 threshold,
+0.7x). (3) *Resolution* boosts constraints, decisions, and
+date-anchored memories (1.2x). All three stages are independently
+toggleable via `DampeningConfig`.
+
+**Graph boost fallback** (`graph-search.ts`): `getGraphBoostIds`
+is the legacy graph-augmented search path, used when traversal is
+disabled. It tokenizes the query, resolves matching entities by
+`canonical_name LIKE ?` (ordered by `mentions DESC`, limit 20),
+then expands one hop through `relations` in both directions (limit
+50 neighbors). Finally it collects all `memory_id` values from
+`memory_entity_mentions` for the expanded entity set (limit 200).
+The result is a set of IDs whose scores are boosted. Any error
+returns an empty set — the graph never degrades core search.
+
+**Entity communities** (`community-detection.ts`): the Louvain
+algorithm clusters entities into functional neighborhoods based on
+`entity_dependencies` edge weights. Results are persisted to the
+`entity_communities` table and `entities.community_id` is updated.
+Community structure provides quality signals (fragmented, moderate,
+strong) and enables community-scoped retrieval.
 
 **Retention and orphaning**: when memories are tombstoned past their
 retention window, the retention worker purges `memory_entity_mentions`
@@ -563,6 +629,15 @@ Session summary queue. Fields: `session_id`, `harness`, `status`
 (`pending`, `processing`, `done`, `failed`), `result_path`, `error`,
 `created_at`. The summary worker polls this table and writes dated
 Markdown files to `~/.agents/`.
+
+**session_transcripts** (migration 040)
+
+Lossless session transcript storage. Fields: `session_key` (PK),
+`content` (raw conversation text), `harness`, `project`, `agent_id`,
+`created_at`. Written at session end alongside extracted memories.
+The recall endpoint supports `expand: true` to join transcript
+content back into results via `source_id`, preserving facts that
+extraction may drop. Indexed on `project` and `created_at`.
 
 **umap_cache**
 
@@ -887,6 +962,8 @@ packages/daemon/src/
     memory-config.ts          PipelineV2Config type and defaults
     embedding-tracker.ts      Incremental embedding refresh tracker
     embedding-health.ts       Embedding health metrics
+    inline-entity-linker.ts   Synchronous write-time entity linking
+    memory-search.ts          Hybrid recall search orchestration
     session-checkpoints.ts    Session checkpoint persistence
     continuity-state.ts       Continuity state for compaction boundaries
     telemetry.ts              Local telemetry event collection
@@ -913,4 +990,7 @@ packages/daemon/src/
         maintenance-worker.ts Autonomous diagnostics + repair loop
         provider.ts           LlmProvider interface + Ollama impl
         reranker.ts           Optional result reranking
+        prospective-index.ts  Hints worker (hypothetical query generation)
+        graph-traversal.ts    Traversal-primary retrieval path
+        community-detection.ts Entity community clustering (Louvain)
 ```

@@ -3,6 +3,8 @@ import type { ReadDb } from "../db-accessor";
 export interface TraversalResult {
 	/** Memory IDs collected from entity_attributes.memory_id */
 	readonly memoryIds: Set<string>;
+	/** Structural importance score per memory (max importance across aspects) */
+	readonly memoryScores: ReadonlyMap<string, number>;
 	/** Constraint content that must always be surfaced */
 	readonly constraints: ReadonlyArray<{
 		readonly entityName: string;
@@ -15,17 +17,27 @@ export interface TraversalResult {
 	readonly timedOut: boolean;
 	/** Aspect IDs walked during traversal */
 	readonly activeAspectIds: ReadonlyArray<string>;
+	/** Entity IDs that seeded the walk (needed by context-construction, DP-7) */
+	readonly focalEntityIds: ReadonlyArray<string>;
 }
 
 export interface TraversalConfig {
+	/** Scope filter — when set, only collect attributes from in-scope memories */
+	readonly scope?: string | null;
 	/** Max aspects per entity, ordered by weight DESC (default 10) */
 	readonly maxAspectsPerEntity: number;
 	/** Max attributes per aspect (default 20) */
 	readonly maxAttributesPerAspect: number;
-	/** Max one-hop dependency expansions (default 30) */
+	/** Max one-hop dependency expansions (default 10) */
 	readonly maxDependencyHops: number;
 	/** Minimum dependency strength to traverse (default 0.3) */
 	readonly minDependencyStrength: number;
+	/** Max outgoing edges per entity node (default 4) */
+	readonly maxBranching: number;
+	/** Total memory ID budget — early exit when reached (default 50) */
+	readonly maxTraversalPaths: number;
+	/** Minimum edge confidence to traverse (default 0.5) */
+	readonly minConfidence: number;
 	/** Timeout in ms (default 500) */
 	readonly timeoutMs: number;
 	/** Filter aspects by canonical_name substring (on-demand expansion) */
@@ -183,6 +195,25 @@ function resolveByQueryTokens(db: ReadDb, agentId: string, queryTokens: Readonly
 	const tokens = sanitizeQueryTokens(queryTokens);
 	if (tokens.length === 0) return [];
 
+	// Try FTS5 first — proper token-boundary matching with BM25 ranking
+	try {
+		const fts = tokens.join(" OR ");
+		const rows = db
+			.prepare(
+				`SELECT e.id FROM entities_fts
+				 JOIN entities e ON e.rowid = entities_fts.rowid
+				 WHERE entities_fts MATCH ?
+				   AND e.agent_id = ?
+				 ORDER BY rank
+				 LIMIT 20`,
+			)
+			.all(fts, agentId) as Array<{ id: string }>;
+		if (rows.length > 0) return sanitizeEntityIds(rows.map((r) => r.id));
+	} catch {
+		// FTS table doesn't exist — fall through to LIKE
+	}
+
+	// LIKE fallback for pre-migration databases
 	const clauses = tokens.map(() => "(canonical_name LIKE ? OR name LIKE ?)").join(" OR ");
 	const args: string[] = [];
 	for (const token of tokens) {
@@ -274,10 +305,12 @@ export function traverseKnowledgeGraph(
 ): TraversalResult {
 	const empty: TraversalResult = {
 		memoryIds: new Set<string>(),
+		memoryScores: new Map<string, number>(),
 		constraints: [],
 		entityCount: 0,
 		timedOut: false,
 		activeAspectIds: [],
+		focalEntityIds: [],
 	};
 
 	try {
@@ -287,6 +320,7 @@ export function traverseKnowledgeGraph(
 		if (focalIds.length === 0) return empty;
 
 		const memoryIds = new Set<string>();
+		const memoryScores = new Map<string, number>();
 		const constraints: Array<{
 			entityName: string;
 			content: string;
@@ -306,8 +340,11 @@ export function traverseKnowledgeGraph(
 			return false;
 		};
 
+		const budget = config.maxTraversalPaths;
+
 		const collectForEntity = (entityId: string): void => {
 			if (timedOut || visitedEntities.has(entityId)) return;
+			if (memoryIds.size >= budget) return;
 			visitedEntities.add(entityId);
 
 			if (checkDeadline()) return;
@@ -363,48 +400,124 @@ export function traverseKnowledgeGraph(
 			const aspectRows = db.prepare(aspectQuery).all(...aspectArgs) as Array<{ id: string }>;
 
 			for (const aspect of aspectRows) {
-				if (checkDeadline()) break;
+				if (checkDeadline() || memoryIds.size >= budget) break;
 				activeAspectIds.add(aspect.id);
-				const attributeRows = db
-					.prepare(
-						`SELECT memory_id FROM entity_attributes
-						 WHERE aspect_id = ?
-						   AND agent_id = ?
-						   AND status = 'active'
-						 ORDER BY importance DESC
-						 LIMIT ?`,
-					)
-					.all(aspect.id, agentId, config.maxAttributesPerAspect) as Array<{ memory_id: string | null }>;
+				let attributeRows: Array<{ memory_id: string | null; importance: number }>;
+
+				if (config.scope !== undefined) {
+					const scopeClause = config.scope === null
+						? "AND m.scope IS NULL"
+						: "AND m.scope = ?";
+					const scopeArgs: unknown[] = config.scope === null ? [] : [config.scope];
+					attributeRows = db
+						.prepare(
+							`SELECT ea.memory_id, ea.importance FROM entity_attributes ea
+							 JOIN memories m ON m.id = ea.memory_id
+							 WHERE ea.aspect_id = ?
+							   AND ea.agent_id = ?
+							   AND ea.status = 'active'
+							   AND m.is_deleted = 0 ${scopeClause}
+							 ORDER BY ea.importance DESC
+							 LIMIT ?`,
+						)
+						.all(aspect.id, agentId, ...scopeArgs, config.maxAttributesPerAspect) as Array<{ memory_id: string | null; importance: number }>;
+				} else {
+					attributeRows = db
+						.prepare(
+							`SELECT memory_id, importance FROM entity_attributes
+							 WHERE aspect_id = ?
+							   AND agent_id = ?
+							   AND status = 'active'
+							 ORDER BY importance DESC
+							 LIMIT ?`,
+						)
+						.all(aspect.id, agentId, config.maxAttributesPerAspect) as Array<{ memory_id: string | null; importance: number }>;
+				}
 
 				for (const row of attributeRows) {
 					if (!row.memory_id) continue;
 					memoryIds.add(row.memory_id);
+					const current = memoryScores.get(row.memory_id);
+					if (current === undefined || row.importance > current) {
+						memoryScores.set(row.memory_id, row.importance);
+					}
+				}
+			}
+
+			// Fallback: when entity_attributes yielded no memories for this
+			// entity (e.g. inline-linked memories without full pipeline
+			// extraction), collect via memory_entity_mentions instead.
+			if (checkDeadline() || memoryIds.size >= budget) return;
+			const mentionBudget = Math.min(config.maxAttributesPerAspect, budget - memoryIds.size);
+			if (mentionBudget <= 0) return;
+
+			let mentionRows: Array<{ memory_id: string; importance: number }>;
+			if (config.scope !== undefined) {
+				const scopeClause = config.scope === null
+					? "AND m.scope IS NULL"
+					: "AND m.scope = ?";
+				const scopeArgs: unknown[] = config.scope === null ? [] : [config.scope];
+				mentionRows = db
+					.prepare(
+						`SELECT mem.memory_id, COALESCE(m.importance, 0.5) AS importance
+						 FROM memory_entity_mentions mem
+						 JOIN memories m ON m.id = mem.memory_id
+						 WHERE mem.entity_id = ?
+						   AND m.is_deleted = 0 ${scopeClause}
+						 ORDER BY mem.confidence DESC, m.importance DESC
+						 LIMIT ?`,
+					)
+					.all(entityId, ...scopeArgs, mentionBudget) as Array<{ memory_id: string; importance: number }>;
+			} else {
+				mentionRows = db
+					.prepare(
+						`SELECT mem.memory_id, COALESCE(m.importance, 0.5) AS importance
+						 FROM memory_entity_mentions mem
+						 JOIN memories m ON m.id = mem.memory_id
+						 WHERE mem.entity_id = ?
+						   AND m.is_deleted = 0
+						 ORDER BY mem.confidence DESC, m.importance DESC
+						 LIMIT ?`,
+					)
+					.all(entityId, mentionBudget) as Array<{ memory_id: string; importance: number }>;
+			}
+
+			for (const row of mentionRows) {
+				memoryIds.add(row.memory_id);
+				const current = memoryScores.get(row.memory_id);
+				if (current === undefined || row.importance > current) {
+					memoryScores.set(row.memory_id, row.importance);
 				}
 			}
 		};
 
 		for (const entityId of focalIds) {
-			if (checkDeadline()) break;
+			if (checkDeadline() || memoryIds.size >= budget) break;
 			collectForEntity(entityId);
 		}
 
-		if (!timedOut) {
+		if (!timedOut && memoryIds.size < budget) {
 			const dependencyPlaceholders = focalIds.map(() => "?").join(", ");
 			const dependencyRows = db
 				.prepare(
 					`SELECT target_entity_id FROM entity_dependencies
 					 WHERE agent_id = ?
 					   AND source_entity_id IN (${dependencyPlaceholders})
-					   AND strength >= ?
-					 ORDER BY strength DESC
+					   AND (COALESCE(confidence, 0.7) * strength) >= ?
+					   AND COALESCE(confidence, 0.7) >= ?
+					 ORDER BY (COALESCE(confidence, 0.7) * strength) DESC
 					 LIMIT ?`,
 				)
-				.all(agentId, ...focalIds, config.minDependencyStrength, config.maxDependencyHops) as Array<{
-				target_entity_id: string;
-			}>;
+				.all(
+					agentId,
+					...focalIds,
+					config.minDependencyStrength,
+					config.minConfidence,
+					config.maxBranching * focalIds.length,
+				) as Array<{ target_entity_id: string }>;
 
 			for (const row of dependencyRows) {
-				if (checkDeadline()) break;
+				if (checkDeadline() || memoryIds.size >= budget) break;
 				collectForEntity(row.target_entity_id);
 			}
 		}
@@ -413,10 +526,12 @@ export function traverseKnowledgeGraph(
 
 		return {
 			memoryIds,
+			memoryScores,
 			constraints,
 			entityCount: visitedEntities.size,
 			timedOut,
 			activeAspectIds: [...activeAspectIds],
+			focalEntityIds: focalIds,
 		};
 	} catch {
 		return empty;

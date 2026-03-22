@@ -378,6 +378,19 @@ async function processJob(
 			.map((fact) => fact.content),
 	});
 
+	// Lossless retention: preserve raw transcript alongside extracted facts
+	try {
+		accessor.withWriteTx((db) => {
+			db.prepare(`
+				INSERT OR IGNORE INTO session_transcripts
+					(session_key, content, harness, project, agent_id, created_at)
+				VALUES (?, ?, ?, ?, 'default', ?)
+			`).run(job.session_key, job.transcript, job.harness, job.project, today);
+		});
+	} catch {
+		// Non-fatal — table may not exist if migration hasn't run
+	}
+
 	// Agent ID is hardcoded because summary_jobs and session_scores tables
 	// lack an agent_id column (pre-existing schema limitation). In a
 	// multi-agent deployment, all predictor comparisons route to the

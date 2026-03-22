@@ -73,6 +73,7 @@ export type {
 	PipelineStructuralConfig,
 	PipelineSignificanceConfig,
 	PipelineModelRegistryConfig,
+	PipelineHintsConfig,
 	ModelRegistryEntry,
 } from "./types";
 export { parseManifest, generateManifest } from "./manifest";

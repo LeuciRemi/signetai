@@ -36,8 +36,8 @@ export const DEFAULT_PIPELINE_V2: PipelineV2Config = {
 	semanticContradictionEnabled: true,
 	semanticContradictionTimeoutMs: 45000,
 	extraction: {
-		provider: "claude-code",
-		model: "haiku",
+		provider: "ollama",
+		model: "qwen3.5:4b",
 		strength: "low",
 		endpoint: undefined,
 		timeout: 90000,
@@ -60,10 +60,14 @@ export const DEFAULT_PIPELINE_V2: PipelineV2Config = {
 	},
 	traversal: {
 		enabled: true,
+		primary: true,
 		maxAspectsPerEntity: 10,
 		maxAttributesPerAspect: 20,
-		maxDependencyHops: 30,
+		maxDependencyHops: 10,
 		minDependencyStrength: 0.3,
+		maxBranching: 4,
+		maxTraversalPaths: 50,
+		minConfidence: 0.5,
 		timeoutMs: 500,
 		boostWeight: 0.2,
 		constraintBudgetChars: 1000,
@@ -98,8 +102,8 @@ export const DEFAULT_PIPELINE_V2: PipelineV2Config = {
 		maxContentBytes: 10 * 1024 * 1024, // 10 MB
 	},
 	guardrails: {
-		maxContentChars: 500,
-		chunkTargetChars: 300,
+		maxContentChars: 800,
+		chunkTargetChars: 600,
 		recallTruncateChars: 500,
 	},
 	continuity: {
@@ -190,6 +194,13 @@ export const DEFAULT_PIPELINE_V2: PipelineV2Config = {
 		enabled: true,
 		refreshIntervalMs: 3600_000,
 	},
+	hints: {
+		enabled: true,
+		max: 5,
+		timeout: 30000,
+		maxTokens: 256,
+		poll: 5000,
+	},
 };
 
 export const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
@@ -261,6 +272,7 @@ export function loadPipelineConfig(
 	const predictorRaw = raw.predictor as Record<string, unknown> | undefined;
 	const predictorPipelineRaw = raw.predictorPipeline as Record<string, unknown> | undefined;
 	const modelRegistryRaw = raw.modelRegistry as Record<string, unknown> | undefined;
+	const hintsRaw = raw.hints as Record<string, unknown> | undefined;
 
 	// Helper: resolve with flat-fallback (non-extraction fields still nested-first)
 	const d = DEFAULT_PIPELINE_V2;
@@ -421,6 +433,9 @@ export function loadPipelineConfig(
 			enabled: resolveBool(
 				traversalRaw?.enabled, undefined, d.traversal?.enabled ?? true,
 			),
+			primary: resolveBool(
+				traversalRaw?.primary, undefined, d.traversal?.primary ?? true,
+			),
 			maxAspectsPerEntity: clampPositive(
 				traversalRaw?.maxAspectsPerEntity,
 				1,
@@ -437,11 +452,27 @@ export function loadPipelineConfig(
 				traversalRaw?.maxDependencyHops,
 				1,
 				200,
-				d.traversal?.maxDependencyHops ?? 30,
+				d.traversal?.maxDependencyHops ?? 10,
 			),
 			minDependencyStrength: clampFraction(
 				traversalRaw?.minDependencyStrength,
 				d.traversal?.minDependencyStrength ?? 0.3,
+			),
+			maxBranching: clampPositive(
+				traversalRaw?.maxBranching,
+				1,
+				50,
+				d.traversal?.maxBranching ?? 4,
+			),
+			maxTraversalPaths: clampPositive(
+				traversalRaw?.maxTraversalPaths,
+				1,
+				500,
+				d.traversal?.maxTraversalPaths ?? 50,
+			),
+			minConfidence: clampFraction(
+				traversalRaw?.minConfidence,
+				d.traversal?.minConfidence ?? 0.5,
 			),
 			timeoutMs: clampPositive(
 				traversalRaw?.timeoutMs,
@@ -953,6 +984,24 @@ export function loadPipelineConfig(
 				60000,
 				86400000,
 				d.modelRegistry.refreshIntervalMs,
+			),
+		},
+
+		hints: {
+			enabled: resolveBool(
+				hintsRaw?.enabled, undefined, d.hints?.enabled ?? true,
+			),
+			max: clampPositive(
+				hintsRaw?.max, 1, 10, d.hints?.max ?? 5,
+			),
+			timeout: clampPositive(
+				hintsRaw?.timeout, 5000, 120000, d.hints?.timeout ?? 30000,
+			),
+			maxTokens: clampPositive(
+				hintsRaw?.maxTokens, 64, 1024, d.hints?.maxTokens ?? 256,
+			),
+			poll: clampPositive(
+				hintsRaw?.poll, 1000, 60000, d.hints?.poll ?? 5000,
 			),
 		},
 	};

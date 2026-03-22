@@ -13,7 +13,7 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Plugin } from "@opencode-ai/plugin";
+import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 import { readStaticIdentity } from "@signet/core";
 import { createDaemonClient } from "./daemon-client.js";
 import { createTools } from "./tools.js";
@@ -89,10 +89,53 @@ function staticFallback(): string {
 }
 
 // ============================================================================
+// Event helpers
+// ============================================================================
+
+// session.idle provides properties.sessionID directly.
+// session.deleted provides properties.info.id (Session object).
+function extractSessionId(props: Record<string, unknown> | undefined): string | undefined {
+	if (!props) return undefined;
+	if (typeof props.sessionID === "string") return props.sessionID;
+	const info = props.info;
+	if (typeof info !== "object" || info === null) return undefined;
+	const id = Reflect.get(info, "id");
+	if (typeof id === "string") return id;
+	return undefined;
+}
+
+// ============================================================================
+// Transcript builder — fetches messages via OpenCode SDK and formats
+// a plain-text transcript for the daemon summary worker.
+// ============================================================================
+
+async function buildTranscript(
+	oc: PluginInput["client"],
+	sid: string,
+): Promise<string> {
+	const res = await oc.session.messages({
+		path: { id: sid },
+		throwOnError: false,
+	});
+	if (!res.data) return "";
+
+	const lines: string[] = [];
+	for (const msg of res.data) {
+		const role = msg.info.role === "user" ? "User" : "Assistant";
+		for (const part of msg.parts) {
+			if (part.type !== "text") continue;
+			const text = part.text?.trim().replace(/\s*\r?\n\s*/g, " ");
+			if (text) lines.push(`${role}: ${text}`);
+		}
+	}
+	return lines.join("\n");
+}
+
+// ============================================================================
 // Plugin
 // ============================================================================
 
-export const SignetPlugin: Plugin = async ({ directory }) => {
+export const SignetPlugin: Plugin = async ({ directory, client: oc }) => {
 	const enabled = readRuntimeEnv("SIGNET_ENABLED") !== "false";
 	if (!enabled) return {};
 
@@ -208,15 +251,34 @@ export const SignetPlugin: Plugin = async ({ directory }) => {
 		// ------------------------------------------------------------------
 		event: async ({
 			event,
-		}: { event: { type: string; summary?: string } }): Promise<void> => {
+		}: {
+			event: {
+				type: string;
+				summary?: string;
+				properties?: Record<string, unknown>;
+			};
+		}): Promise<void> => {
 			try {
 				if (event.type === "session.idle" || event.type === "session.deleted") {
+					const sid = extractSessionId(event.properties);
+
+					let transcript = "";
+					if (sid) {
+						try {
+							transcript = await buildTranscript(oc, sid);
+						} catch {
+							// non-fatal — send without transcript
+						}
+					}
+
 					await client.post(
 						"/api/hooks/session-end",
 						{
 							harness: HARNESS,
 							runtimePath: RUNTIME_PATH,
 							reason: event.type,
+							sessionKey: sid,
+							...(transcript ? { transcript } : {}),
 						},
 						WRITE_TIMEOUT,
 					);

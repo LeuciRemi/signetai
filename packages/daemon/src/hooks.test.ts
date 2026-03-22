@@ -190,4 +190,20 @@ describe("normalizeSessionTranscript", () => {
 			"User: Fix the bug\nAssistant: Fixed it",
 		);
 	});
+
+	it("normalizes inline transcript (no file path) identically to file-read", () => {
+		// Simulates the fallback path in handleSessionEnd where req.transcript
+		// is provided directly instead of req.transcriptPath
+		const inline = "User: What's the plan?\nAssistant: Ship it by Friday.";
+		expect(normalizeSessionTranscript("opencode", inline)).toBe(inline);
+
+		// JSON-line variant that a plugin might send
+		const json = [
+			'{"role":"user","content":"What\'s the plan?"}',
+			'{"role":"assistant","content":"Ship it by Friday."}',
+		].join("\n");
+		expect(normalizeSessionTranscript("opencode", json)).toBe(
+			"User: What's the plan?\nAssistant: Ship it by Friday.",
+		);
+	});
 });

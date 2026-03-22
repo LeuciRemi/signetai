@@ -143,6 +143,7 @@ export class SignetClientHelpers {
 			readonly pinned?: boolean;
 			readonly importance_min?: number;
 			readonly since?: string;
+			readonly expand?: boolean;
 			readonly minScore?: number;
 		},
 	): Promise<RecallResponse> {

@@ -47,6 +47,7 @@ export interface RecallResponse {
     readonly searchTime: number;
     readonly graphBoosted?: number;
   };
+  readonly sources?: Readonly<Record<string, string>>;
 }
 
 export interface RememberResult {

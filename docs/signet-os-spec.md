@@ -1,3 +1,7 @@
+---
+title: "Signet OS — Master Spec"
+---
+
 # Signet OS — Master Spec
 
 **Status:** Draft — awaiting Oogie review sign-off  

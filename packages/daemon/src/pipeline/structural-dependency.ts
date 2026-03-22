@@ -12,6 +12,7 @@ import type { PipelineV2Config } from "../memory-config";
 import type { LlmProvider } from "./provider";
 import { stripFences, tryParseJson } from "./extraction";
 import { upsertAspect, upsertDependency } from "../knowledge-graph";
+import { invalidateTraversalCache } from "./graph-traversal";
 import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
@@ -364,6 +365,7 @@ async function processDependencyBatch(
 						aspectId: aspect.id,
 						dependencyType: result.dep_type as DependencyType,
 						strength: 0.5,
+						confidence: 0.7,
 						reason: result.reason,
 					});
 					depsCreated++;
@@ -398,6 +400,10 @@ async function processDependencyBatch(
 			}
 		}
 	});
+
+	if (depsCreated > 0) {
+		invalidateTraversalCache();
+	}
 
 	logger.info("structural-dependency", "Batch processed", {
 		entityName,

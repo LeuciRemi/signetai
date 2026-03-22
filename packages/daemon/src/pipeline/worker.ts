@@ -16,11 +16,14 @@ import { escalate } from "./extraction-escalation";
 import { detectSemanticContradiction } from "./contradiction";
 import { runShadowDecisions } from "./decision";
 import { logger } from "../logger";
+import { assessSignificance, type SignificanceConfig } from "./significance-gate";
 import { txIngestEnvelope, txModifyMemory, txForgetMemory } from "../transactions";
 import { archiveToCold } from "./retention-worker";
 import { normalizeAndHashContent } from "../content-normalization";
 import { vectorToBlob, countChanges, syncVecInsert, syncVecDeleteBySourceExceptHash } from "../db-helpers";
 import { txPersistEntities } from "./graph-transactions";
+import { invalidateTraversalCache } from "./graph-traversal";
+import { enqueueHintsJob } from "./prospective-index";
 import type { AnalyticsCollector } from "../analytics";
 import type { TelemetryCollector } from "../telemetry";
 import { generateWithTracking } from "./provider";
@@ -62,6 +65,7 @@ interface JobRow {
 
 interface MemoryContentRow {
 	content: string;
+	extraction_status: string | null;
 }
 
 interface WrittenFact {
@@ -130,6 +134,20 @@ export function enqueueExtractionJob(
 	memoryId: string,
 ): void {
 	accessor.withWriteTx((db) => {
+		// Skip if memory extraction is already complete (structured passthrough
+		// or prior pipeline run). This prevents re-processing memories that
+		// were ingested with pre-extracted data.
+		const mem = db
+			.prepare(
+				`SELECT extraction_status FROM memories WHERE id = ? LIMIT 1`,
+			)
+			.get(memoryId) as { extraction_status: string | null } | undefined;
+		if (
+			mem?.extraction_status === "complete" ||
+			mem?.extraction_status === "completed"
+		)
+			return;
+
 		// Dedup: skip if a pending/leased job already exists
 		const existing = db
 			.prepare(
@@ -922,11 +940,13 @@ export function startWorker(
 	const STALL_THRESHOLD = 60_000;
 
 	async function processExtractJob(job: JobRow): Promise<void> {
-		// Fetch memory content
+		// Fetch memory content + extraction status
 		const row = accessor.withReadDb(
 			(db) =>
 				db
-					.prepare("SELECT content FROM memories WHERE id = ?")
+					.prepare(
+						"SELECT content, extraction_status FROM memories WHERE id = ?",
+					)
 					.get(job.memory_id) as MemoryContentRow | undefined,
 		);
 
@@ -939,6 +959,66 @@ export function startWorker(
 				);
 			});
 			return;
+		}
+
+		// Bail if memory was already extracted (structured passthrough or
+		// prior run). Completes the job without running LLM extraction.
+		if (
+			row.extraction_status === "complete" ||
+			row.extraction_status === "completed"
+		) {
+			accessor.withWriteTx((db) => {
+				completeJob(
+					db,
+					job.id,
+					JSON.stringify({ skipped: "already_extracted" }),
+				);
+			});
+			return;
+		}
+
+		// --- Significance gate: skip extraction for trivial sessions ---
+		const sigCfg: SignificanceConfig =
+			pipelineCfg.significance ?? {
+				enabled: true,
+				minTurns: 5,
+				minEntityOverlap: 1,
+				noveltyThreshold: 0.15,
+			};
+
+		if (sigCfg.enabled) {
+			const assessment = accessor.withReadDb((db) =>
+				assessSignificance(row.content, db, "default", sigCfg),
+			);
+
+			if (!assessment.significant) {
+				logger.info(
+					"pipeline",
+					"Session below significance threshold — skipping extraction",
+					{
+						jobId: job.id,
+						memoryId: job.memory_id,
+						scores: assessment.scores,
+						reason: assessment.reason,
+					},
+				);
+
+				// Mark the job complete with gate result — raw transcript
+				// is already persisted, only LLM extraction is skipped.
+				accessor.withWriteTx((db) => {
+					completeJob(
+						db,
+						job.id,
+						JSON.stringify({
+							skipped: "significance_gate",
+							scores: assessment.scores,
+							reason: assessment.reason,
+						}),
+					);
+					updateExtractionStatus(db, job.memory_id, "completed");
+				});
+				return;
+			}
 		}
 
 		// Wrap provider to capture llm.generate telemetry on every call
@@ -1202,6 +1282,8 @@ export function startWorker(
 							agentId: "default",
 					}),
 				);
+				// New entities/relations invalidate traversal table cache
+				invalidateTraversalCache();
 			} catch (e) {
 				logger.warn("pipeline", "Graph entity persistence failed (non-fatal)", {
 					jobId: job.id,
@@ -1274,6 +1356,25 @@ export function startWorker(
 			}
 		}
 
+		// Enqueue prospective indexing jobs for newly written facts.
+		// Non-fatal: hint generation is async and can fail independently.
+		let hintsEnqueued = 0;
+		if (pipelineCfg.hints?.enabled && writeStats.writtenFacts.length > 0) {
+			try {
+				accessor.withWriteTx((db) => {
+					for (const fact of writeStats.writtenFacts) {
+						enqueueHintsJob(db, fact.memoryId, fact.content);
+						hintsEnqueued++;
+					}
+				});
+			} catch (e) {
+				logger.warn("pipeline", "Hints job enqueueing failed (non-fatal)", {
+					jobId: job.id,
+					error: e instanceof Error ? e.message : String(e),
+				});
+			}
+		}
+
 		logger.info("pipeline", "Extraction job completed", {
 			jobId: job.id,
 			memoryId: job.memory_id,
@@ -1295,6 +1396,7 @@ export function startWorker(
 			structuralAttributesCreated: structuralStats.attributesCreated,
 			structuralClassifyEnqueued: structuralStats.classifyEnqueued,
 			structuralDependencyEnqueued: structuralStats.dependencyEnqueued,
+			hintsEnqueued,
 		});
 	}
 

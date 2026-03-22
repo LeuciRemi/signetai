@@ -178,10 +178,14 @@ export interface PipelineGraphConfig {
 
 export interface PipelineTraversalConfig {
 	readonly enabled: boolean;
+	readonly primary: boolean;
 	readonly maxAspectsPerEntity: number;
 	readonly maxAttributesPerAspect: number;
 	readonly maxDependencyHops: number;
 	readonly minDependencyStrength: number;
+	readonly maxBranching: number;
+	readonly maxTraversalPaths: number;
+	readonly minConfidence: number;
 	readonly timeoutMs: number;
 	readonly boostWeight: number;
 	readonly constraintBudgetChars: number;
@@ -274,6 +278,7 @@ export interface PipelineV2Config {
 	readonly predictor?: PredictorConfig;
 	readonly predictorPipeline: PipelinePredictorConfig;
 	readonly modelRegistry: PipelineModelRegistryConfig;
+	readonly hints?: PipelineHintsConfig;
 }
 
 export interface ModelRegistryEntry {
@@ -371,6 +376,14 @@ export interface PipelineSignificanceConfig {
 	readonly minTurns: number;
 	readonly minEntityOverlap: number;
 	readonly noveltyThreshold: number;
+}
+
+export interface PipelineHintsConfig {
+	readonly enabled: boolean;
+	readonly max: number;
+	readonly timeout: number;
+	readonly maxTokens: number;
+	readonly poll: number;
 }
 
 // -- Status/union constants --
@@ -661,6 +674,7 @@ export interface EntityDependency {
 	readonly aspectId: string | null;
 	readonly dependencyType: DependencyType;
 	readonly strength: number;
+	readonly confidence: number;
 	readonly reason: string | null;
 	readonly createdAt: string;
 	readonly updatedAt: string;

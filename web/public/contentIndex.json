@@ -1,4 +1,11 @@
 {
+  "docs/acp-integration": {
+    "title": "ACP Integration",
+    "url": "/docs/acp-integration/",
+    "tags": [],
+    "links": [],
+    "collection": "docs"
+  },
   "docs/analytics": {
     "title": "Analytics",
     "url": "/docs/analytics/",
@@ -48,6 +55,13 @@
       "docs/api",
       "docs/configuration"
     ],
+    "collection": "docs"
+  },
+  "docs/benchmarks": {
+    "title": "Benchmarks",
+    "url": "/docs/benchmarks/",
+    "tags": [],
+    "links": [],
     "collection": "docs"
   },
   "docs/cli": {
@@ -129,18 +143,6 @@
     ],
     "collection": "docs"
   },
-  "docs/desire-paths": {
-    "title": "Desire Paths",
-    "url": "/docs/desire-paths/",
-    "tags": [],
-    "links": [
-      "docs/memory",
-      "docs/knowledge-graph",
-      "docs/dashboard",
-      "docs/pipeline"
-    ],
-    "collection": "docs"
-  },
   "docs/diagnostics": {
     "title": "Diagnostics",
     "url": "/docs/diagnostics/",
@@ -188,13 +190,6 @@
       "docs/daemon",
       "docs/configuration"
     ],
-    "collection": "docs"
-  },
-  "docs/ideal-signet": {
-    "title": "Ideal Signet",
-    "url": "/docs/ideal-signet/",
-    "tags": [],
-    "links": [],
     "collection": "docs"
   },
   "docs/knowledge-architecture": {
@@ -277,28 +272,18 @@
     "links": [
       "docs/configuration",
       "docs/cli",
+      "docs/architecture",
       "docs/daemon",
       "docs/dashboard",
       "docs/pipeline"
     ],
     "collection": "docs"
   },
-  "docs/research-paper-outline": {
-    "title": "Research Paper Outline",
-    "url": "/docs/research-paper-outline/",
-    "tags": [],
-    "links": [],
-    "collection": "docs"
-  },
   "docs/roadmap": {
     "title": "Roadmap",
     "url": "/docs/roadmap/",
     "tags": [],
-    "links": [
-      "docs/pipeline",
-      "docs/daemon",
-      "docs/auth"
-    ],
+    "links": [],
     "collection": "docs"
   },
   "docs/scheduling": {
@@ -375,6 +360,13 @@
     "links": [],
     "collection": "docs"
   },
+  "docs/signet-os-spec": {
+    "title": "Signet OS — Master Spec",
+    "url": "/docs/signet-os-spec/",
+    "tags": [],
+    "links": [],
+    "collection": "docs"
+  },
   "blog/introducing-signet": {
     "title": "What Is Signet",
     "url": "/blog/introducing-signet/",
@@ -388,7 +380,6 @@
       "docs/memory",
       "docs/secrets",
       "docs/skills",
-      "docs/pipeline",
       "blog/knowledge-architecture",
       "docs/knowledge-architecture",
       "blog/why-local-first-memory"
@@ -427,6 +418,19 @@
       "docs/connectors",
       "docs/harnesses"
     ],
+    "collection": "blog"
+  },
+  "blog/the-os-moment": {
+    "title": "The OS Moment",
+    "url": "/blog/the-os-moment/",
+    "tags": [
+      "ecosystem",
+      "openclaw",
+      "nemoclaw",
+      "positioning",
+      "architecture"
+    ],
+    "links": [],
     "collection": "blog"
   },
   "blog/why-local-first-memory": {
