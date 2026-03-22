@@ -86,6 +86,20 @@ const WIDGET_SYSTEM_PROMPT = `Generate an interactive HTML widget for an MCP ser
 window.signet.callTool(toolName, args)  — Call an MCP tool. Returns Promise<{ content: unknown }>
 window.signet.readResource(uri)         — Read an MCP resource. Returns Promise<{ contents: unknown }>
 
+## AI Agent Cursor (Page-Agent)
+
+Every widget automatically has an AI agent cursor that can visually click buttons and fill forms.
+To make your widget work well with the agent cursor:
+
+- Use semantic HTML: <button>, <input>, <select>, <textarea>, <a> — the agent identifies these automatically
+- Add descriptive text content to buttons: <button>+ Add Contact</button> not <button><svg/></button>
+- Add placeholder and name attributes to inputs: <input name="firstName" placeholder="First name">
+- Use <label for="id"> to associate labels with form fields
+- Keep forms simple and linear — avoid complex multi-step wizards
+- Use data-action or aria-label on custom interactive elements that aren't standard HTML
+- Avoid onclick on <div>/<span> — use <button> instead (agent detects buttons automatically)
+- Don't rely on hover states for critical functionality — the agent can click but not hover-inspect
+
 ## Constraints
 
 - No external URLs or fetch calls — all data comes through the bridge API

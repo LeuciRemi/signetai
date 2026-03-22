@@ -1,6 +1,8 @@
 // Widget sandbox theme stylesheet and postMessage bridge.
 // Injected into every widget iframe via srcdoc.
 
+import { PAGE_AGENT_SCRIPT } from "./page-agent-bundle";
+
 export const WIDGET_BASE_CSS = `
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-family: 'Geist Mono', 'IBM Plex Mono', monospace; font-size: 13px; line-height: 1.5; color: var(--sig-text); background: var(--sig-bg); -webkit-font-smoothing: antialiased; }
@@ -150,6 +152,7 @@ export function buildThemeVars(): string {
 export const WIDGET_BRIDGE_SCRIPT = `(function() {
   var rid = 0;
   var pending = new Map();
+  var eventListeners = new Map();
 
   window.signet = {
     callTool: function(name, args) {
@@ -165,6 +168,20 @@ export const WIDGET_BRIDGE_SCRIPT = `(function() {
         pending.set(id, { resolve: resolve, reject: reject });
         parent.postMessage({ type: 'signet:readResource', id: id, uri: uri }, '*');
       });
+    },
+    emit: function(eventType, data) {
+      parent.postMessage({ type: 'signet:emit', eventType: eventType, data: data }, '*');
+    },
+    on: function(eventType, callback) {
+      if (!eventListeners.has(eventType)) eventListeners.set(eventType, []);
+      eventListeners.get(eventType).push(callback);
+      return function unsubscribe() {
+        var list = eventListeners.get(eventType);
+        if (list) {
+          var idx = list.indexOf(callback);
+          if (idx >= 0) list.splice(idx, 1);
+        }
+      };
     }
   };
 
@@ -192,6 +209,86 @@ export const WIDGET_BRIDGE_SCRIPT = `(function() {
         }
       }
     }
+    if (d.type === 'signet:event' && d.eventType) {
+      var listeners = eventListeners.get(d.eventType) || [];
+      for (var i = 0; i < listeners.length; i++) {
+        try { listeners[i](d.data); } catch(e) { console.error('signet event handler error:', e); }
+      }
+    }
+    if (d.type === 'signet:action') {
+      if (d.action === 'refresh') {
+        // Dispatch DOM event for any listener, then trigger full re-fetch
+        window.dispatchEvent(new CustomEvent('signet:refresh', { detail: d.data }));
+        // Re-run all useEffect cleanups + mounts by forcing React reconciliation
+        // Simplest: dispatch event that our React apps can hook into
+        var refreshEvent = new Event('signet-data-refresh');
+        window.dispatchEvent(refreshEvent);
+      }
+      if (d.action === 'navigate') {
+        // Dispatch navigate event with target info (e.g., {view: "contact", id: "xxx"})
+        window.dispatchEvent(new CustomEvent('signet:navigate', { detail: d.data }));
+      }
+      if (d.action === 'highlight') {
+        // Highlight a specific element by text content match
+        var target = d.data && d.data.text;
+        if (target) {
+          var allCells = document.querySelectorAll('td, .contact-name, .deal-name, [data-id]');
+          for (var j = 0; j < allCells.length; j++) {
+            if (allCells[j].textContent && allCells[j].textContent.toLowerCase().includes(target.toLowerCase())) {
+              allCells[j].scrollIntoView({ behavior: 'smooth', block: 'center' });
+              allCells[j].style.outline = '2px solid var(--sig-accent, #c8ff00)';
+              allCells[j].style.outlineOffset = '2px';
+              allCells[j].style.transition = 'outline 0.3s ease';
+              var cell = allCells[j];
+              // Find the parent row and click it
+              var row = cell.closest('tr') || cell.closest('[data-id]') || cell;
+              if (row && row.click) row.click();
+              setTimeout(function() { cell.style.outline = 'none'; }, 3000);
+              break;
+            }
+          }
+        }
+      }
+    }
+    // --- Page Agent bridge handlers ---
+    if (d.type === 'signet:getDomState') {
+      (async function() {
+        try {
+          if (window.signet && window.signet.getDomState) {
+            var result = await window.signet.getDomState();
+            parent.postMessage({ type: 'signet:domState', id: d.id, result: result }, '*');
+          } else {
+            parent.postMessage({ type: 'signet:domState', id: d.id, result: { success: false, error: 'PageController not ready' } }, '*');
+          }
+        } catch(err) {
+          parent.postMessage({ type: 'signet:domState', id: d.id, result: { success: false, error: err.message || String(err) } }, '*');
+        }
+      })();
+    }
+    if (d.type === 'signet:executeAction') {
+      (async function() {
+        try {
+          if (window.signet && window.signet.executeAction) {
+            var result = await window.signet.executeAction(d.action);
+            parent.postMessage({ type: 'signet:actionResult', id: d.id, result: result }, '*');
+          } else {
+            parent.postMessage({ type: 'signet:actionResult', id: d.id, result: { success: false, message: 'PageController not ready' } }, '*');
+          }
+        } catch(err) {
+          parent.postMessage({ type: 'signet:actionResult', id: d.id, result: { success: false, message: err.message || String(err) } }, '*');
+        }
+      })();
+    }
+    if (d.type === 'signet:agentStart') {
+      if (window.signet && window.signet.agentStart) {
+        window.signet.agentStart().catch(function(e) { console.warn('agentStart error:', e); });
+      }
+    }
+    if (d.type === 'signet:agentStop') {
+      if (window.signet && window.signet.agentStop) {
+        window.signet.agentStop().catch(function(e) { console.warn('agentStop error:', e); });
+      }
+    }
   });
 
   parent.postMessage({ type: 'signet:ready' }, '*');
@@ -208,6 +305,7 @@ export function buildSrcdoc(html: string, serverId: string): string {
 <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>${theme}\n${WIDGET_BASE_CSS}</style>
 <script>${WIDGET_BRIDGE_SCRIPT}<\/script>
+<script>${PAGE_AGENT_SCRIPT}<\/script>
 </head>
 <body data-server-id="${serverId.replace(/"/g, '&quot;')}">
 ${html}

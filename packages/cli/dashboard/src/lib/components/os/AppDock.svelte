@@ -285,4 +285,19 @@
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 	}
+
+	/* Mobile: touch-friendly dock items */
+	@media (max-width: 768px) {
+		.dock-item {
+			min-height: 44px;
+			min-width: 44px;
+		}
+	}
+
+	/* Safe area inset for notched phones */
+	@supports (padding: env(safe-area-inset-bottom)) {
+		.app-dock {
+			padding-bottom: max(6px, env(safe-area-inset-bottom));
+		}
+	}
 </style>

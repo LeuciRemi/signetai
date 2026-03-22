@@ -4684,6 +4684,14 @@ mountMarketplaceReviewsRoutes(app);
 import { mountChangelogRoutes } from "./routes/changelog.js";
 mountChangelogRoutes(app);
 
+// OS agent chat routes (natural language → MCP tool routing)
+import { mountOsChatRoutes } from "./routes/os-chat.js";
+mountOsChatRoutes(app);
+
+// OS page-agent routes (visual GUI automation via PageController)
+import { mountOsAgentRoutes } from "./routes/os-agent.js";
+mountOsAgentRoutes(app);
+
 // ============================================================================
 // Harnesses API
 // ============================================================================

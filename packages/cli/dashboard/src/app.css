@@ -879,3 +879,13 @@ svg.lucide [stroke] {
         background-position: 23px 23px;
     }
 }
+
+/* === Mobile responsive — global touch targets === */
+@media (max-width: 768px) {
+    /* Ensure buttons and sig-switches meet the 44×44px touch target minimum */
+    button,
+    .sig-switch {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}

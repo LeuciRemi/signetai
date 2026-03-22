@@ -23,6 +23,13 @@
 	let dragOffsetY = $state(0);
 	let gridEl = $state<HTMLDivElement | null>(null);
 
+	// Resize state
+	let resizeId = $state<string | null>(null);
+	let resizeStartX = $state(0);
+	let resizeStartY = $state(0);
+	let resizeDeltaW = $state(0);
+	let resizeDeltaH = $state(0);
+
 	let activeMoveListener: ((e: PointerEvent) => void) | null = null;
 	let activeUpListener: (() => void) | null = null;
 
@@ -144,6 +151,83 @@
 		dragOffsetY = 0;
 	}
 
+	function handleResizeStart(id: string, e: PointerEvent): void {
+		e.preventDefault();
+		e.stopPropagation();
+		cleanupDragListeners();
+		resizeId = id;
+		resizeStartX = e.clientX;
+		resizeStartY = e.clientY;
+		resizeDeltaW = 0;
+		resizeDeltaH = 0;
+
+		const onMove = (me: PointerEvent) => {
+			resizeDeltaW = me.clientX - resizeStartX;
+			resizeDeltaH = me.clientY - resizeStartY;
+		};
+
+		const onUp = () => {
+			cleanupDragListeners();
+			commitResize();
+		};
+
+		activeMoveListener = onMove;
+		activeUpListener = onUp;
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+	}
+
+	function commitResize(): void {
+		if (!resizeId || !gridEl) {
+			resizeId = null;
+			return;
+		}
+
+		const app = apps.find((a) => a.id === resizeId);
+		if (!app?.gridPosition) {
+			resizeId = null;
+			return;
+		}
+
+		const gridWidth = gridEl.clientWidth;
+		if (gridWidth === 0) {
+			resizeId = null;
+			return;
+		}
+
+		const cellWidth = gridWidth / GRID_COLS;
+		const dw = Math.round(resizeDeltaW / cellWidth);
+		const dh = Math.round(resizeDeltaH / ROW_HEIGHT);
+
+		const newW = Math.max(2, Math.min(GRID_COLS - app.gridPosition.x, app.gridPosition.w + dw));
+		const newH = Math.max(1, app.gridPosition.h + dh);
+
+		if (newW !== app.gridPosition.w || newH !== app.gridPosition.h) {
+			updateGridPosition(app.id, {
+				...app.gridPosition,
+				w: newW,
+				h: newH,
+			});
+		}
+
+		resizeId = null;
+		resizeDeltaW = 0;
+		resizeDeltaH = 0;
+	}
+
+	function getResizeStyle(pos: GridPosition | undefined, id: string): string {
+		if (!pos || resizeId !== id) return "";
+		const extraW = resizeDeltaW;
+		const extraH = resizeDeltaH;
+		if (extraW === 0 && extraH === 0) return "";
+		const left = (pos.x / GRID_COLS) * 100;
+		const width = (pos.w / GRID_COLS) * 100;
+		const top = pos.y * ROW_HEIGHT;
+		const height = pos.h * ROW_HEIGHT - GAP;
+		// Override width/height with pixel values during resize
+		return `left: ${left}%; width: calc(${width}% + ${extraW}px); top: ${top}px; height: ${height + extraH}px;`;
+	}
+
 	async function handleRemove(id: string): Promise<void> {
 		await moveToTray(id);
 	}
@@ -188,16 +272,25 @@
 
 	{#each apps as app (app.id)}
 		{@const isDragging = dragId === app.id}
+		{@const isResizing = resizeId === app.id}
 		<div
 			class="grid-item"
 			class:grid-item--dragging={isDragging}
-			style="{getStyle(app.gridPosition)}{isDragging ? ` transform: translate(${dragOffsetX}px, ${dragOffsetY}px);` : ''}"
+			class:grid-item--resizing={isResizing}
+			style="{isResizing ? getResizeStyle(app.gridPosition, app.id) : getStyle(app.gridPosition)}{isDragging ? ` transform: translate(${dragOffsetX}px, ${dragOffsetY}px);` : ''}"
 		>
 			<WidgetCard
 				{app}
 				onremove={handleRemove}
 				ondragstart={handleDragStart}
 			/>
+			<!-- Resize handle -->
+			<div
+				class="resize-handle"
+				onpointerdown={(e) => handleResizeStart(app.id, e)}
+				role="separator"
+				aria-orientation="horizontal"
+			></div>
 		</div>
 	{/each}
 
@@ -260,6 +353,64 @@
 		opacity: 0.85;
 		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 		pointer-events: none;
+	}
+
+	.grid-item--resizing {
+		z-index: 100;
+		box-shadow: 0 0 0 2px var(--sig-accent);
+	}
+
+	.resize-handle {
+		position: absolute;
+		bottom: 0;
+		right: 0;
+		width: 16px;
+		height: 16px;
+		cursor: nwse-resize;
+		z-index: 10;
+		opacity: 0;
+		transition: opacity 0.15s ease;
+	}
+
+	.resize-handle::before {
+		content: "";
+		position: absolute;
+		bottom: 3px;
+		right: 3px;
+		width: 8px;
+		height: 8px;
+		border-right: 2px solid var(--sig-text-muted);
+		border-bottom: 2px solid var(--sig-text-muted);
+	}
+
+	.grid-item:hover .resize-handle {
+		opacity: 1;
+	}
+
+	.grid-item--resizing .resize-handle {
+		opacity: 1;
+	}
+
+	.grid-item--resizing .resize-handle::before {
+		border-color: var(--sig-accent);
+	}
+
+	/* Chat-triggered highlight animation */
+	:global(.widget-chat-highlight) {
+		z-index: 50 !important;
+		animation: widgetHighlight 2s ease-out !important;
+	}
+
+	@keyframes widgetHighlight {
+		0% {
+			box-shadow: 0 0 0 3px var(--sig-accent), 0 0 20px rgba(200, 255, 0, 0.3);
+		}
+		50% {
+			box-shadow: 0 0 0 2px var(--sig-accent), 0 0 12px rgba(200, 255, 0, 0.2);
+		}
+		100% {
+			box-shadow: none;
+		}
 	}
 
 	.widget-grid.has-focus .grid-item {

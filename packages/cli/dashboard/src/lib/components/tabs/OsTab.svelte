@@ -20,6 +20,10 @@
 	import AppDock from "$lib/components/os/AppDock.svelte";
 	import SidebarGroups from "$lib/components/os/SidebarGroups.svelte";
 	import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+	import MessageSquare from "@lucide/svelte/icons/message-square";
+	import AgentChat from "$lib/components/os/AgentChat.svelte";
+
+	let showChat = $state(false);
 
 	const trayApps = $derived(getTrayApps());
 	const gridApps = $derived(getGridApps());
@@ -101,6 +105,14 @@
 			</div>
 			<div class="os-topbar-right">
 				<button
+					class="os-chat-toggle"
+					class:active={showChat}
+					title={showChat ? "Hide agent chat" : "Show agent chat"}
+					onclick={() => showChat = !showChat}
+				>
+					<MessageSquare class="size-3" />
+				</button>
+				<button
 					class="os-refresh-btn"
 					title="Refresh app tray"
 					onclick={() => fetchTrayEntries()}
@@ -119,6 +131,11 @@
 
 		<!-- Widget grid -->
 		<WidgetGrid apps={gridApps} ongriddrop={handleGridDrop} {resolveDefaultSize} />
+
+		<!-- Agent chat panel (collapsible) -->
+		{#if showChat}
+			<AgentChat />
+		{/if}
 
 		<!-- Bottom dock / tray -->
 		<AppDock
@@ -178,6 +195,32 @@
 		gap: 4px;
 	}
 
+	.os-chat-toggle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		border: 1px solid var(--sig-border);
+		border-radius: 6px;
+		background: var(--sig-surface);
+		color: var(--sig-text-muted);
+		cursor: pointer;
+		transition: all var(--dur) var(--ease);
+	}
+
+	.os-chat-toggle:hover {
+		border-color: var(--sig-border-strong);
+		color: var(--sig-text-bright);
+	}
+
+	.os-chat-toggle.active {
+		border-color: var(--sig-accent);
+		color: var(--sig-accent);
+		background: color-mix(in srgb, var(--sig-accent) 10%, var(--sig-surface));
+	}
+
 	.os-refresh-btn {
 		display: flex;
 		align-items: center;
@@ -221,6 +264,13 @@
 			padding: var(--space-sm);
 			overflow-x: auto;
 			overflow-y: hidden;
+		}
+	}
+
+	/* Safe area inset for notched phones */
+	@supports (padding: env(safe-area-inset-top)) {
+		.os-topbar {
+			padding-top: max(10px, env(safe-area-inset-top));
 		}
 	}
 </style>

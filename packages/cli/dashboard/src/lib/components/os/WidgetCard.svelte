@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { onMount } from "svelte";
 	import type { AppTrayEntry } from "$lib/stores/os.svelte";
-	import { os, widgetHtmlCache, widgetGenerating, expandWidget, requestWidgetGen } from "$lib/stores/os.svelte";
+	import { os, widgetHtmlCache, widgetGenerating, expandWidget, requestWidgetGen, fetchWidgetHtml } from "$lib/stores/os.svelte";
 	import type { WidgetSizePreset } from "$lib/stores/os.svelte";
 	import { WIDGET_SIZES } from "$lib/stores/os.svelte";
 	import AutoCard from "./AutoCard.svelte";
@@ -17,6 +18,13 @@
 	}
 
 	const { app, onremove, ondragstart }: Props = $props();
+
+	// Auto-fetch cached widget HTML on mount if not already in memory
+	onMount(() => {
+		if (!app.manifest.html && !widgetHtmlCache.has(app.id)) {
+			fetchWidgetHtml(app.id);
+		}
+	});
 
 	// Force reactivity on cache changes
 	const _v = $derived(os.widgetCacheVersion);
