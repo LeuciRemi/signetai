@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.72.5] - 2026-03-22
+
+### Bug Fixes
+
+- address 9 security and stability issues (#275)
+
+
 ## [0.72.4] - 2026-03-22
 
 ### Bug Fixes
