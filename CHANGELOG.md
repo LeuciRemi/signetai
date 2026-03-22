@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.71.6] - 2026-03-22
+
+### Features
+
+- **os**: Visual GUI Agent — Page-Agent Integration (#266)
+
+
 ## [0.71.5] - 2026-03-21
 
 ### Bug Fixes
