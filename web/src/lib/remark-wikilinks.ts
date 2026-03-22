@@ -15,6 +15,14 @@ import type { Root, Text } from "mdast";
 import type { Plugin } from "unified";
 import { visit } from "unist-util-visit";
 
+function escapeHtml(str: string): string {
+	return str
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;");
+}
+
 // All known doc slugs (filename without .md, lowercased)
 const DOC_SLUGS = new Set([
 	"agents",
@@ -138,17 +146,17 @@ const remarkWikilinks: Plugin<[], Root> = () => {
 				const resolved = resolveWikilink(rawSlug);
 				if (resolved) {
 					outgoingLinks.push(resolved.slug);
-					const text = displayText ?? defaultDisplayText(rawSlug);
+					const text = escapeHtml(displayText ?? defaultDisplayText(rawSlug));
 					children.push({
 						type: "html",
-						value: `<a href="${resolved.url}" class="wikilink" data-collection="${resolved.collection}">${text}</a>`,
+						value: `<a href="${escapeHtml(resolved.url)}" class="wikilink" data-collection="${escapeHtml(resolved.collection)}">${text}</a>`,
 					});
 				} else {
 					// Broken link — render with broken class
-					const text = displayText ?? defaultDisplayText(rawSlug);
+					const text = escapeHtml(displayText ?? defaultDisplayText(rawSlug));
 					children.push({
 						type: "html",
-						value: `<a class="wikilink broken" title="Page not found: ${rawSlug}">${text}</a>`,
+						value: `<a class="wikilink broken" title="Page not found: ${escapeHtml(rawSlug)}">${text}</a>`,
 					});
 				}
 

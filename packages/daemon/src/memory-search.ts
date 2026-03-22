@@ -142,11 +142,11 @@ function buildFilterClause(params: RecallParams): FilterClause {
  * characters to prevent syntax errors.
  */
 function sanitizeFtsQuery(raw: string): string {
-	// Split on OR (preserved as FTS5 operator) and whitespace
+	// All tokens are treated as literals — FTS5 operators (OR, AND, NOT)
+	// are NOT preserved to prevent semantic manipulation of recall results
 	return raw
 		.split(/\s+/)
 		.map((token) => {
-			if (token === "OR" || token === "AND" || token === "NOT") return token;
 			// Strip characters that are FTS5 syntax: colons, quotes, parens, asterisks, carets
 			const cleaned = token.replace(/[":()^*]/g, "").trim();
 			if (!cleaned) return null;

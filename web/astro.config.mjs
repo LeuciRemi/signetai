@@ -15,12 +15,7 @@ export default defineConfig({
   integrations: [
     mdx(),
     react(),
-    sitemap({
-      serialize(item) {
-        item.lastmod = new Date();
-        return item;
-      },
-    }),
+    sitemap(),
     graphIndex(),
   ],
   vite: {

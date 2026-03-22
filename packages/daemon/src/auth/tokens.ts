@@ -27,9 +27,20 @@ export function generateSecret(): Buffer {
 	return randomBytes(32);
 }
 
+const SECRET_LENGTH = 32;
+
 export function loadOrCreateSecret(secretPath: string): Buffer {
 	if (existsSync(secretPath)) {
-		return readFileSync(secretPath);
+		const secret = readFileSync(secretPath);
+		if (secret.length !== SECRET_LENGTH) {
+			console.warn(
+				`[auth] Secret at ${secretPath} has unexpected length ${secret.length} — regenerating. All existing tokens will be invalidated.`,
+			);
+			const fresh = generateSecret();
+			writeFileSync(secretPath, fresh, { mode: 0o600 });
+			return fresh;
+		}
+		return secret;
 	}
 	const dir = dirname(secretPath);
 	if (!existsSync(dir)) {

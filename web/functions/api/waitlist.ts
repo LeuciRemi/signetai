@@ -2,10 +2,20 @@ interface Env {
 	RESEND_API_KEY: string;
 }
 
+const ALLOWED_ORIGINS = [
+	'https://signetai.sh',
+	'https://www.signetai.sh',
+];
+
+function corsHeaders(origin: string): Record<string, string> {
+	if (!origin || !ALLOWED_ORIGINS.includes(origin)) return {};
+	return { 'Access-Control-Allow-Origin': origin };
+}
+
 export const onRequestPost: PagesFunction<Env> = async (context) => {
 	const origin = context.request.headers.get('Origin') ?? '';
 	const headers = {
-		'Access-Control-Allow-Origin': origin,
+		...corsHeaders(origin),
 		'Content-Type': 'application/json',
 	};
 
@@ -51,11 +61,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 	}
 };
 
-export const onRequestOptions: PagesFunction = async () => {
+export const onRequestOptions: PagesFunction = async (context) => {
+	const origin = context.request.headers.get('Origin') ?? '';
 	return new Response(null, {
 		status: 204,
 		headers: {
-			'Access-Control-Allow-Origin': '*',
+			...corsHeaders(origin),
 			'Access-Control-Allow-Methods': 'POST, OPTIONS',
 			'Access-Control-Allow-Headers': 'Content-Type',
 		},

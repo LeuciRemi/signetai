@@ -94,6 +94,7 @@ import {
 	resolveEmbeddingBaseUrl,
 	resolveEmbeddingApiKey,
 	setNativeFallbackToOllama,
+	resolveOllamaUrl,
 } from "./embedding-fetch";
 import { detectDrift } from "./predictor-comparison";
 import { getPredictorState } from "./predictor-state";
@@ -899,7 +900,8 @@ function normalizeLegacyEmbeddingsPayload(
 		return defaultLegacyEmbeddingsResponse(limit, offset, "Legacy export returned invalid payload");
 	}
 
-	const data = payload as Record<string, unknown>;
+	const data: Record<string, unknown> = Object.create(null);
+	Object.assign(data, payload);
 	const rawEmbeddings = Array.isArray(data.embeddings) ? data.embeddings : [];
 	const embeddings = rawEmbeddings
 		.map((entry) => normalizeLegacyEmbeddingRow(entry, withVectors))
@@ -952,12 +954,24 @@ async function runLegacyEmbeddingsExport(
 	}
 
 	return await new Promise<LegacyEmbeddingsResponse>((resolve) => {
+		const timeout = withVectors ? 120000 : 30000;
 		const proc = spawn("python3", args, {
 			cwd: AGENTS_DIR,
 			stdio: "pipe",
-			timeout: withVectors ? 120000 : 30000,
 			windowsHide: true,
 		});
+
+		// Bun's spawn() silently ignores `timeout` — enforce manually
+		const timer = setTimeout(() => {
+			proc.kill();
+			resolve(
+				defaultLegacyEmbeddingsResponse(
+					limit,
+					offset,
+					`Legacy embeddings export timed out after ${timeout}ms`,
+				),
+			);
+		}, timeout);
 
 		let stdout = "";
 		let stderr = "";
@@ -971,6 +985,7 @@ async function runLegacyEmbeddingsExport(
 		});
 
 		proc.on("close", (code) => {
+			clearTimeout(timer);
 			if (code !== 0) {
 				resolve(
 					defaultLegacyEmbeddingsResponse(
@@ -1002,6 +1017,7 @@ async function runLegacyEmbeddingsExport(
 		});
 
 		proc.on("error", (error) => {
+			clearTimeout(timer);
 			resolve(defaultLegacyEmbeddingsResponse(limit, offset, error.message));
 		});
 	});
@@ -1049,7 +1065,7 @@ async function checkEmbeddingProvider(cfg: EmbeddingConfig): Promise<EmbeddingSt
 				// Native unavailable — check if ollama is available as fallback
 				logger.warn("embedding", `Native provider unavailable: ${nativeStatus.error ?? "unknown"}`);
 				try {
-					const ollamaRes = await fetch("http://127.0.0.1:11434/api/tags", {
+					const ollamaRes = await fetch(`${resolveOllamaUrl().replace(/\/$/, "")}/api/tags`, {
 						method: "GET",
 						signal: AbortSignal.timeout(3000),
 					});
