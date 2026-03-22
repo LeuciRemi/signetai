@@ -777,6 +777,7 @@ async function registerMarketplaceProxyTools(
 	api: OpenClawPluginApi,
 	options: MarketplaceContextOptions,
 	knownNames: Set<string>,
+	proxyNameByToolKey: Map<string, string>,
 ): Promise<{ registeredNow: number; total: number }> {
 	const [catalog, policy] = await Promise.all([
 		marketplaceToolList({ ...options, refresh: true }),
@@ -815,7 +816,14 @@ async function registerMarketplaceProxyTools(
 
 	let registeredNow = 0;
 	for (const tool of candidates) {
-		const proxyName = buildProxyToolName(usedNames, tool.serverId, tool.toolName);
+		const toolKey = `${tool.serverId}\0${tool.toolName}`;
+		let proxyName = proxyNameByToolKey.get(toolKey);
+		if (!proxyName) {
+			proxyName = buildProxyToolName(usedNames, tool.serverId, tool.toolName);
+			proxyNameByToolKey.set(toolKey, proxyName);
+		} else {
+			usedNames.add(proxyName);
+		}
 		if (knownNames.has(proxyName)) {
 			continue;
 		}
@@ -1259,8 +1267,10 @@ const signetPlugin = {
 			{ name: "mcp_server_call" },
 		);
 
+		const marketplaceProxyNameByToolKey = new Map<string, string>();
+
 		const refreshMarketplaceProxyTools = (): Promise<void> =>
-			registerMarketplaceProxyTools(api, opts, marketplaceProxyNames)
+			registerMarketplaceProxyTools(api, opts, marketplaceProxyNames, marketplaceProxyNameByToolKey)
 				.then((result) => {
 					if (result.registeredNow > 0) {
 						api.logger.info(
