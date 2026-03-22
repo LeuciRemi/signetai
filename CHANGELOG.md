@@ -2,6 +2,14 @@
 
 All notable changes to Signet are documented here.
 
+## [0.72.1] - 2026-03-22
+
+### Bug Fixes
+
+- harden error handling and resource cleanup (#272)
+- codex MCP config uses string command, not array (#273)
+
+
 ## [0.71.6] - 2026-03-22
 
 ### Features
