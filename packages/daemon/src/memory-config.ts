@@ -105,6 +105,10 @@ export const DEFAULT_PIPELINE_V2: PipelineV2Config = {
 		maxContentChars: 800,
 		chunkTargetChars: 600,
 		recallTruncateChars: 500,
+		// Total character budget for the injected <signet-memory> block per
+		// prompt turn. Memories are greedily included from highest score until
+		// this limit is reached. Prevents context window overruns on long sessions.
+		contextBudgetChars: 4000,
 	},
 	continuity: {
 		enabled: true,
@@ -633,6 +637,12 @@ export function loadPipelineConfig(
 				50,
 				100000,
 				d.guardrails.recallTruncateChars,
+			),
+			contextBudgetChars: clampPositive(
+				guardrailsRaw?.contextBudgetChars,
+				200,
+				100000,
+				d.guardrails.contextBudgetChars,
 			),
 		},
 

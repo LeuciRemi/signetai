@@ -1950,6 +1950,35 @@ app.get("/api/memory/timeline", (c) => {
 });
 
 // ============================================================================
+// Memory Review Queue API
+// ============================================================================
+
+app.get("/api/memory/review-queue", (c) => {
+	try {
+		const rows = getDbAccessor().withReadDb((db) => {
+			return db
+				.prepare(
+					`SELECT h.id, h.memory_id, h.event, h.old_content, h.new_content,
+					        h.reason, h.metadata, h.created_at, h.session_id,
+					        m.content AS current_content, m.type AS memory_type,
+					        m.importance
+					 FROM memory_history h
+					 LEFT JOIN memories m ON m.id = h.memory_id
+					 WHERE h.event IN ('DEDUP', 'REVIEW_NEEDED', 'BLOCKED_DESTRUCTIVE')
+					   AND h.created_at > datetime('now', '-30 days')
+					 ORDER BY h.created_at DESC
+					 LIMIT 200`,
+				)
+				.all();
+		});
+		return c.json({ items: rows });
+	} catch (e) {
+		logger.error("memory", "Error fetching review queue", e as Error);
+		return c.json({ error: "Failed to fetch review queue", items: [] }, 500);
+	}
+});
+
+// ============================================================================
 // Memory Search API
 // ============================================================================
 
@@ -5421,6 +5450,7 @@ import {
 	getActiveSessions,
 	getBypassedSessionKeys,
 	getSessionPath,
+	hasSession,
 	isSessionBypassed,
 	releaseSession,
 	startSessionCleanup,
@@ -5546,10 +5576,15 @@ app.post("/api/hooks/user-prompt-submit", async (c) => {
 		const runtimePath = resolveRuntimePath(c, body);
 		if (runtimePath) body.runtimePath = runtimePath;
 
+		// Capture before any claim refresh — false means the daemon restarted
+		// mid-session (claimedSessions lost in memory) so the adapter can re-init.
+		// Note: hasSession evicts expired entries as a side effect; calling it
+		// before checkSessionClaim is intentional — an expired claim == no claim.
+		const sessionKey = parseOptionalString(body.sessionKey);
+		const known = sessionKey ? hasSession(sessionKey) : false;
+
 		const conflict = checkSessionClaim(c, body.sessionKey, runtimePath);
 		if (conflict) return conflict;
-
-		const sessionKey = parseOptionalString(body.sessionKey);
 		const agentId = parseOptionalString(body.agentId) ?? "default";
 		if (sessionKey) {
 			const touched = touchAgentPresence(sessionKey);
@@ -5580,7 +5615,7 @@ app.post("/api/hooks/user-prompt-submit", async (c) => {
 		}
 
 		const result = await handleUserPromptSubmit(body);
-		return c.json(result);
+		return c.json({ ...result, sessionKnown: known });
 	} catch (e) {
 		logger.error("hooks", "User prompt submit hook failed", e as Error);
 		return c.json({ error: "Hook execution failed" }, 500);

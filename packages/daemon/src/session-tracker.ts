@@ -91,6 +91,21 @@ export function releaseSession(sessionKey: string): void {
 }
 
 /**
+ * Return true if the session is currently claimed and not stale.
+ * Used by hooks to detect daemon-restart mid-session.
+ */
+export function hasSession(sessionKey: string): boolean {
+	const claim = sessions.get(sessionKey);
+	if (!claim) return false;
+	if (Date.now() > claim.expiresAt) {
+		sessions.delete(sessionKey);
+		bypassedSessions.delete(sessionKey);
+		return false;
+	}
+	return true;
+}
+
+/**
  * Get the runtime path for a session, if claimed.
  */
 export function getSessionPath(sessionKey: string): RuntimePath | undefined {

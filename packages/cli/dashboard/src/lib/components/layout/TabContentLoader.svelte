@@ -147,6 +147,14 @@ const {
 	{:catch error}
 		{@render skeletonError(error)}
 	{/await}
+{:else if activeTab === "review-queue"}
+	{#await import("$lib/components/tabs/ReviewQueueTab.svelte")}
+		{@render skeletonList()}
+	{:then module}
+		<module.default />
+	{:catch error}
+		{@render skeletonError(error)}
+	{/await}
 {:else if activeTab === "logs"}
 	{#await import("$lib/components/tabs/LogsTab.svelte")}
 		{@render skeletonList()}

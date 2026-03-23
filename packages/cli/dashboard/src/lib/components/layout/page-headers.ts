@@ -96,6 +96,7 @@ export const MEMORY_TAB_ITEMS = [
 export const ENGINE_TAB_ITEMS = [
 	{ id: "settings", label: "Settings" },
 	{ id: "pipeline", label: "Pipeline" },
+	{ id: "review-queue", label: "Review Queue" },
 	{ id: "predictor", label: "Predictor" },
 	{ id: "connectors", label: "Connectors" },
 	{ id: "logs", label: "Logs" },
@@ -123,6 +124,7 @@ export interface PageFooterStatic {
 export const PAGE_FOOTERS: Partial<Record<TabId, PageFooterStatic>> = {
 	home: { left: "Agent overview", right: "dashboard home" },
 	pipeline: { left: "Pipeline", right: "memory loop v2" },
+	"review-queue": { left: "Review Queue", right: "dedup decisions · pipeline events" },
 	embeddings: { left: "Constellation", right: "UMAP" },
 	knowledge: { left: "structural graph browser", right: "entities, traversal, predictor slices" },
 	logs: { left: "Log viewer", right: "daemon logs" },

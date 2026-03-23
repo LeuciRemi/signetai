@@ -355,6 +355,20 @@ export async function isDaemonRunning(daemonUrl = DEFAULT_DAEMON_URL): Promise<b
 	}
 }
 
+/** Returns the daemon PID if reachable, null otherwise. */
+async function getDaemonPid(daemonUrl: string): Promise<number | null> {
+	try {
+		const res = await fetch(`${daemonUrl}/health`, {
+			signal: AbortSignal.timeout(1000),
+		});
+		if (!res.ok) return null;
+		const body = (await res.json()) as { pid?: number };
+		return typeof body.pid === "number" ? body.pid : null;
+	} catch {
+		return null;
+	}
+}
+
 // ============================================================================
 // Static identity fallback when daemon is unreachable
 // ============================================================================
@@ -885,16 +899,18 @@ const signetPlugin = {
 
 		// Instance-scoped health state (safe for multi-register)
 		let daemonReachable = true;
+		let knownPid: number | null = null;
 		let healthTimer: ReturnType<typeof setInterval> | null = null;
 		let marketplaceProxyTimer: ReturnType<typeof setInterval> | null = null;
 		const marketplaceProxyNames = new Set<string>();
 
 		api.logger.info(`signet-memory: registered (daemon: ${daemonUrl})`);
 
-		// Fire-and-forget startup health check
-		isDaemonRunning(daemonUrl).then((ok) => {
-			daemonReachable = ok;
-			if (!ok) {
+		// Fire-and-forget startup health check (also captures initial PID)
+		getDaemonPid(daemonUrl).then((pid) => {
+			daemonReachable = pid !== null;
+			knownPid = pid;
+			if (!daemonReachable) {
 				api.logger.warn(
 					`signet-memory: daemon unreachable at ${daemonUrl}. Memory tools will silently no-op until daemon is running.`,
 				);
@@ -1459,7 +1475,8 @@ const signetPlugin = {
 			start() {
 				api.logger.info(`signet-memory: service started (daemon: ${daemonUrl})`);
 				healthTimer = setInterval(async () => {
-					const ok = await isDaemonRunning(daemonUrl);
+					const pid = await getDaemonPid(daemonUrl);
+					const ok = pid !== null;
 					if (ok !== daemonReachable) {
 						daemonReachable = ok;
 						if (ok) {
@@ -1468,6 +1485,14 @@ const signetPlugin = {
 							api.logger.warn("signet-memory: daemon became unreachable");
 						}
 					}
+					// Daemon restarted (PID changed). Evict all claimed sessions so
+					// ensureSessionStarted re-inits on next turn, restoring identity
+					// blocks and memory context transparently.
+					if (ok && knownPid !== null && pid !== knownPid) {
+						api.logger.info(`signet-memory: daemon restarted (pid ${knownPid} -> ${pid}), re-initializing sessions`);
+						claimedSessions.clear();
+					}
+					knownPid = pid;
 				}, 60_000);
 			},
 			stop() {

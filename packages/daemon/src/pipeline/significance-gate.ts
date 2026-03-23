@@ -164,13 +164,13 @@ function computeNovelty(transcript: string, db: ReadDb): number {
 
 	if (recentTranscripts.length === 0) return 1.0;
 
-	const currentTokens = tokenize(transcript.slice(0, 2000));
+	const currentTokens = tokenize(sampleTranscript(transcript));
 	if (currentTokens.size === 0) return 1.0; // Unrecognizable content is novel by default
 
 	// Build union of tokens from recent sessions
 	const recentTokens = new Set<string>();
 	for (const row of recentTranscripts) {
-		for (const tok of tokenize(row.transcript.slice(0, 2000))) {
+		for (const tok of tokenize(sampleTranscript(row.transcript))) {
 			recentTokens.add(tok);
 		}
 	}
@@ -188,6 +188,18 @@ function computeNovelty(transcript: string, db: ReadDb): number {
 	if (ratio >= 0.3) return 1.0;
 	if (ratio <= 0.1) return 0.0;
 	return (ratio - 0.1) / 0.2;
+}
+
+/**
+ * Sample a representative cross-section of the transcript.
+ * Taking only the head biases novelty toward 0 because system prompts and
+ * agent instructions are structurally identical across sessions. Instead
+ * we sample head + mid + tail within the same 2000-char total budget.
+ */
+function sampleTranscript(t: string): string {
+	if (t.length <= 2000) return t;
+	const mid = Math.floor(t.length * 0.4);
+	return `${t.slice(0, 400)} ${t.slice(mid, mid + 1200)} ${t.slice(-400)}`;
 }
 
 /** Split text into lowercase alpha-numeric tokens (>= 3 chars). */

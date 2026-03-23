@@ -39,7 +39,7 @@ function isSidebarItem(value: string): value is SidebarFocusItem {
 
 // --- Tab group arrays (ordered for arrow-key cycling) ---
 
-export const ENGINE_TABS = ["settings", "pipeline", "predictor", "connectors", "logs"] as const;
+export const ENGINE_TABS = ["settings", "pipeline", "review-queue", "predictor", "connectors", "logs"] as const;
 export const MEMORY_TABS = ["memory", "timeline", "knowledge", "embeddings"] as const;
 export const CORTEX_TABS = ["cortex-memory", "cortex-apps", "cortex-tasks", "cortex-troubleshooter"] as const;
 

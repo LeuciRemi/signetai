@@ -15,6 +15,7 @@ export type TabId =
 	| "knowledge"
 	| "embeddings"
 	| "pipeline"
+	| "review-queue"
 	| "logs"
 	| "secrets"
 	| "skills"
@@ -36,6 +37,7 @@ const VALID_TABS: ReadonlySet<string> = new Set<TabId>([
 	"knowledge",
 	"embeddings",
 	"pipeline",
+	"review-queue",
 	"logs",
 	"secrets",
 	"skills",
@@ -99,6 +101,7 @@ const MEMORY_TABS: ReadonlySet<TabId> = new Set([
 const ENGINE_TABS: ReadonlySet<TabId> = new Set([
 	"settings",
 	"pipeline",
+	"review-queue",
 	"predictor",
 	"connectors",
 	"logs",

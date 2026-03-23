@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { detectSchema, getMissingIdentityFiles, hasValidIdentity } from "@signet/core";
 import chalk from "chalk";
@@ -42,6 +44,45 @@ interface StatusReport {
 	readonly files: readonly FileReport[];
 	readonly db: DbReport;
 	readonly daemon: DaemonStatus;
+	// True when an openclaw config was found with both the legacy hook AND the
+	// plugin path enabled simultaneously (dual-system misconfiguration).
+	readonly openclawDualSystem: boolean;
+}
+
+/**
+ * Check candidate openclaw config paths for the dual-system misconfiguration
+ * where both the legacy hook and plugin are enabled simultaneously.
+ */
+function detectOpenClawDualSystem(): boolean {
+	const home = homedir();
+	const candidates = [
+		process.env.OPENCLAW_CONFIG_PATH,
+		process.env.CLAWDBOT_CONFIG_PATH,
+		join(home, ".openclaw", "openclaw.json"),
+		join(home, ".clawdbot", "clawdbot.json"),
+	].filter((p): p is string => typeof p === "string" && p.length > 0);
+
+	for (const path of candidates) {
+		try {
+			if (!existsSync(path)) continue;
+			const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+			const hooks = raw.hooks as Record<string, unknown> | undefined;
+			const internal = hooks?.internal as Record<string, unknown> | undefined;
+			const entries = internal?.entries as Record<string, unknown> | undefined;
+			const hook = entries?.["signet-memory"] as Record<string, unknown> | undefined;
+			const hookEnabled = hook?.enabled === true;
+
+			const plugins = raw.plugins as Record<string, unknown> | undefined;
+			const pluginEntries = plugins?.entries as Record<string, unknown> | undefined;
+			const plugin = pluginEntries?.["signet-memory-openclaw"] as Record<string, unknown> | undefined;
+			const pluginEnabled = plugin?.enabled === true;
+
+			if (hookEnabled && pluginEnabled) return true;
+		} catch {
+			// Unparseable config — skip
+		}
+	}
+	return false;
 }
 
 interface DoctorFinding {
@@ -85,6 +126,7 @@ export async function getStatusReport(basePath: string, deps: StatusDeps): Promi
 			conversationCount: null,
 		},
 		daemon,
+		openclawDualSystem: detectOpenClawDualSystem(),
 	};
 
 	if (!existing.memoryDb) {
@@ -284,6 +326,15 @@ function getDoctorFindings(report: StatusReport): DoctorFinding[] {
 			level: "info",
 			message: "Memory database is empty.",
 			fix: "Use `signet remember` or keep chatting so the daemon can build memory.",
+		});
+	}
+
+	if (report.openclawDualSystem) {
+		findings.push({
+			level: "error",
+			message:
+				"OpenClaw dual-system conflict: legacy hook AND plugin are both enabled. This causes duplicate memories, 2× token burn, and 409 session errors.",
+			fix: 'Run `signet setup --harness openclaw` to repair, or set hooks.internal.entries["signet-memory"].enabled = false in your openclaw config.',
 		});
 	}
 
