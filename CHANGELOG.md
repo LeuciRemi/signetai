@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.74.1] - 2026-03-23
+
+### Features
+
+- **cli**: add configurable Signet workspace path + migration (#302)
+
+
 ## [0.74.0] - 2026-03-23
 
 ### Bug Fixes
