@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.75.3] - 2026-03-24
+
+### Features
+
+- multi-agent support — scoped identity, memory, and OpenClaw routing (#316)
+
+
 ## [0.75.2] - 2026-03-24
 
 ### Bug Fixes
