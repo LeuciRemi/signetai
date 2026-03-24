@@ -313,7 +313,7 @@ impl Default for PipelineV2Config {
             native_shadow_enabled: false,
             mutations_frozen: false,
             semantic_contradiction_enabled: true,
-            semantic_contradiction_timeout_ms: 45_000,
+            semantic_contradiction_timeout_ms: 120_000,
             telemetry_enabled: false,
             extraction: ExtractionConfig::default(),
             worker: WorkerConfig::default(),

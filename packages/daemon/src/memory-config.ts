@@ -34,7 +34,7 @@ export const DEFAULT_PIPELINE_V2: PipelineV2Config = {
 	nativeShadowEnabled: false,
 	mutationsFrozen: false,
 	semanticContradictionEnabled: true,
-	semanticContradictionTimeoutMs: 45000,
+	semanticContradictionTimeoutMs: 120000,
 	extraction: {
 		provider: "ollama",
 		model: "qwen3.5:4b",

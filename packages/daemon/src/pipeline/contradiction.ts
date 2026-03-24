@@ -49,7 +49,7 @@ export async function detectSemanticContradiction(
 	factContent: string,
 	targetContent: string,
 	provider: LlmProvider,
-	timeoutMs = 45000,
+	timeoutMs = 120000,
 ): Promise<SemanticContradictionResult> {
 	const noContradiction: SemanticContradictionResult = {
 		detected: false,

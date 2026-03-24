@@ -85,6 +85,8 @@ export function startEmbeddingTracker(
 						 LEFT JOIN embeddings e
 						   ON e.source_type = 'memory' AND e.source_id = m.id
 						 WHERE m.is_deleted = 0
+						   AND m.content_hash IS NOT NULL
+						   AND trim(m.content_hash) <> ''
 						   AND (
 						     e.id IS NULL
 						     OR e.content_hash <> m.content_hash
