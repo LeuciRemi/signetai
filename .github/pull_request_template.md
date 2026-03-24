@@ -38,6 +38,30 @@
 <!-- Required for any UI changes (dashboard, web, extension). PRs that
      touch the frontend without screenshots will not be merged. -->
 
+
+## PR Readiness (MANDATORY)
+
+<!-- Derived from AGENTS.md recurring review failures. These checks are
+     required and enforced by CI. -->
+
+- [ ] Spec alignment validated (`INDEX.md` + `dependencies.yaml`)
+- [ ] Agent scoping verified on all new/changed data queries
+- [ ] Input/config validation and bounds checks added
+- [ ] Error handling and fallback paths tested (no silent swallow)
+- [ ] Security checks applied to admin/mutation endpoints
+- [ ] Docs updated for API/spec/status changes
+- [ ] Regression tests added for each bug fix
+- [ ] Lint/typecheck/tests pass locally
+
+
+## Migration Notes (if applicable)
+
+<!-- Fill this section only when migrations are touched. -->
+
+- [ ] Migration is idempotent
+- [ ] Daemon Rust parity reviewed or explicitly N/A
+- [ ] Rollback / compatibility note included in PR description
+
 ## Testing
 
 <!-- How did you verify this works? -->
