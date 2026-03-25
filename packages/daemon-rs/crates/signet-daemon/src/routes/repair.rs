@@ -25,6 +25,19 @@ fn repair_result(action: &str, success: bool, affected: usize, message: &str) ->
     })
 }
 
+fn lease_timeout_ms(state: &AppState) -> u64 {
+    // Match the TypeScript repair endpoint's resolved fallback until the
+    // Rust daemon shares the same config resolution path.
+    state
+        .config
+        .manifest
+        .memory
+        .as_ref()
+        .and_then(|cfg| cfg.pipeline_v2.as_ref())
+        .map(|cfg| cfg.worker.lease_timeout_ms)
+        .unwrap_or(300_000)
+}
+
 // ---------------------------------------------------------------------------
 // Repair endpoints
 // ---------------------------------------------------------------------------
@@ -65,29 +78,58 @@ pub async fn requeue_dead(State(state): State<Arc<AppState>>) -> impl IntoRespon
 
 /// POST /api/repair/release-leases — release stale job leases.
 pub async fn release_leases(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let lease_ms = lease_timeout_ms(&state).min(i64::MAX as u64) as i64;
+    let now = chrono::Utc::now();
+    let now_s = now.to_rfc3339();
+    let cutoff = (now - chrono::Duration::milliseconds(lease_ms)).to_rfc3339();
     let result = state
         .pool
-        .write(signet_core::db::Priority::Low, |conn| {
-            let count = conn.execute(
-                "UPDATE memory_jobs SET status = 'pending', leased_at = NULL, updated_at = datetime('now')
-                 WHERE status = 'leased' AND leased_at < datetime('now', '-5 minutes')",
-                [],
+        .write(signet_core::db::Priority::Low, move |conn| {
+            let dead = conn.execute(
+                "UPDATE memory_jobs
+                 SET status = 'dead',
+                     leased_at = NULL,
+                     failed_at = ?1,
+                     error = COALESCE(error, 'lease expired before completion'),
+                     updated_at = ?1
+                 WHERE status = 'leased'
+                   AND leased_at < ?2
+                   AND attempts >= max_attempts",
+                rusqlite::params![now_s, cutoff],
             )?;
-            Ok(serde_json::json!(count))
+            let pending = conn.execute(
+                "UPDATE memory_jobs
+                 SET status = 'pending',
+                     leased_at = NULL,
+                     updated_at = ?1
+                 WHERE status = 'leased'
+                   AND leased_at < ?2
+                   AND attempts < max_attempts",
+                rusqlite::params![now_s, cutoff],
+            )?;
+            Ok(serde_json::json!({
+                "pending": pending,
+                "dead": dead,
+                "total": pending + dead,
+            }))
         })
         .await;
 
     match result {
         Ok(count) => {
-            let n = count.as_u64().unwrap_or(0) as usize;
+            let pending = count["pending"].as_u64().unwrap_or(0) as usize;
+            let dead = count["dead"].as_u64().unwrap_or(0) as usize;
+            let n = count["total"].as_u64().unwrap_or(0) as usize;
+            let msg = if dead > 0 {
+                format!(
+                    "released {pending} stale lease(s) back to pending and dead-lettered {dead} exhausted job(s)"
+                )
+            } else {
+                format!("released {pending} stale lease(s) back to pending")
+            };
             (
                 StatusCode::OK,
-                Json(repair_result(
-                    "release_leases",
-                    true,
-                    n,
-                    &format!("{n} stale leases released"),
-                )),
+                Json(repair_result("release_leases", true, n, &msg)),
             )
         }
         Err(e) => (

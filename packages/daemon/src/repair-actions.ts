@@ -19,6 +19,7 @@ import {
 import { logger } from "./logger";
 import type { EmbeddingConfig } from "./memory-config";
 import type { PipelineV2Config } from "./memory-config";
+import { recoverStaleLeases } from "./pipeline/stale-leases";
 import { insertHistoryEvent } from "./transactions";
 
 // ---------------------------------------------------------------------------
@@ -295,25 +296,25 @@ export function releaseStaleLeases(
 
 	const cutoff = new Date(Date.now() - cfg.worker.leaseTimeoutMs).toISOString();
 
-	const affected = accessor.withWriteTx((db) => {
+	const result = accessor.withWriteTx((db) => {
 		const now = new Date().toISOString();
-		const result = db
-			.prepare(
-				`UPDATE memory_jobs
-				 SET status = 'pending', leased_at = NULL, updated_at = ?
-				 WHERE status = 'leased' AND leased_at < ?`,
-			)
-			.run(now, cutoff);
-
-		const count = countChanges(result);
-		const msg = `released ${count} stale lease(s) back to pending`;
-		writeRepairAudit(db, action, ctx, count, msg);
-		return count;
+		const recovered = recoverStaleLeases(db, { cutoff, now });
+		const msg =
+			recovered.dead > 0
+				? `released ${recovered.pending} stale lease(s) back to pending and dead-lettered ${recovered.dead} exhausted job(s)`
+				: `released ${recovered.pending} stale lease(s) back to pending`;
+		writeRepairAudit(db, action, ctx, recovered.total, msg);
+		return {
+			msg,
+			recovered,
+		};
 	});
 
 	limiter.record(action);
 	logger.info("pipeline", "repair: released stale leases", {
-		affected,
+		affected: result.recovered.total,
+		pending: result.recovered.pending,
+		dead: result.recovered.dead,
 		cutoff,
 		actor: ctx.actor,
 		reason: ctx.reason,
@@ -322,8 +323,8 @@ export function releaseStaleLeases(
 	return {
 		action,
 		success: true,
-		affected,
-		message: `released ${affected} stale lease(s) back to pending`,
+		affected: result.recovered.total,
+		message: result.msg,
 	};
 }
 
@@ -1998,12 +1999,18 @@ export function forgetDeadMemories(accessor: DbAccessor, ids: readonly string[])
 		for (const id of ids) {
 			total += countChanges(stmt.run(now, id));
 		}
-		writeRepairAudit(db, "forget-dead-memories", {
-			actor: "api",
-			reason: "dead-memory hygiene",
-			actorType: "system",
-			requestId: null,
-		}, total, `soft-deleted ${total} dead memories`);
+		writeRepairAudit(
+			db,
+			"forget-dead-memories",
+			{
+				actor: "api",
+				reason: "dead-memory hygiene",
+				actorType: "system",
+				requestId: null,
+			},
+			total,
+			`soft-deleted ${total} dead memories`,
+		);
 		return total;
 	});
 }

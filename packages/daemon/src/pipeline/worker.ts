@@ -27,6 +27,7 @@ import { enqueueHintsJob } from "./prospective-index";
 import type { AnalyticsCollector } from "../analytics";
 import type { TelemetryCollector } from "../telemetry";
 import { generateWithTracking } from "./provider";
+import { recoverStaleLeases, type StaleLeaseRecovery } from "./stale-leases";
 import {
 	PROSPECTIVE_ANTONYM_PAIRS,
 	tokenize,
@@ -769,18 +770,14 @@ function applyPhaseCWrites(
 // Stale lease reaper
 // ---------------------------------------------------------------------------
 
-function reapStaleLeases(accessor: DbAccessor, timeoutMs: number): number {
+function reapStaleLeases(
+	accessor: DbAccessor,
+	timeoutMs: number,
+): StaleLeaseRecovery {
 	return accessor.withWriteTx((db) => {
 		const cutoff = new Date(Date.now() - timeoutMs).toISOString();
 		const now = new Date().toISOString();
-		const result = db
-			.prepare(
-				`UPDATE memory_jobs
-				 SET status = 'pending', updated_at = ?
-				 WHERE status = 'leased' AND leased_at < ?`,
-			)
-			.run(now, cutoff);
-		return countChanges(result);
+		return recoverStaleLeases(db, { cutoff, now });
 	});
 }
 
@@ -1496,8 +1493,12 @@ export function startWorker(
 		if (!running) return;
 		try {
 			const reaped = reapStaleLeases(accessor, pipelineCfg.worker.leaseTimeoutMs);
-			if (reaped > 0) {
-				logger.info("pipeline", "Reaped stale leases", { count: reaped });
+			if (reaped.total > 0) {
+				logger.info("pipeline", "Reaped stale leases", {
+					count: reaped.total,
+					pending: reaped.pending,
+					dead: reaped.dead,
+				});
 			}
 		} catch (e) {
 			logger.warn("pipeline", "Lease reaper error", {

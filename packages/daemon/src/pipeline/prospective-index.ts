@@ -120,7 +120,7 @@ function leaseJob(db: WriteDb, maxAttempts: number): HintJobRow | null {
 		 WHERE id = ?`,
 	).run(now, now, row.id);
 
-	return row;
+	return { ...row, attempts: row.attempts + 1 };
 }
 
 function completeJob(db: WriteDb, jobId: string): void {
@@ -186,18 +186,20 @@ export function startHintsWorker(deps: {
 	async function tick(): Promise<void> {
 		if (!running) return;
 
+		let job: HintJobRow | null = null;
 		try {
-			const job = accessor.withWriteTx((db) => leaseJob(db, 3));
+			job = accessor.withWriteTx((db) => leaseJob(db, 3));
 			if (!job) {
 				schedule();
 				return;
 			}
+			const j = job;
 
 			let payload: HintPayload;
 			try {
-				payload = JSON.parse(job.payload) as HintPayload;
+				payload = JSON.parse(j.payload) as HintPayload;
 			} catch {
-				accessor.withWriteTx((db) => failJob(db, job.id, "invalid payload"));
+				accessor.withWriteTx((db) => failJob(db, j.id, "invalid payload"));
 				schedule();
 				return;
 			}
@@ -208,19 +210,30 @@ export function startHintsWorker(deps: {
 			if (hints.length > 0) {
 				accessor.withWriteTx((db) => {
 					writeHints(db, payload.memoryId, "default", hints);
-					completeJob(db, job.id);
+					completeJob(db, j.id);
 				});
 				logger.info("pipeline", "Prospective hints generated", {
 					memoryId: payload.memoryId,
 					hints: hints.length,
 				});
 			} else {
-				accessor.withWriteTx((db) => completeJob(db, job.id));
+				accessor.withWriteTx((db) => completeJob(db, j.id));
 				logger.debug("pipeline", "No hints generated (empty LLM response)", {
 					memoryId: payload.memoryId,
 				});
 			}
 		} catch (e) {
+			if (job) {
+				const j = job;
+				const msg = e instanceof Error ? e.message : String(e);
+				accessor.withWriteTx((db) => failJob(db, j.id, msg));
+				logger.warn("pipeline", "Hints worker job failed", {
+					jobId: j.id,
+					memoryId: j.memory_id,
+					error: msg,
+					attempt: j.attempts,
+				});
+			}
 			logger.warn("pipeline", "Hints worker tick failed", {
 				error: e instanceof Error ? e.message : String(e),
 			});

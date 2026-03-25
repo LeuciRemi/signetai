@@ -12,11 +12,7 @@ import { runMigrations } from "@signet/core";
 import type { LlmProvider } from "./provider";
 import type { DbAccessor, WriteDb, ReadDb } from "../db-accessor";
 import type { PipelineHintsConfig } from "@signet/core";
-import {
-	generateHints,
-	enqueueHintsJob,
-	startHintsWorker,
-} from "./prospective-index";
+import { generateHints, enqueueHintsJob, startHintsWorker } from "./prospective-index";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -64,9 +60,9 @@ const HINTS_CFG: PipelineHintsConfig = {
 
 function getHints(db: Database, memoryId: string): string[] {
 	return (
-		db
-			.prepare(`SELECT hint FROM memory_hints WHERE memory_id = ? ORDER BY hint`)
-			.all(memoryId) as Array<{ hint: string }>
+		db.prepare(`SELECT hint FROM memory_hints WHERE memory_id = ? ORDER BY hint`).all(memoryId) as Array<{
+			hint: string;
+		}>
 	).map((r) => r.hint);
 }
 
@@ -86,13 +82,27 @@ function getHintsFts(db: Database, query: string): string[] {
 function getJob(
 	db: Database,
 	memoryId: string,
-): { status: string; attempts: number } | undefined {
+):
+	| {
+			status: string;
+			attempts: number;
+			leased_at: string | null;
+			failed_at: string | null;
+	  }
+	| undefined {
 	return db
 		.prepare(
-			`SELECT status, attempts FROM memory_jobs
+			`SELECT status, attempts, leased_at, failed_at FROM memory_jobs
 			 WHERE memory_id = ? AND job_type = 'prospective_index'`,
 		)
-		.get(memoryId) as { status: string; attempts: number } | undefined;
+		.get(memoryId) as
+		| {
+				status: string;
+				attempts: number;
+				leased_at: string | null;
+				failed_at: string | null;
+		  }
+		| undefined;
 }
 
 /** Shared pipeline config with hints enabled. */
@@ -105,8 +115,23 @@ function pipelineCfg(hints = HINTS_CFG) {
 		worker: { pollMs: 10, maxRetries: 3, leaseTimeoutMs: 300000 },
 		graph: { enabled: false, boostWeight: 0, boostTimeoutMs: 500 },
 		reranker: { enabled: false, model: "", topN: 20, timeoutMs: 2000 },
-		autonomous: { enabled: false, frozen: false, allowUpdateDelete: false, maintenanceIntervalMs: 0, maintenanceMode: "observe" as const },
-		repair: { reembedCooldownMs: 0, reembedHourlyBudget: 0, requeueCooldownMs: 0, requeueHourlyBudget: 0, dedupCooldownMs: 0, dedupHourlyBudget: 0, dedupSemanticThreshold: 0.92, dedupBatchSize: 100 },
+		autonomous: {
+			enabled: false,
+			frozen: false,
+			allowUpdateDelete: false,
+			maintenanceIntervalMs: 0,
+			maintenanceMode: "observe" as const,
+		},
+		repair: {
+			reembedCooldownMs: 0,
+			reembedHourlyBudget: 0,
+			requeueCooldownMs: 0,
+			requeueHourlyBudget: 0,
+			dedupCooldownMs: 0,
+			dedupHourlyBudget: 0,
+			dedupSemanticThreshold: 0.92,
+			dedupBatchSize: 100,
+		},
 		documents: { workerIntervalMs: 10000, chunkSize: 2000, chunkOverlap: 200, maxContentBytes: 10_000_000 },
 		guardrails: { maxContentChars: 500, chunkTargetChars: 300, recallTruncateChars: 500 },
 		structural: { enabled: false, classifyBatchSize: 8, dependencyBatchSize: 5, pollIntervalMs: 10000 },
@@ -302,9 +327,7 @@ describe("prospective-index", () => {
 		});
 
 		it("propagates provider errors", async () => {
-			await expect(
-				generateHints(throwingProvider(), "test", HINTS_CFG),
-			).rejects.toThrow("Ollama timeout");
+			await expect(generateHints(throwingProvider(), "test", HINTS_CFG)).rejects.toThrow("Ollama timeout");
 		});
 
 		it("filters lines shorter than 11 characters", async () => {
@@ -451,6 +474,30 @@ describe("prospective-index", () => {
 			// Same hints should not duplicate due to UNIQUE(memory_id, hint)
 			const hints = getHints(db, mid);
 			expect(hints.length).toBe(5);
+		});
+
+		it("requeues throwing jobs immediately instead of leaving them leased for the reaper", async () => {
+			const mid = crypto.randomUUID();
+			insertMemory(db, mid, "test content");
+
+			accessor.withWriteTx((wdb) => {
+				enqueueHintsJob(wdb, mid, "test content");
+			});
+
+			const handle = startHintsWorker({
+				accessor,
+				provider: throwingProvider(),
+				pipelineCfg: pipelineCfg(),
+			});
+
+			await new Promise((r) => setTimeout(r, 200));
+			await handle.stop();
+
+			const job = getJob(db, mid);
+			expect(job).toBeDefined();
+			expect(job?.status).toBe("pending");
+			expect(job?.attempts).toBe(1);
+			expect(job?.failed_at).not.toBeNull();
 		});
 	});
 

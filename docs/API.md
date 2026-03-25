@@ -2046,12 +2046,19 @@ after resolving a pipeline configuration issue.
 ### POST /api/repair/release-leases
 
 Release stale pipeline job leases that have exceeded their timeout. Run this
-if pipeline workers crashed and left jobs locked.
+if pipeline workers crashed and left jobs locked. Stale jobs that still have
+remaining retries are returned to `pending`. Stale jobs that have already
+reached `max_attempts` are moved to `dead` instead of being requeued again.
 
 **Response**
 
 ```json
-{ "action": "releaseStaleLeases", "success": true, "affected": 3, "message": "..." }
+{
+  "action": "releaseStaleLeases",
+  "success": true,
+  "affected": 3,
+  "message": "released 2 stale lease(s) back to pending and dead-lettered 1 exhausted job(s)"
+}
 ```
 
 ### POST /api/repair/check-fts

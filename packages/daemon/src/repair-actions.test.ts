@@ -144,12 +144,21 @@ function insertMemory(db: Database, id: string): void {
 	).run(id, `content for ${id}`, "fact", now, now, "test");
 }
 
-function insertJob(db: Database, id: string, memId: string, status: string, leasedAt?: string): void {
+function insertJob(
+	db: Database,
+	id: string,
+	memId: string,
+	status: string,
+	leasedAt?: string,
+	attempts = 0,
+	maxAttempts = 3,
+): void {
 	const now = new Date().toISOString();
 	db.prepare(
-		`INSERT INTO memory_jobs (id, memory_id, job_type, status, leased_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-	).run(id, memId, "extract", status, leasedAt ?? null, now, now);
+		`INSERT INTO memory_jobs
+		 (id, memory_id, job_type, status, attempts, max_attempts, leased_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	).run(id, memId, "extract", status, attempts, maxAttempts, leasedAt ?? null, now, now);
 }
 
 function ensureVecTable(db: Database): void {
@@ -382,11 +391,45 @@ describe("releaseStaleLeases", () => {
 		expect(result.success).toBe(true);
 		expect(result.affected).toBe(1);
 
-		const stale = db.prepare("SELECT status FROM memory_jobs WHERE id = 'job-stale'").get() as { status: string };
+		const stale = db.prepare("SELECT status, leased_at FROM memory_jobs WHERE id = 'job-stale'").get() as {
+			status: string;
+			leased_at: string | null;
+		};
 		expect(stale.status).toBe("pending");
+		expect(stale.leased_at).toBeNull();
 
 		const fresh = db.prepare("SELECT status FROM memory_jobs WHERE id = 'job-fresh'").get() as { status: string };
 		expect(fresh.status).toBe("leased");
+	});
+
+	it("dead-letters stale leases that already exhausted max attempts", () => {
+		insertMemory(db, "mem-4");
+
+		const staleAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+		insertJob(db, "job-exhausted", "mem-4", "leased", staleAt, 3, 3);
+
+		const cfg = { ...TEST_CFG, worker: { ...TEST_CFG.worker, leaseTimeoutMs: 5 * 60 * 1000 } };
+		const limiter = createRateLimiter();
+		const result = releaseStaleLeases(accessor, cfg, CTX_OPERATOR, limiter);
+
+		expect(result.success).toBe(true);
+		expect(result.affected).toBe(1);
+		expect(result.message).toContain("dead-lettered 1 exhausted job(s)");
+
+		const job = db
+			.prepare("SELECT status, leased_at, failed_at, error FROM memory_jobs WHERE id = 'job-exhausted'")
+			.get() as
+			| {
+					status: string;
+					leased_at: string | null;
+					failed_at: string | null;
+					error: string | null;
+			  }
+			| undefined;
+		expect(job?.status).toBe("dead");
+		expect(job?.leased_at).toBeNull();
+		expect(job?.failed_at).not.toBeNull();
+		expect(job?.error).toBe("lease expired before completion");
 	});
 });
 

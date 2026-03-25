@@ -249,8 +249,10 @@ curl -X POST http://localhost:3850/api/repair/requeue-dead \
 
 ### POST /api/repair/release-leases
 
-Releases jobs stuck in `leased` status past the lease timeout back to
-`pending`. The cutoff is `now - leaseTimeoutMs` (default: 5 minutes).
+Releases jobs stuck in `leased` status past the lease timeout. Jobs with
+remaining retries move back to `pending`. Jobs whose `attempts` already meet
+or exceed `max_attempts` are dead-lettered instead. The cutoff is
+`now - leaseTimeoutMs` (default: 5 minutes).
 
 - Cooldown: `repairRequeueCooldownMs` (default: 1 minute)
 - Hourly budget: `repairRequeueHourlyBudget` (default: 50)
