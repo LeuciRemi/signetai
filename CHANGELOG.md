@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.77.1] - 2026-03-25
+
+### Bug Fixes
+
+- **cli**: recover stale daemon processes on restart (#333)
+
+
 ## [0.77.0] - 2026-03-25
 
 ### Bug Fixes
