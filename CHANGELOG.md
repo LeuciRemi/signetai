@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.77.7] - 2026-03-26
+
+### Features
+
+- **forge**: require explicit dev-warning acknowledgement on install and launch (#359)
+
+
 ## [0.77.5] - 2026-03-26
 
 ### Bug Fixes
