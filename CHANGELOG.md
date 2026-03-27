@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.80.0] - 2026-03-27
+
+### Features
+
+- **docker**: add first-party self-hosting stack (#374)
+
+
 ## [0.79.0] - 2026-03-27
 
 ### Features
