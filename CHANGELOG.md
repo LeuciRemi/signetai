@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.78.1] - 2026-03-27
+
+### Bug Fixes
+
+- **update**: verify installed version after install (#365)
+
+
 ## [0.78.0] - 2026-03-27
 
 ### Bug Fixes
