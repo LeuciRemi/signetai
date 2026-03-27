@@ -176,6 +176,14 @@ Per RESEARCH-SSM-INTEGRATION drift detection:
 - Benchmark harness is reused for ongoing regression testing.
 - Canary suite runs as part of shadow diagnostics.
 
+### SSM Temporal Backbone <-> Engram-Informed Predictor Track
+
+- Consumes accepted/rejected Engram-pattern translation decisions from
+  `engram-informed-predictor-track`.
+- Shadow rollout notes must cite which Engram-inspired deltas were
+  carried forward vs rejected.
+- No SSM default-path promotion before this handoff is documented.
+
 ### SSM Temporal Backbone <-> Ontology Evolution Core
 
 - Consumes confidence, co-occurrence, relationship type, lineage

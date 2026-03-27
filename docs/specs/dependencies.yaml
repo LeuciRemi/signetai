@@ -429,6 +429,28 @@ specs:
       - "Ablations compare SSM vs current scorer on MRR, NDCG@10, and temporal precision"
     decision: null
 
+  - id: engram-informed-predictor-track
+    status: planning
+    path: docs/specs/planning/engram-informed-predictor-track.md
+    hard_depends_on:
+      - predictive-memory-scorer
+    soft_depends_on:
+      - ssm-foundation-evaluation
+      - desire-paths-epic
+      - predictor-agent-feedback
+    blocks:
+      - ssm-temporal-backbone
+    informed_by:
+      - references/Engram
+      - "arxiv:2601.07372 (Engram: Conditional Memory via Scalable Lookup)"
+      - docs/research/technical/RESEARCH-SSM-INTEGRATION.md
+      - docs/specs/planning/ssm-foundation-evaluation.md
+    success_criteria:
+      - "Engram-inspired scorer ablations are benchmarked with reproducible quality and latency reports against the current cross-attention baseline"
+      - "At least one Engram-inspired configuration improves canary quality slices without violating fail-open and latency constraints"
+      - "Selected architecture deltas are codified as contracts for ssm-temporal-backbone shadow deployment"
+    decision: null
+
   - id: ssm-temporal-backbone
     status: planning
     path: docs/specs/planning/ssm-temporal-backbone.md

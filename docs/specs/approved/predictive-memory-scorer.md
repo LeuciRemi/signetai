@@ -11,7 +11,7 @@ scope_boundary: "Scores and ranks memories — does not define extraction, graph
 
 Spec metadata:
 - ID: `predictive-memory-scorer`
-- Status: `planning`
+- Status: `approved`
 - Hard depends on: `memory-pipeline-v2`, `knowledge-architecture-schema`,
   `session-continuity-protocol`
 - Registry: `docs/specs/INDEX.md`
@@ -54,7 +54,7 @@ personal memory corpus. That's what we're building.
 ## Knowledge Architecture Coupling
 
 This spec now depends on
-`docs/specs/planning/knowledge-architecture-schema.md`.
+`docs/specs/complete/knowledge-architecture-schema.md`.
 
 The predictor is still a ranking layer, but the candidate floor is no longer
 "flat facts only." Structural retrieval (entity -> aspect ->

@@ -32,6 +32,7 @@ flowchart TD
   OEC[Ontology Evolution Core]
   OGW[Ontology Governance Workflow]
   SSF[SSM Foundation Eval]
+  EIPT[Engram-Informed Predictor Track]
   SST[SSM Temporal Backbone]
   SSG[SSM Graph Traversal Model]
   DRR[Daemon Rust Rewrite]
@@ -72,6 +73,10 @@ flowchart TD
   OEC --> OGW
   PMS --> SSF
   DP --> SSF
+  PMS --> EIPT
+  SSF -.-> EIPT
+  DP -.-> EIPT
+  EIPT --> SST
   SSF --> SST
   OEC --> SST
   SST --> SSG
@@ -128,6 +133,7 @@ and market subdirectories). Reference repos live in `references/`.
 | `desire-paths-epic`, `retroactive-supersession` | RESEARCH-COMPETITIVE-SYSTEMS | What retrieval, lifecycle, and integration patterns from competing systems should be adopted? |
 | `ontology-evolution-core`, `ontology-governance-workflow` | RESEARCH-ONTOLOGY-EVOLUTION | How should ontology schema and governance evolve without losing local-first simplicity? |
 | `ssm-foundation-evaluation`, `ssm-temporal-backbone`, `ssm-graph-traversal-model` | RESEARCH-SSM-INTEGRATION, SSM-GRAPH-INTERSECTION, SSM-LITERATURE-REVIEW, SYNTHETIC-DATA-GENERATION | How should SSM research translate into benchmarked, staged deployment without violating retrieval invariants? |
+| `engram-informed-predictor-track` | references/Engram, RESEARCH-SSM-INTEGRATION, ssm-foundation-evaluation | How should Engram design patterns be translated into Signet scorer and SSM architecture decisions? |
 | `macos-sqlite-runtime-discovery` | RESEARCH-MACOS-SQLITE-RUNTIME-DISCOVERY | How should Signet select a compatible SQLite runtime on macOS so Bun can load sqlite-vec? |
 
 ### Research Adoption Ledger (high-impact)
@@ -139,6 +145,7 @@ and market subdirectories). Reference repos live in `references/`.
 | `RESEARCH-REFERENCE-REPOS` | ADOPT/TEST | DP-16..DP-20 design direction |
 | `RESEARCH-SSM-INTEGRATION` | ADOPT (planning track active) | `ssm-foundation-evaluation`, `ssm-temporal-backbone` |
 | `SSM-GRAPH-INTERSECTION` | ADOPT (planning track active) | `ssm-graph-traversal-model` |
+| `arxiv:2601.07372 (Engram)` | ADOPT (translation track) | `engram-informed-predictor-track`, SSM planning contracts |
 
 ---
 
@@ -406,6 +413,15 @@ cannot suppress them. This is a hard retrieval invariant.
   (both handle missing signals gracefully with zero defaults) and is not
   required by `ssm-foundation-evaluation`.
 
+### Engram-Informed Predictor Track <-> SSM Track
+
+- `engram-informed-predictor-track` is the translation lane for Engram
+  patterns into Signet scorer experiments and SSM-ready contracts.
+- No `ssm-temporal-backbone` rollout may claim Engram alignment until this
+  track records accepted/rejected deltas and benchmark evidence.
+- The track cannot violate existing runtime guarantees: fail-open scoring,
+  deterministic fallback, bounded latency, and constraint surfacing.
+
 ### Multi-Agent <-> All Specs
 
 - `agent_id` column appears on every data table (see invariant 1).
@@ -556,6 +572,9 @@ Phase ordering based on hard dependencies and integration contracts.
 - **SSM Foundation and Evaluation**: planning (`ssm-foundation-evaluation`)
   - reproducible benchmark harness + synthetic/real canaries
   - ablations against current scorer (NDCG@10, MRR, temporal precision)
+- **Engram-Informed Predictor Track**: planning (`engram-informed-predictor-track`)
+  - translate Engram hash/gate/conv patterns into Signet scorer experiments
+  - publish acceptance/rejection contracts before temporal SSM rollout
 - **SSM Temporal Backbone**: planning (`ssm-temporal-backbone`)
   - shadow-mode temporal sidecar with deterministic fallback
   - learned decay and continuity-aware ranking validation
@@ -651,6 +670,7 @@ Legend:
 | `ontology-evolution-core` | planning | `docs/specs/planning/ontology-evolution-core.md` | `knowledge-architecture-schema`, `desire-paths-epic` | `ontology-governance-workflow` | Confidence/provenance edges, co-occurrence signals, typed relationships, temporal lineage |
 | `ontology-governance-workflow` | planning | `docs/specs/planning/ontology-governance-workflow.md` | `ontology-evolution-core`, `knowledge-architecture-schema` | - | Proposal/review workflow for ontology-impacting schema changes |
 | `ssm-foundation-evaluation` | planning | `docs/specs/planning/ssm-foundation-evaluation.md` | `predictive-memory-scorer`, `desire-paths-epic` | `ssm-temporal-backbone` | Benchmark harness and canary gates for SSM adoption |
+| `engram-informed-predictor-track` | planning | `docs/specs/planning/engram-informed-predictor-track.md` | `predictive-memory-scorer` | `ssm-temporal-backbone` | Engram-pattern translation lane for scorer ablations and SSM handoff contracts |
 | `ssm-temporal-backbone` | planning | `docs/specs/planning/ssm-temporal-backbone.md` | `ssm-foundation-evaluation`, `ontology-evolution-core`, `session-continuity-protocol` | `ssm-graph-traversal-model` | Shadow-mode temporal state model with fallback |
 | `ssm-graph-traversal-model` | planning | `docs/specs/planning/ssm-graph-traversal-model.md` | `ssm-temporal-backbone`, `desire-paths-epic`, `knowledge-architecture-schema` | - | SSM-assisted traversal path ranking |
 | `distributed-harness-orchestration` | planning | `docs/specs/planning/distributed-harness-orchestration.md` | `multi-agent-support`, `signet-runtime` | `signet-native-harness` | Stub: multi-remote harness/agent/memory orchestration |
@@ -738,6 +758,10 @@ INDEX/dependency consistency checks in CI.
 
 **ssm-foundation-evaluation**: SSM benchmarks and canary suites produce
 reproducible, decision-grade comparisons against current scorer behavior.
+
+**engram-informed-predictor-track**: Engram-inspired scorer ablations
+produce reproducible quality and latency evidence, and accepted deltas are
+explicitly handed off into SSM temporal planning contracts.
 
 **ssm-temporal-backbone**: Temporal SSM shadow scoring improves long-gap
 and supersession-sensitive ranking slices while preserving deterministic

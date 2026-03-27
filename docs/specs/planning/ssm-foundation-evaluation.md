@@ -82,6 +82,9 @@ conclusions are drawn:
 
 ### C) Engram-informed ablations
 
+Execution details for this lane are tracked in
+`docs/specs/planning/engram-informed-predictor-track.md`.
+
 The Engram paper (arxiv:2601.07372) identifies architectural patterns
 directly relevant to the scorer. Add these to the ablation matrix:
 
