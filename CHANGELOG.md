@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.82.0] - 2026-03-28
+
+### Bug Fixes
+
+- **cli**: protect OpenClaw-linked workspaces from unprotected data loss (#378)
+
+
 ## [0.81.2] - 2026-03-28
 
 ### Features
