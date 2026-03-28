@@ -10,6 +10,7 @@ import { managedForgeInstallSupportedOnCurrentPlatform } from "./forge.js";
 import { runFreshSetup } from "./setup-fresh.js";
 import { runExistingSetupWizard } from "./setup-migrate.js";
 import { EXTRACTION_SAFETY_WARNING, defaultExtractionModel } from "./setup-pipeline.js";
+import { enforceSetupProtection, printSetupProtectionSummary } from "./setup-protection.js";
 import { hasCommand, preflightOllamaEmbedding, promptOpenAIEmbeddingModel } from "./setup-providers.js";
 import {
 	DEPLOYMENT_TYPE_CHOICES,
@@ -142,6 +143,13 @@ export async function setupWizard(options: SetupWizardOptions, deps: SetupDeps):
 		console.log();
 
 		if (nonInteractive) {
+			const protection = await enforceSetupProtection({
+				basePath,
+				nonInteractive: true,
+				allowUnprotectedWorkspace: options.allowUnprotectedWorkspace === true,
+				createLocalBackup: options.createLocalBackup === true,
+			});
+
 			const running = await deps.isDaemonRunning();
 			if (!running) {
 				const spinner = ora("Starting daemon...").start();
@@ -157,6 +165,7 @@ export async function setupWizard(options: SetupWizardOptions, deps: SetupDeps):
 				await open(`http://localhost:${deps.DEFAULT_PORT}`);
 			}
 
+			printSetupProtectionSummary(protection);
 			return;
 		}
 
@@ -242,6 +251,8 @@ export async function setupWizard(options: SetupWizardOptions, deps: SetupDeps):
 				nonInteractive: true,
 				openDashboard: options.openDashboard === true,
 				skipGit: options.skipGit === true,
+				allowUnprotectedWorkspace: options.allowUnprotectedWorkspace === true,
+				createLocalBackup: options.createLocalBackup === true,
 				embeddingProvider: migrationEmbeddingProvider,
 				embeddingModel: deps.normalizeStringValue(options.embeddingModel) || undefined,
 				extractionProvider: migrationExtractionProvider,
@@ -317,6 +328,8 @@ export async function setupWizard(options: SetupWizardOptions, deps: SetupDeps):
 			});
 
 			await runExistingSetupWizard(basePath, existing, existingConfig, deps, {
+				allowUnprotectedWorkspace: false,
+				createLocalBackup: false,
 				embeddingProvider: migrationEmbeddingProvider,
 				embeddingModel: deps.normalizeStringValue(existingEmbedding.model) || undefined,
 				extractionProvider: migrationExtractionProvider,
@@ -415,9 +428,11 @@ export async function setupWizard(options: SetupWizardOptions, deps: SetupDeps):
 
 	let configureOpenClawWs = false;
 	let openclawRuntimePath: OpenClawRuntimeChoice = "plugin";
+	let openclawConfigCount = 0;
 	if (harnesses.includes("openclaw")) {
 		const connector = new OpenClawConnector();
 		const existingConfigs = connector.getDiscoveredConfigPaths();
+		openclawConfigCount = existingConfigs.length;
 
 		if (nonInteractive) {
 			configureOpenClawWs = options.configureOpenclawWorkspace === true && existingConfigs.length > 0;
@@ -426,7 +441,7 @@ export async function setupWizard(options: SetupWizardOptions, deps: SetupDeps):
 			if (existingConfigs.length > 0) {
 				console.log();
 				configureOpenClawWs = await confirm({
-					message: `Set OpenClaw workspace to ${basePath} in ${existingConfigs.length} config file(s)?`,
+					message: `Set OpenClaw workspace to ${basePath} in ${existingConfigs.length} config file(s)? This can be destructive on OpenClaw uninstall unless backups are configured.`,
 					default: true,
 				});
 			}
@@ -802,6 +817,7 @@ export async function setupWizard(options: SetupWizardOptions, deps: SetupDeps):
 		harnesses,
 		openclawRuntimePath,
 		configureOpenClawWs,
+		openclawConfigCount,
 		embeddingProvider,
 		embeddingModel,
 		embeddingDimensions,
@@ -816,6 +832,8 @@ export async function setupWizard(options: SetupWizardOptions, deps: SetupDeps):
 		existingAgentsDir: existing.agentsDir,
 		nonInteractive,
 		openDashboard: options.openDashboard === true,
+		allowUnprotectedWorkspace: options.allowUnprotectedWorkspace === true,
+		createLocalBackup: options.createLocalBackup === true,
 	};
 
 	await runFreshSetup(cfg, deps);

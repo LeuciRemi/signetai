@@ -18,6 +18,8 @@ export interface SetupWizardOptions {
 	openDashboard?: boolean;
 	openclawRuntimePath?: string;
 	configureOpenclawWorkspace?: boolean;
+	allowUnprotectedWorkspace?: boolean;
+	createLocalBackup?: boolean;
 }
 
 export interface SetupDeps {
@@ -62,6 +64,7 @@ export interface FreshSetupConfig {
 	readonly harnesses: string[];
 	readonly openclawRuntimePath: OpenClawRuntimeChoice;
 	readonly configureOpenClawWs: boolean;
+	readonly openclawConfigCount: number;
 	readonly embeddingProvider: "native" | "ollama" | "openai" | "none";
 	readonly embeddingModel: string;
 	readonly embeddingDimensions: number;
@@ -76,4 +79,6 @@ export interface FreshSetupConfig {
 	readonly existingAgentsDir: boolean;
 	readonly nonInteractive: boolean;
 	readonly openDashboard: boolean;
+	readonly allowUnprotectedWorkspace: boolean;
+	readonly createLocalBackup: boolean;
 }
