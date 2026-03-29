@@ -31,7 +31,7 @@ system, then poses questions that require accurate recall and reasoning.
 Setup
 ---
 
-The benchmark tool lives at `references/memorybench/`.
+Memscore: The benchmark tool we recommend: [supermemoryai/memorybench](https://github.com/supermemoryai/memorybench)  
 
 ### Isolated Environment
 
