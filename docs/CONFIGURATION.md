@@ -24,11 +24,11 @@ All files live in your active Signet workspace.
 | File | Purpose |
 |------|---------|
 | `agent.yaml` | Main configuration and manifest |
-| `AGENTS.md` | Agent identity and instructions (synced to harnesses) |
-| `SOUL.md` | Personality and tone |
-| `MEMORY.md` | Working memory summary (auto-generated) |
-| `IDENTITY.md` | Optional identity metadata (name, creature, vibe) |
-| `USER.md` | Optional user preferences and profile |
+| `AGENTS.md` | Agent-managed operating rules and instructions (synced to harnesses) |
+| `SOUL.md` | Agent-managed personality, tone, values, and temperament |
+| `MEMORY.md` | System-managed working memory summary (auto-generated, do not edit manually) |
+| `IDENTITY.md` | Agent-managed identity metadata |
+| `USER.md` | Agent-managed user profile and relationship context |
 
 The loader checks `agent.yaml`, `AGENT.yaml`, and `config.yaml` in that
 order, using the first file it finds. All sections are optional; omitting
