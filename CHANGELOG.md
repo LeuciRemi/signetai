@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.86.1] - 2026-03-29
+
+### Bug Fixes
+
+- **daemon**: harden dogfood runtime and MCP surfaces (#403)
+
+
 ## [0.86.0] - 2026-03-29
 
 ### Bug Fixes
