@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { OhMyPiConnector } from "./src/index.js";
 
 const originalEnv = {
@@ -101,5 +102,37 @@ describe("OhMyPiConnector", () => {
 		expect(uninstall.filesRemoved).toContain(join(customAgentDir, "extensions", "signet-oh-my-pi.js"));
 		expect(uninstall.filesRemoved).toContain(join(tmpRoot, ".config-home", "signet", "oh-my-pi.json"));
 		expect(reloadedConnector.isInstalled()).toBe(false);
+	});
+});
+
+describe("root build pipeline", () => {
+	it("builds Oh My Pi prerequisites before the shared dependency batch", () => {
+		const dir = dirname(fileURLToPath(import.meta.url));
+		const path = resolve(dir, "..", "..", "package.json");
+		const text = readFileSync(path, "utf8");
+
+		expect(text).toContain('"build:oh-my-pi-extension"');
+		expect(text).toContain('"build:connector-oh-my-pi"');
+
+		const build = text.match(/"build":\s*"([^"]+)"/)?.[1] ?? "";
+		const ext = "bun run build:oh-my-pi-extension";
+		const connector = "bun run build:connector-oh-my-pi";
+		const deps = "bun run build:deps";
+
+		expect(build).toContain(ext);
+		expect(build).toContain(connector);
+		expect(build).toContain(deps);
+		expect(build.indexOf(ext)).toBeLessThan(build.indexOf(connector));
+		expect(build.indexOf(connector)).toBeLessThan(build.indexOf(deps));
+	});
+
+	it("keeps cli out of the parallel dependency batch", () => {
+		const dir = dirname(fileURLToPath(import.meta.url));
+		const path = resolve(dir, "..", "..", "package.json");
+		const text = readFileSync(path, "utf8");
+		const deps = text.match(/"build:deps":\s*"([^"]+)"/)?.[1] ?? "";
+
+		expect(deps).not.toContain("@signet/cli");
+		expect(deps).not.toContain("@signet/connector-oh-my-pi");
 	});
 });
