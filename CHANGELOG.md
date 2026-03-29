@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.84.0] - 2026-03-29
+
+### Bug Fixes
+
+- **daemon-rs**: parity for PR #372 -- startup recovery + content_hash notes
+
+
 ## [0.83.0] - 2026-03-29
 
 ### Features
