@@ -544,12 +544,32 @@ async function reembedMissingMemoriesBatch(
 	const written = accessor.withWriteTx((db) => {
 		const now = new Date().toISOString();
 		let count = 0;
+		// Hoisted outside loop (pattern: db.prepare inside a loop is flagged)
+		const writeHash = db.prepare("UPDATE memories SET content_hash = ? WHERE id = ? AND content_hash IS NULL");
+		// Guard against unique constraint violation: idx_memories_content_hash_unique
+		// is a partial unique index on (content_hash) WHERE content_hash IS NOT NULL AND is_deleted = 0.
+		// If another non-deleted memory already owns the same hash, writing it back would throw
+		// and abort the entire batch. Skip the write-back in that case -- the dedup worker
+		// will soft-delete the duplicate in a later pass.
+		const checkHash = db.prepare(
+			`SELECT id FROM memories WHERE content_hash = ? AND is_deleted = 0 AND id <> ? LIMIT 1`,
+		);
 
 		for (const { memory, vector } of results) {
 			const contentHash =
 				typeof memory.contentHash === "string" && memory.contentHash.trim().length > 0
 					? memory.contentHash
 					: normalizeAndHashContent(memory.content).contentHash;
+
+			// Write computed hash back to the memories row when it was NULL.
+			// Without this, the embedding-coverage queries can never use the
+			// content_hash match branch for these rows, so they keep showing up
+			// as unembedded and the backfill cycles indefinitely.
+			if (!memory.contentHash) {
+				const collision = checkHash.get(contentHash, memory.id) as { id: string } | undefined;
+				if (!collision) writeHash.run(contentHash, memory.id);
+			}
+
 			const embId = crypto.randomUUID();
 			const blob = vectorToBlob(vector);
 			syncVecDeleteBySourceExceptHash(db, "memory", memory.id, contentHash);
