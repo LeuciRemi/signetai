@@ -8,8 +8,9 @@
  * Lives alongside the other extraction/decision prompts in pipeline/.
  */
 
-import type { LlmProvider } from "./provider";
 import { logger } from "../logger";
+import { extractBalancedJsonObjects, stripFences, tryParseJson } from "./extraction";
+import type { LlmProvider } from "./provider";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,9 +33,7 @@ export interface SkillEnrichmentResult {
 // ---------------------------------------------------------------------------
 
 function buildEnrichmentPrompt(input: SkillEnrichmentInput): string {
-	const bodyPreview = input.body.length > 3000
-		? `${input.body.slice(0, 3000)}\n[truncated]`
-		: input.body;
+	const bodyPreview = input.body.length > 3000 ? `${input.body.slice(0, 3000)}\n[truncated]` : input.body;
 
 	return `You are analyzing an AI agent skill to generate discovery metadata.
 
@@ -57,39 +56,40 @@ Return ONLY a JSON object with these three keys. No other text.
 // JSON parsing
 // ---------------------------------------------------------------------------
 
-const THINK_RE = /<think>[\s\S]*?<\/think>\s*/g;
-const FENCE_RE = /```(?:json)?\s*([\s\S]*?)```/;
-
 function parseEnrichmentOutput(raw: string): SkillEnrichmentResult | null {
-	const stripped = raw.replace(THINK_RE, "").trim();
-	const fenceMatch = stripped.match(FENCE_RE);
-	const jsonStr = fenceMatch ? fenceMatch[1].trim() : stripped;
-
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(jsonStr);
-	} catch {
-		return null;
+	const stripped = stripFences(raw);
+	const candidates: string[] = [raw.trim(), stripped];
+	const rawObjs = extractBalancedJsonObjects(raw);
+	for (let i = rawObjs.length - 1; i >= 0; i--) {
+		candidates.push(rawObjs[i]);
+	}
+	const strippedObjs = extractBalancedJsonObjects(stripped);
+	for (let i = strippedObjs.length - 1; i >= 0; i--) {
+		candidates.push(strippedObjs[i]);
 	}
 
-	if (typeof parsed !== "object" || parsed === null) return null;
-	const obj = parsed as Record<string, unknown>;
+	const seen = new Set<string>();
+	for (const candidate of candidates) {
+		const text = candidate.trim();
+		if (!text || seen.has(text)) continue;
+		seen.add(text);
+		const parsed = tryParseJson(candidate);
+		if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+			continue;
+		}
+		const obj = parsed as Record<string, unknown>;
+		const description = typeof obj.description === "string" ? obj.description.trim() : "";
+		const triggers = Array.isArray(obj.triggers)
+			? obj.triggers.filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+			: [];
+		const tags = Array.isArray(obj.tags)
+			? obj.tags.filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+			: [];
+		if (!description && triggers.length === 0) continue;
+		return { description, triggers, tags };
+	}
 
-	const description = typeof obj.description === "string"
-		? obj.description.trim()
-		: "";
-
-	const triggers = Array.isArray(obj.triggers)
-		? obj.triggers.filter((t): t is string => typeof t === "string" && t.trim().length > 0)
-		: [];
-
-	const tags = Array.isArray(obj.tags)
-		? obj.tags.filter((t): t is string => typeof t === "string" && t.trim().length > 0)
-		: [];
-
-	if (!description && triggers.length === 0) return null;
-
-	return { description, triggers, tags };
+	return null;
 }
 
 // ---------------------------------------------------------------------------

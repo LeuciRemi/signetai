@@ -127,15 +127,14 @@ export function tryParseJson(candidate: string): unknown | null {
 	return null;
 }
 
-function extractBalancedJsonObject(raw: string): string | null {
-	const start = raw.indexOf("{");
-	if (start < 0) return null;
-
+export function extractBalancedJsonObjects(raw: string): string[] {
+	const out: string[] = [];
 	let depth = 0;
 	let inString = false;
 	let escaping = false;
+	let start = -1;
 
-	for (let i = start; i < raw.length; i++) {
+	for (let i = 0; i < raw.length; i++) {
 		const ch = raw[i];
 
 		if (inString) {
@@ -158,16 +157,25 @@ function extractBalancedJsonObject(raw: string): string | null {
 			continue;
 		}
 
-		if (ch === "{") depth++;
+		if (ch === "{") {
+			if (depth === 0) start = i;
+			depth++;
+		}
 		if (ch === "}") {
 			depth--;
-			if (depth === 0) {
-				return raw.slice(start, i + 1);
+			if (depth === 0 && start >= 0) {
+				out.push(raw.slice(start, i + 1));
+				start = -1;
 			}
 		}
 	}
 
-	return null;
+	return out;
+}
+
+export function extractBalancedJsonObject(raw: string): string | null {
+	const list = extractBalancedJsonObjects(raw);
+	return list.length > 0 ? list[0] : null;
 }
 
 /**
@@ -188,13 +196,22 @@ export function extractBalancedJsonArray(raw: string): string | null {
 		const ch = raw[i];
 
 		if (inString) {
-			if (escaping) { escaping = false; continue; }
-			if (ch === "\\") { escaping = true; continue; }
+			if (escaping) {
+				escaping = false;
+				continue;
+			}
+			if (ch === "\\") {
+				escaping = true;
+				continue;
+			}
 			if (ch === '"') inString = false;
 			continue;
 		}
 
-		if (ch === '"') { inString = true; continue; }
+		if (ch === '"') {
+			inString = true;
+			continue;
+		}
 		if (ch === "[") {
 			if (depth === 0) last = i;
 			depth++;
@@ -213,13 +230,22 @@ export function extractBalancedJsonArray(raw: string): string | null {
 		const ch = raw[i];
 
 		if (inString) {
-			if (escaping) { escaping = false; continue; }
-			if (ch === "\\") { escaping = true; continue; }
+			if (escaping) {
+				escaping = false;
+				continue;
+			}
+			if (ch === "\\") {
+				escaping = true;
+				continue;
+			}
 			if (ch === '"') inString = false;
 			continue;
 		}
 
-		if (ch === '"') { inString = true; continue; }
+		if (ch === '"') {
+			inString = true;
+			continue;
+		}
 		if (ch === "[") depth++;
 		if (ch === "]") {
 			depth--;

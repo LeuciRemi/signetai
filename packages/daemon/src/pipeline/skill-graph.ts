@@ -10,14 +10,14 @@
  */
 
 import type { DbAccessor, WriteDb } from "../db-accessor";
+import { syncVecDeleteByEmbeddingIds, syncVecInsert, vectorToBlob } from "../db-helpers";
+import { logger } from "../logger";
 import type { EmbeddingConfig, PipelineV2Config } from "../memory-config";
-import type { LlmProvider } from "./provider";
-import { enrichSkillFrontmatter } from "./skill-enrichment";
 import { extractFactsAndEntities } from "./extraction";
 import { txPersistEntities } from "./graph-transactions";
 import { invalidateTraversalCache } from "./graph-traversal";
-import { vectorToBlob, syncVecInsert, syncVecDeleteByEmbeddingIds } from "../db-helpers";
-import { logger } from "../logger";
+import type { LlmProvider } from "./provider";
+import { enrichSkillFrontmatter } from "./skill-enrichment";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,8 +105,7 @@ export async function installSkillNode(
 
 	// Step 1: Enrich if needed
 	const needsEnrichment =
-		fm.description.length < procCfg.enrichMinDescription ||
-		!fm.triggers || fm.triggers.length === 0;
+		fm.description.length < procCfg.enrichMinDescription || !fm.triggers || fm.triggers.length === 0;
 
 	if (procCfg.enrichOnInstall && needsEnrichment && provider === null) {
 		logger.warn("pipeline", "Skill enrichment skipped — LLM provider not available", {
@@ -125,12 +124,8 @@ export async function installSkillNode(
 			fm = {
 				...fm,
 				description: enrichResult.description || fm.description,
-				triggers: enrichResult.triggers.length > 0
-					? enrichResult.triggers
-					: fm.triggers,
-				tags: enrichResult.tags.length > 0
-					? enrichResult.tags
-					: fm.tags,
+				triggers: enrichResult.triggers.length > 0 ? enrichResult.triggers : fm.triggers,
+				tags: enrichResult.tags.length > 0 ? enrichResult.tags : fm.tags,
 			};
 			enriched = true;
 		}
@@ -139,9 +134,9 @@ export async function installSkillNode(
 	// Step 2: Create entity + skill_meta in a write transaction
 	accessor.withWriteTx((db) => {
 		// Check if entity already exists by id or name (idempotent)
-		const existing = db.prepare(
-			"SELECT id FROM entities WHERE id = ? OR (name = ? AND agent_id = ?)",
-		).get(entityId, fm.name, agentId) as { id: string } | undefined;
+		const existing = db
+			.prepare("SELECT id FROM entities WHERE id = ? OR (name = ? AND agent_id = ?)")
+			.get(entityId, fm.name, agentId) as { id: string } | undefined;
 
 		if (existing) {
 			// If matched by name (collision), adopt that entity's id
@@ -149,9 +144,11 @@ export async function installSkillNode(
 				entityId = existing.id;
 			}
 			// Update existing entity
-			db.prepare(
-				`UPDATE entities SET entity_type = 'skill', description = ?, updated_at = ? WHERE id = ?`,
-			).run(fm.description, now, entityId);
+			db.prepare(`UPDATE entities SET entity_type = 'skill', description = ?, updated_at = ? WHERE id = ?`).run(
+				fm.description,
+				now,
+				entityId,
+			);
 
 			// Upsert skill_meta (may not exist if entity was from extraction)
 			db.prepare(
@@ -199,25 +196,35 @@ export async function installSkillNode(
 
 				// Name collision — an extracted entity already owns this name.
 				// Claim it as a skill entity and reuse its id.
-				const collision = db.prepare(
-					"SELECT id FROM entities WHERE name = ? LIMIT 1",
-				).get(fm.name) as { id: string } | undefined;
+				const collision = db
+					.prepare("SELECT id FROM entities WHERE name = ? AND agent_id = ? LIMIT 1")
+					.get(fm.name, agentId) as { id: string } | undefined;
 
 				if (!collision) throw e;
 
-				db.prepare(
-					`UPDATE entities SET entity_type = 'skill', description = ?, updated_at = ? WHERE id = ?`,
-				).run(fm.description, now, collision.id);
+				db.prepare(`UPDATE entities SET entity_type = 'skill', description = ?, updated_at = ? WHERE id = ?`).run(
+					fm.description,
+					now,
+					collision.id,
+				);
 				entityId = collision.id;
 			}
 
-			// Insert skill_meta
+			// Upsert skill_meta. Reconciler startup, periodic passes, and watcher
+			// can overlap; avoid UNIQUE(entity_id) races under concurrent installs.
 			db.prepare(
 				`INSERT INTO skill_meta
 				 (entity_id, agent_id, version, author, license, source,
 				  role, triggers, tags, permissions, enriched,
 				  installed_at, importance, decay_rate, fs_path)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(entity_id) DO UPDATE SET
+					version = excluded.version, author = excluded.author,
+					license = excluded.license, source = excluded.source,
+					role = excluded.role, triggers = excluded.triggers,
+					tags = excluded.tags, permissions = excluded.permissions,
+					enriched = excluded.enriched, fs_path = excluded.fs_path,
+					uninstalled_at = NULL, updated_at = ?`,
 			).run(
 				entityId,
 				agentId,
@@ -234,6 +241,7 @@ export async function installSkillNode(
 				procCfg.importanceOnInstall,
 				procCfg.decayRate,
 				input.fsPath,
+				now,
 			);
 		}
 	});
@@ -250,15 +258,16 @@ export async function installSkillNode(
 
 		accessor.withWriteTx((db) => {
 			// Remove any old skill embeddings
-			const oldEmbs = db.prepare(
-				`SELECT id FROM embeddings WHERE source_type = 'skill' AND source_id = ?`,
-			).all(entityId) as Array<{ id: string }>;
+			const oldEmbs = db
+				.prepare(`SELECT id FROM embeddings WHERE source_type = 'skill' AND source_id = ?`)
+				.all(entityId) as Array<{ id: string }>;
 
 			if (oldEmbs.length > 0) {
-				syncVecDeleteByEmbeddingIds(db, oldEmbs.map((e) => e.id));
-				db.prepare(
-					`DELETE FROM embeddings WHERE source_type = 'skill' AND source_id = ?`,
-				).run(entityId);
+				syncVecDeleteByEmbeddingIds(
+					db,
+					oldEmbs.map((e) => e.id),
+				);
+				db.prepare(`DELETE FROM embeddings WHERE source_type = 'skill' AND source_id = ?`).run(entityId);
 			}
 
 			// Insert new embedding (ON CONFLICT may keep the existing row id)
@@ -275,9 +284,7 @@ export async function installSkillNode(
 
 			// Query back the actual row id — on conflict SQLite keeps the
 			// existing id, not the one we generated above.
-			const actualRow = db
-				.prepare("SELECT id FROM embeddings WHERE content_hash = ?")
-				.get(hash) as { id: string };
+			const actualRow = db.prepare("SELECT id FROM embeddings WHERE content_hash = ?").get(hash) as { id: string };
 			syncVecInsert(db, actualRow.id, embVec);
 		});
 
@@ -325,16 +332,12 @@ export async function installSkillNode(
 // Uninstall: remove entity + skill_meta + embeddings + relations
 // ---------------------------------------------------------------------------
 
-export function uninstallSkillNode(
-	input: SkillUninstallInput,
-	accessor: DbAccessor,
-): SkillUninstallResult {
+export function uninstallSkillNode(input: SkillUninstallInput, accessor: DbAccessor): SkillUninstallResult {
 	const agentId = input.agentId ?? "default";
 	const entityId = skillEntityId(agentId, input.skillName);
 
-	const exists = accessor.withReadDb((db) =>
-		db.prepare("SELECT id FROM entities WHERE id = ?")
-			.get(entityId) as { id: string } | undefined,
+	const exists = accessor.withReadDb(
+		(db) => db.prepare("SELECT id FROM entities WHERE id = ?").get(entityId) as { id: string } | undefined,
 	);
 
 	if (!exists) {
@@ -349,20 +352,19 @@ export function uninstallSkillNode(
 		).run(entityId, entityId);
 
 		// 2. Remove skill mention links
-		db.prepare(
-			`DELETE FROM memory_entity_mentions WHERE entity_id = ?`,
-		).run(entityId);
+		db.prepare("DELETE FROM memory_entity_mentions WHERE entity_id = ?").run(entityId);
 
 		// 3. Remove embeddings + vec sync
-		const embRows = db.prepare(
-			`SELECT id FROM embeddings WHERE source_type = 'skill' AND source_id = ?`,
-		).all(entityId) as Array<{ id: string }>;
+		const embRows = db
+			.prepare(`SELECT id FROM embeddings WHERE source_type = 'skill' AND source_id = ?`)
+			.all(entityId) as Array<{ id: string }>;
 
 		if (embRows.length > 0) {
-			syncVecDeleteByEmbeddingIds(db, embRows.map((e) => e.id));
-			db.prepare(
-				`DELETE FROM embeddings WHERE source_type = 'skill' AND source_id = ?`,
-			).run(entityId);
+			syncVecDeleteByEmbeddingIds(
+				db,
+				embRows.map((e) => e.id),
+			);
+			db.prepare(`DELETE FROM embeddings WHERE source_type = 'skill' AND source_id = ?`).run(entityId);
 		}
 
 		// 4. Hard-delete skill_meta + entity in same transaction
