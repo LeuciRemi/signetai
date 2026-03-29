@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.85.3] - 2026-03-29
+
+### Bug Fixes
+
+- **pipeline**: harden dependency prompt auditability (#397)
+
+
 ## [0.85.2] - 2026-03-29
 
 ### Bug Fixes
