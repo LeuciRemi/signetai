@@ -2,6 +2,18 @@
 
 All notable changes to Signet are documented here.
 
+## [0.84.2] - 2026-03-29
+
+### Features
+
+- add GitHub Projects sync for spec pipeline kanban
+
+### Docs
+
+- add link to memscore in benchmarking documentation
+- add oh my pi connector to readme
+
+
 ## [0.84.1] - 2026-03-29
 
 ### Bug Fixes
