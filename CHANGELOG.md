@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.87.0] - 2026-03-30
+
+### Bug Fixes
+
+- **worker**: exclude exhausted jobs from watchdog stall detector query (#339) (#409)
+
+
 ## [0.86.4] - 2026-03-30
 
 ### Features
