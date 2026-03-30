@@ -50,6 +50,7 @@ const sortOptions: { value: SkillsSort; label: string }[] = [
 
 const providerOptions: { value: ProviderFilter; label: string }[] = [
 	{ value: "all", label: "All" },
+	{ value: "signet", label: "Signet" },
 	{ value: "skills.sh", label: "skills.sh" },
 	{ value: "clawhub", label: "ClawHub" },
 ];
@@ -62,7 +63,7 @@ function parseSort(value: string): SkillsSort {
 }
 
 function parseProvider(value: string): ProviderFilter {
-	if (value === "skills.sh" || value === "clawhub") return value;
+	if (value === "signet" || value === "skills.sh" || value === "clawhub") return value;
 	return "all";
 }
 
