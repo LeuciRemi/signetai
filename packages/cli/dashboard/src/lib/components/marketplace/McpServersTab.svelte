@@ -33,7 +33,7 @@ interface Props {
 	}) => void | Promise<void>;
 }
 
-const { embedded = false, showViewTabs = true, currentView = "browse", onviewchange }: Props = $props();
+let { embedded = false, showViewTabs = true, currentView = "browse", onviewchange }: Props = $props();
 
 interface McpDetailItem {
 	targetId: string;
