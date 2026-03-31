@@ -123,5 +123,48 @@ const imageUrl = new URL(image, Astro.site ?? "https://signetai.sh");
     <slot />
 
     <script src="../scripts/canvas-animations.ts"></script>
+
+    <!-- Reddit Pixel Conversion Events -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      function trackReddit(event, selectors) {
+        selectors.forEach(function(sel) {
+          document.querySelectorAll(sel).forEach(function(el) {
+            el.addEventListener('click', function() {
+              rdt('track', event, {conversionId: crypto.randomUUID()});
+            });
+          });
+        });
+      }
+
+      trackReddit('Custom', [
+        '.hero-install > .install-box > .copy-btn',
+        '.install-final-content > .install-box > .copy-btn',
+      ]);
+
+      trackReddit('Custom', [
+        '.nav-links > :nth-child(1)',
+      ]);
+
+      trackReddit('Custom', [
+        '.footer-nav > :nth-child(3)',
+        '.nav-links > :nth-child(2)',
+      ]);
+
+      trackReddit('AddToCart', [
+        '.footer-links > :nth-child(4)',
+      ]);
+
+      trackReddit('AddToCart', [
+        '.nav-github',
+        '.install-final-links > :nth-child(2)',
+        '.footer-links > :nth-child(2)',
+      ]);
+
+      trackReddit('AddToCart', [
+        '.benchmark-link',
+      ]);
+    });
+    </script>
   </body>
 </html>
