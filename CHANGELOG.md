@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.91.2] - 2026-03-31
+
+### Bug Fixes
+
+- **openclaw**: prevent double registration blocking gateway providers (#423)
+
+
 ## [0.91.1] - 2026-03-31
 
 ### Bug Fixes
