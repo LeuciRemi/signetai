@@ -534,6 +534,7 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(routes::scheduler::trigger),
         )
         .route("/api/tasks/{id}/runs", get(routes::scheduler::runs))
+        .route("/api/skills/analytics", get(routes::skill_analytics::summary))
         // Git routes
         .route("/api/git/status", get(routes::git::status))
         .route("/api/git/pull", axum::routing::post(routes::git::pull))

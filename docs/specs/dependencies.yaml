@@ -698,8 +698,8 @@ specs:
 
 
   - id: mcp-cli-bridge-and-usage-analytics
-    status: planning
-    path: docs/specs/planning/mcp-cli-bridge-and-usage-analytics.md
+    status: approved
+    path: docs/specs/approved/mcp-cli-bridge-and-usage-analytics.md
     hard_depends_on:
       - signet-runtime
     soft_depends_on: []
@@ -707,6 +707,22 @@ specs:
     informed_by: []
     success_criteria:
       - "Installed MCP servers are invokable through Signet CLI with dashboard usage tracking"
+    decision: null
+
+  - id: overview-usage-analytics
+    status: approved
+    path: docs/specs/approved/overview-usage-analytics.md
+    hard_depends_on:
+      - mcp-cli-bridge-and-usage-analytics
+      - procedural-memory-plan
+    soft_depends_on: []
+    blocks: []
+    informed_by:
+      - docs/research/technical/RESEARCH-OVERVIEW-USAGE-ANALYTICS.md
+      - docs/specs/approved/mcp-cli-bridge-and-usage-analytics.md
+      - docs/specs/approved/procedural-memory-plan.md
+    success_criteria:
+      - "The home overview card reflects real most-used MCP servers and skills instead of catalog popularity"
     decision: null
 
 

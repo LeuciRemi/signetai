@@ -16,6 +16,7 @@ pub mod pipeline;
 pub mod predictor;
 pub mod repair;
 pub mod scheduler;
+pub mod skill_analytics;
 pub mod search;
 pub mod secrets;
 pub mod sessions;

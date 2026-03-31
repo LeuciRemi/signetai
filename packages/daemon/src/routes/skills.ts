@@ -15,6 +15,7 @@ import { logger } from "../logger.js";
 import { parseSkillFile, patchSkillFrontmatter } from "../pipeline/skill-frontmatter.js";
 import { installSkillNode, uninstallSkillNode } from "../pipeline/skill-graph.js";
 import { getDbAccessor, type DbAccessor } from "../db-accessor.js";
+import type { AuthMode } from "../auth/index.js";
 import { loadMemoryConfig, type EmbeddingConfig, type PipelineV2Config } from "../memory-config.js";
 import { getLlmProvider } from "../llm.js";
 import type { LlmProvider } from "../pipeline/provider.js";
@@ -510,7 +511,7 @@ function onSkillUninstalling(skillName: string): void {
 	}
 }
 
-export function mountSkillsRoutes(app: Hono): void {
+export function mountSkillsRoutes(app: Hono, _authMode: AuthMode = "local"): void {
 	// GET /api/skills - list installed skills
 	app.get("/api/skills", (c) => {
 		try {

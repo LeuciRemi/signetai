@@ -1267,6 +1267,20 @@ export interface SkillDetail extends Skill {
 	content: string;
 }
 
+export interface SkillAnalyticsItem {
+	skillName: string;
+	count: number;
+	successCount: number;
+	avgLatencyMs: number;
+}
+
+export interface SkillAnalyticsSummary {
+	totalCalls: number;
+	successRate: number;
+	topSkills: SkillAnalyticsItem[];
+	latency: { p50: number; p95: number };
+}
+
 export async function getSkills(): Promise<Skill[]> {
 	try {
 		const response = await fetch(`${API_BASE}/api/skills`);
@@ -1335,6 +1349,21 @@ export async function uninstallSkill(name: string): Promise<{ success: boolean; 
 	} catch (e) {
 		return { success: false, error: String(e) };
 	}
+}
+
+export async function getSkillAnalytics(params?: {
+	since?: string;
+	agentId?: string;
+	limit?: number;
+}): Promise<SkillAnalyticsSummary> {
+	const qs = new URLSearchParams();
+	if (params?.since) qs.set("since", params.since);
+	if (params?.agentId) qs.set("agent_id", params.agentId);
+	if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+	const query = qs.toString();
+	const response = await fetch(`${API_BASE}/api/skills/analytics${query ? `?${query}` : ""}`);
+	if (!response.ok) throw new Error("Failed to fetch skill analytics");
+	return response.json();
 }
 
 // ============================================================================
@@ -2618,11 +2647,13 @@ export async function getMcpAnalytics(params?: {
 	server?: string;
 	since?: string;
 	agentId?: string;
+	limit?: number;
 }): Promise<McpAnalyticsSummary> {
 	const qs = new URLSearchParams();
 	if (params?.server) qs.set("server", params.server);
 	if (params?.since) qs.set("since", params.since);
 	if (params?.agentId) qs.set("agent_id", params.agentId);
+	if (params?.limit !== undefined) qs.set("limit", String(params.limit));
 	const query = qs.toString();
 	const response = await fetch(`${API_BASE}/api/mcp/analytics${query ? `?${query}` : ""}`);
 	if (!response.ok) throw new Error("Failed to fetch MCP analytics");

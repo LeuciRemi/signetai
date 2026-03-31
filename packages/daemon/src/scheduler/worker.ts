@@ -12,6 +12,7 @@ import type { DbAccessor, ReadDb } from "../db-accessor";
 import { logger } from "../logger";
 import { loadMemoryConfig } from "../memory-config";
 import type { WorkerHandle } from "../pipeline/worker";
+import { recordSkillInvocation } from "../skill-invocations";
 import { computeNextRun } from "./cron";
 import { resolveSkillPrompt } from "./skill-resolver";
 import { type SpawnResult, spawnTask } from "./spawn";
@@ -38,6 +39,7 @@ function isTaskHarness(value: string): value is TaskHarness {
 
 export interface DueTaskRow {
 	readonly id: string;
+	readonly agent_id: string;
 	readonly name: string;
 	readonly prompt: string;
 	readonly cron_expression: string;
@@ -52,10 +54,11 @@ export function selectDueTasks(db: ReadDb, nowIso: string, limit: number): Reado
 
 	return db
 		.prepare(
-			`SELECT t.id, t.name, t.prompt, t.cron_expression,
+			`SELECT t.id, COALESCE(h.agent_id, 'default') AS agent_id, t.name, t.prompt, t.cron_expression,
 			        t.harness, t.working_directory,
 			        t.skill_name, t.skill_mode
 			 FROM scheduled_tasks t
+			 LEFT JOIN task_scope_hints h ON h.task_id = t.id
 			 WHERE t.enabled = 1
 			   AND t.next_run_at IS NOT NULL
 			   AND t.next_run_at <= ?
@@ -101,6 +104,7 @@ type ExecuteTaskDeps = {
 	readonly emitTaskStream: typeof emitTaskStream;
 	readonly logger: typeof logger;
 	readonly resolveTaskModel: typeof resolveTaskModel;
+	readonly recordSkillInvocation: typeof recordSkillInvocation;
 };
 
 const DEFAULT_EXECUTE_TASK_DEPS: ExecuteTaskDeps = {
@@ -110,6 +114,7 @@ const DEFAULT_EXECUTE_TASK_DEPS: ExecuteTaskDeps = {
 	emitTaskStream,
 	logger,
 	resolveTaskModel,
+	recordSkillInvocation,
 };
 
 /** Start the scheduler worker. Returns a handle to stop it. */
@@ -240,6 +245,7 @@ export async function executeTask(
 
 	// Spawn the process
 	let result: SpawnResult;
+	const startedMs = Date.now();
 	try {
 		if (!isTaskHarness(task.harness)) {
 			throw new Error(`Unsupported harness: ${task.harness}`);
@@ -316,4 +322,15 @@ export async function executeTask(
 		exitCode: result.exitCode,
 		timedOut: result.timedOut,
 	});
+
+	if (task.skill_name) {
+		deps.recordSkillInvocation({
+			skillName: task.skill_name,
+			agentId: task.agent_id,
+			source: "scheduler",
+			latencyMs: Date.now() - startedMs,
+			success: status === "completed",
+			errorText: result.error ?? undefined,
+		});
+	}
 }

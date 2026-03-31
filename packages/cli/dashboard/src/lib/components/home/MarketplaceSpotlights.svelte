@@ -1,42 +1,118 @@
 <script lang="ts">
-import type { MarketplaceMcpCatalogEntry, SkillSearchResult } from "$lib/api";
+import type {
+	MarketplaceMcpServer,
+	Skill,
+	SkillAnalyticsSummary,
+	McpAnalyticsSummary,
+} from "$lib/api";
 import { getAvatarFromSource, getAvatarUrl, getMonogram, getMonogramBg } from "$lib/card-utils";
+import {
+	getMcpAnalytics,
+	getMarketplaceMcpServers,
+	getSkillAnalytics,
+	getSkills,
+} from "$lib/api";
 import { fetchMarketplaceMcpCatalog, mcpMarket } from "$lib/stores/marketplace-mcp.svelte";
 import { nav } from "$lib/stores/navigation.svelte";
 import { fetchCatalog, sk } from "$lib/stores/skills.svelte";
 import { onMount } from "svelte";
 import { SvelteSet } from "svelte/reactivity";
 
-type SpotlightEntry =
-	| { readonly kind: "skill"; readonly item: SkillSearchResult }
-	| { readonly kind: "mcp"; readonly item: MarketplaceMcpCatalogEntry };
+type SpotlightEntry = {
+	readonly kind: "skill" | "mcp";
+	readonly id: string;
+	readonly name: string;
+	readonly description: string;
+	readonly count: number;
+};
 
 const TOTAL = 6;
+const LIMIT = 3;
+const SINCE = new Date(Date.now() - 30 * 86_400_000).toISOString();
 
 let loaded = $state(false);
+let installedSkills = $state<Skill[]>([]);
+let installedServers = $state<MarketplaceMcpServer[]>([]);
+let skillUsage = $state<SkillAnalyticsSummary | null>(null);
+let mcpUsage = $state<McpAnalyticsSummary | null>(null);
 const avatarErrors = new SvelteSet<string>();
 
 onMount(async () => {
-	await Promise.allSettled([fetchCatalog(), fetchMarketplaceMcpCatalog(5)]);
+	const results = await Promise.allSettled([
+		fetchCatalog(),
+		fetchMarketplaceMcpCatalog(5),
+		getSkills(),
+		getMarketplaceMcpServers(),
+		getSkillAnalytics({ since: SINCE, limit: LIMIT }),
+		getMcpAnalytics({ since: SINCE, limit: LIMIT }),
+	]);
+
+	if (results[2]?.status === "fulfilled") installedSkills = results[2].value;
+	if (results[3]?.status === "fulfilled") installedServers = results[3].value.servers;
+	if (results[4]?.status === "fulfilled") skillUsage = results[4].value;
+	if (results[5]?.status === "fulfilled") mcpUsage = results[5].value;
 	loaded = true;
 });
 
 const spotlights = $derived.by((): SpotlightEntry[] => {
-	const skills: SpotlightEntry[] = sk.catalog.slice(0, 3).map((item) => ({ kind: "skill" as const, item }));
-	const mcps: SpotlightEntry[] = mcpMarket.catalog.slice(0, 3).map((item) => ({ kind: "mcp" as const, item }));
+	const skillMeta = new Map<string, { name: string; description: string }>();
+	for (const item of installedSkills) {
+		skillMeta.set(item.name.toLowerCase(), {
+			name: item.name,
+			description: item.description,
+		});
+	}
+	for (const item of sk.catalog) {
+		const key = item.name.toLowerCase();
+		if (skillMeta.has(key)) continue;
+		skillMeta.set(key, {
+			name: item.name,
+			description: item.description,
+		});
+	}
+
+	const serverMeta = new Map<string, { name: string; description: string }>();
+	for (const item of installedServers) {
+		serverMeta.set(item.id, {
+			name: item.name,
+			description: item.description,
+		});
+	}
+	for (const item of mcpMarket.catalog) {
+		if (serverMeta.has(item.id)) continue;
+		serverMeta.set(item.id, {
+			name: item.name,
+			description: item.description,
+		});
+	}
+
+	const skills: SpotlightEntry[] = (skillUsage?.topSkills ?? []).slice(0, LIMIT).map((item) => {
+		const meta = skillMeta.get(item.skillName.toLowerCase());
+		return {
+			kind: "skill",
+			id: item.skillName,
+			name: meta?.name ?? item.skillName,
+			description: meta?.description ?? "Tracked from real skill invocation history.",
+			count: item.count,
+		};
+	});
+
+	const mcps: SpotlightEntry[] = (mcpUsage?.topServers ?? []).slice(0, LIMIT).map((item) => {
+		const meta = serverMeta.get(item.serverId);
+		return {
+			kind: "mcp",
+			id: item.serverId,
+			name: meta?.name ?? item.serverId,
+			description: meta?.description ?? "Tracked from real MCP server invocation history.",
+			count: item.count,
+		};
+	});
+
 	return [...skills, ...mcps].slice(0, TOTAL);
 });
 
 function spotlightId(entry: SpotlightEntry): string {
-	return entry.kind === "skill" ? `sk:${entry.item.name}` : `mcp:${entry.item.id}`;
-}
-
-function spotlightName(entry: SpotlightEntry): string {
-	return entry.item.name;
-}
-
-function spotlightDesc(entry: SpotlightEntry): string {
-	return entry.item.description;
+	return entry.kind === "skill" ? `sk:${entry.id}` : `mcp:${entry.id}`;
 }
 
 function spotlightBadge(entry: SpotlightEntry): string {
@@ -45,15 +121,28 @@ function spotlightBadge(entry: SpotlightEntry): string {
 
 function spotlightAvatar(entry: SpotlightEntry): string | null {
 	if (entry.kind === "mcp") {
-		return getAvatarFromSource(entry.item.source, entry.item.catalogId) ?? getAvatarUrl(entry.item.sourceUrl);
+		const installed = installedServers.find((item) => item.id === entry.id);
+		if (installed?.source !== "manual" && installed?.catalogId) {
+			return getAvatarFromSource(installed.source, installed.catalogId);
+		}
+		const catalog = mcpMarket.catalog.find((item) => item.id === entry.id);
+		if (catalog) {
+			return getAvatarFromSource(catalog.source, catalog.catalogId) ?? getAvatarUrl(catalog.sourceUrl);
+		}
+		return null;
 	}
-	const maintainer = entry.item.maintainer;
+
+	const installed = installedSkills.find((item) => item.name.toLowerCase() === entry.id.toLowerCase());
+	if (installed?.maintainer) {
+		return `https://github.com/${installed.maintainer.split("/")[0]}.png?size=40`;
+	}
+	const catalog = sk.catalog.find((item) => item.name.toLowerCase() === entry.id.toLowerCase());
+	const maintainer = catalog?.maintainer;
 	if (maintainer) return `https://github.com/${maintainer.split("/")[0]}.png?size=40`;
 	return null;
 }
 
-function handleClick(_entry: SpotlightEntry): void {
-	// Both skills and MCP servers live on the "skills" (Marketplace) tab
+function handleClick(): void {
 	nav.activeTab = "skills";
 }
 </script>
@@ -61,45 +150,44 @@ function handleClick(_entry: SpotlightEntry): void {
 <div class="spotlights-panel sig-panel">
 	<div class="spotlights-header sig-panel-header">
 		<span class="spotlights-title">MOST USED SKILLS & SERVERS</span>
-		<span class="spotlights-count">{spotlights.length} TOP PICKS</span>
+		<span class="spotlights-count">LAST 30 DAYS</span>
 	</div>
 
 	{#if !loaded && spotlights.length === 0}
-		<div class="empty-state">LOADING CATALOG...</div>
+		<div class="empty-state">LOADING USAGE...</div>
 	{:else if spotlights.length === 0}
-		<div class="empty-state">NO CATALOG DATA</div>
+		<div class="empty-state">NO TRACKED USAGE YET</div>
 	{:else}
 		<div class="spotlights-grid">
 			{#each spotlights as entry (spotlightId(entry))}
 				{@const avatar = spotlightAvatar(entry)}
 				{@const id = spotlightId(entry)}
-				<button
-					type="button"
-					class="spotlight-card"
-					onclick={() => handleClick(entry)}
-				>
+				<button type="button" class="spotlight-card" onclick={handleClick}>
 					<div class="spotlight-top">
 						<div
 							class="spotlight-icon"
-							style="background: {avatar && !avatarErrors.has(id) ? 'transparent' : getMonogramBg(spotlightName(entry))};"
+							style="background: {avatar && !avatarErrors.has(id) ? 'transparent' : getMonogramBg(entry.name)};"
 						>
 							{#if avatar && !avatarErrors.has(id)}
 								<img
 									src={avatar}
-									alt={spotlightName(entry)}
+									alt={entry.name}
 									class="spotlight-avatar"
-									onerror={() => { avatarErrors.add(id); }}
+									onerror={() => {
+										avatarErrors.add(id);
+									}}
 								/>
 							{:else}
-								{getMonogram(spotlightName(entry))}
+								{getMonogram(entry.name)}
 							{/if}
 						</div>
 						<div class="spotlight-meta">
-							<span class="spotlight-name">{spotlightName(entry)}</span>
+							<span class="spotlight-name">{entry.name}</span>
 							<span class="spotlight-badge">{spotlightBadge(entry)}</span>
 						</div>
 					</div>
-					<p class="spotlight-desc">{spotlightDesc(entry)}</p>
+					<p class="spotlight-desc">{entry.description}</p>
+					<p class="spotlight-usage">{entry.count} uses</p>
 				</button>
 			{/each}
 		</div>
@@ -246,6 +334,15 @@ function handleClick(_entry: SpotlightEntry): void {
 		overflow: hidden;
 	}
 
+	.spotlight-usage {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--sig-text-bright);
+	}
+
 	.empty-state {
 		flex: 1;
 		display: flex;
@@ -256,5 +353,4 @@ function handleClick(_entry: SpotlightEntry): void {
 		letter-spacing: 0.1em;
 		color: var(--sig-text-muted);
 	}
-
 </style>

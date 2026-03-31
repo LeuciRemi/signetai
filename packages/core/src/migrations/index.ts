@@ -58,6 +58,8 @@ import { up as sessionExtractCursors } from "./049-session-extract-cursors";
 import { up as relatedToAudit } from "./050-related-to-audit";
 import { up as memoryMdRollingWindowLineage } from "./051-memory-md-rolling-window-lineage";
 import { up as mcpInvocations } from "./052-mcp-invocations";
+import { up as skillInvocations } from "./053-skill-invocations";
+import { up as taskAgentScope } from "./054-task-agent-scope";
 
 // -- Public interface consumed by Database.init() --
 
@@ -505,6 +507,22 @@ export const MIGRATIONS: readonly Migration[] = [
 		up: mcpInvocations,
 		artifacts: {
 			tables: ["mcp_invocations"],
+		},
+	},
+	{
+		version: 53,
+		name: "skill-invocations",
+		up: skillInvocations,
+		artifacts: {
+			tables: ["skill_invocations"],
+		},
+	},
+	{
+		version: 54,
+		name: "task-agent-scope",
+		up: taskAgentScope,
+		artifacts: {
+			tables: ["task_scope_hints"],
 		},
 	},
 ];

@@ -604,6 +604,9 @@ Phase ordering based on hard dependencies and integration contracts.
 - **MCP CLI Bridge and Usage Analytics** (`mcp-cli-bridge-and-usage-analytics`)
   - expose installed MCP servers as Signet CLI commands and track usage in dashboard
   - reference inspiration: MC Porter
+- **Overview Usage Analytics** (`overview-usage-analytics`)
+  - make the home overview card reflect real MCP server and skill usage
+  - reuse analytics ledgers instead of catalog popularity
 - **Git Marketplace Monorepo** (`git-marketplace-monorepo`)
   - GitHub-authenticated PR workflow for skills/servers and JSON review artifacts
 - **Adaptive Skill Lifecycle** (`adaptive-skill-lifecycle`)
@@ -660,7 +663,7 @@ Legend:
 | `lossless-working-memory-runtime` | approved | `docs/specs/approved/lossless-working-memory-runtime.md` | `memory-md-temporal-head`, `session-continuity-protocol`, `knowledge-architecture-schema`, `multi-agent-support` | - | One agent may span many sessions/branches but still keeps one shared MEMORY.md head; live transcripts are fallback-queryable until structured distillation catches up |
 | `lossless-working-memory-closure` | approved | `docs/specs/approved/lossless-working-memory-closure.md` | `memory-md-temporal-head`, `lossless-working-memory-runtime`, `signet-runtime` | - | Hardens the no-gap runtime contract: temporal node expansion, retry-safe merge protection, compaction parity, transcript fallback discipline, explicit harness fidelity docs, and same-wave daemon-rs contract-shape parity with degraded-mode documentation for remaining runtime deltas. |
 | `memory-md-rolling-window-lineage` | complete | `docs/specs/complete/memory-md-rolling-window-lineage.md` | `memory-md-temporal-head`, `lossless-working-memory-runtime`, `session-continuity-protocol` | - | Session-end transcripts, session-end summaries, and compactions now persist as canonical markdown artifacts with workspace-root-relative wikilinks; MEMORY.md is rendered programmatically from artifact frontmatter plus DB-native thread and temporal state. |
-| `procedural-memory-plan` | approved | `docs/specs/approved/procedural-memory-plan.md` | `memory-pipeline-v2` | `knowledge-architecture-schema` | P1 complete (skill_meta, enrichment, reconciler, graph nodes); P2–P5 remaining |
+| `procedural-memory-plan` | approved | `docs/specs/approved/procedural-memory-plan.md` | `memory-pipeline-v2` | `knowledge-architecture-schema` | P1 complete; P2 usage ledger + `skill_meta` usage updates shipped, with decay and broader retrieval follow-ups still remaining |
 | `knowledge-architecture-schema` | complete | `docs/specs/complete/knowledge-architecture-schema.md` | `memory-pipeline-v2`, `session-continuity-protocol`, `procedural-memory-plan` | `predictive-memory-scorer` | KA-1 through KA-6 fully implemented. Audit contract: `entity_dependency_history` captures all dependency mutations via DB-level triggers (`changed_by='db-trigger'`); `related_to` edges require a non-empty reason enforced at both app layer and DB BEFORE INSERT/UPDATE triggers. |
 | `predictive-memory-scorer` | approved | `docs/specs/approved/predictive-memory-scorer.md` | `memory-pipeline-v2`, `knowledge-architecture-schema`, `session-continuity-protocol` | - | |
 | `multi-agent-support` | approved | `docs/specs/approved/multi-agent-support.md` | `memory-pipeline-v2` | - | |
@@ -697,7 +700,8 @@ Legend:
 | `remember-recall-skill-parity` | planning | `docs/specs/planning/remember-recall-skill-parity.md` | `procedural-memory-plan` | - | Stub: /remember and /recall architecture/schema parity |
 | `rust-daemon-parity-cutover` | planning | `docs/specs/planning/rust-daemon-parity-cutover.md` | `daemon-rust-rewrite`, `memory-pipeline-v2` | - | Stub: rust daemon parity and primary-runtime cutover |
 | `deep-memory-search` | planning | `docs/specs/planning/deep-memory-search.md` | `desire-paths-epic`, `ssm-foundation-evaluation` | - | Stub: optional supermemory-style deep memory escalation |
-| `mcp-cli-bridge-and-usage-analytics` | approved | `docs/specs/planning/mcp-cli-bridge-and-usage-analytics.md` | `signet-runtime` | - | Phase 1: CLI bridge, invocation tracking, analytics API, dashboard panel |
+| `mcp-cli-bridge-and-usage-analytics` | approved | `docs/specs/approved/mcp-cli-bridge-and-usage-analytics.md` | `signet-runtime` | - | Phase 1: CLI bridge, invocation tracking, analytics API, dashboard panel |
+| `overview-usage-analytics` | approved | `docs/specs/approved/overview-usage-analytics.md` | `mcp-cli-bridge-and-usage-analytics`, `procedural-memory-plan` | - | Home overview card ranks most-used MCP servers and skills from real analytics instead of catalog popularity |
 | `git-marketplace-monorepo` | planning | `docs/specs/planning/git-marketplace-monorepo.md` | `predictor-agent-feedback` | - | Stub: GitHub-authenticated PR marketplace for skills and MCP servers |
 | `adaptive-skill-lifecycle` | planning | `docs/specs/planning/adaptive-skill-lifecycle.md` | `procedural-memory-plan`, `predictor-agent-feedback` | - | Stub: passive continuous skill creation/maintenance loop |
 | `marketplace-official-skills` | planning | `docs/specs/planning/marketplace-official-skills.md` | `procedural-memory-plan` | - | Stub: feature Signet official skills prominently in the dashboard marketplace |

@@ -23,7 +23,6 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAdaptorServer, type serve } from "@hono/node-server";
-import { bindWithRetry } from "./bind-with-retry";
 import { serveStatic } from "@hono/node-server/serve-static";
 import {
 	type AgentDefinition,
@@ -66,6 +65,7 @@ import {
 	requireRateLimit,
 	requireScope,
 } from "./auth";
+import { bindWithRetry } from "./bind-with-retry";
 import { migrateConfig } from "./config-migration";
 import { createFilesystemConnector } from "./connectors/filesystem";
 import {
@@ -237,6 +237,7 @@ import {
 import { parseFeedback, recordAgentFeedback } from "./session-memories";
 import { createSingleFlightRunner } from "./single-flight-runner";
 import { closeSynthesisProvider, initSynthesisProvider } from "./synthesis-llm";
+import { readScopedTask, readTaskAgentId } from "./task-scope";
 import { type TelemetryCollector, type TelemetryEventType, createTelemetryCollector } from "./telemetry";
 import { expandTemporalNode } from "./temporal-expand";
 import { upsertThreadHead } from "./thread-heads";
@@ -1699,6 +1700,18 @@ app.use("/api/analytics", async (c, next) => {
 	return requirePermission("analytics", authConfig)(c, next);
 });
 app.use("/api/analytics/*", async (c, next) => {
+	return requirePermission("analytics", authConfig)(c, next);
+});
+app.use("/api/mcp/analytics", async (c, next) => {
+	return requirePermission("analytics", authConfig)(c, next);
+});
+app.use("/api/mcp/analytics/*", async (c, next) => {
+	return requirePermission("analytics", authConfig)(c, next);
+});
+app.use("/api/skills/analytics", async (c, next) => {
+	return requirePermission("analytics", authConfig)(c, next);
+});
+app.use("/api/skills/analytics/*", async (c, next) => {
 	return requirePermission("analytics", authConfig)(c, next);
 });
 
@@ -5311,7 +5324,7 @@ app.get("/api/connectors/:id/health", (c) => {
 import { type ReconcilerHandle, startReconciler } from "./pipeline/skill-reconciler.js";
 // Skills routes (extracted to routes/skills.ts)
 import { mountSkillsRoutes, setFetchEmbedding } from "./routes/skills.js";
-mountSkillsRoutes(app);
+mountSkillsRoutes(app, authConfig.mode);
 setFetchEmbedding(fetchEmbedding);
 
 // Marketplace routes (MCP servers catalog + routing)
@@ -5320,6 +5333,9 @@ mountMarketplaceRoutes(app, authConfig.mode);
 
 import { mountMcpAnalyticsRoutes } from "./routes/mcp-analytics.js";
 mountMcpAnalyticsRoutes(app, authConfig.mode);
+
+import { mountSkillAnalyticsRoutes } from "./routes/skill-analytics.js";
+mountSkillAnalyticsRoutes(app, authConfig.mode);
 
 import { mountAppTrayRoutes } from "./routes/app-tray.js";
 mountAppTrayRoutes(app);
@@ -7373,6 +7389,9 @@ app.get("/api/tasks", (c) => {
 
 // Create a new task
 app.post("/api/tasks", async (c) => {
+	const scoped = resolveScopedAgentId(c, c.req.query("agent_id"));
+	if (scoped.error) return c.json({ error: scoped.error }, 403);
+
 	const body = await c.req.json();
 	const { name, prompt, cronExpression, harness, workingDirectory, skillName, skillMode } = body;
 
@@ -7429,6 +7448,11 @@ app.post("/api/tasks", async (c) => {
 			now,
 			now,
 		);
+		db.prepare(
+			`INSERT INTO task_scope_hints (task_id, agent_id, created_at, updated_at)
+			 VALUES (?, ?, ?, ?)
+			 ON CONFLICT(task_id) DO UPDATE SET agent_id = excluded.agent_id, updated_at = excluded.updated_at`,
+		).run(id, scoped.agentId, now, now);
 	});
 
 	logger.info("scheduler", `Task created: ${name}`, { taskId: id });
@@ -7537,10 +7561,12 @@ app.delete("/api/tasks/:id", (c) => {
 // Trigger an immediate manual run
 app.post("/api/tasks/:id/run", async (c) => {
 	const taskId = c.req.param("id");
+	const scoped = resolveScopedAgentId(c, c.req.query("agent_id"));
+	if (scoped.error) return c.json({ error: scoped.error }, 403);
 
 	const task = getDbAccessor().withReadDb((db) =>
-		db.prepare("SELECT * FROM scheduled_tasks WHERE id = ?").get(taskId),
-	) as Record<string, unknown> | undefined;
+		readScopedTask(db, taskId, scoped.agentId, shouldEnforceAuthScope(c)),
+	);
 
 	if (!task) {
 		return c.json({ error: "Task not found" }, 404);
@@ -7585,9 +7611,11 @@ app.post("/api/tasks/:id/run", async (c) => {
 	const taskSkillName = typeof task.skill_name === "string" ? task.skill_name : null;
 	const taskSkillMode = typeof task.skill_mode === "string" ? task.skill_mode : null;
 	const taskWorkingDir = typeof task.working_directory === "string" ? task.working_directory : null;
+	const taskAgentId = readTaskAgentId(task, scoped.agentId);
 
 	// Resolve skill content into prompt
 	const effectivePrompt = resolveSkillPrompt(taskPrompt, taskSkillName, taskSkillMode);
+	const startedMs = Date.now();
 
 	// Spawn in background (don't await)
 	import("./scheduler/spawn").then((mod) => {
@@ -7638,6 +7666,19 @@ app.post("/api/tasks/:id/run", async (c) => {
 					error: result.error,
 					timestamp: new Date().toISOString(),
 				});
+
+				if (taskSkillName) {
+					void import("./skill-invocations.js").then((skills) => {
+						skills.recordSkillInvocation({
+							skillName: taskSkillName,
+							agentId: taskAgentId,
+							source: "api",
+							latencyMs: Date.now() - startedMs,
+							success: status === "completed",
+							errorText: result.error ?? undefined,
+						});
+					});
+				}
 			});
 	});
 

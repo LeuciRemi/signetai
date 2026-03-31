@@ -47,8 +47,8 @@ Created by migration 018. Schema:
 | `permissions` | TEXT | JSON array of declared permissions |
 | `enriched` | INTEGER | 1 if LLM enrichment ran; 0 otherwise |
 | `installed_at` | TEXT | ISO timestamp of first install |
-| `last_used_at` | TEXT | ISO timestamp of most recent use (P2, not yet populated) |
-| `use_count` | INTEGER | Number of times the skill has been used (P2, not yet populated) |
+| `last_used_at` | TEXT | ISO timestamp of most recent tracked use |
+| `use_count` | INTEGER | Number of tracked skill invocations |
 | `importance` | REAL | Starting importance score (from `procCfg.importanceOnInstall`, default 0.7) |
 | `decay_rate` | REAL | Per-period decay multiplier (from `procCfg.decayRate`, default 0.99) |
 | `fs_path` | TEXT NOT NULL | Absolute path to the `SKILL.md` file |
@@ -163,10 +163,10 @@ The `skill_meta` schema includes `decay_rate`, `importance`, `use_count`, and
 `last_used_at` to support a usage-based decay model for skill relevance.
 
 The `decay_rate` (default 0.99) and `importance` (default 0.7) values are written
-at install time from `PipelineV2Config.procedural`. However, the usage tracking
-fields (`use_count`, `last_used_at`) are **not yet populated** by any running code
-— this is P2 work defined in the procedural memory spec. The decay model exists in
-the schema but is not active.
+at install time from `PipelineV2Config.procedural`. The usage tracking fields
+(`use_count`, `last_used_at`) are now populated from tracked daemon-mediated skill
+invocations. The broader decay model still exists in the schema but is not yet
+actively applied.
 
 When P2 is implemented, a "use" will be defined as a skill node being retrieved
 and injected into agent context. `use_count` will increment and `last_used_at`
@@ -178,8 +178,8 @@ to let unused skills fade.
 - **P1 (complete)**: `skill_meta` table (migration 018), YAML frontmatter parsing,
   LLM enrichment, skill graph node install/uninstall, skill reconciler with startup
   backfill + periodic + chokidar watcher
-- **P2 (not started)**: Usage tracking (`use_count`, `last_used_at`), importance
-  decay application
+- **P2 (partial)**: Usage tracking ledger + `skill_meta` updates shipped. Importance
+  decay application and richer cross-memory linking still pending
 - **P3–P5 (not started)**: Relation computation between skills, retrieval endpoints
   for skill search, dashboard integration showing skills in the constellation view
 

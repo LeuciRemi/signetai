@@ -1456,6 +1456,41 @@ Uninstall a skill by removing its directory from `$SIGNET_WORKSPACE/skills/`.
 { "success": true, "name": "browser-use", "message": "Removed browser-use" }
 ```
 
+### GET /api/skills/analytics
+
+Return usage analytics for skill invocations recorded by the daemon.
+
+**Query parameters**
+
+| Parameter  | Description |
+|------------|-------------|
+| `agent_id` | Optional agent scope override. Defaults to the request-scoped agent or `default`. |
+| `since`    | Optional ISO 8601 UTC timestamp filter, e.g. `2026-03-01T00:00:00Z`. |
+| `limit`    | Optional max number of top skills to return. Default `10`, range `1-100`. |
+
+**Response**
+
+```json
+{
+  "totalCalls": 12,
+  "successRate": 0.917,
+  "topSkills": [
+    {
+      "skillName": "web-search",
+      "count": 5,
+      "successCount": 5,
+      "avgLatencyMs": 184
+    }
+  ],
+  "latency": {
+    "p50": 160,
+    "p95": 310
+  }
+}
+```
+
+Returns `400` if `since` is not an ISO 8601 UTC timestamp.
+
 
 Harnesses
 ---------
@@ -2937,7 +2972,8 @@ Delete a task and all its run history (cascade).
 ### POST /api/tasks/:id/run
 
 Trigger an immediate manual run. Returns 202 with `runId`. Returns 409 if
-the task already has a running execution.
+the task already has a running execution. Skill usage analytics are
+attributed using non-breaking task scope hints when available.
 
 ### GET /api/tasks/:id/runs
 
