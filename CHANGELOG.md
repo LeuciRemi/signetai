@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.91.4] - 2026-04-01
+
+### Bug Fixes
+
+- **daemon**: resolve ReferenceError in /api/hooks/recall endpoint (#436)
+
+
 ## [0.91.3] - 2026-04-01
 
 ### Bug Fixes
