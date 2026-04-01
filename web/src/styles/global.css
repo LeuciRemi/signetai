@@ -366,13 +366,16 @@ section {
    ========================================================================== */
 .reveal {
 	opacity: 0;
-	transform: translateY(24px);
-	transition: opacity 480ms var(--ease), transform 480ms var(--ease);
+	transform: translateY(24px) scale(0.985);
+	transition: 
+		opacity 800ms cubic-bezier(0.16, 1, 0.3, 1), 
+		transform 800ms cubic-bezier(0.16, 1, 0.3, 1);
+	will-change: opacity, transform;
 }
 
 .reveal.is-visible {
 	opacity: 1;
-	transform: none;
+	transform: translateY(0) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -448,8 +451,24 @@ section {
 	background: color-mix(in srgb, var(--color-surface) 75%, transparent);
 	backdrop-filter: blur(16px);
 	-webkit-backdrop-filter: blur(16px);
-	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+	box-shadow: 
+		0 8px 32px rgba(0, 0, 0, 0.4), 
+		inset 0 1px 0 rgba(255, 255, 255, 0.05);
 	position: relative;
+	overflow: hidden;
+}
+
+.site-nav::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	left: 50%;
+	transform: translateX(-50%);
+	width: 40%;
+	height: 1px;
+	background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
+	opacity: 0.3;
+	filter: blur(0.5px);
 }
 
 .nav-brand {
@@ -463,10 +482,13 @@ section {
 	font-weight: 700;
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
-	color: var(--color-text-bright);
+	background: linear-gradient(to bottom, var(--color-text-bright) 40%, color-mix(in srgb, var(--color-text-bright) 60%, transparent));
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
 	text-decoration: none;
 	transition: transform 0.2s ease;
 }
+
 .nav-brand:hover {
 	transform: scale(1.02);
 }

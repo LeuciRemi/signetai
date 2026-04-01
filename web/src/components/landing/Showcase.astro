@@ -198,8 +198,12 @@ const slides = [
     position: absolute;
     top: 0;
     left: 0;
-    transition: opacity 0.5s ease;
+    transition: 
+      opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+      transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+    transform: scale(1.02) translateY(10px);
     pointer-events: none;
+    z-index: 0;
   }
 
   /* First image is in flow to set container height */
@@ -209,7 +213,9 @@ const slides = [
 
   .showcase-img.active {
     opacity: 1;
+    transform: scale(1) translateY(0);
     pointer-events: auto;
+    z-index: 1;
   }
 
   /* Nav tabs */
