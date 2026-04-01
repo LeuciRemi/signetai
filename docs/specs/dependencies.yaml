@@ -893,6 +893,7 @@ specs:
     informed_by: []
     success_criteria:
       - "A fast mandatory CI lane validates core invariants and spec/dependency sync on every PR"
+      - "Lockfile/install invariants fail fast when package manifests drift from bun.lock"
     decision: null
 
 

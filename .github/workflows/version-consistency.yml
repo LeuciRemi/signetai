@@ -17,6 +17,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Verify bun.lock matches manifests
+        shell: bash
+        run: bun install --frozen-lockfile
+
       - name: Verify package versions are aligned
         shell: bash
         run: |

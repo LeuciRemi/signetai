@@ -2082,9 +2082,9 @@ const signetPlugin = {
 		} catch (err) {
 			if (claimed) {
 				writeRegistered(false);
-				api.logger.error("signet-memory: registration failed after guard was claimed; guard reset before rethrow", {
-					error: String(err),
-				});
+				api.logger.error(
+					`signet-memory: registration failed after guard was claimed; guard reset before rethrow: ${String(err)}`,
+				);
 			}
 			throw err;
 		}

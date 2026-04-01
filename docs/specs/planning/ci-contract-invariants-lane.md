@@ -8,6 +8,7 @@ depends_on:
   - "knowledge-architecture-schema"
 success_criteria:
   - "A fast mandatory CI lane validates core invariants and spec/dependency sync on every PR"
+  - "Lockfile/install invariants fail fast when package manifests drift from bun.lock"
 scope_boundary: "A single GitHub Actions job and supporting check scripts. No changes to application code or database schema."
 draft_quality: "auto-generated, needs user validation before implementation"
 ---
@@ -28,7 +29,8 @@ before human review begins.
    diverge.
 2. Enforce agent_id column presence on all new user-data tables.
 3. Detect duplicated constant maps across packages.
-4. Complete in under 60 seconds (no build or test required).
+4. Catch bun.lock drift before build/test lanes start.
+5. Complete in under 60 seconds (no build or test required).
 
 ## Non-goals
 
@@ -38,21 +40,23 @@ before human review begins.
 ## Proposed approach
 
 **Single CI job** (`invariants` lane) runs on every PR, before build/test.
-It executes a sequence of lightweight check scripts, each exiting non-zero
+It executes a sequence of lightweight checks, each exiting non-zero
 on failure:
 
 1. **Spec sync** (`bun scripts/spec-deps-check.ts`): Already exists.
    Validates status/directory consistency in dependencies.yaml.
-2. **INDEX consistency** (`scripts/ci-index-check.ts`): New script.
+2. **Lockfile integrity** (`bun install --frozen-lockfile`): Fails fast when
+   `package.json` changes are not reflected in `bun.lock`.
+3. **INDEX consistency** (`scripts/ci-index-check.ts`): New script.
    Parses INDEX.md registry table rows, cross-references with
    dependencies.yaml entries. Flags missing IDs, status mismatches,
    or orphaned entries.
-3. **Agent scoping** (`scripts/ci-agent-scope.ts`): New script. Scans
+4. **Agent scoping** (`scripts/ci-agent-scope.ts`): New script. Scans
    migration files for CREATE TABLE statements. Any table containing
    user-scoped data columns (content, memory, session) must include
    an `agent_id` column. Allowlist for shared tables (migrations,
    config).
-4. **Constant dedup** (`scripts/ci-no-dupes.ts`): New script. Scans
+5. **Constant dedup** (`scripts/ci-no-dupes.ts`): New script. Scans
    for known patterns (exported const maps, enum-like objects) that
    appear in more than one package. Reports duplicates with file
    locations.
@@ -78,6 +82,7 @@ the main branch protection rule.
 
 - PR adding a new table without agent_id fails the invariants lane.
 - PR modifying dependencies.yaml without matching INDEX update fails.
+- PR updating package versions without lockfile refresh fails.
 - Lane completes in under 60 seconds on a typical PR.
 
 ## Open decisions
