@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.91.7] - 2026-04-01
+
+### Refactoring
+
+- extract Signet system prompt from AGENTS.md into session-start inject (#440)
+
+
 ## [0.91.6] - 2026-04-01
 
 ### Bug Fixes
