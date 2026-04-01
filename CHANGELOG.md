@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.91.5] - 2026-04-01
+
+### Bug Fixes
+
+- **pipeline**: pass maxContextTokens to direct Ollama synthesis (#426) (#430)
+
+
 ## [0.91.4] - 2026-04-01
 
 ### Bug Fixes
