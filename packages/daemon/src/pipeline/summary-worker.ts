@@ -774,6 +774,7 @@ async function processChunked(
 			logger.warn("summary-worker", "Chunk summarization failed, skipping", {
 				chunk: i + 1,
 				total: chunks.length,
+				responsePreview: raw.length > 0 ? raw.slice(0, 120) : "(empty)",
 			});
 		}
 	}
@@ -1337,11 +1338,11 @@ export async function resolveSummaryProvider(cfg: ReturnType<typeof loadMemoryCo
 	const model = cfg.pipelineV2.synthesis.model;
 	const timeout = cfg.pipelineV2.synthesis.timeout;
 	const endpoint = cfg.pipelineV2.synthesis.endpoint;
-	const ollamaFallbackMaxContextTokens = resolveDefaultOllamaFallbackMaxContextTokens();
+	const ollamaMaxContextTokens = resolveDefaultOllamaFallbackMaxContextTokens();
 	const fallback = () =>
 		createOllamaProvider({
 			defaultTimeoutMs: timeout,
-			maxContextTokens: ollamaFallbackMaxContextTokens,
+			maxContextTokens: ollamaMaxContextTokens,
 		});
 	switch (p) {
 		case "none":
@@ -1406,16 +1407,15 @@ export async function resolveSummaryProvider(cfg: ReturnType<typeof loadMemoryCo
 				model: model || "anthropic/claude-haiku-4-5-20251001",
 				baseUrl: endpoint ?? "http://127.0.0.1:4096",
 				ollamaFallbackBaseUrl: "http://127.0.0.1:11434",
-				ollamaFallbackMaxContextTokens,
+				ollamaFallbackMaxContextTokens: ollamaMaxContextTokens,
 				defaultTimeoutMs: timeout,
 			});
 		default:
-			// Intentionally omit maxContextTokens here. When Ollama is explicitly
-			// configured (not fallback), users control context via model config.
 			return createOllamaProvider({
 				...(typeof model === "string" && model.trim().length > 0 ? { model } : {}),
 				...(endpoint ? { baseUrl: endpoint } : {}),
 				defaultTimeoutMs: timeout,
+				maxContextTokens: ollamaMaxContextTokens,
 			});
 	}
 }

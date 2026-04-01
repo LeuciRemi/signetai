@@ -528,4 +528,41 @@ describe("resolveSummaryProvider", () => {
 		const provider = await resolveSummaryProvider(loadMemoryConfig(dir));
 		expect(provider.name).toBe("ollama:qwen3.5:4b");
 	});
+
+	it("direct ollama provider sends num_ctx so chunks are not truncated (#426)", async () => {
+		const dir = makeAgentsDir(`memory:
+  pipelineV2:
+    extractionProvider: ollama
+    extractionModel: qwen3:4b
+`);
+
+		const provider = await resolveSummaryProvider(loadMemoryConfig(dir));
+		expect(provider.name).toBe("ollama:qwen3:4b");
+
+		// Intercept fetch to verify num_ctx is included in the request
+		const original = globalThis.fetch;
+		let captured: unknown = null;
+		const mockFetch: typeof fetch = async (_url, init) => {
+			if (typeof init?.body !== "string") throw new Error(`Expected string body, got: ${typeof init?.body}`);
+			captured = JSON.parse(init.body);
+			return new Response(JSON.stringify({ response: "{}", done: true }), { status: 200 });
+		};
+		globalThis.fetch = mockFetch;
+
+		try {
+			await provider.generate("test prompt");
+		} finally {
+			globalThis.fetch = original;
+		}
+
+		expect(captured).not.toBeNull();
+		if (typeof captured !== "object" || captured === null) throw new Error("Expected object body");
+		if (!("options" in captured)) throw new Error("Expected options field");
+		const { options } = captured;
+		if (typeof options !== "object" || options === null) throw new Error("Expected options object");
+		if (!("num_ctx" in options)) throw new Error("Expected num_ctx field");
+		const { num_ctx: numCtx } = options;
+		expect(typeof numCtx).toBe("number");
+		expect(numCtx).toBeGreaterThanOrEqual(8192);
+	});
 });

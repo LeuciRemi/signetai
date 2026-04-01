@@ -301,6 +301,10 @@ export function resolveDefaultOllamaFallbackModel(): string {
 	return DEFAULT_OLLAMA_FALLBACK_MODEL;
 }
 
+// Reads SIGNET_OLLAMA_FALLBACK_MAX_CTX (kept for backwards compatibility).
+// Despite the FALLBACK label, this value applies to all Ollama summary paths —
+// both the degraded-fallback case and an explicitly-configured
+// synthesis.provider=ollama deployment.
 export function resolveDefaultOllamaFallbackMaxContextTokens(): number {
 	return (
 		parseOptionalPositiveInt(process.env.SIGNET_OLLAMA_FALLBACK_MAX_CTX) ?? DEFAULT_OLLAMA_FALLBACK_MAX_CONTEXT_TOKENS

@@ -166,6 +166,7 @@ async fn main() -> anyhow::Result<()> {
                     base_url: endpoint,
                     api_key,
                     timeout_ms: Some(timeout),
+                    max_context_tokens: None,
                 },
             )
         });
@@ -848,6 +849,7 @@ async fn start_extraction_worker_inner(state: &AppState, dead_letter_on_blocked:
         base_url: runtime_endpoint,
         api_key,
         timeout_ms: Some(pipeline.extraction.timeout),
+        max_context_tokens: None,
     };
     let provider = signet_pipeline::provider::from_config(&provider_cfg);
     // Share the same provider with the recall handler for LLM reranking.
@@ -946,6 +948,7 @@ pub(crate) async fn start_summary_worker(state: &AppState) -> bool {
             base_url: pipeline.synthesis.endpoint.clone(),
             api_key: api_key_for_provider(&pipeline.synthesis.provider),
             timeout_ms: Some(pipeline.synthesis.timeout),
+            max_context_tokens: Some(signet_pipeline::provider::resolve_ollama_max_context_tokens()),
         });
     let semaphore = Arc::new(signet_pipeline::provider::LlmSemaphore::default());
     let handle = signet_pipeline::summary::start(
@@ -1020,6 +1023,7 @@ pub(crate) async fn start_synthesis_worker(state: &AppState) -> bool {
             base_url: pipeline.synthesis.endpoint.clone(),
             api_key: api_key_for_provider(&pipeline.synthesis.provider),
             timeout_ms: Some(pipeline.synthesis.timeout),
+            max_context_tokens: None,
         });
     let semaphore = Arc::new(signet_pipeline::provider::LlmSemaphore::default());
     let handle = signet_pipeline::synthesis::start(

@@ -115,6 +115,7 @@ pub struct OllamaLlmProvider {
     base_url: String,
     model: String,
     default_timeout_ms: u64,
+    max_context_tokens: Option<u32>,
     health: Mutex<HealthTracker>,
 }
 
@@ -131,6 +132,8 @@ struct OllamaGenRequest<'a> {
 struct OllamaGenOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     num_predict: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_ctx: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -143,6 +146,10 @@ struct OllamaGenResponse {
 
 impl OllamaLlmProvider {
     pub fn new(base_url: &str, model: &str, timeout_ms: u64) -> Self {
+        Self::with_context(base_url, model, timeout_ms, None)
+    }
+
+    pub fn with_context(base_url: &str, model: &str, timeout_ms: u64, max_context_tokens: Option<u32>) -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(timeout_ms.max(5000)))
             .build()
@@ -153,6 +160,7 @@ impl OllamaLlmProvider {
             base_url: base_url.trim_end_matches('/').to_string(),
             model: model.to_string(),
             default_timeout_ms: timeout_ms,
+            max_context_tokens,
             health: Mutex::new(HealthTracker::new()),
         }
     }
@@ -169,9 +177,14 @@ impl OllamaLlmProvider {
         let start = Instant::now();
         let timeout = Duration::from_millis(opts.timeout_ms.unwrap_or(self.default_timeout_ms));
 
-        let options = opts.max_tokens.map(|n| OllamaGenOptions {
-            num_predict: Some(n),
-        });
+        let options = if opts.max_tokens.is_some() || self.max_context_tokens.is_some() {
+            Some(OllamaGenOptions {
+                num_predict: opts.max_tokens,
+                num_ctx: self.max_context_tokens,
+            })
+        } else {
+            None
+        };
 
         let body = OllamaGenRequest {
             model: &self.model,
@@ -538,6 +551,21 @@ impl HealthTracker {
 
 const DEFAULT_OLLAMA_URL: &str = "http://localhost:11434";
 const DEFAULT_TIMEOUT_MS: u64 = 90_000;
+pub const DEFAULT_OLLAMA_MAX_CONTEXT_TOKENS: u32 = 8192;
+
+/// Resolve the Ollama context window size from env or default.
+///
+/// Reads `SIGNET_OLLAMA_FALLBACK_MAX_CTX` (kept for backwards compatibility).
+/// Despite the `FALLBACK` label, this value applies to **all** Ollama summary
+/// paths — both the degraded-fallback case and an explicitly-configured
+/// `synthesis.provider = ollama` deployment.
+pub fn resolve_ollama_max_context_tokens() -> u32 {
+    std::env::var("SIGNET_OLLAMA_FALLBACK_MAX_CTX")
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(DEFAULT_OLLAMA_MAX_CONTEXT_TOKENS)
+}
 
 /// LLM provider configuration.
 #[derive(Debug, Clone)]
@@ -547,6 +575,7 @@ pub struct LlmProviderConfig {
     pub base_url: Option<String>,
     pub api_key: Option<String>,
     pub timeout_ms: Option<u64>,
+    pub max_context_tokens: Option<u32>,
 }
 
 /// Create an LLM provider from config.
@@ -561,7 +590,7 @@ pub fn from_config(cfg: &LlmProviderConfig) -> Arc<dyn LlmProvider> {
                 .filter(|s| !s.is_empty())
                 .unwrap_or(DEFAULT_OLLAMA_URL);
             info!(provider = "ollama", model = %cfg.model, url, timeout_ms = timeout, "LLM provider initialized");
-            Arc::new(OllamaLlmProvider::new(url, &cfg.model, timeout))
+            Arc::new(OllamaLlmProvider::with_context(url, &cfg.model, timeout, cfg.max_context_tokens))
         }
         "anthropic" => {
             let key = cfg.api_key.as_deref().unwrap_or("");
@@ -578,7 +607,7 @@ pub fn from_config(cfg: &LlmProviderConfig) -> Arc<dyn LlmProvider> {
                 .as_deref()
                 .filter(|s| !s.is_empty())
                 .unwrap_or(DEFAULT_OLLAMA_URL);
-            Arc::new(OllamaLlmProvider::new(url, &cfg.model, timeout))
+            Arc::new(OllamaLlmProvider::with_context(url, &cfg.model, timeout, cfg.max_context_tokens))
         }
     }
 }
