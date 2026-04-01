@@ -39,6 +39,32 @@ function connector(): TempConnector {
 	return new TempConnector(tempHome);
 }
 
+describe("CodexConnector.install — legacy SIGNET block migration", () => {
+	test("strips legacy block from AGENTS.md and reports path in filesWritten", async () => {
+		const agentsPath = join(tempHome, "AGENTS.md");
+		writeFileSync(
+			agentsPath,
+			`before\n<!-- SIGNET:START -->\nmanaged block\n<!-- SIGNET:END -->\nafter\n`,
+			"utf-8",
+		);
+
+		const result = await connector().install(tempHome);
+
+		expect(readFileSync(agentsPath, "utf-8")).toBe("before\nafter\n");
+		expect(result.filesWritten).toContain(agentsPath);
+	});
+
+	test("leaves AGENTS.md untouched and does not add path when no legacy block", async () => {
+		const agentsPath = join(tempHome, "AGENTS.md");
+		writeFileSync(agentsPath, "plain content\n", "utf-8");
+
+		const result = await connector().install(tempHome);
+
+		expect(readFileSync(agentsPath, "utf-8")).toBe("plain content\n");
+		expect(result.filesWritten).not.toContain(agentsPath);
+	});
+});
+
 describe("CodexConnector.install — config.toml MCP registration", () => {
 	test("creates config.toml with string command when file does not exist", async () => {
 		await connector().install(tempHome);

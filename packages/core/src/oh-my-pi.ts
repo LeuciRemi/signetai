@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { expandHome } from "./constants.js";
 
 interface OhMyPiConfigFile {
 	readonly version: 1;
@@ -15,16 +16,8 @@ function readTrimmed(env: NodeJS.ProcessEnv, name: string): string | null {
 	return trimmed.length > 0 ? trimmed : null;
 }
 
-function expandUserPath(pathValue: string): string {
-	const trimmed = pathValue.trim();
-	if (trimmed === "~") return homedir();
-	if (trimmed.startsWith("~/")) return join(homedir(), trimmed.slice(2));
-	if (trimmed.startsWith("~")) return join(homedir(), trimmed.slice(1));
-	return trimmed;
-}
-
 function normalizePath(pathValue: string): string {
-	return resolve(expandUserPath(pathValue));
+	return resolve(expandHome(pathValue.trim()));
 }
 
 function readConfigHome(env: NodeJS.ProcessEnv): string {

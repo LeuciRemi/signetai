@@ -249,12 +249,30 @@ interface DreamingResult {
 The daemon validates and applies mutations transactionally. Failed
 or invalid mutations are logged but don't block the rest.
 
-### Chunking strategy
+### Incremental deltas
 
-If accumulated summaries exceed `maxInputTokens`, the agent processes
-them in chronological batches. Each batch gets the full entity graph
-snapshot (or the graph as mutated by the previous batch) plus a window
-of summaries. The entity graph is the continuity thread across batches.
+Dreaming passes operate on deltas, not full graph snapshots. The
+daemon tracks what changed since the last pass:
+
+- New session summaries (already tracked via token counter)
+- Entities/attributes created or modified since last pass (via
+  `updated_at` timestamp or a monotonic version column)
+
+The dreaming model receives:
+
+1. Identity context (AGENTS.md, SOUL.md, etc.)
+2. New session summaries since last pass
+3. Only entities/attributes in the delta (created or modified)
+4. A graph query tool to pull adjacent entities on demand (e.g.
+   if the model suspects a merge candidate exists outside the delta)
+
+The default payload is small and bounded by actual change volume,
+not total graph size. The model reaches into the full graph only
+when it needs to — not as a baseline assumption.
+
+Backfill/compaction mode (below) is the exception: it deliberately
+walks the full graph for cleanup. Regular dreaming passes are
+incremental.
 
 
 ## Backfill / Initial Compaction
@@ -283,21 +301,26 @@ signet dream --trigger    # force a dreaming pass now
 
 ## Interaction with Existing Pipeline
 
-The extraction pipeline and dreaming are not mutually exclusive:
+Dreaming (Pipeline V3) and the extraction pipeline (Pipeline V2) are
+**mutually exclusive**. When dreaming is enabled, Pipeline V2 is off.
+One writer for the knowledge graph at a time.
 
-| Config                          | Behavior                                                        |
-|---------------------------------|-----------------------------------------------------------------|
-| `dreaming.enabled: false`       | Extraction pipeline only (current behavior, default)            |
-| `dreaming.enabled: true`        | Dreaming runs on token threshold; pipeline still handles        |
-|                                 | immediate fact extraction for real-time recall                  |
-| `pipeline.extractionEnabled: false` + `dreaming.enabled: true` | Dreaming only — summaries accumulate, no real-time extraction |
+| Config                    | Behavior                                              |
+|---------------------------|-------------------------------------------------------|
+| `dreaming.enabled: false` | Pipeline V2 (current behavior, default)               |
+| `dreaming.enabled: true`  | Pipeline V2 off. Summaries accumulate, dreaming       |
+|                           | consolidates the knowledge graph on token threshold   |
 
-The pipeline can remain active for immediate fact availability (users
-want to recall something from 5 minutes ago, not wait for the next
-dreaming pass). Dreaming then cleans up and densifies what the
-pipeline produced. Over time, as models improve and context windows
-grow, users may choose to disable the pipeline entirely and rely on
-dreaming + raw transcript retrieval.
+This is an architectural simplification, not an additive layer. The
+existing database schema (entities, aspects, attributes) is preserved
+— dreaming replaces the *writer*, not the *data model*. The graph
+structure has real value for traversal, deduplication, and density.
+The problem was never the schema; it was building 10 narrow-context
+workers to populate it poorly. A single capable reasoning model with
+full identity context and the complete picture does all of that better.
+
+Pipeline V2 remains as a fallback for users without access to a
+capable reasoning model (small/local-only setups).
 
 
 ## System Prompt Extraction (Related)
@@ -319,21 +342,91 @@ This is tracked separately but is part of the same simplification
 effort.
 
 
+## Evidence: Manual Graph Audit (2026-04-01)
+
+A manual knowledge graph audit on the live database confirmed every
+problem this spec aims to solve. Key findings:
+
+### Entity Duplication
+
+A single person (Avery Felts) exists as **6 separate entities**:
+`Avery`, `Avery Felts`, `Avery's`, `Avery Felts\"**`,
+`Avery/AlexMondello`, `LMAO AVERY`. The possessive forms, markdown
+artifacts, and Discord message fragments were all extracted as
+distinct entities by pipeline workers that couldn't recognize them
+as the same person.
+
+Session lifecycle concepts split across 5+ entities:
+`session initialization`, `initialization commands`,
+`Signet startup hook`, `signet hook session-start command`,
+`Signet session-start hook`.
+
+Entity names with markdown formatting artifacts: `Signet Development**`,
+`Graph Bloat**`, `People's`.
+
+### Attribute Fragmentation
+
+The Nicholai entity's `general` aspect contains these attributes:
+- `"lives with"` (truncated mid-sentence)
+- `"**: Lead"` (markdown bold artifact)
+- `"shared his top 3 pen list: Pilot G-2 0"` (truncated at chunk boundary)
+
+The `properties` aspect is worse: `"Avery) consistently surface but
+are very large/noisy"`, `"entity) over explicit entity names passed
+as arguments"` — sentence fragments ripped from surrounding context.
+
+### Memory Duplication from MEMORY.md Backups
+
+The same "People" block existed in 4 copies (from successive
+MEMORY.md backup snapshots ingested by the file watcher). The same
+"Signet Development" block existed in 3 copies. The re-embedding
+test results existed in 3 copies. All from the feedback loop bug
+(PR #439), but demonstrating that even with the loop fixed, the
+existing data needs a compaction pass.
+
+### Traversal Scoring Dominance
+
+Live testing showed graph traversal scores (93-109 range) outweigh
+keyword relevance (under 1.0) by ~100x. A query for "Nuke" returned
+pen preferences and Discord allowlists as top results because they
+connect to hub entities (Nicholai, Biohazard) via graph edges.
+Direct keyword hits for Nuke-related memories were buried.
+
+### Manual Cleanup Results
+
+In one session, 18 junk/duplicate memories were identified and
+deleted via `memory_forget`. This required reading full memory
+content, cross-referencing for duplicates, and making judgment calls
+about supersession — exactly the kind of reasoning a dreaming agent
+would do automatically.
+
+### Implications for Backfill
+
+The audit confirms that `--compact` mode is not optional for
+existing users. The current graph state actively degrades search
+quality. First dreaming pass must run compaction. Estimated scope:
+13,000+ memories, potentially thousands of duplicate/junk entities
+requiring merge/delete.
+
+
 ## Open Questions
 
 1. **Model selection for dreaming.** Should this default to the same
    provider as extraction, or always target a larger model? The whole
    point is that a smarter model does better work, but cost varies.
-2. **Mutation conflict resolution.** If dreaming says "merge entity A
-   and B" but entity B was updated by the pipeline between when the
-   snapshot was taken and when mutations are applied, what wins?
-3. **Observability.** Users should be able to see what dreaming
+2. **Observability.** Users should be able to see what dreaming
    changed — a diff view of the entity graph before/after. Dashboard
    integration?
-4. **Incremental vs full graph snapshot.** Sending the full entity
-   graph every pass could get expensive for large databases. Should
-   we send only entities that were touched by the new session summaries
-   (plus their neighbors)?
-5. **Retention policy interaction.** Dreaming's delete operations need
+3. **Retention policy interaction.** Dreaming's delete operations need
    to respect pinned memories and retention policies. How does this
    compose with the existing retention decay system?
+4. **Chunked compaction.** With 13k+ memories, the full graph won't
+   fit in a single context window. Compaction may need to work in
+   entity-cluster batches (e.g. all entities related to "Signet",
+   then "Biohazard VFX", etc.) with a final merge-candidates pass
+   across clusters.
+5. **Entity deduplication heuristics.** The dreaming agent needs
+   guidance on recognizing possessive forms, markdown artifacts,
+   and name variants as the same entity. Should this be in the
+   dreaming prompt, or should there be a pre-processing normalization
+   step before the agent sees the graph?

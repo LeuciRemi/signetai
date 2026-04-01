@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir, tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { BaseConnector, type InstallResult, type UninstallResult, atomicWriteJson } from "@signet/connector-base";
+import { expandHome } from "@signet/core";
 import { parse as parseJson5 } from "json5";
 
 // ============================================================================
@@ -330,10 +331,14 @@ export class OpenClawConnector extends BaseConnector {
 	 * `{ runtimePath: "legacy" }` explicitly.
 	 */
 	async install(basePath: string, options: OpenClawInstallOptions = {}): Promise<InstallResult> {
-		const expandedBasePath = this.expandPath(basePath);
+		const expandedBasePath = expandHome(basePath, this.getHomeDir());
 		const filesWritten: string[] = [];
 		const configsPatched: string[] = [];
 		const warnings: string[] = [];
+		const strippedAgentsPath = this.stripLegacySignetBlock(expandedBasePath);
+		if (strippedAgentsPath !== null) {
+			filesWritten.push(strippedAgentsPath);
+		}
 
 		const configureHooks = options.configureHooks ?? true;
 		const configureWorkspace = options.configureWorkspace ?? true;
@@ -419,7 +424,7 @@ export class OpenClawConnector extends BaseConnector {
 	 */
 	async configureWorkspace(basePath: string): Promise<string[]> {
 		this.validateWorkspacePath(basePath);
-		const expandedBasePath = this.expandPath(basePath);
+		const expandedBasePath = expandHome(basePath, this.getHomeDir());
 		const ownershipWarnings = this.checkWorkspaceOwnership(expandedBasePath);
 		for (const w of ownershipWarnings) {
 			console.warn(w);
@@ -529,7 +534,7 @@ export class OpenClawConnector extends BaseConnector {
 					continue;
 				}
 
-				const expanded = resolve(this.expandPath(trimmed));
+				const expanded = resolve(expandHome(trimmed, this.getHomeDir()));
 				if (seen.has(expanded)) {
 					continue;
 				}
@@ -726,7 +731,7 @@ export class OpenClawConnector extends BaseConnector {
 	 * in production OpenClaw configs.
 	 */
 	private validateWorkspacePath(p: string): void {
-		const resolved = resolve(this.expandPath(p));
+		const resolved = resolve(expandHome(p, this.getHomeDir()));
 		const tmp = tmpdir();
 		if (resolved.startsWith(tmp)) {
 			throw new Error(`Refusing to set workspace to temp directory: ${resolved}`);
@@ -771,7 +776,7 @@ export class OpenClawConnector extends BaseConnector {
 
 		const push = (rawPath: string | undefined) => {
 			if (!rawPath) return;
-			const expanded = this.expandPath(rawPath.trim());
+			const expanded = expandHome(rawPath.trim(), this.getHomeDir());
 			if (!expanded || seen.has(expanded)) return;
 			seen.add(expanded);
 			candidates.push(expanded);
@@ -796,7 +801,7 @@ export class OpenClawConnector extends BaseConnector {
 			if (!raw || raw.trim().length === 0) {
 				return;
 			}
-			stateDirs.push(this.expandPath(raw.trim()));
+			stateDirs.push(expandHome(raw.trim(), this.getHomeDir()));
 		};
 
 		// Current state-dir env vars + legacy Signet compatibility fallback.
@@ -805,7 +810,7 @@ export class OpenClawConnector extends BaseConnector {
 		// Preserve historical behavior: OPENCLAW_STATE_HOME maps to openclaw.json only.
 		push(
 			process.env.OPENCLAW_STATE_HOME
-				? join(this.expandPath(process.env.OPENCLAW_STATE_HOME), "openclaw.json")
+				? join(expandHome(process.env.OPENCLAW_STATE_HOME, this.getHomeDir()), "openclaw.json")
 				: undefined,
 		);
 
@@ -816,20 +821,20 @@ export class OpenClawConnector extends BaseConnector {
 		}
 
 		// Historical home-dir overrides.
-		push(process.env.OPENCLAW_HOME ? join(this.expandPath(process.env.OPENCLAW_HOME), "openclaw.json") : undefined);
-		push(process.env.CLAWDBOT_HOME ? join(this.expandPath(process.env.CLAWDBOT_HOME), "clawdbot.json") : undefined);
-		push(process.env.MOLDBOT_HOME ? join(this.expandPath(process.env.MOLDBOT_HOME), "moldbot.json") : undefined);
-		push(process.env.MOLTBOT_HOME ? join(this.expandPath(process.env.MOLTBOT_HOME), "moltbot.json") : undefined);
+		push(process.env.OPENCLAW_HOME ? join(expandHome(process.env.OPENCLAW_HOME, this.getHomeDir()), "openclaw.json") : undefined);
+		push(process.env.CLAWDBOT_HOME ? join(expandHome(process.env.CLAWDBOT_HOME, this.getHomeDir()), "clawdbot.json") : undefined);
+		push(process.env.MOLDBOT_HOME ? join(expandHome(process.env.MOLDBOT_HOME, this.getHomeDir()), "moldbot.json") : undefined);
+		push(process.env.MOLTBOT_HOME ? join(expandHome(process.env.MOLTBOT_HOME, this.getHomeDir()), "moltbot.json") : undefined);
 
 		for (const pair of namedConfigPairs) {
 			push(join(home, `.${pair.dirName}`, pair.fileName));
 		}
 
 		const xdgConfigHome = process.env.XDG_CONFIG_HOME
-			? this.expandPath(process.env.XDG_CONFIG_HOME)
+			? expandHome(process.env.XDG_CONFIG_HOME, this.getHomeDir())
 			: join(home, ".config");
 		const xdgStateHome = process.env.XDG_STATE_HOME
-			? this.expandPath(process.env.XDG_STATE_HOME)
+			? expandHome(process.env.XDG_STATE_HOME, this.getHomeDir())
 			: join(home, ".local", "state");
 
 		// XDG fallbacks for older non-default installs.
@@ -1207,27 +1212,7 @@ configured by rejecting session claims from the second path (HTTP 409).
 
 	private getHomeDir(): string {
 		const home = process.env.HOME;
-		if (typeof home === "string" && home.trim().length > 0) {
-			return home.trim();
-		}
-
-		return homedir();
-	}
-
-	/** Expand `~` to the home directory. */
-	private expandPath(path: string): string {
-		if (path === "~") {
-			return this.getHomeDir();
-		}
-
-		if (path.startsWith("~/")) {
-			return join(this.getHomeDir(), path.slice(2));
-		}
-
-		if (path.startsWith("~")) {
-			return join(this.getHomeDir(), path.slice(1));
-		}
-		return path;
+		return typeof home === "string" && home.trim().length > 0 ? home.trim() : homedir();
 	}
 }
 

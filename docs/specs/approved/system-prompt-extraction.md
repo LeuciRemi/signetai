@@ -161,10 +161,9 @@ markdown files. The `install()` methods still create/symlink
 `AGENTS.md` → `CLAUDE.md` etc., but only with the user's content.
 
 For existing users who already have a Signet block in their
-`AGENTS.md`, the connector's `install()` can strip it on upgrade
-(remove content between `SIGNET:START` and `SIGNET:END` markers).
-Or it can be left in place harmlessly — it's just stale, not harmful.
-A deprecation log message would be appropriate.
+`AGENTS.md`, `signet install` strips it on upgrade (remove content
+between `SIGNET:START` and `SIGNET:END` markers) as a marker-bounded,
+idempotent migration.
 
 
 ## Migration Path
@@ -177,20 +176,14 @@ session-start hook.
 
 ### Existing users
 
-Two options, not mutually exclusive:
+Active migration is required in this phase:
 
-1. **Passive migration.** The session-start hook starts including the
-   system prompt. The old Signet block in `AGENTS.md` is redundant
-   but harmless. Over time, users can remove it manually or the
-   connector can strip it on next `signet install`.
-
-2. **Active migration.** `signet install` detects the Signet block
-   markers and strips them from `AGENTS.md`, logging what it did.
-   This is cleaner but touches the user's file.
-
-Recommendation: passive migration first (ship the hook change), then
-active cleanup in a follow-up release. This avoids any risk of
-clobbering user content.
+1. `signet install` detects `SIGNET:START` / `SIGNET:END` markers and
+   strips the legacy block from workspace `AGENTS.md`.
+2. The cleanup is marker-bounded and idempotent, preserving all
+   user-authored content outside the block.
+3. Session-start inject supplies the runtime system prompt on every
+   new session, so users do not need to regenerate identity files.
 
 
 ## Tool Naming
@@ -222,21 +215,16 @@ Could be done as aliases first, deprecating the old names.
 | `packages/connector-opencode/src/index.ts` | Same as above |
 | `packages/connector-openclaw/src/index.ts` | Same as above |
 | `packages/connector-codex/src/index.ts` | Same as above |
+| `packages/connector-oh-my-pi/src/index.ts` | Apply the same legacy block cleanup during install |
+| `packages/daemon-rs/crates/signet-daemon/src/routes/hooks.rs` | Mirror session-start system prompt injection to keep shadow parity |
 
 
-## Open Questions
+## Implementation Decisions (This Phase)
 
-1. **Character budget.** The session-start hook has a timeout. The
-   system prompt adds ~1200 chars to the inject payload. Is this
-   within budget, or does it crowd out memories? May need to adjust
-   the memory recall limit to compensate.
-2. **Per-harness variation.** Should the system prompt differ by
-   harness? Claude Code has MCP tools, but Codex/OpenCode might
-   surface tools differently. The prompt may need conditional sections.
-3. **User override.** Should users be able to customize or suppress
-   the system prompt? A `memory.systemPrompt.enabled: false` config
-   flag would be straightforward.
-4. **Tool availability detection.** The system prompt lists MCP tools,
-   but not all tools may be available in all configurations. Should
-   the daemon check which tools are actually registered before listing
-   them?
+1. **Character budget:** accepted for MVP. The injected system prompt is
+   compact and fits inside existing session-start budgets.
+2. **Per-harness variation:** deferred. This phase uses one shared
+   prompt across harnesses.
+3. **User override flag:** deferred. No suppression toggle in this phase.
+4. **Tool availability detection:** deferred. Prompt currently lists the
+   canonical Signet MCP tools unconditionally.

@@ -49,6 +49,7 @@ import {
 	parseSimpleYaml,
 	readStaticIdentity,
 	resolveGlobalPackagePath,
+	expandHome,
 	resolvePrimaryPackageManager,
 	symlinkSkills,
 	unifySkills,
@@ -448,25 +449,8 @@ function parseSearchBalanceValue(value: unknown): number | null {
 	return parsed;
 }
 
-function expandUserPath(pathValue: string): string {
-	const trimmed = pathValue.trim();
-	if (trimmed === "~") {
-		return homedir();
-	}
-
-	if (trimmed.startsWith("~/")) {
-		return join(homedir(), trimmed.slice(2));
-	}
-
-	if (trimmed.startsWith("~")) {
-		return join(homedir(), trimmed.slice(1));
-	}
-
-	return trimmed;
-}
-
 function normalizeAgentPath(pathValue: string): string {
-	return resolvePath(expandUserPath(pathValue));
+	return resolvePath(expandHome(pathValue.trim()));
 }
 
 function getOpenClawPluginSyncPath(basePath: string): string {

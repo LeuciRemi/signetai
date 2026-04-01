@@ -1,10 +1,25 @@
 import { describe, expect, it } from "bun:test";
 import {
+	buildSignetSystemPrompt,
 	normalizeCodexTranscript,
 	normalizeJsonConversationTranscript,
 	normalizeSessionTranscript,
 	queryAnchorsMissingFromRecall,
 } from "./hooks";
+
+describe("buildSignetSystemPrompt", () => {
+	it("lists primary signet retrieval tools with namespaced ids", () => {
+		const prompt = buildSignetSystemPrompt();
+		expect(prompt).toContain("[signet active]");
+		expect(prompt).toContain("mcp__signet__memory_search");
+		expect(prompt).toContain("mcp__signet__lcm_expand");
+		expect(prompt).toContain("mcp__signet__knowledge_expand");
+		expect(prompt).toContain("mcp__signet__knowledge_expand_session");
+		expect(prompt).toContain("mcp__signet__memory_store");
+		expect(prompt).toContain("mcp__signet__secret_list");
+		expect(prompt).toContain("mcp__signet__secret_exec");
+	});
+});
 
 describe("normalizeCodexTranscript", () => {
 	it("includes assistant turns from top-level item.completed events", () => {

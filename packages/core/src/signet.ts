@@ -7,7 +7,7 @@ import { Agent, AgentConfig, AgentManifest } from "./types";
 import { parseManifest, generateManifest } from "./manifest";
 import { parseSoul, generateSoul } from "./soul";
 import { parseMemory, generateMemory } from "./memory";
-import { DEFAULT_BASE_PATH } from "./constants";
+import { resolveDefaultBasePath } from "./constants";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 
@@ -18,7 +18,7 @@ export class Signet {
 
 	constructor(config: AgentConfig = {}) {
 		this.config = {
-			basePath: config.basePath || DEFAULT_BASE_PATH,
+			basePath: config.basePath || resolveDefaultBasePath(),
 			autoSync: config.autoSync ?? true,
 			...config,
 		};
@@ -110,7 +110,7 @@ export class Signet {
 	 * Detect if Signet is installed
 	 */
 	static detect(basePath?: string): boolean {
-		const path = basePath || DEFAULT_BASE_PATH;
+		const path = basePath || resolveDefaultBasePath();
 		return existsSync(join(path, "agent.yaml"));
 	}
 
@@ -118,6 +118,6 @@ export class Signet {
 	 * Get the default base path
 	 */
 	static getDefaultPath(): string {
-		return DEFAULT_BASE_PATH;
+		return resolveDefaultBasePath();
 	}
 }

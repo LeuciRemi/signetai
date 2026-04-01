@@ -152,6 +152,31 @@ function sanitizePeerPromptField(value: string | undefined): string {
 		.trim();
 }
 
+export function buildSignetSystemPrompt(): string {
+	return `[signet active]
+You have persistent memory managed by Signet.
+
+Memory tools:
+- mcp__signet__memory_search: search stored memories by keyword or meaning
+- mcp__signet__lcm_expand: expand a session summary into its full lineage and linked memories
+- mcp__signet__knowledge_expand: expand a known entity into its aspects, attributes, and dependencies
+- mcp__signet__knowledge_expand_session: find sessions linked to a known entity
+- mcp__signet__memory_store: save something to memory explicitly
+
+Identity files in your Signet workspace:
+- AGENTS.md: how you operate (maintain this)
+- SOUL.md: personality and values (maintain this)
+- IDENTITY.md: who you are (maintain this)
+- USER.md: who the user is (maintain this)
+- MEMORY.md: auto-generated working memory summary (system-managed)
+
+Secrets:
+- mcp__signet__secret_list
+- mcp__signet__secret_exec
+Secrets are injected into subprocesses as environment variables and are not exposed as raw values.
+`;
+}
+
 function toUnique(values: ReadonlyArray<string>): string[] {
 	return [...new Set(values.filter((value) => typeof value === "string" && value.length > 0))];
 }
@@ -1523,6 +1548,7 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 	const injectParts: string[] = [];
 	let recoverySection = "";
 
+	injectParts.push(buildSignetSystemPrompt());
 	injectParts.push("[memory active | /remember | /recall]");
 	if (predictorStatusLine) {
 		injectParts.push(predictorStatusLine);

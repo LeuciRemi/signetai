@@ -138,6 +138,30 @@ fn normalize_agent_id(value: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
+fn build_signet_system_prompt() -> &'static str {
+    "[signet active]\n\
+You have persistent memory managed by Signet.\n\
+\n\
+Memory tools:\n\
+- mcp__signet__memory_search: search stored memories by keyword or meaning\n\
+- mcp__signet__lcm_expand: expand a session summary into its full lineage and linked memories\n\
+- mcp__signet__knowledge_expand: expand a known entity into its aspects, attributes, and dependencies\n\
+- mcp__signet__knowledge_expand_session: find sessions linked to a known entity\n\
+- mcp__signet__memory_store: save something to memory explicitly\n\
+\n\
+Identity files in your Signet workspace:\n\
+- AGENTS.md: how you operate (maintain this)\n\
+- SOUL.md: personality and values (maintain this)\n\
+- IDENTITY.md: who you are (maintain this)\n\
+- USER.md: who the user is (maintain this)\n\
+- MEMORY.md: auto-generated working memory summary (system-managed)\n\
+\n\
+Secrets:\n\
+- mcp__signet__secret_list\n\
+- mcp__signet__secret_exec\n\
+Secrets are injected into subprocesses as environment variables and are not exposed as raw values.\n"
+}
+
 fn resolve_remember_agent(
     explicit: Option<&str>,
     header: Option<&str>,
@@ -486,7 +510,7 @@ pub async fn session_start(
             Json(serde_json::json!({
                 "identity": { "name": state.config.manifest.agent.name },
                 "memories": [],
-                "inject": format!("Current date: {}", now.format("%Y-%m-%d %H:%M")),
+                "inject": format!("{}\n[memory active | /remember | /recall]\nCurrent date: {}", build_signet_system_prompt(), now.format("%Y-%m-%d %H:%M")),
                 "deduped": true,
             })),
         )
@@ -525,7 +549,12 @@ pub async fn session_start(
 
             // Build inject string
             let now = chrono::Utc::now();
-            let mut inject = format!("Current date: {}\n", now.format("%Y-%m-%d %H:%M"));
+            let mut inject = String::new();
+            inject.push_str(build_signet_system_prompt());
+            // TS: injectParts.join("\n") with prompt ending \n produces a blank line here
+            inject.push('\n');
+            inject.push_str("[memory active | /remember | /recall]\n");
+            inject.push_str(&format!("Current date: {}\n", now.format("%Y-%m-%d %H:%M")));
 
             // Add recovery digest if available
             if let Some(checkpoint) = recovery.first() {

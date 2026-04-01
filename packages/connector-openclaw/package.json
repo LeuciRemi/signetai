@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@signet/connector-base": "workspace:*",
+    "@signet/core": "workspace:*",
     "json5": "^2.2.3"
   },
   "devDependencies": {

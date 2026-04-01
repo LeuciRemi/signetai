@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { BaseConnector, type InstallResult, type UninstallResult, atomicWriteJson } from "@signet/connector-base";
+import { expandHome } from "@signet/core";
 
 // ---------------------------------------------------------------------------
 // Signet command resolution
@@ -237,6 +238,11 @@ export class CodexConnector extends BaseConnector {
 		const filesWritten: string[] = [];
 		const configsPatched: string[] = [];
 		const warnings: string[] = [];
+		const expandedBasePath = expandHome(basePath || join(homedir(), ".agents"));
+		const strippedAgentsPath = this.stripLegacySignetBlock(expandedBasePath);
+		if (strippedAgentsPath !== null) {
+			filesWritten.push(strippedAgentsPath);
+		}
 
 		const codexHome = this.getCodexHome();
 		mkdirSync(codexHome, { recursive: true });
@@ -265,7 +271,7 @@ export class CodexConnector extends BaseConnector {
 		filesWritten.push(hooksPath);
 
 		// 2. Symlink skills directory
-		const skillsResult = this.symlinkSkills(basePath, codexHome);
+		const skillsResult = this.symlinkSkills(expandedBasePath, codexHome);
 		if (!skillsResult) {
 			warnings.push("Failed to symlink skills directory");
 		}

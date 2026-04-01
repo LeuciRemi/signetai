@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { BaseConnector, type InstallResult, type UninstallResult } from "@signet/connector-base";
 import {
 	clearConfiguredOhMyPiAgentDir,
+	expandHome,
 	getOhMyPiConfigPath,
 	listOhMyPiAgentDirCandidates,
 	resolveOhMyPiAgentDir,
@@ -157,6 +158,11 @@ export class OhMyPiConnector extends BaseConnector {
 
 	async install(basePath: string): Promise<InstallResult> {
 		const filesWritten: string[] = [];
+		const expandedBasePath = expandHome(basePath || resolveWorkspacePath());
+		const strippedAgentsPath = this.stripLegacySignetBlock(expandedBasePath);
+		if (strippedAgentsPath !== null) {
+			filesWritten.push(strippedAgentsPath);
+		}
 		const agentDir = resolveOhMyPiAgentDir();
 		const targetPath = managedExtensionPath(agentDir, OH_MY_PI_MANAGED_FILENAME);
 		const legacyPath = managedExtensionPath(agentDir, OH_MY_PI_LEGACY_MANAGED_FILENAME);
@@ -178,7 +184,7 @@ export class OhMyPiConnector extends BaseConnector {
 
 		mkdirSync(dirname(targetPath), { recursive: true });
 		const managedContent = buildManagedExtensionContent({
-			signetPath: basePath || resolveWorkspacePath(),
+			signetPath: expandedBasePath,
 			daemonUrl: resolveDaemonUrl() || DAEMON_URL_DEFAULT,
 			agentId: resolveAgentId(),
 		});

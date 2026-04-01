@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { expandHome } from "@signet/core";
 
 export type WorkspaceSource = "env" | "config" | "default";
 
@@ -17,25 +17,8 @@ interface WorkspaceConfigFile {
 	readonly updatedAt: string;
 }
 
-export function expandUserPath(pathValue: string): string {
-	const trimmed = pathValue.trim();
-	if (trimmed === "~") {
-		return homedir();
-	}
-
-	if (trimmed.startsWith("~/")) {
-		return join(homedir(), trimmed.slice(2));
-	}
-
-	if (trimmed.startsWith("~")) {
-		return join(homedir(), trimmed.slice(1));
-	}
-
-	return trimmed;
-}
-
 export function normalizeWorkspacePath(pathValue: string): string {
-	return resolve(expandUserPath(pathValue));
+	return resolve(expandHome(pathValue.trim()));
 }
 
 function readEnvPath(env: NodeJS.ProcessEnv): string | null {

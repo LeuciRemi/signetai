@@ -31,7 +31,6 @@ import {
 	SIGNET_GIT_PROTECTED_PATHS,
 	type SyncCursor,
 	buildArchitectureDoc,
-	buildSignetBlock,
 	findSignetForgeBinary,
 	keywordSearch,
 	mergeSignetGitignoreEntries,
@@ -10606,7 +10605,6 @@ async function syncHarnessConfigs() {
 
 	const rawContent = await Bun.file(agentsMdPath).text();
 	const content = stripSignetBlock(rawContent);
-	const withBlock = buildSignetBlock(AGENTS_DIR) + content;
 
 	// Build header with cross-references to other documents
 	const buildHeader = (targetName: string) => {
@@ -10664,7 +10662,7 @@ ${fileList}
 		.filter(Boolean)
 		.join("\n");
 
-	const composed = withBlock + identityExtras;
+	const composed = content + identityExtras;
 
 	// Sync to OpenCode (~/.config/opencode/AGENTS.md)
 	const opencodeDir = join(homedir(), ".config", "opencode");

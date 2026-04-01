@@ -490,3 +490,31 @@ describe("OpenClawConnector config patching", () => {
 		expect(patched.plugins.slots.memory).toBe("memory-core");
 	});
 });
+
+describe("OpenClawConnector.install — legacy SIGNET block migration", () => {
+	it("strips legacy block from AGENTS.md and reports path in filesWritten", async () => {
+		const agentsPath = join(tmpRoot, "AGENTS.md");
+		writeFileSync(
+			agentsPath,
+			`before\n<!-- SIGNET:START -->\nmanaged block\n<!-- SIGNET:END -->\nafter\n`,
+			"utf-8",
+		);
+		const result = await new OpenClawConnector().install(tmpRoot, {
+			configureWorkspace: false,
+			configureHooks: false,
+		});
+		expect(readFileSync(agentsPath, "utf-8")).toBe("before\nafter\n");
+		expect(result.filesWritten).toContain(agentsPath);
+	});
+
+	it("leaves AGENTS.md untouched when no legacy block present", async () => {
+		const agentsPath = join(tmpRoot, "AGENTS.md");
+		writeFileSync(agentsPath, "plain content\n", "utf-8");
+		const result = await new OpenClawConnector().install(tmpRoot, {
+			configureWorkspace: false,
+			configureHooks: false,
+		});
+		expect(readFileSync(agentsPath, "utf-8")).toBe("plain content\n");
+		expect(result.filesWritten).not.toContain(agentsPath);
+	});
+});

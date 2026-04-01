@@ -36,7 +36,6 @@ import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import {
-	buildSignetBlock,
 	stripSignetBlock,
 	symlinkSkills,
 	type SymlinkOptions,
@@ -68,8 +67,8 @@ export interface UninstallResult {
  * Abstract base class for Signet harness connectors.
  *
  * Provides:
- * - buildSignetBlock() - generate Signet system block for injected configs
  * - stripSignetBlock() - remove existing Signet blocks before re-injection
+ * - stripLegacySignetBlock() - migrate old SIGNET block out of AGENTS.md
  * - symlinkSkills() - symlink skills directory to harness-specific location
  *
  * Subclasses must implement:
@@ -96,19 +95,6 @@ export abstract class BaseConnector {
 	// ==========================================================================
 
 	/**
-	 * Build the Signet system block for injection into harness config files.
-	 *
-	 * This block provides agents with essential Signet information:
-	 * - Key files in the Signet workspace
-	 * - Dashboard URL
-	 * - Memory commands (/remember, /recall)
-	 * - Secrets commands
-	 */
-	protected buildSignetBlock(basePath = "$SIGNET_WORKSPACE"): string {
-		return buildSignetBlock(basePath);
-	}
-
-	/**
 	 * Strip existing Signet blocks from content.
 	 *
 	 * Call this before re-injecting the block to prevent duplication
@@ -116,6 +102,28 @@ export abstract class BaseConnector {
 	 */
 	protected stripSignetBlock(content: string): string {
 		return stripSignetBlock(content);
+	}
+
+	/**
+	 * Strip legacy SIGNET block markers from AGENTS.md in place.
+	 *
+	 * Returns the path when a write occurred, otherwise null.
+	 */
+	protected stripLegacySignetBlock(basePath: string): string | null {
+		const agentsPath = join(basePath, "AGENTS.md");
+		if (!existsSync(agentsPath)) return null;
+		const raw = readFileSync(agentsPath, "utf-8");
+		const cleaned = stripSignetBlock(raw);
+		if (cleaned === raw) return null;
+		const tmp = join(basePath, `.${randomBytes(6).toString("hex")}.tmp`);
+		try {
+			writeFileSync(tmp, cleaned, "utf-8");
+			renameSync(tmp, agentsPath);
+		} catch (err) {
+			try { unlinkSync(tmp); } catch {}
+			throw err;
+		}
+		return agentsPath;
 	}
 
 	/**

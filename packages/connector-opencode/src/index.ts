@@ -23,7 +23,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { BaseConnector, type InstallResult, type UninstallResult, atomicWriteJson } from "@signet/connector-base";
-import { hasValidIdentity } from "@signet/core";
+import { expandHome, hasValidIdentity } from "@signet/core";
 import { PLUGIN_BUNDLE } from "./plugin-bundle.js";
 
 // ============================================================================
@@ -232,13 +232,19 @@ export class OpenCodeConnector extends BaseConnector {
 	 */
 	async install(basePath: string): Promise<InstallResult> {
 		const filesWritten: string[] = [];
+		const expandedBasePath = expandHome(basePath || join(homedir(), ".agents"));
 
-		if (!hasValidIdentity(basePath)) {
+		if (!hasValidIdentity(expandedBasePath)) {
 			return {
 				success: false,
-				message: `No valid Signet identity found at ${basePath}`,
-				filesWritten: [],
+				message: `No valid Signet identity found at ${expandedBasePath}`,
+				filesWritten,
 			};
+		}
+
+		const strippedAgentsPath = this.stripLegacySignetBlock(expandedBasePath);
+		if (strippedAgentsPath !== null) {
+			filesWritten.push(strippedAgentsPath);
 		}
 
 		const opencodePath = this.getOpenCodePath();
@@ -263,7 +269,7 @@ export class OpenCodeConnector extends BaseConnector {
 		this.registerPlugin(opencodePath);
 
 		// Generate AGENTS.md from identity files
-		const agentsMdPath = await this.generateAgentsMd(basePath);
+		const agentsMdPath = await this.generateAgentsMd(expandedBasePath);
 		if (agentsMdPath) {
 			filesWritten.push(agentsMdPath);
 		}
@@ -272,7 +278,7 @@ export class OpenCodeConnector extends BaseConnector {
 		this.registerMcpServer(opencodePath);
 
 		// Symlink skills directory
-		const skillsSource = join(basePath, "skills");
+		const skillsSource = join(expandedBasePath, "skills");
 		const skillsDest = join(opencodePath, "skills");
 		if (existsSync(skillsSource)) {
 			this.symlinkSkills(skillsSource, skillsDest);
@@ -544,7 +550,7 @@ export class OpenCodeConnector extends BaseConnector {
 		const extras = this.composeIdentityExtras(basePath);
 
 		const destPath = join(this.getOpenCodePath(), "AGENTS.md");
-		writeFileSync(destPath, header + this.buildSignetBlock() + userContent + extras);
+		writeFileSync(destPath, header + userContent + extras);
 
 		return destPath;
 	}

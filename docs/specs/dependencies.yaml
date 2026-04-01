@@ -1,5 +1,5 @@
 version: 3
-updated_at: "2026-03-30"
+updated_at: "2026-04-01"
 
 specs:
   - id: memory-pipeline-v2
@@ -1105,8 +1105,8 @@ specs:
     decision: null
 
   - id: system-prompt-extraction
-    status: planning
-    path: docs/specs/planning/system-prompt-extraction.md
+    status: approved
+    path: docs/specs/approved/system-prompt-extraction.md
     hard_depends_on: []
     soft_depends_on:
       - dreaming-memory-consolidation

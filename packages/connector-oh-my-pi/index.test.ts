@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -134,5 +134,27 @@ describe("root build pipeline", () => {
 
 		expect(deps).not.toContain("@signet/cli");
 		expect(deps).not.toContain("@signet/connector-oh-my-pi");
+	});
+});
+
+describe("OhMyPiConnector.install — legacy SIGNET block migration", () => {
+	it("strips legacy block from AGENTS.md and reports path in filesWritten", async () => {
+		const agentsPath = join(tmpRoot, "AGENTS.md");
+		writeFileSync(
+			agentsPath,
+			`before\n<!-- SIGNET:START -->\nmanaged block\n<!-- SIGNET:END -->\nafter\n`,
+			"utf-8",
+		);
+		const result = await new OhMyPiConnector().install(tmpRoot);
+		expect(readFileSync(agentsPath, "utf-8")).toBe("before\nafter\n");
+		expect(result.filesWritten).toContain(agentsPath);
+	});
+
+	it("leaves AGENTS.md untouched when no legacy block present", async () => {
+		const agentsPath = join(tmpRoot, "AGENTS.md");
+		writeFileSync(agentsPath, "plain content\n", "utf-8");
+		const result = await new OhMyPiConnector().install(tmpRoot);
+		expect(readFileSync(agentsPath, "utf-8")).toBe("plain content\n");
+		expect(result.filesWritten).not.toContain(agentsPath);
 	});
 });
