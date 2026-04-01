@@ -1102,3 +1102,42 @@ specs:
       - "Official image publishing supports linux/amd64 and linux/arm64 with stable tags"
       - "Self-hosting docs include Docker quickstart, backup/restore, and in-place upgrade flow"
     decision: null
+
+  - id: system-prompt-extraction
+    status: planning
+    path: docs/specs/planning/system-prompt-extraction.md
+    hard_depends_on: []
+    soft_depends_on:
+      - dreaming-memory-consolidation
+    blocks: []
+    informed_by:
+      - docs/specs/planning/dreaming-memory-consolidation.md
+      - docs/specs/planning/LCM-PATTERNS.md
+    success_criteria:
+      - "Signet system prompt is injected via session-start hook output, not embedded in AGENTS.md"
+      - "Users with pre-existing AGENTS.md files receive the system prompt without regenerating their file"
+      - "AGENTS.md contains only user-authored agent instructions and identity; no Signet plumbing"
+      - "The system prompt is a single, maintainable source of truth across all connectors"
+      - "Models use LCM expand / memory search as the primary retrieval interface without additional prompting in identity files"
+    decision: null
+
+  - id: dreaming-memory-consolidation
+    status: planning
+    path: docs/specs/planning/dreaming-memory-consolidation.md
+    hard_depends_on:
+      - memory-pipeline-v2
+      - knowledge-architecture-schema
+    soft_depends_on:
+      - session-continuity-protocol
+    blocks: []
+    informed_by:
+      - docs/specs/planning/LCM-PATTERNS.md
+      - docs/specs/complete/memory-pipeline-plan.md
+      - docs/specs/complete/knowledge-architecture-schema.md
+    success_criteria:
+      - "Entity graph density increases (fewer entities, more attributes per entity) after a dreaming pass"
+      - "Duplicate and near-duplicate entities are merged automatically"
+      - "Stale or junk attributes are pruned without manual intervention"
+      - "Users without large-model access fall back to the existing extraction pipeline with no degradation"
+      - "Token spend per dreaming pass is bounded and configurable"
+    decision: null
