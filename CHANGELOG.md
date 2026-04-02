@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.91.10] - 2026-04-02
+
+### Bug Fixes
+
+- enforce 5000-token MEMORY.md budget (#443)
+
+
 ## [0.91.9] - 2026-04-02
 
 ### Bug Fixes
