@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.91.12] - 2026-04-02
+
+### Features
+
+- dreaming memory consolidation — periodic LLM-driven knowledge graph refinement (#442)
+
+
 ## [0.91.11] - 2026-04-02
 
 ### Bug Fixes
