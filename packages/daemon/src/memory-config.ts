@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	DEFAULT_PIPELINE_TIMEOUT_MS,
+	type DreamingConfig,
 	PIPELINE_FLAGS,
 	type PipelineFlag,
 	type PipelineV2Config,
@@ -10,6 +11,7 @@ import {
 	parseSimpleYaml,
 } from "@signet/core";
 import { type AuthConfig, parseAuthConfig } from "./auth/config";
+import { logger } from "./logger";
 
 export interface EmbeddingConfig {
 	provider: "native" | "ollama" | "openai" | "none";
@@ -29,7 +31,16 @@ export interface MemorySearchConfig {
 }
 
 export { PIPELINE_FLAGS };
-export type { PipelineFlag, PipelineV2Config };
+export type { PipelineFlag, PipelineV2Config, DreamingConfig };
+
+export const DEFAULT_DREAMING: DreamingConfig = {
+	enabled: false,
+	tokenThreshold: 100_000,
+	timeout: 300_000,
+	maxInputTokens: 128_000,
+	maxOutputTokens: 16_000,
+	backfillOnFirstRun: true,
+};
 
 class PipelineConfigValidationError extends Error {
 	constructor(message: string) {
@@ -235,6 +246,7 @@ export interface ResolvedMemoryConfig {
 	embedding: EmbeddingConfig;
 	search: MemorySearchConfig;
 	pipelineV2: PipelineV2Config;
+	dreaming: DreamingConfig;
 	auth: AuthConfig;
 }
 
@@ -914,6 +926,30 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): PipelineV2Con
 	};
 }
 
+function clampWarn(field: string, raw: unknown, min: number, max: number, fallback: number): number {
+	if (typeof raw !== "number" || !Number.isFinite(raw)) return fallback;
+	const clamped = Math.max(min, Math.min(max, raw));
+	if (clamped !== raw) {
+		logger.warn("config", `dreaming.${field} out of range [${min}, ${max}]: ${raw} → clamped to ${clamped}`);
+	}
+	return clamped;
+}
+
+export function loadDreamingConfig(yaml: Record<string, unknown>): DreamingConfig {
+	const mem = yaml.memory as Record<string, unknown> | undefined;
+	const raw = mem?.dreaming as Record<string, unknown> | undefined;
+	if (!raw) return { ...DEFAULT_DREAMING };
+	const dd = DEFAULT_DREAMING;
+	return {
+		enabled: typeof raw.enabled === "boolean" ? raw.enabled : dd.enabled,
+		tokenThreshold: clampWarn("tokenThreshold", raw.tokenThreshold, 10_000, 1_000_000, dd.tokenThreshold),
+		timeout: clampWarn("timeout", raw.timeout, 30_000, 600_000, dd.timeout),
+		maxInputTokens: clampWarn("maxInputTokens", raw.maxInputTokens, 8_000, 1_000_000, dd.maxInputTokens),
+		maxOutputTokens: clampWarn("maxOutputTokens", raw.maxOutputTokens, 1_000, 128_000, dd.maxOutputTokens),
+		backfillOnFirstRun: typeof raw.backfillOnFirstRun === "boolean" ? raw.backfillOnFirstRun : dd.backfillOnFirstRun,
+	};
+}
+
 export function loadMemoryConfig(agentsDir: string): ResolvedMemoryConfig {
 	const defaults: ResolvedMemoryConfig = {
 		embedding: {
@@ -931,6 +967,7 @@ export function loadMemoryConfig(agentsDir: string): ResolvedMemoryConfig {
 			rehearsal_half_life_days: 30,
 		},
 		pipelineV2: { ...DEFAULT_PIPELINE_V2 },
+		dreaming: { ...DEFAULT_DREAMING },
 		auth: parseAuthConfig(undefined, agentsDir),
 	};
 
@@ -988,6 +1025,7 @@ export function loadMemoryConfig(agentsDir: string): ResolvedMemoryConfig {
 			}
 
 			defaults.pipelineV2 = loadPipelineConfig(yaml);
+			defaults.dreaming = loadDreamingConfig(yaml);
 			defaults.auth = parseAuthConfig(yaml.auth, agentsDir);
 
 			break;

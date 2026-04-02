@@ -1112,7 +1112,7 @@ specs:
       - dreaming-memory-consolidation
     blocks: []
     informed_by:
-      - docs/specs/planning/dreaming-memory-consolidation.md
+      - docs/specs/approved/dreaming-memory-consolidation.md
       - docs/specs/planning/LCM-PATTERNS.md
     success_criteria:
       - "Signet system prompt is injected via session-start hook output, not embedded in AGENTS.md"
@@ -1123,8 +1123,8 @@ specs:
     decision: null
 
   - id: dreaming-memory-consolidation
-    status: planning
-    path: docs/specs/planning/dreaming-memory-consolidation.md
+    status: approved
+    path: docs/specs/approved/dreaming-memory-consolidation.md
     hard_depends_on:
       - memory-pipeline-v2
       - knowledge-architecture-schema
@@ -1141,4 +1141,6 @@ specs:
       - "Stale or junk attributes are pruned without manual intervention"
       - "Users without large-model access fall back to the existing extraction pipeline with no degradation"
       - "Token spend per dreaming pass is bounded and configurable"
+      - "Dreaming passes run as full sessions with transcript capture and self-improvement loop (Phase 2)"
+      - "Pipeline V2 extraction is gated off when dreaming is enabled (Phase 2)"
     decision: null

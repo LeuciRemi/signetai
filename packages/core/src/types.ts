@@ -106,6 +106,7 @@ export interface AgentManifest {
 		session_budget?: number;
 		decay_rate?: number;
 		pipelineV2?: Partial<PipelineV2Config>;
+		dreaming?: Partial<DreamingConfig>;
 	};
 
 	// Trust & verification (optional)
@@ -427,6 +428,15 @@ export interface PipelineHintsConfig {
 	readonly timeout: number;
 	readonly maxTokens: number;
 	readonly poll: number;
+}
+
+export interface DreamingConfig {
+	readonly enabled: boolean;
+	readonly tokenThreshold: number;
+	readonly timeout: number;
+	readonly maxInputTokens: number;
+	readonly maxOutputTokens: number;
+	readonly backfillOnFirstRun: boolean;
 }
 
 // -- Status/union constants --

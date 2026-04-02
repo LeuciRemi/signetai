@@ -12,6 +12,7 @@ import type { TelemetryCollector } from "../telemetry";
 import type { DecisionConfig } from "./decision";
 import { type DependencySynthesisHandle, startDependencySynthesisWorker } from "./dependency-synthesis";
 import { type DocumentWorkerHandle, startDocumentWorker } from "./document-worker";
+import type { DreamingWorkerHandle } from "./dreaming-worker";
 import { type MaintenanceHandle, startMaintenanceWorker } from "./maintenance-worker";
 import { type HintsWorkerHandle, startHintsWorker } from "./prospective-index";
 import { DEFAULT_RETENTION, type RetentionHandle, startRetentionWorker } from "./retention-worker";
@@ -38,10 +39,22 @@ export { startSummaryWorker, enqueueSummaryJob } from "./summary-worker";
 export type { SummaryWorkerHandle } from "./summary-worker";
 export { startSynthesisWorker, readLastSynthesisTime } from "./synthesis-worker";
 export type { SynthesisWorkerHandle } from "./synthesis-worker";
+export { addDreamingTokens, getDreamingState, getDreamingPasses, recordDreamingFailure } from "./dreaming";
+export type { DreamingWorkerHandle } from "./dreaming-worker";
 
 /** Get the active synthesis worker handle (for API routes). */
 export function getSynthesisWorker(): SynthesisWorkerHandle | null {
 	return synthesisWorkerHandle;
+}
+
+/** Get the active dreaming worker handle (for API routes). */
+export function getDreamingWorker(): DreamingWorkerHandle | null {
+	return dreamingWorkerHandle;
+}
+
+/** Set dreaming worker handle (managed by daemon.ts, not startPipeline). */
+export function setDreamingWorker(handle: DreamingWorkerHandle | null): void {
+	dreamingWorkerHandle = handle;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,6 +71,7 @@ let structuralClassifyHandle: StructuralClassifyHandle | null = null;
 let structuralDependencyHandle: StructuralDependencyHandle | null = null;
 let dependencySynthesisHandle: DependencySynthesisHandle | null = null;
 let hintsWorkerHandle: HintsWorkerHandle | null = null;
+let dreamingWorkerHandle: DreamingWorkerHandle | null = null;
 
 /** Snapshot of running state for each worker — used by /api/pipeline/status */
 export function getPipelineWorkerStatus(): Record<string, { running: boolean; stats?: WorkerStats }> {
@@ -75,6 +89,7 @@ export function getPipelineWorkerStatus(): Record<string, { running: boolean; st
 		structuralDependency: { running: structuralDependencyHandle !== null },
 		dependencySynthesis: { running: dependencySynthesisHandle !== null },
 		hints: { running: hintsWorkerHandle !== null },
+		dreaming: { running: dreamingWorkerHandle !== null },
 	};
 }
 

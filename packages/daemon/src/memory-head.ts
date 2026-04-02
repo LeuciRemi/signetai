@@ -2,14 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Tiktoken } from "js-tiktoken/lite";
-import cl100k_base from "js-tiktoken/ranks/cl100k_base";
 import { getDbAccessor } from "./db-accessor";
 import { countChanges } from "./db-helpers";
 import { loadMemoryConfig } from "./memory-config";
+import { countTokens, truncateToTokens } from "./pipeline/tokenizer";
 
 export const MEMORY_HEAD_MAX_TOKENS = 5000;
-const headTok = new Tiktoken(cl100k_base);
 
 function getAgentsDir(): string {
 	return process.env.SIGNET_PATH || join(homedir(), ".agents");
@@ -33,18 +31,11 @@ function hashContent(content: string): string {
 	return createHash("sha256").update(content).digest("hex");
 }
 
-function truncateTokens(text: string, limit: number): string {
-	if (limit < 1) return "";
-	const tokens = headTok.encode(text);
-	if (tokens.length <= limit) return text;
-	return headTok.decode(tokens.slice(0, limit)).trimEnd();
-}
-
 function projectMemoryMd(content: string): { readonly body: string; readonly file: string } {
 	const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
 	const prefix = `<!-- generated ${stamp} -->\n\n`;
-	const budget = MEMORY_HEAD_MAX_TOKENS - headTok.encode(prefix).length;
-	const body = truncateTokens(content, budget);
+	const budget = MEMORY_HEAD_MAX_TOKENS - countTokens(prefix);
+	const body = truncateToTokens(content, budget);
 	return { body, file: `${prefix}${body}` };
 }
 

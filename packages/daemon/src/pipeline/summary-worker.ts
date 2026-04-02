@@ -26,6 +26,7 @@ import { writeSummaryArtifact } from "../memory-lineage";
 import { getSecret } from "../secrets";
 import { upsertSessionTranscript } from "../session-transcripts";
 import { upsertThreadHead } from "../thread-heads";
+import { addDreamingTokens } from "./dreaming";
 import {
 	createAnthropicProvider,
 	createClaudeCodeProvider,
@@ -36,6 +37,7 @@ import {
 	resolveDefaultOllamaFallbackMaxContextTokens,
 } from "./provider";
 import { type SignificanceConfig, assessSignificance } from "./significance-gate";
+import { countTokens } from "./tokenizer";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -581,6 +583,21 @@ async function processJob(
 			writeSummaryToDAG(accessor, job, result, job.agent_id);
 		} catch (e) {
 			logger.warn("summary-worker", "Failed to write session summary to DAG (non-fatal)", {
+				error: e instanceof Error ? e.message : String(e),
+			});
+		}
+
+		// Track session tokens for dreaming trigger (use transcript length
+		// as a proxy for the session's actual token consumption, not the
+		// compressed summary output).
+		// NOTE: The dreaming worker currently only starts for the default
+		// agent. Tokens for non-default agents accumulate but no pass fires
+		// for them until Phase 2 adds multi-agent dreaming worker support.
+		try {
+			const tokens = countTokens(job.transcript);
+			addDreamingTokens(accessor, job.agent_id, tokens);
+		} catch (e) {
+			logger.warn("summary-worker", "Failed to accumulate dreaming tokens (non-fatal)", {
 				error: e instanceof Error ? e.message : String(e),
 			});
 		}
@@ -1141,7 +1158,7 @@ function writeSummaryToDAG(accessor: DbAccessor, job: SummaryJobRow, result: Llm
 		if (!row) return;
 
 		const now = new Date().toISOString();
-		const tokenCount = Math.ceil(result.summary.length / 4);
+		const tokenCount = countTokens(result.summary);
 		const sourceType = job.trigger === "checkpoint_extract" ? "checkpoint" : "summary";
 
 		// Upsert: check for existing row first since ON CONFLICT doesn't
@@ -1242,7 +1259,7 @@ function writeSummaryToDAG(accessor: DbAccessor, job: SummaryJobRow, result: Llm
 					chunkId,
 					job.project,
 					leaf,
-					Math.ceil(leaf.length / 4),
+					countTokens(leaf),
 					job.created_at,
 					now,
 					job.harness,

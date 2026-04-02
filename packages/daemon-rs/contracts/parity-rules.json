@@ -255,6 +255,16 @@
 				"deterministic": ["messages.*.id", "messages.*.content"],
 				"ignoreFields": ["messages.*.sentAt"],
 				"arrayOrdering": "ordered"
+			},
+			"GET /api/dream/status": {
+				"deterministic": ["enabled", "state.tokensSinceLastPass", "state.lastPassAt"],
+				"ignoreFields": ["worker", "passes.*.completedAt"],
+				"note": "Dreaming consolidation — not yet implemented in daemon-rs. Stub returns enabled:false until Rust parity wave."
+			},
+			"POST /api/dream/trigger": {
+				"deterministic": ["accepted", "status", "mode"],
+				"ignoreFields": ["passId"],
+				"note": "Dreaming consolidation — not yet implemented in daemon-rs. Stub returns 501 until Rust parity wave."
 			}
 		}
 	},

@@ -2555,6 +2555,92 @@ Requires `admin` permission and uses the admin rate limit bucket.
 requested state.
 
 
+Dreaming
+--------
+
+Dreaming is a periodic knowledge-graph consolidation process that uses a
+smart model to merge, prune, and enrich the entity graph.
+
+### GET /api/dream/status
+
+Return the current dreaming worker state, configuration, and recent passes.
+Requires `admin` permission.
+
+**Query parameters**
+
+| Parameter | Type   | Required | Description         |
+|-----------|--------|----------|---------------------|
+| `agentId` | string | no       | Agent ID (default: `"default"`) |
+
+**Response**
+
+```json
+{
+  "enabled": true,
+  "worker": { "running": true, "active": false },
+  "state": {
+    "tokensSinceLastPass": 42000,
+    "lastPassAt": "2026-04-01T12:00:00.000Z",
+    "lastPassId": "abc-123",
+    "lastPassMode": "incremental"
+  },
+  "config": {
+    "tokenThreshold": 100000,
+    "backfillOnFirstRun": true,
+    "maxInputTokens": 128000,
+    "maxOutputTokens": 16000,
+    "timeout": 300000
+  },
+  "passes": [
+    {
+      "id": "pass-uuid",
+      "mode": "incremental",
+      "status": "completed",
+      "startedAt": "2026-04-01T12:00:00.000Z",
+      "completedAt": "2026-04-01T12:05:00.000Z",
+      "tokensConsumed": 8000,
+      "mutationsApplied": 12,
+      "mutationsSkipped": 3,
+      "mutationsFailed": 1,
+      "summary": "Merged 3 duplicate entities, pruned 5 junk attributes",
+      "error": null
+    }
+  ]
+}
+```
+
+### POST /api/dream/trigger
+
+Manually trigger a dreaming pass. Requires `admin` permission.
+Returns `202 Accepted` immediately and runs the pass in the background
+(passes can take up to several minutes on large graphs).
+Returns 409 if a pass is already running. Returns 503 if the
+dreaming worker is not started.
+
+Poll `GET /api/dream/status` and check `passes[0].status` for completion.
+
+**Request body**
+
+```json
+{
+  "mode": "incremental"
+}
+```
+
+`mode` is `"incremental"` (default) or `"compact"`.
+
+**Response** — `202 Accepted`
+
+```json
+{
+  "accepted": true,
+  "passId": "pass-uuid",
+  "status": "running",
+  "mode": "incremental"
+}
+```
+
+
 Checkpoints
 -----------
 

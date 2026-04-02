@@ -39,6 +39,7 @@ import {
 	type SetupDetection,
 	type SkillsResult,
 	detectExistingSetup as detectExistingSetupCore,
+	expandHome,
 	formatYaml,
 	getGlobalInstallCommand,
 	getMissingIdentityFiles,
@@ -49,7 +50,6 @@ import {
 	parseSimpleYaml,
 	readStaticIdentity,
 	resolveGlobalPackagePath,
-	expandHome,
 	resolvePrimaryPackageManager,
 	symlinkSkills,
 	unifySkills,
@@ -61,6 +61,7 @@ import { registerBrowseCommand } from "./browse.js";
 import { registerAgentCommands } from "./commands/agent.js";
 import { registerAppCommands } from "./commands/app.js";
 import { registerDaemonCommands } from "./commands/daemon.js";
+import { registerDreamCommands } from "./commands/dream.js";
 import { registerForgeCommands } from "./commands/forge.js";
 import { registerGitCommands } from "./commands/git.js";
 import { registerHookCommands } from "./commands/hook.js";
@@ -1419,6 +1420,14 @@ registerVectorCommands(program, {
 // ============================================================================
 
 registerSessionCommands(program, {
+	fetchFromDaemon,
+});
+
+// ============================================================================
+// signet dream - Dreaming memory consolidation
+// ============================================================================
+
+registerDreamCommands(program, {
 	fetchFromDaemon,
 });
 

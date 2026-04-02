@@ -60,6 +60,7 @@ import { up as memoryMdRollingWindowLineage } from "./051-memory-md-rolling-wind
 import { up as mcpInvocations } from "./052-mcp-invocations";
 import { up as skillInvocations } from "./053-skill-invocations";
 import { up as taskAgentScope } from "./054-task-agent-scope";
+import { up as dreamingState } from "./055-dreaming-state";
 
 // -- Public interface consumed by Database.init() --
 
@@ -523,6 +524,14 @@ export const MIGRATIONS: readonly Migration[] = [
 		up: taskAgentScope,
 		artifacts: {
 			tables: ["task_scope_hints"],
+		},
+	},
+	{
+		version: 55,
+		name: "dreaming-state",
+		up: dreamingState,
+		artifacts: {
+			tables: ["dreaming_state", "dreaming_passes"],
 		},
 	},
 ];

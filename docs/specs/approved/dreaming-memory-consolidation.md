@@ -107,7 +107,7 @@ its token count is added to a running total persisted in the database.
 dreaming_state:
   tokens_since_last_pass: 0
   last_pass_at: null
-  last_pass_summary_id: null
+  last_pass_id: null
 ```
 
 When `tokens_since_last_pass` exceeds the configured threshold, the
@@ -119,8 +119,6 @@ memory:
   dreaming:
     enabled: true
     tokenThreshold: 100000    # trigger after ~100k tokens of summaries
-    provider: "anthropic"     # which LLM provider to use
-    model: "claude-sonnet-4-6"  # default model for dreaming passes
     maxInputTokens: 128000    # context budget per pass
     backfillOnFirstRun: true  # run compaction on first dreaming pass
 ```
@@ -409,24 +407,120 @@ quality. First dreaming pass must run compaction. Estimated scope:
 requiring merge/delete.
 
 
+## Implementation Status (PR #442)
+
+### Delivered (Phase 1)
+
+The mechanical consolidation engine is complete:
+
+- **Dreaming agent core.** All 8 mutation operations: `create_entity`,
+  `merge_entities`, `delete_entity`, `update_aspect`, `delete_aspect`,
+  `supersede_attribute`, `create_attribute`, `delete_attribute`. Atomic
+  application in a single write transaction. Pinned entities and
+  constraint attributes protected (reported as `skipped`).
+- **Token-budget trigger.** Summary worker accumulates transcript
+  token counts into `dreaming_state`. Background worker polls every
+  5 minutes and fires when threshold is crossed.
+- **Compact and incremental modes.** First pass auto-runs in compact
+  mode when `backfillOnFirstRun: true`. Manual trigger via API/CLI.
+- **Config surface.** `agent.yaml` > `memory.dreaming` with threshold,
+  budget, backfill, and timeout settings. Provider and model are
+  inherited from the synthesis provider (no separate dreaming-specific
+  provider config -- avoids duplication and supports all synthesis
+  backends including `claude-code`, `codex`, `opencode`, etc.).
+- **API.** `GET /api/dream/status`, `POST /api/dream/trigger`.
+- **CLI.** `signet dream status`, `signet dream trigger [--compact]`.
+- **DB migration 055.** `dreaming_state` (per-agent PK) and
+  `dreaming_passes` (audit log with applied/skipped/failed counts).
+- **Graph safety.** LIMIT caps on entity graph queries (2000 entities,
+  10k aspects, 50k attributes, 10k dependencies). Character budget
+  for graph text in prompts (~30% of token budget).
+- **Tests.** 26 tests covering state management, threshold logic,
+  all mutation types, constraint protection, and pass lifecycle.
+
+### Deferred (Phase 2 — required for spec completion)
+
+These items are described in the spec but not yet implemented. They
+are critical for the spec's full vision and must be built before
+the spec can move to `complete`.
+
+1. **Dreaming as a session.** The spec's central design insight
+   (section "Dreaming is a normal session") is that a dreaming pass
+   should go through the full session lifecycle — session-start hook,
+   transcript capture, session-end summarization. Currently, dreaming
+   is a standalone LLM call that bypasses the session system. This
+   means:
+   - The agent does not remember its own dreaming passes
+   - The self-improvement loop (section "Self-Improvement Loop")
+     is not active — dream pass N+1 cannot review dream pass N's
+     decisions and course-correct
+   - No session transcript is saved for the dreaming pass itself
+
+2. **Incremental delta filtering.** The spec (section "Incremental
+   deltas") describes sending only entities modified since the last
+   pass, with a graph query tool for on-demand expansion. Currently,
+   the full entity graph snapshot is sent (bounded by LIMIT caps).
+   This works for moderate-sized graphs but is wasteful for large
+   graphs where most entities haven't changed.
+
+3. **Graph query tool.** The spec describes giving the model a tool
+   to pull adjacent entities on demand when it suspects merge
+   candidates exist outside the delta. Currently the model receives
+   a static snapshot with no interactive tool access.
+
+4. **Pipeline V2 mutual exclusion.** The spec (section "Interaction
+   with Existing Pipeline") states that Pipeline V2 extraction should
+   be OFF when dreaming is enabled — one writer at a time. Currently
+   both can run simultaneously. SQLite write serialization prevents
+   data corruption, but concurrent extraction can create new entities
+   that the dreaming pass doesn't see, leading to inconsistency.
+   Needs: gate `startPipeline` when `dreaming.enabled: true`, or
+   stop extraction workers during a dreaming pass.
+
+5. **Chunked compaction.** For very large graphs (13k+ entities per
+   the evidence section), the full entity graph won't fit in a single
+   context window even with LIMIT caps. The spec's open question #4
+   describes entity-cluster batching (e.g. all entities related to
+   "Signet", then "Biohazard VFX") with a cross-cluster merge pass.
+   Not implemented — current LIMIT caps truncate silently.
+
+6. **Dashboard observability.** The spec's open question #2 describes
+   a diff view of the entity graph before/after a dreaming pass. No
+   dashboard UI exists for dreaming status, history, or graph diffs.
+   The API surface (`GET /api/dream/status`) provides the data but
+   there's no frontend consumer.
+
+7. **~~Identity context injection.~~** (RESOLVED) The prompt now loads
+   and injects all five identity files (AGENTS.md, SOUL.md, IDENTITY.md,
+   USER.md into `<identity>`, MEMORY.md into `<working_memory>`).
+   This was implemented in Phase 1 — the deferred item was documented
+   in error.
+
+
 ## Open Questions
 
 1. **Model selection for dreaming.** Should this default to the same
    provider as extraction, or always target a larger model? The whole
    point is that a smarter model does better work, but cost varies.
+   *Resolved in Phase 1:* Dreaming has its own provider/model config
+   independent of extraction. Default is `anthropic`/`claude-sonnet-4-6`.
 2. **Observability.** Users should be able to see what dreaming
    changed — a diff view of the entity graph before/after. Dashboard
-   integration?
+   integration? *Deferred to Phase 2.*
 3. **Retention policy interaction.** Dreaming's delete operations need
    to respect pinned memories and retention policies. How does this
-   compose with the existing retention decay system?
+   compose with the existing retention decay system? *Partially
+   resolved:* pinned entities and constraint attributes are protected.
+   Full retention policy integration (decay rates, archived memories)
+   is not yet wired.
 4. **Chunked compaction.** With 13k+ memories, the full graph won't
    fit in a single context window. Compaction may need to work in
    entity-cluster batches (e.g. all entities related to "Signet",
    then "Biohazard VFX", etc.) with a final merge-candidates pass
-   across clusters.
+   across clusters. *Deferred to Phase 2.*
 5. **Entity deduplication heuristics.** The dreaming agent needs
    guidance on recognizing possessive forms, markdown artifacts,
    and name variants as the same entity. Should this be in the
    dreaming prompt, or should there be a pre-processing normalization
-   step before the agent sees the graph?
+   step before the agent sees the graph? *Currently in the prompt
+   only — no pre-processing normalization.*

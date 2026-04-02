@@ -140,13 +140,18 @@ import {
 	enqueueDocumentIngestJob,
 	enqueueExtractionJob,
 	ensureRetentionWorker,
+	getDreamingPasses,
+	getDreamingState,
+	getDreamingWorker,
 	getPipelineWorkerStatus,
 	getSynthesisWorker,
 	nudgeExtractionWorker,
 	readLastSynthesisTime,
+	setDreamingWorker,
 	startPipeline,
 	stopPipeline,
 } from "./pipeline";
+import { AlreadyRunningError, type DreamingWorkerHandle, startDreamingWorker } from "./pipeline/dreaming-worker";
 import { getFeedbackTelemetry } from "./pipeline/aspect-feedback";
 import { clusterEntities } from "./pipeline/community-detection";
 import { deadLetterExtractionJob, deadLetterPendingExtractionJobs } from "./pipeline/extraction-fallback";
@@ -166,6 +171,7 @@ import {
 	stopModelRegistry,
 } from "./pipeline/model-registry";
 import {
+	DEFAULT_OLLAMA_FALLBACK_MODEL,
 	createAnthropicProvider,
 	createClaudeCodeProvider,
 	createCodexProvider,
@@ -499,6 +505,7 @@ let embeddingTrackerHandle: EmbeddingTrackerHandle | null = null;
 let predictorClientRef: PredictorClient | null = null;
 let shadowProcess: ChildProcess | null = null;
 let skillReconcilerHandle: ReconcilerHandle | null = null;
+let dreamingWorkerHandle: DreamingWorkerHandle | null = null;
 let structuralBackfillTimer: ReturnType<typeof setTimeout> | null = null;
 let pipelineTransition = false;
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
@@ -8119,6 +8126,81 @@ app.post("/api/pipeline/models/refresh", async (c) => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// Dreaming API
+// ---------------------------------------------------------------------------
+
+app.use("/api/dream/*", async (c, next) => {
+	return requirePermission("admin", authConfig)(c, next);
+});
+
+app.get("/api/dream/status", (c) => {
+	// loadMemoryConfig on each request intentionally: this is a polled
+	// admin endpoint and callers expect fresh config values after an
+	// agent.yaml edit without restarting the daemon. Consistent with
+	// other polled status endpoints in this file.
+	const cfg = loadMemoryConfig(AGENTS_DIR);
+	const accessor = getDbAccessor();
+	const agentId = resolveAgentId({
+		agentId: c.req.query("agentId") ?? c.req.header("x-signet-agent-id"),
+	});
+
+	const state = getDreamingState(accessor, agentId);
+	const passes = getDreamingPasses(accessor, agentId, 10);
+	// The dreaming worker currently runs only for the default agent.
+	// For non-default agent queries, report no worker (not a lie —
+	// no worker is processing their graph yet).
+	const defaultAgent = resolveAgentId({});
+	const worker = agentId === defaultAgent ? getDreamingWorker() : null;
+
+	return c.json({
+		enabled: cfg.dreaming.enabled,
+		worker: { running: worker !== null, active: worker?.running ?? false },
+		state,
+		config: {
+			tokenThreshold: cfg.dreaming.tokenThreshold,
+			backfillOnFirstRun: cfg.dreaming.backfillOnFirstRun,
+			maxInputTokens: cfg.dreaming.maxInputTokens,
+			maxOutputTokens: cfg.dreaming.maxOutputTokens,
+			timeout: cfg.dreaming.timeout,
+		},
+		passes,
+	});
+});
+
+app.post("/api/dream/trigger", async (c) => {
+	const worker = getDreamingWorker();
+	if (!worker) {
+		return c.json({ error: "Dreaming worker not running" }, 503);
+	}
+
+	const contentType = c.req.header("content-type") ?? "";
+	let mode: "compact" | "incremental" = "incremental";
+	if (contentType.includes("application/json")) {
+		const raw: unknown = await c.req.json().catch(() => null);
+		if (raw === null) {
+			return c.json({ error: "Malformed JSON body" }, 400);
+		}
+		if (typeof raw === "object" && raw !== null && "mode" in raw && raw.mode === "compact") {
+			mode = "compact";
+		}
+	}
+
+	// Async fire-and-forget: return 202 immediately so the caller is not
+	// blocked for the full pass duration (up to several minutes on large
+	// graphs). The pass runs in the background; poll GET /api/dream/status
+	// for completion. If a pass is already running, return 409.
+	let passId: string;
+	try {
+		passId = worker.triggerAsync(mode);
+	} catch (e) {
+		if (e instanceof AlreadyRunningError) return c.json({ error: e.message }, 409);
+		const msg = e instanceof Error ? e.message : String(e);
+		return c.json({ error: msg }, 500);
+	}
+	return c.json({ accepted: true, passId, status: "running", mode }, 202);
+});
+
 app.get("/api/predictor/status", async (c) => {
 	const cfg = loadMemoryConfig(AGENTS_DIR);
 	const predictorCfg = cfg.pipelineV2.predictor;
@@ -11536,6 +11618,19 @@ async function stopPipelineRuntime(): Promise<void> {
 		embeddingTrackerHandle = null;
 	}
 
+	if (dreamingWorkerHandle) {
+		dreamingWorkerHandle.stop();
+		// Await any in-flight pass (up to 30s) before the DB closes.
+		// Without this, a pass completing after stopPipeline() would throw
+		// on the closed DB connection.
+		if (dreamingWorkerHandle.activePass) {
+			const timeout = new Promise<void>((resolve) => setTimeout(resolve, 30_000));
+			await Promise.race([dreamingWorkerHandle.activePass.catch(() => undefined), timeout]);
+		}
+		dreamingWorkerHandle = null;
+		setDreamingWorker(null);
+	}
+
 	try {
 		await stopPipeline();
 	} catch {
@@ -12218,6 +12313,27 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 			fetchEmbedding,
 			checkEmbeddingProvider,
 		);
+	}
+
+	// Dreaming worker — periodic knowledge-graph consolidation via a smart model.
+	// Runs independently from extraction; uses its own configured provider.
+	// NOTE: Currently starts a single worker for the default agent. Multi-agent
+	// support would require iterating the agent roster and starting one worker
+	// per agent (Phase 2 / dreaming-as-session work).
+	if (memoryCfg.dreaming.enabled && !pipelinePaused && !memoryCfg.pipelineV2.mutationsFrozen) {
+		try {
+			dreamingWorkerHandle = startDreamingWorker(
+				getDbAccessor(),
+				memoryCfg.dreaming,
+				AGENTS_DIR,
+				resolveAgentId({}),
+			);
+			setDreamingWorker(dreamingWorkerHandle);
+		} catch (err) {
+			logger.warn("dreaming", "Failed to start dreaming worker (non-fatal)", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
 	}
 
 	// One-time structural backfill: populate entity_aspects/attributes for
