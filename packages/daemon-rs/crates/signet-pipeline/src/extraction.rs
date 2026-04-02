@@ -61,7 +61,7 @@ struct RawExtraction {
 
 const MAX_FACTS: usize = 20;
 const MAX_ENTITIES: usize = 15;
-const MIN_FACT_LEN: usize = 20;
+const MIN_FACT_LEN: usize = 80;
 const MAX_FACT_LEN: usize = 2000;
 const MAX_INPUT_CHARS: usize = 12_000;
 
@@ -90,7 +90,7 @@ pub fn build_prompt(content: &str) -> String {
         r#"Extract key facts and entity relationships from the following content.
 
 Return a JSON object with:
-- "facts": array of objects with "content" (string, 20-2000 chars, atomic and self-contained), "type" (one of: fact, preference, decision, rationale, procedural, semantic), "confidence" (0.0-1.0)
+- "facts": array of objects with "content" (string, 80-2000 chars, atomic and self-contained), "type" (one of: fact, preference, decision, rationale, procedural, semantic), "confidence" (0.0-1.0)
 - "entities": array of objects with "source" (string), "target" (string), "relationship" (string), "source_type" (optional string), "target_type" (optional string)
 
 Rules:
@@ -331,7 +331,7 @@ mod tests {
 
     #[test]
     fn parse_valid_extraction() {
-        let raw = r#"{"facts":[{"content":"The user prefers async/await over callbacks for all new code","type":"preference","confidence":0.9}],"entities":[{"source":"UserService","target":"Database","relationship":"queries"}]}"#;
+        let raw = r#"{"facts":[{"content":"The user prefers async/await over callbacks for all new TypeScript and Rust code in this project","type":"preference","confidence":0.9}],"entities":[{"source":"UserService","target":"Database","relationship":"queries"}]}"#;
 
         let result = parse(raw);
         assert_eq!(result.facts.len(), 1);
@@ -344,7 +344,7 @@ mod tests {
     #[test]
     fn parse_with_fences() {
         let raw = r#"```json
-{"facts":[{"content":"Rust 2024 edition supports let-chain syntax in if expressions","type":"fact","confidence":0.85}],"entities":[]}
+{"facts":[{"content":"Rust 2024 edition supports let-chain syntax in if-let expressions for cleaner pattern matching","type":"fact","confidence":0.85}],"entities":[]}
 ```"#;
 
         let result = parse(raw);
@@ -357,7 +357,7 @@ mod tests {
         let raw = r#"<think>
 Let me analyze the content...
 </think>
-{"facts":[{"content":"The daemon uses WAL mode for SQLite to improve concurrent read performance","type":"fact","confidence":0.95}],"entities":[]}"#;
+{"facts":[{"content":"The signet daemon uses WAL journal mode for SQLite to improve concurrent read performance under load","type":"fact","confidence":0.95}],"entities":[]}"#;
 
         let result = parse(raw);
         assert_eq!(result.facts.len(), 1);
@@ -374,7 +374,7 @@ Let me analyze the content...
 
     #[test]
     fn parse_normalizes_unknown_type() {
-        let raw = r#"{"facts":[{"content":"Some fact that is long enough to pass validation checks here","type":"unknown_type","confidence":0.5}],"entities":[]}"#;
+        let raw = r#"{"facts":[{"content":"Some fact about the project configuration that is long enough to pass the validation length gate","type":"unknown_type","confidence":0.5}],"entities":[]}"#;
 
         let result = parse(raw);
         assert_eq!(result.facts.len(), 1);
@@ -383,7 +383,7 @@ Let me analyze the content...
 
     #[test]
     fn parse_clamps_confidence() {
-        let raw = r#"{"facts":[{"content":"A fact with over-confident score that should be clamped to valid range","type":"fact","confidence":1.5}],"entities":[]}"#;
+        let raw = r#"{"facts":[{"content":"A fact about the signet daemon configuration with an over-confident score that should be clamped","type":"fact","confidence":1.5}],"entities":[]}"#;
 
         let result = parse(raw);
         assert_eq!(result.facts.len(), 1);

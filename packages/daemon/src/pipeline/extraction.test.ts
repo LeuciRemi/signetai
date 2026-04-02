@@ -23,11 +23,15 @@ function mockProvider(responses: string[]): LlmProvider {
 	};
 }
 
+// Inputs must be >= MIN_FACT_LENGTH (80) chars to pass the early-return guard.
+const INPUT = "User prefers dark mode and uses vim keybindings in their VS Code development environment";
+const INPUT_GENERIC = "Some content that is long enough to pass the extraction input gate and be processed fully";
+
 const VALID_RESPONSE = JSON.stringify({
 	facts: [
-		{ content: "User prefers dark mode", type: "preference", confidence: 0.9 },
+		{ content: "User prefers dark mode for their terminal, editor, and all development tool interfaces", type: "preference", confidence: 0.9 },
 		{
-			content: "User uses vim keybindings in VS Code",
+			content: "User uses vim keybindings in VS Code and has customized their keybinding configuration extensively",
 			type: "preference",
 			confidence: 0.85,
 		},
@@ -60,17 +64,17 @@ describe("extractFactsAndEntities", () => {
 			},
 		};
 
-		await extractFactsAndEntities("User prefers dark mode and uses vim keybindings", provider, { timeoutMs: 12345 });
+		await extractFactsAndEntities(INPUT, provider, { timeoutMs: 12345 });
 
 		expect(seenTimeout).toBe(12345);
 	});
 
 	it("parses valid JSON response correctly", async () => {
 		const provider = mockProvider([VALID_RESPONSE]);
-		const result = await extractFactsAndEntities("User prefers dark mode and uses vim keybindings", provider);
+		const result = await extractFactsAndEntities(INPUT, provider);
 
 		expect(result.facts).toHaveLength(2);
-		expect(result.facts[0].content).toBe("User prefers dark mode");
+		expect(result.facts[0].content).toBe("User prefers dark mode for their terminal, editor, and all development tool interfaces");
 		expect(result.facts[0].type).toBe("preference");
 		expect(result.facts[0].confidence).toBe(0.9);
 		expect(result.entities).toHaveLength(1);
@@ -85,7 +89,7 @@ describe("extractFactsAndEntities", () => {
 ${VALID_RESPONSE}
 \`\`\``;
 		const provider = mockProvider([fenced]);
-		const result = await extractFactsAndEntities("User prefers dark mode and uses vim keybindings", provider);
+		const result = await extractFactsAndEntities(INPUT, provider);
 
 		expect(result.facts).toHaveLength(2);
 		expect(result.entities).toHaveLength(1);
@@ -97,7 +101,7 @@ ${VALID_RESPONSE}
 ${VALID_RESPONSE}
 \`\`\``;
 		const provider = mockProvider([fenced]);
-		const result = await extractFactsAndEntities("User prefers dark mode and uses vim keybindings", provider);
+		const result = await extractFactsAndEntities(INPUT, provider);
 
 		expect(result.facts).toHaveLength(2);
 	});
@@ -105,7 +109,7 @@ ${VALID_RESPONSE}
 	it("parses JSON when model adds prose before and after", async () => {
 		const wrapped = `Here is the extracted data:\n\n${VALID_RESPONSE}\n\nDone.`;
 		const provider = mockProvider([wrapped]);
-		const result = await extractFactsAndEntities("User prefers dark mode and uses vim keybindings", provider);
+		const result = await extractFactsAndEntities(INPUT, provider);
 
 		expect(result.facts).toHaveLength(2);
 		expect(result.entities).toHaveLength(1);
@@ -115,14 +119,14 @@ ${VALID_RESPONSE}
 	it("parses JSON with trailing commas from fallback model", async () => {
 		const trailingCommaResponse = `{
 		  "facts": [
-		    {"content": "User prefers dark mode for terminal and editor interfaces", "type": "preference", "confidence": 0.9,},
+		    {"content": "User prefers dark mode for their terminal, editor, and all development tool interfaces in daily work", "type": "preference", "confidence": 0.9,},
 		  ],
 		  "entities": [
 		    {"source": "User", "relationship": "prefers", "target": "dark mode", "confidence": 0.9,},
 		  ],
 		}`;
 		const provider = mockProvider([trailingCommaResponse]);
-		const result = await extractFactsAndEntities("User prefers dark mode and uses vim keybindings", provider);
+		const result = await extractFactsAndEntities(INPUT, provider);
 
 		expect(result.facts).toHaveLength(1);
 		expect(result.entities).toHaveLength(1);
@@ -132,24 +136,24 @@ ${VALID_RESPONSE}
 	it("truncates over-limit facts to 20", async () => {
 		// Generate 25 valid facts
 		const manyFacts = Array.from({ length: 25 }, (_, i) => ({
-			content: `Fact number ${i + 1} that is long enough to pass validation`,
+			content: `Fact number ${i + 1} extracted from the session transcript that contains enough detail to pass validation`,
 			type: "fact",
 			confidence: 0.8,
 		}));
 		const response = JSON.stringify({ facts: manyFacts, entities: [] });
 		const provider = mockProvider([response]);
-		const result = await extractFactsAndEntities("Some long enough input text for extraction", provider);
+		const result = await extractFactsAndEntities(INPUT_GENERIC, provider);
 
 		expect(result.facts).toHaveLength(20);
 		expect(result.warnings.some((w) => w.includes("Truncated facts"))).toBe(true);
 	});
 
-	it("rejects trivial facts (< 10 chars) with a warning", async () => {
+	it("rejects trivial facts (< 80 chars) with a warning", async () => {
 		const response = JSON.stringify({
 			facts: [
-				{ content: "short", type: "fact", confidence: 0.9 },
+				{ content: "short fact that is under the minimum length threshold", type: "fact", confidence: 0.9 },
 				{
-					content: "This one is long enough to pass",
+					content: "This fact contains enough detail about the user's development environment preferences to pass validation",
 					type: "fact",
 					confidence: 0.8,
 				},
@@ -157,11 +161,11 @@ ${VALID_RESPONSE}
 			entities: [],
 		});
 		const provider = mockProvider([response]);
-		const result = await extractFactsAndEntities("Some content that is long enough", provider);
+		const result = await extractFactsAndEntities(INPUT_GENERIC, provider);
 
 		// Only the long fact should survive
 		expect(result.facts).toHaveLength(1);
-		expect(result.facts[0].content).toBe("This one is long enough to pass");
+		expect(result.facts[0].content).toBe("This fact contains enough detail about the user's development environment preferences to pass validation");
 		expect(result.warnings.some((w) => w.includes("too short"))).toBe(true);
 	});
 
@@ -169,7 +173,7 @@ ${VALID_RESPONSE}
 		const response = JSON.stringify({
 			facts: [
 				{
-					content: "Some fact that is definitely long enough",
+					content: "Some fact about the user's project configuration that is definitely long enough to pass the validation gate",
 					type: "bogustype",
 					confidence: 0.7,
 				},
@@ -177,7 +181,7 @@ ${VALID_RESPONSE}
 			entities: [],
 		});
 		const provider = mockProvider([response]);
-		const result = await extractFactsAndEntities("Some content that is long enough", provider);
+		const result = await extractFactsAndEntities(INPUT_GENERIC, provider);
 
 		expect(result.facts).toHaveLength(1);
 		expect(result.facts[0].type).toBe("fact");
@@ -186,7 +190,7 @@ ${VALID_RESPONSE}
 
 	it("returns empty with warning on total parse failure", async () => {
 		const provider = mockProvider(["this is not valid json at all"]);
-		const result = await extractFactsAndEntities("Some content that is long enough to process", provider);
+		const result = await extractFactsAndEntities(INPUT_GENERIC, provider);
 
 		expect(result.facts).toHaveLength(0);
 		expect(result.entities).toHaveLength(0);
@@ -197,12 +201,12 @@ ${VALID_RESPONSE}
 		const response = JSON.stringify({
 			facts: [
 				{
-					content: "Fact with confidence above one point zero",
+					content: "Fact with confidence above one point zero and enough detail about the project to satisfy the length gate",
 					type: "fact",
 					confidence: 1.5,
 				},
 				{
-					content: "Fact with negative confidence value here",
+					content: "Fact with negative confidence value here and enough additional context to satisfy the minimum length gate",
 					type: "fact",
 					confidence: -0.3,
 				},
@@ -217,16 +221,35 @@ ${VALID_RESPONSE}
 			],
 		});
 		const provider = mockProvider([response]);
-		const result = await extractFactsAndEntities("Some content that is long enough to process", provider);
+		const result = await extractFactsAndEntities(INPUT_GENERIC, provider);
 
 		expect(result.facts[0].confidence).toBe(1);
 		expect(result.facts[1].confidence).toBe(0);
 		expect(result.entities[0].confidence).toBe(1);
 	});
 
+	it("rejects facts in the 20-79 char range that previously passed with MIN_FACT_LENGTH=20", async () => {
+		const response = JSON.stringify({
+			facts: [
+				{ content: "User prefers dark mode in the editor", type: "preference", confidence: 0.9 },
+				{ content: "The daemon runs on port 3850 by default for HTTP serving", type: "fact", confidence: 0.85 },
+				{ content: "User's development environment runs Hyprland window manager on Arch Linux with custom keybindings configured", type: "fact", confidence: 0.8 },
+			],
+			entities: [],
+		});
+		const provider = mockProvider([response]);
+		const result = await extractFactsAndEntities(INPUT_GENERIC, provider);
+
+		// First two facts are 36 and 56 chars — both under 80, should be rejected
+		// Third fact is 108 chars — should pass
+		expect(result.facts).toHaveLength(1);
+		expect(result.facts[0].content).toContain("Hyprland");
+		expect(result.warnings.filter((w) => w.includes("too short"))).toHaveLength(2);
+	});
+
 	it("returns early with warning when input is too short", async () => {
 		const provider = mockProvider(["anything"]);
-		// Less than 20 chars
+		// Less than MIN_FACT_LENGTH chars
 		const result = await extractFactsAndEntities("short", provider);
 
 		expect(result.facts).toHaveLength(0);
@@ -270,7 +293,7 @@ ${VALID_RESPONSE}
 			],
 		});
 		const provider = mockProvider([response]);
-		const result = await extractFactsAndEntities("Some content that is long enough to process", provider);
+		const result = await extractFactsAndEntities(INPUT_GENERIC, provider);
 
 		// Only the valid entity passes
 		expect(result.entities).toHaveLength(1);
@@ -289,7 +312,7 @@ ${VALID_RESPONSE}
 			},
 		};
 
-		await expect(extractFactsAndEntities("Some content that is long enough to process", errorProvider)).rejects.toThrow(
+		await expect(extractFactsAndEntities(INPUT_GENERIC, errorProvider)).rejects.toThrow(
 			"LLM extraction failed: connection refused",
 		);
 	});
@@ -297,13 +320,13 @@ ${VALID_RESPONSE}
 	it("accepts all valid memory types", async () => {
 		const validTypes = ["fact", "preference", "decision", "procedural", "semantic"];
 		const facts = validTypes.map((type) => ({
-			content: `A fact of type ${type} that is long enough`,
+			content: `A fact of type ${type} that contains enough descriptive detail about the system configuration to pass validation`,
 			type,
 			confidence: 0.8,
 		}));
 		const response = JSON.stringify({ facts, entities: [] });
 		const provider = mockProvider([response]);
-		const result = await extractFactsAndEntities("Some content that is long enough to process", provider);
+		const result = await extractFactsAndEntities(INPUT_GENERIC, provider);
 
 		expect(result.facts).toHaveLength(validTypes.length);
 		for (let i = 0; i < validTypes.length; i++) {
@@ -316,7 +339,7 @@ ${VALID_RESPONSE}
 	it("handles non-array facts/entities gracefully", async () => {
 		const response = JSON.stringify({ facts: "not an array", entities: null });
 		const provider = mockProvider([response]);
-		const result = await extractFactsAndEntities("Some content that is long enough to process", provider);
+		const result = await extractFactsAndEntities(INPUT_GENERIC, provider);
 
 		expect(result.facts).toHaveLength(0);
 		expect(result.entities).toHaveLength(0);
@@ -325,7 +348,7 @@ ${VALID_RESPONSE}
 	it("parses JSON when Copilot model prefixes with explanation text", async () => {
 		const copilotStyle = `Sure, here is the extracted data from the text:\n\n${VALID_RESPONSE}`;
 		const provider = mockProvider([copilotStyle]);
-		const result = await extractFactsAndEntities("User prefers dark mode and uses vim keybindings", provider);
+		const result = await extractFactsAndEntities(INPUT, provider);
 
 		expect(result.facts).toHaveLength(2);
 		expect(result.entities).toHaveLength(1);
@@ -335,7 +358,7 @@ ${VALID_RESPONSE}
 	it("parses JSON when model adds verbose preamble without code fence", async () => {
 		const verbose = `I've analyzed the text and extracted the following facts and entities. Here is the result:\n${VALID_RESPONSE}`;
 		const provider = mockProvider([verbose]);
-		const result = await extractFactsAndEntities("User prefers dark mode and uses vim keybindings", provider);
+		const result = await extractFactsAndEntities(INPUT, provider);
 
 		expect(result.facts).toHaveLength(2);
 		expect(result.entities).toHaveLength(1);
