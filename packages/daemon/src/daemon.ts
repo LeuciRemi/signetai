@@ -11235,13 +11235,16 @@ function chunkMarkdownHierarchically(
 // These are already distilled and inserted directly into the DB —
 // re-ingesting them through the chunker creates noisy duplicates.
 export const ARTIFACT_FILENAME_RE = /--(?:summary|transcript|compaction|manifest)\.md$/;
+export const MEMORY_BACKUP_FILENAME_RE = /^MEMORY\.(?:backup|bak|pre)-.+\.md$/;
 
 async function ingestMemoryMarkdown(filePath: string): Promise<number> {
 	// Skip MEMORY.md (index file, not content)
 	if (filePath.endsWith("MEMORY.md")) return 0;
 
-	// Skip pipeline artifact files (summaries, transcripts, etc.)
-	if (ARTIFACT_FILENAME_RE.test(basename(filePath))) return 0;
+	const filenameWithExt = basename(filePath);
+
+	// Skip generated MEMORY backups and pipeline artifacts.
+	if (MEMORY_BACKUP_FILENAME_RE.test(filenameWithExt) || ARTIFACT_FILENAME_RE.test(filenameWithExt)) return 0;
 
 	// Read file content
 	let content: string;
