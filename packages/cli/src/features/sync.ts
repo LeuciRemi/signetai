@@ -1,9 +1,9 @@
-import { OhMyPiConnector } from "@signet/connector-oh-my-pi";
-import { OpenClawConnector } from "@signet/connector-openclaw";
-import chalk from "chalk";
 import { copyFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { OhMyPiConnector } from "@signet/connector-oh-my-pi";
+import { OpenClawConnector } from "@signet/connector-openclaw";
+import chalk from "chalk";
 
 interface SkillSync {
 	readonly installed: readonly string[];
@@ -18,7 +18,11 @@ interface SyncState {
 
 interface Deps {
 	readonly agentsDir: string;
-	readonly configureHarnessHooks: (harness: string, basePath: string) => Promise<void>;
+	readonly configureHarnessHooks: (
+		harness: string,
+		basePath: string,
+		options?: { openclawRuntimePath?: "plugin" | "legacy" },
+	) => Promise<void>;
 	readonly getSkillsSourceDir: () => string;
 	readonly getTemplatesDir: () => string;
 	readonly signetLogo: () => string;
@@ -119,7 +123,26 @@ async function syncHarnessHooks(basePath: string, deps: Deps): Promise<number> {
 	let synced = 0;
 	for (const harness of detectHarnesses()) {
 		try {
-			await deps.configureHarnessHooks(harness, basePath);
+			let runtimePath: "plugin" | "legacy" | undefined;
+			if (harness === "openclaw") {
+				const state = new OpenClawConnector().getRuntimeState();
+				if (state === "legacy") {
+					runtimePath = "plugin";
+					console.log(
+						chalk.yellow(
+							"  ↺ OpenClaw legacy-only config detected, migrating to the plugin runtime path for full lifecycle capture",
+						),
+					);
+				}
+				// Leave dual-state installs visible in doctor/status for manual cleanup.
+				// sync only self-heals legacy-only configs and should not silently remove hooks.
+			}
+
+			await deps.configureHarnessHooks(
+				harness,
+				basePath,
+				runtimePath ? { openclawRuntimePath: runtimePath } : undefined,
+			);
 			console.log(chalk.green(`  ✓ hooks re-registered for ${harness}`));
 			synced += 1;
 		} catch {

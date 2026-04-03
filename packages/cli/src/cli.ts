@@ -261,6 +261,8 @@ async function configureHarnessHooks(
 		}
 		case "openclaw": {
 			const connector = new OpenClawConnector();
+			// sync.ts can force plugin migration by passing openclawRuntimePath here;
+			// fall back to the discovered runtime only when no explicit override was provided.
 			const runtimePath = options?.openclawRuntimePath ?? connector.getConfiguredRuntimePath() ?? "plugin";
 			// Install connector first — writes config with runtimePath so
 			// ensureOpenClawPluginPackage's getConfiguredRuntimePath() check passes.

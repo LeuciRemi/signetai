@@ -1,8 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { OpenClawConnector, type OpenClawRuntimeState } from "@signet/connector-openclaw";
 import { detectSchema, getMissingIdentityFiles, hasValidIdentity } from "@signet/core";
 import chalk from "chalk";
+import { join } from "node:path";
 import { daemonAccessLines } from "../lib/network.js";
 import { getGitRemoteState, getSnapshotProtection, hasOpenClawWorkspaceLink } from "../lib/workspace-protection.js";
 import Database from "../sqlite.js";
@@ -68,47 +67,10 @@ interface StatusReport {
 		readonly origin: string | null;
 		readonly snapshot: string | null;
 	};
-	// True when an openclaw config was found with both the legacy hook AND the
-	// plugin path enabled simultaneously (dual-system misconfiguration).
 	readonly openclawDualSystem: boolean;
+	readonly openclawRuntime: OpenClawRuntimeState;
 	readonly openclawWorkspaceLinked: boolean;
 	readonly openclawWorkspaceUnprotected: boolean;
-}
-
-/**
- * Check candidate openclaw config paths for the dual-system misconfiguration
- * where both the legacy hook and plugin are enabled simultaneously.
- */
-function detectOpenClawDualSystem(): boolean {
-	const home = homedir();
-	const candidates = [
-		process.env.OPENCLAW_CONFIG_PATH,
-		process.env.CLAWDBOT_CONFIG_PATH,
-		join(home, ".openclaw", "openclaw.json"),
-		join(home, ".clawdbot", "clawdbot.json"),
-	].filter((p): p is string => typeof p === "string" && p.length > 0);
-
-	for (const path of candidates) {
-		try {
-			if (!existsSync(path)) continue;
-			const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-			const hooks = raw.hooks as Record<string, unknown> | undefined;
-			const internal = hooks?.internal as Record<string, unknown> | undefined;
-			const entries = internal?.entries as Record<string, unknown> | undefined;
-			const hook = entries?.["signet-memory"] as Record<string, unknown> | undefined;
-			const hookEnabled = hook?.enabled === true;
-
-			const plugins = raw.plugins as Record<string, unknown> | undefined;
-			const pluginEntries = plugins?.entries as Record<string, unknown> | undefined;
-			const plugin = pluginEntries?.["signet-memory-openclaw"] as Record<string, unknown> | undefined;
-			const pluginEnabled = plugin?.enabled === true;
-
-			if (hookEnabled && pluginEnabled) return true;
-		} catch {
-			// Unparseable config — skip
-		}
-	}
-	return false;
 }
 
 interface DoctorFinding {
@@ -141,6 +103,7 @@ export async function getStatusReport(basePath: string, deps: StatusDeps): Promi
 	const git = getGitRemoteState(basePath);
 	const snapshot = getSnapshotProtection(basePath);
 	const openclawWorkspaceLinked = hasOpenClawWorkspaceLink(basePath);
+	const openclawRuntime = new OpenClawConnector().getRuntimeState();
 	const report: StatusReport = {
 		basePath,
 		installed,
@@ -160,7 +123,8 @@ export async function getStatusReport(basePath: string, deps: StatusDeps): Promi
 			origin: git.origin,
 			snapshot,
 		},
-		openclawDualSystem: detectOpenClawDualSystem(),
+		openclawDualSystem: openclawRuntime === "dual",
+		openclawRuntime,
 		openclawWorkspaceLinked,
 		openclawWorkspaceUnprotected: openclawWorkspaceLinked && git.origin === null && snapshot === null,
 	};
@@ -272,6 +236,10 @@ export async function showStatus(options: { path?: string; json?: boolean }, dep
 	} else if (report.openclawWorkspaceLinked && report.git.snapshot) {
 		console.log(chalk.yellow("  ⚠ OpenClaw workspace protection: local snapshot"));
 		console.log(chalk.dim(`    Snapshot: ${report.git.snapshot}`));
+	}
+	if (report.openclawRuntime === "legacy") {
+		console.log(chalk.yellow("  ⚠ OpenClaw runtime: legacy-only"));
+		console.log(chalk.dim("    Run `signet sync` to migrate to the plugin path and restore full lifecycle capture."));
 	}
 	console.log();
 }
@@ -418,12 +386,21 @@ function getDoctorFindings(report: StatusReport): DoctorFinding[] {
 		});
 	}
 
-	if (report.openclawDualSystem) {
+	if (report.openclawRuntime === "dual") {
 		findings.push({
 			level: "error",
 			message:
 				"OpenClaw dual-system conflict: legacy hook AND plugin are both enabled. This causes duplicate memories, 2× token burn, and 409 session errors.",
 			fix: 'Run `signet setup --harness openclaw` to repair, or set hooks.internal.entries["signet-memory"].enabled = false in your openclaw config.',
+		});
+	}
+
+	if (report.openclawRuntime === "legacy") {
+		findings.push({
+			level: "warn",
+			message:
+				"OpenClaw is still running on the legacy Signet hook path. Manual commands still work, but session-start, prompt-submit, compaction, and session-end capture stay disabled.",
+			fix: "Run `signet sync` to migrate this OpenClaw config to the plugin runtime path.",
 		});
 	}
 

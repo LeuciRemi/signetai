@@ -71,6 +71,8 @@ export interface OpenClawInstallOptions {
 	runtimePath?: "plugin" | "legacy";
 }
 
+export type OpenClawRuntimeState = "plugin" | "legacy" | "dual" | null;
+
 /**
  * Recursively merge `source` into `target`. Arrays are replaced (not
  * concatenated); objects are merged. Mutates and returns `target`.
@@ -678,8 +680,9 @@ export class OpenClawConnector extends BaseConnector {
 		return false;
 	}
 
-	getConfiguredRuntimePath(): "plugin" | "legacy" | null {
+	getRuntimeState(): OpenClawRuntimeState {
 		let sawLegacy = false;
+		let sawPlugin = false;
 
 		for (const configPath of this.getDiscoveredConfigPaths()) {
 			try {
@@ -691,20 +694,35 @@ export class OpenClawConnector extends BaseConnector {
 				const pluginSlot =
 					config.plugins?.slots?.memory === "signet-memory-openclaw" ||
 					config.plugins?.slots?.memory === "signet-memory";
+				const plugin = pluginEntry || pluginSlot;
+				const legacy = config.hooks?.internal?.entries?.["signet-memory"]?.enabled === true;
 
-				if (pluginEntry || pluginSlot) {
-					return "plugin";
-				}
-
-				if (config.hooks?.internal?.entries?.["signet-memory"]?.enabled === true) {
-					sawLegacy = true;
+				sawPlugin ||= plugin;
+				sawLegacy ||= legacy;
+				if (sawPlugin && sawLegacy) {
+					return "dual";
 				}
 			} catch {
 				// malformed config — skip
 			}
 		}
 
+		if (sawPlugin) {
+			return "plugin";
+		}
+
 		return sawLegacy ? "legacy" : null;
+	}
+
+	getConfiguredRuntimePath(): "plugin" | "legacy" | null {
+		const state = this.getRuntimeState();
+		if (state === "plugin" || state === "dual") {
+			return "plugin";
+		}
+		if (state === "legacy") {
+			return "legacy";
+		}
+		return null;
 	}
 
 	/**
@@ -821,10 +839,26 @@ export class OpenClawConnector extends BaseConnector {
 		}
 
 		// Historical home-dir overrides.
-		push(process.env.OPENCLAW_HOME ? join(expandHome(process.env.OPENCLAW_HOME, this.getHomeDir()), "openclaw.json") : undefined);
-		push(process.env.CLAWDBOT_HOME ? join(expandHome(process.env.CLAWDBOT_HOME, this.getHomeDir()), "clawdbot.json") : undefined);
-		push(process.env.MOLDBOT_HOME ? join(expandHome(process.env.MOLDBOT_HOME, this.getHomeDir()), "moldbot.json") : undefined);
-		push(process.env.MOLTBOT_HOME ? join(expandHome(process.env.MOLTBOT_HOME, this.getHomeDir()), "moltbot.json") : undefined);
+		push(
+			process.env.OPENCLAW_HOME
+				? join(expandHome(process.env.OPENCLAW_HOME, this.getHomeDir()), "openclaw.json")
+				: undefined,
+		);
+		push(
+			process.env.CLAWDBOT_HOME
+				? join(expandHome(process.env.CLAWDBOT_HOME, this.getHomeDir()), "clawdbot.json")
+				: undefined,
+		);
+		push(
+			process.env.MOLDBOT_HOME
+				? join(expandHome(process.env.MOLDBOT_HOME, this.getHomeDir()), "moldbot.json")
+				: undefined,
+		);
+		push(
+			process.env.MOLTBOT_HOME
+				? join(expandHome(process.env.MOLTBOT_HOME, this.getHomeDir()), "moltbot.json")
+				: undefined,
+		);
 
 		for (const pair of namedConfigPairs) {
 			push(join(home, `.${pair.dirName}`, pair.fileName));

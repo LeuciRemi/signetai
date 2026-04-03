@@ -410,7 +410,9 @@ next setup or sync run.
 
 OpenClaw is the flagship harness for the lossless working-memory model.
 The plugin path gives the closest match to the full LCM runtime, while the
-legacy hook path remains compatibility-only.
+legacy hook path remains compatibility-only. `signet sync` auto-migrates
+legacy-only Signet installs to the plugin path, and `signet doctor` warns
+when a config is still stuck on legacy-only mode.
 
 ### Files managed by Signet
 

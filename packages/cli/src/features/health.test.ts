@@ -3,13 +3,22 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getExtractionStatusNotice, getStatusReport } from "./health.js";
+import { getExtractionStatusNotice, getStatusReport, showDoctor } from "./health.js";
 
+const originalHome = process.env.HOME;
 const originalOpenClawConfig = process.env.OPENCLAW_CONFIG_PATH;
 
 afterEach(() => {
+	if (originalHome === undefined) {
+		// biome-ignore lint/performance/noDelete: assigning undefined to process.env stores the string "undefined"
+		delete process.env.HOME;
+	} else {
+		process.env.HOME = originalHome;
+	}
+
 	if (originalOpenClawConfig === undefined) {
-		process.env.OPENCLAW_CONFIG_PATH = undefined;
+		// biome-ignore lint/performance/noDelete: assigning undefined to process.env stores the string "undefined"
+		delete process.env.OPENCLAW_CONFIG_PATH;
 	} else {
 		process.env.OPENCLAW_CONFIG_PATH = originalOpenClawConfig;
 	}
@@ -291,6 +300,114 @@ describe("status report openclaw backup risk", () => {
 			expect(report.openclawWorkspaceUnprotected).toBe(true);
 			expect(report.git.snapshot).toBeNull();
 		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("status report openclaw runtime", () => {
+	it("reports legacy-only runtime when only the hook path is enabled", async () => {
+		const root = mkdtempSync(join(tmpdir(), "health-runtime-"));
+		const workspace = join(root, "agents");
+		try {
+			process.env.HOME = root;
+			mkdirSync(workspace, { recursive: true });
+			const cfgPath = join(root, "openclaw.json");
+			writeFileSync(
+				cfgPath,
+				JSON.stringify({
+					hooks: {
+						internal: {
+							entries: {
+								"signet-memory": { enabled: true },
+							},
+						},
+					},
+				}),
+			);
+			process.env.OPENCLAW_CONFIG_PATH = cfgPath;
+			const report = await getStatusReport(workspace, depsFor(workspace));
+			expect(report.openclawDualSystem).toBe(false);
+			expect(report.openclawRuntime).toBe("legacy");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("reports dual runtime when hook and plugin paths are both enabled", async () => {
+		const root = mkdtempSync(join(tmpdir(), "health-runtime-"));
+		const workspace = join(root, "agents");
+		try {
+			process.env.HOME = root;
+			mkdirSync(workspace, { recursive: true });
+			const cfgPath = join(root, "openclaw.json");
+			writeFileSync(
+				cfgPath,
+				JSON.stringify({
+					hooks: {
+						internal: {
+							entries: {
+								"signet-memory": { enabled: true },
+							},
+						},
+					},
+					plugins: {
+						slots: { memory: "signet-memory-openclaw" },
+						entries: {
+							"signet-memory-openclaw": { enabled: true },
+						},
+					},
+				}),
+			);
+			process.env.OPENCLAW_CONFIG_PATH = cfgPath;
+			const report = await getStatusReport(workspace, depsFor(workspace));
+			expect(report.openclawDualSystem).toBe(true);
+			expect(report.openclawRuntime).toBe("dual");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("doctor warns when openclaw is still on the legacy-only runtime path", async () => {
+		const root = mkdtempSync(join(tmpdir(), "health-runtime-"));
+		const workspace = join(root, "agents");
+		const lines: string[] = [];
+		const oldLog = console.log;
+		try {
+			process.env.HOME = root;
+			mkdirSync(workspace, { recursive: true });
+			writeFileSync(join(workspace, "AGENTS.md"), "# src\n");
+			writeFileSync(join(workspace, "agent.yaml"), "version: 1\n");
+			writeFileSync(join(workspace, "SOUL.md"), "soul\n");
+			writeFileSync(join(workspace, "IDENTITY.md"), "identity\n");
+			writeFileSync(join(workspace, "USER.md"), "user\n");
+			writeFileSync(join(workspace, "MEMORY.md"), "memory\n");
+			mkdirSync(join(workspace, "memory"), { recursive: true });
+			writeFileSync(join(workspace, "memory", "memories.db"), "sqlite");
+			const cfgPath = join(root, "openclaw.json");
+			writeFileSync(
+				cfgPath,
+				JSON.stringify({
+					hooks: {
+						internal: {
+							entries: {
+								"signet-memory": { enabled: true },
+							},
+						},
+					},
+				}),
+			);
+			process.env.OPENCLAW_CONFIG_PATH = cfgPath;
+			console.log = (...args: unknown[]) => {
+				lines.push(args.join(" "));
+			};
+
+			await showDoctor({}, depsFor(workspace));
+
+			expect(lines.join("\n")).toContain("legacy Signet hook path");
+			expect(lines.join("\n")).toContain("Run `signet sync`");
+		} finally {
+			console.log = oldLog;
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
