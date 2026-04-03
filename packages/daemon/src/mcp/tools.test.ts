@@ -5,6 +5,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createMcpServer, refreshMarketplaceProxyTools } from "./tools.js";
 
@@ -588,6 +590,27 @@ describe("createMcpServer", () => {
 			const refresh = await refreshMarketplaceProxyTools(dynamicServer, { notify: false });
 			expect(refresh.changed).toBe(true);
 			expect(getToolNames(dynamicServer)).toContain("signet_dogfood_everything_get_sum");
+		});
+	});
+
+	describe("schema compatibility", () => {
+		it("no tool schema emits propertyNames (OpenAI compat)", async () => {
+			// propertyNames is emitted by z.record(z.string(), ValueType) and is
+			// rejected by the OpenAI function-calling API with a hard 400.
+			// This test calls tools/list through the actual MCP protocol to catch
+			// any regression at the serialization layer, not just the schema definition.
+			const [ct, st] = InMemoryTransport.createLinkedPair();
+			const client = new Client({ name: "test-client", version: "0.0.1" });
+			await server.connect(st);
+			await client.connect(ct);
+
+			const { tools } = await client.listTools();
+			for (const tool of tools) {
+				const schema = JSON.stringify(tool.inputSchema);
+				expect(schema, `tool '${tool.name}' schema contains 'propertyNames' — rejected by OpenAI`).not.toContain(
+					"propertyNames",
+				);
+			}
 		});
 	});
 });

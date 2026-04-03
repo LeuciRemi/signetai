@@ -28,6 +28,7 @@ import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ClaudeCodeConnector } from "@signet/connector-claude-code";
 import { CodexConnector } from "@signet/connector-codex";
+import { ForgeConnector } from "@signet/connector-forge";
 import { OhMyPiConnector } from "@signet/connector-oh-my-pi";
 import { OpenClawConnector } from "@signet/connector-openclaw";
 import { OpenCodeConnector } from "@signet/connector-opencode";
@@ -298,8 +299,11 @@ async function configureHarnessHooks(
 			break;
 		}
 		case "forge": {
-			// Forge is a first-party native harness managed as its own product.
-			// There are no hook/config patches to apply from the Signet CLI.
+			const connector = new ForgeConnector();
+			const result = await connector.install(basePath);
+			if (!result.success) {
+				console.warn(chalk.yellow(`  Warning: ForgeCode integration setup failed: ${result.message}`));
+			}
 			break;
 		}
 	}
