@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.93.3] - 2026-04-03
+
+### Bug Fixes
+
+- **cli**: auto-migrate legacy-only OpenClaw runtime (#446)
+
+
 ## [0.93.2] - 2026-04-03
 
 ### Bug Fixes
