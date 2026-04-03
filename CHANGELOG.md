@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.92.0] - 2026-04-03
+
+### Features
+
+- **connector-forge**: add ForgeCode connector (#444)
+
+
 ## [0.91.12] - 2026-04-02
 
 ### Features
