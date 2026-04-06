@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.93.7] - 2026-04-06
+
+### Features
+
+- OpenClaw adapter request normalization (#468)
+
+
 ## [0.93.5] - 2026-04-04
 
 ### Bug Fixes
