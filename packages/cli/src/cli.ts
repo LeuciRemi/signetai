@@ -54,6 +54,8 @@ import {
 	resolveGlobalPackagePath,
 	resolvePrimaryPackageManager,
 	symlinkSkills,
+	syncWorkspaceSourceRepo,
+	syncWorkspaceSourceRepoAsync,
 	unifySkills,
 } from "@signet/core";
 import chalk from "chalk";
@@ -1295,6 +1297,7 @@ registerAppCommands(program, {
 			signetLogo,
 			startDaemon,
 			syncBuiltinSkills,
+			syncWorkspaceSourceRepo: syncWorkspaceSourceRepoAsync,
 		}),
 	showDoctor: (options) => showDoctor(options, healthDeps),
 	showStatus: (options) => showStatus(options, healthDeps),
@@ -1308,6 +1311,7 @@ registerAppCommands(program, {
 			syncBuiltinSkills,
 			syncNativeEmbeddingModel,
 			syncPredictorBinary,
+			syncWorkspaceSourceRepo: syncWorkspaceSourceRepoAsync,
 		}),
 });
 
@@ -1421,6 +1425,7 @@ registerUpdateCommands(program, {
 	isOpenClawInstalled: () => new OpenClawConnector().isInstalled(),
 	isOhMyPiInstalled: () => new OhMyPiConnector().isInstalled(),
 	syncBuiltinSkills,
+	syncWorkspaceSourceRepo,
 });
 
 registerGitCommands(program, {

@@ -127,6 +127,18 @@ export {
 	SIGNET_GIT_PROTECTED_PATHS,
 	mergeSignetGitignoreEntries,
 } from "./gitignore";
+export {
+	SIGNET_SOURCE_CHECKOUT_DIRNAME,
+	SIGNET_SOURCE_REMOTE_URL,
+	resolveWorkspaceSourceRepoPath,
+	syncWorkspaceSourceRepoAsync,
+	syncWorkspaceSourceRepo,
+} from "./workspace-source-repo";
+export type {
+	WorkspaceSourceRepoStatus,
+	WorkspaceSourceRepoSyncOptions,
+	WorkspaceSourceRepoSyncResult,
+} from "./workspace-source-repo";
 
 // Portable export/import
 export {

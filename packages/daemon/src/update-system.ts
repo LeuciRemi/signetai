@@ -5,18 +5,20 @@
  * db-accessor.ts).
  */
 
-import { spawn } from "child_process";
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
-	parseSimpleYaml,
-	resolvePrimaryPackageManager,
-	getGlobalInstallCommand,
-	resolveGlobalPackagePath,
 	type PackageManagerFamily,
+	type WorkspaceSourceRepoSyncResult,
+	getGlobalInstallCommand,
+	parseSimpleYaml,
+	resolveGlobalPackagePath,
+	resolvePrimaryPackageManager,
+	syncWorkspaceSourceRepoAsync,
 } from "@signet/core";
 import { logger } from "./logger";
-import { compareVersions, isVersionNewer, isMajorUpgrade } from "./version";
+import { compareVersions, isMajorUpgrade, isVersionNewer } from "./version";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -488,6 +490,10 @@ interface UpdateVerificationDeps {
 	readFileSync: (path: string, encoding: BufferEncoding) => string;
 }
 
+interface FinalizeSuccessfulUpdateDeps {
+	syncWorkspaceSourceRepoAsync: (workspaceDir: string) => Promise<WorkspaceSourceRepoSyncResult>;
+}
+
 export function verifyInstalledVersion(
 	family: PackageManagerFamily,
 	packageName: string,
@@ -544,6 +550,41 @@ export function verifyInstalledVersion(
 	}
 }
 
+export async function finalizeSuccessfulUpdateInstall(
+	installedVersion: string,
+	stdout: string,
+	deps: FinalizeSuccessfulUpdateDeps = {
+		syncWorkspaceSourceRepoAsync: (workspaceDir) => syncWorkspaceSourceRepoAsync(workspaceDir),
+	},
+): Promise<UpdateRunResult> {
+	pendingRestartVersion = installedVersion;
+	lastUpdateCheck = null;
+	lastUpdateCheckTime = null;
+
+	const repoSync = await deps.syncWorkspaceSourceRepoAsync(agentsDir);
+	if (repoSync.status === "error") {
+		logger.warn("system", "Workspace Signet source checkout sync failed after update", {
+			path: repoSync.path,
+			message: repoSync.message,
+		});
+	} else if (repoSync.status !== "current") {
+		logger.info("system", "Workspace Signet source checkout sync result", {
+			path: repoSync.path,
+			status: repoSync.status,
+			message: repoSync.message,
+		});
+	}
+
+	logger.info("system", "Update installed successfully");
+	return {
+		success: true,
+		message: "Update installed. Restart daemon to apply.",
+		output: stdout,
+		installedVersion,
+		restartRequired: true,
+	};
+}
+
 export async function runUpdate(targetVersion?: string): Promise<UpdateRunResult> {
 	assertInitialized();
 	const normalizedTargetVersion = normalizeTargetVersion(targetVersion);
@@ -594,45 +635,45 @@ export async function runUpdate(targetVersion?: string): Promise<UpdateRunResult
 			});
 
 			proc.on("close", (code) => {
-				logger.info("update", "Update command exited", {
-					exitCode: code ?? -1,
-					command: `${installCommand.command} ${installCommand.args.join(" ")}`,
-				});
-				if (code === 0) {
-					const verification = verifyInstalledVersion(packageManager.family, NPM_PACKAGE, normalizedTargetVersion);
-					if (!verification.ok) {
-						logger.warn("system", "Update verification failed", {
-							reason: verification.message,
-							family: packageManager.family,
-						});
-						resolve({
-							success: false,
-							message: verification.message,
-							output: stdout + stderr,
-						});
+				void (async () => {
+					logger.info("update", "Update command exited", {
+						exitCode: code ?? -1,
+						command: `${installCommand.command} ${installCommand.args.join(" ")}`,
+					});
+					if (code === 0) {
+						const verification = verifyInstalledVersion(packageManager.family, NPM_PACKAGE, normalizedTargetVersion);
+						if (!verification.ok) {
+							logger.warn("system", "Update verification failed", {
+								reason: verification.message,
+								family: packageManager.family,
+							});
+							resolve({
+								success: false,
+								message: verification.message,
+								output: stdout + stderr,
+							});
+							return;
+						}
+
+						resolve(await finalizeSuccessfulUpdateInstall(verification.installedVersion, stdout));
 						return;
 					}
 
-					pendingRestartVersion = verification.installedVersion;
-					lastUpdateCheck = null;
-					lastUpdateCheckTime = null;
-
-					logger.info("system", "Update installed successfully");
-					resolve({
-						success: true,
-						message: "Update installed. Restart daemon to apply.",
-						output: stdout,
-						installedVersion: verification.installedVersion,
-						restartRequired: true,
-					});
-				} else {
 					logger.warn("system", "Update failed", { stderr });
 					resolve({
 						success: false,
 						message: `Update failed: ${stderr || "Unknown error"}`,
 						output: stdout + stderr,
 					});
-				}
+				})().catch((err: unknown) => {
+					const message = err instanceof Error ? err.message : "Unknown error";
+					logger.warn("system", "Update post-install handling failed", { error: message });
+					resolve({
+						success: false,
+						message: `Update failed: ${message}`,
+						output: stdout + stderr,
+					});
+				});
 			});
 
 			proc.on("error", (e) => {
