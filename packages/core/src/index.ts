@@ -20,6 +20,7 @@ export {
 	ATTRIBUTE_STATUSES,
 	DEPENDENCY_TYPES,
 	TASK_STATUSES,
+	DEFAULT_PROVIDER_RATE_LIMIT,
 } from "./types";
 export type {
 	LlmProvider,
@@ -56,6 +57,7 @@ export type {
 	PipelineEmbeddingTrackerConfig,
 	PipelineContinuityConfig,
 	PipelineSynthesisConfig,
+	ProviderRateLimitConfig,
 	PipelineProceduralConfig,
 	PredictorConfig,
 	ExtractedFact,

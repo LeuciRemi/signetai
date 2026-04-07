@@ -7,6 +7,7 @@ import { runMigrations } from "../../../core/src/migrations";
 import type { DbAccessor, ReadDb, WriteDb } from "../db-accessor";
 import { loadMemoryConfig } from "../memory-config";
 import { IMMUTABLE_ARTIFACT_ERROR_PREFIX } from "../memory-lineage";
+import { RateLimitExceededError } from "./provider";
 import {
 	SUMMARY_WORKER_UPDATED_BY,
 	type SummaryWorkerHandle,
@@ -410,6 +411,12 @@ describe("summary job helpers", () => {
 			),
 		).toBe(true);
 		expect(isTerminalSummaryJobError("summary command timed out after 5000ms")).toBe(false);
+	});
+
+	it("classifies RateLimitExceededError as terminal via error instance", () => {
+		const err = new RateLimitExceededError("claude-code:haiku", 200);
+		expect(isTerminalSummaryJobError(err)).toBe(true);
+		expect(isTerminalSummaryJobError(err.message)).toBe(false);
 	});
 
 	it("marks terminal errors dead immediately even with remaining attempts", () => {

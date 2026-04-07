@@ -190,6 +190,20 @@ export interface PipelineCommandConfig {
 	readonly env?: Readonly<Record<string, string>>;
 }
 
+// Callers may provide a partial rate-limit config; omitted fields fall back to
+// these defaults in the config parser and in withRateLimit().
+export interface ProviderRateLimitConfig {
+	readonly maxCallsPerHour?: number;
+	readonly burstSize?: number;
+	readonly waitTimeoutMs?: number;
+}
+
+export const DEFAULT_PROVIDER_RATE_LIMIT: Required<ProviderRateLimitConfig> = {
+	maxCallsPerHour: 200,
+	burstSize: 20,
+	waitTimeoutMs: 5000,
+};
+
 export interface PipelineExtractionConfig {
 	readonly provider: "none" | "ollama" | "claude-code" | "opencode" | "codex" | "anthropic" | "openrouter" | "command";
 	readonly fallbackProvider?: "ollama" | "none";
@@ -200,6 +214,7 @@ export interface PipelineExtractionConfig {
 	readonly minConfidence: number;
 	readonly command?: PipelineCommandConfig;
 	readonly escalation?: PipelineEscalationConfig;
+	readonly rateLimit?: ProviderRateLimitConfig;
 }
 
 export interface PipelineWorkerConfig {
@@ -377,6 +392,7 @@ export interface PipelineSynthesisConfig {
 	readonly timeout: number;
 	readonly maxTokens: number;
 	readonly idleGapMinutes: number;
+	readonly rateLimit?: ProviderRateLimitConfig;
 }
 
 export interface PipelineProceduralConfig {

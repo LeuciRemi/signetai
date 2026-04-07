@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	DEFAULT_PIPELINE_TIMEOUT_MS,
+	DEFAULT_PROVIDER_RATE_LIMIT,
 	type DreamingConfig,
 	PIPELINE_FLAGS,
 	type PipelineFlag,
@@ -257,6 +258,11 @@ function clampPositive(raw: unknown, min: number, max: number, fallback: number)
 	return Math.max(min, Math.min(max, raw));
 }
 
+function parseOptionalPositive(raw: unknown, min: number, max: number): number | undefined {
+	if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;
+	return Math.max(min, Math.min(max, raw));
+}
+
 function clampFraction(raw: unknown, fallback: number): number {
 	if (typeof raw !== "number" || !Number.isFinite(raw)) return fallback;
 	return Math.max(0, Math.min(1, raw));
@@ -286,6 +292,19 @@ function parseOptionalUrl(raw: unknown): string | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseRateLimitConfig(raw: unknown): PipelineV2Config["extraction"]["rateLimit"] | undefined {
+	if (!isRecord(raw)) return undefined;
+	const maxCallsPerHour = parseOptionalPositive(raw.maxCallsPerHour, 0, 10000);
+	const burstSize = parseOptionalPositive(raw.burstSize, 1, 1000);
+	const waitTimeoutMs = parseOptionalPositive(raw.waitTimeoutMs, 0, 60000);
+	if (maxCallsPerHour === undefined && burstSize === undefined && waitTimeoutMs === undefined) return undefined;
+	return {
+		maxCallsPerHour: maxCallsPerHour ?? DEFAULT_PROVIDER_RATE_LIMIT.maxCallsPerHour,
+		burstSize: burstSize ?? DEFAULT_PROVIDER_RATE_LIMIT.burstSize,
+		waitTimeoutMs: waitTimeoutMs ?? DEFAULT_PROVIDER_RATE_LIMIT.waitTimeoutMs,
+	};
 }
 
 function parseCommandArgv(raw: string): { bin: string; args: string[] } | null {
@@ -544,6 +563,7 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): PipelineV2Con
 					d.extraction.escalation?.level2MaxEntities ?? 5,
 				),
 			},
+			rateLimit: parseRateLimitConfig(extractionRaw?.rateLimit),
 		},
 
 		worker: {
@@ -777,6 +797,7 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): PipelineV2Con
 			timeout: resolvedSynthesisTimeout,
 			maxTokens: clampPositive(synthesisRaw?.maxTokens ?? synthesisRaw?.max_tokens, 1000, 32000, d.synthesis.maxTokens),
 			idleGapMinutes: clampPositive(synthesisRaw?.idleGapMinutes, 1, 1440, d.synthesis.idleGapMinutes),
+			rateLimit: parseRateLimitConfig(synthesisRaw?.rateLimit),
 		},
 		procedural: {
 			enabled: resolveBool(proceduralRaw?.enabled, undefined, d.procedural.enabled),

@@ -316,6 +316,9 @@ Controls the LLM-based extraction stage. Supports multiple providers.
 | `timeout` | `90000` | 5000-300000 ms | Extraction call timeout |
 | `minConfidence` | `0.7` | 0.0-1.0 | Confidence threshold; facts below this are dropped |
 | `command` | — | — | Command provider config (`bin`, `args[]`, optional `cwd`, optional `env`) — required when `provider: "command"` |
+| `rateLimit.maxCallsPerHour` | `200` when `rateLimit` is set | 0-10000 | Max extraction-provider calls per hour; set `0` to disable rate limiting |
+| `rateLimit.burstSize` | `20` when `rateLimit` is set | 1-1000 | Max burst size before throttling begins |
+| `rateLimit.waitTimeoutMs` | `5000` when `rateLimit` is set | 0-60000 ms | How long to wait for a token before failing with `RateLimitExceededError` |
 
 For safety, the intended extraction setups are:
 
@@ -331,6 +334,38 @@ Remote API extraction can accumulate extreme fees quickly because the
 pipeline runs continuously in the background. Use `anthropic`,
 `openrouter`, or remote OpenCode routes only when you explicitly want
 that billing behavior.
+
+`rateLimit` is opt-in. If the stanza is omitted, Signet preserves the
+provider's existing behavior with no throughput throttling. When
+configured, it applies only to remote or paid providers
+(`claude-code`, `anthropic`, `openrouter`, `codex`, `opencode`).
+Ollama and `command` providers are always exempt. If you set `rateLimit`
+on an exempt provider, Signet logs a warning and passes calls through
+unthrottled.
+
+An empty `rateLimit: {}` block is treated as disabled. Set at least one
+sub-field to opt in, or omit the stanza entirely to leave rate limiting
+off.
+
+When a rate-limited job fails (the bucket is empty and the wait timeout
+expires), it is classified as non-retryable and sent directly to
+dead-letter status. Dead-lettered jobs are not retried when the rate-limit
+window resets. Choose `maxCallsPerHour` high enough to handle sustained
+ingestion bursts, or you will permanently lose extraction for memories
+queued during exhaustion. Dead-letter jobs are purged after 30 days by
+the retention worker.
+
+When configured via YAML, `burstSize` is clamped to a minimum of `1`.
+The lower-level `withRateLimit()` helper is more defensive: passing
+`burstSize: 0` or `maxCallsPerHour: 0` disables the wrapper entirely
+instead of constructing a limiter that can never acquire a token.
+
+Rate-limiter state is in-memory only. After a daemon restart the full
+`burstSize` is available immediately (the token bucket starts full). In
+environments with frequent restarts (crash-loops, rolling deployments),
+this means the limiter cannot protect against a burst of calls right
+after startup. Set `burstSize` conservatively if your daemon restarts
+often under load.
 
 When using `ollama`, the model must be available locally. When using
 `claude-code`, the Claude Code CLI must be on PATH. `codex` uses the
@@ -399,11 +434,24 @@ defaults (`ollama` + default synthesis model/timeout) instead.
 | `model` | inherited from extraction when omitted | — | Model name for the configured provider |
 | `endpoint` | inherited from extraction when omitted | — | Optional base URL override for Ollama, OpenCode, or OpenRouter |
 | `timeout` | inherited from extraction when omitted | 5000-300000 ms | Summary generation timeout |
+| `rateLimit.maxCallsPerHour` | `200` when `rateLimit` is set | 0-10000 | Max synthesis-provider calls per hour; set `0` to disable rate limiting |
+| `rateLimit.burstSize` | `20` when `rateLimit` is set | 1-1000 | Max burst size before throttling begins |
+| `rateLimit.waitTimeoutMs` | `5000` when `rateLimit` is set | 0-60000 ms | How long to wait for a token before failing with `RateLimitExceededError` |
 
 Set `provider: none` or `enabled: false` to disable background session
 summary synthesis entirely.
 
 `synthesis.provider: command` is invalid and rejected during config load.
+
+Widget HTML generation uses a separate provider instance by default, so
+widget traffic does not consume the synthesis pipeline's `rateLimit`
+bucket.
+
+As with extraction, an empty `rateLimit: {}` block is treated as
+disabled. Set at least one sub-field to opt in.
+
+Rate-limited synthesis jobs that fail are sent to dead-letter without
+retry. See the extraction `rateLimit` docs above for the full warning.
 
 
 ### Worker (`worker`)

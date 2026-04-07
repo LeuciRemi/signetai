@@ -12,7 +12,13 @@ import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "n
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import type { LlmGenerateResult, LlmProvider } from "@signet/core";
+import {
+	DEFAULT_PROVIDER_RATE_LIMIT,
+	type LlmGenerateResult,
+	type LlmProvider,
+	type PipelineExtractionConfig,
+	type ProviderRateLimitConfig,
+} from "@signet/core";
 import { logger } from "../logger";
 import { trimTrailingSlash } from "./url";
 
@@ -77,6 +83,172 @@ const subprocessSemaphore = new SubprocessSemaphore(
 			})()
 		: DEFAULT_MAX_CONCURRENT_SUBPROCESSES,
 );
+
+// ---------------------------------------------------------------------------
+// Token-bucket rate limiter for provider-level call throttling
+// ---------------------------------------------------------------------------
+// Prevents runaway subprocess spawning when a pipeline stall loop or
+// aggressive scheduling causes excessive LLM calls. Independent of the
+// concurrency semaphore (which limits parallelism, not throughput).
+
+export class RateLimitExceededError extends Error {
+	constructor(
+		public readonly providerName: string,
+		public readonly maxCallsPerHour: number,
+	) {
+		super(`Rate limit exceeded: ${maxCallsPerHour}/hr for ${providerName}`);
+		this.name = "RateLimitExceededError";
+	}
+}
+
+export class TokenBucketRateLimiter {
+	private tokens: number;
+	private lastRefillMs: number;
+	private totalConsumed = 0;
+	private totalThrottled = 0;
+
+	constructor(
+		private readonly maxCallsPerHour: number,
+		private readonly burstSize: number,
+	) {
+		this.tokens = burstSize;
+		this.lastRefillMs = Date.now();
+	}
+
+	private refill(): void {
+		const now = Date.now();
+		const elapsedMs = now - this.lastRefillMs;
+		if (elapsedMs <= 0) return;
+		const refillAmount = (this.maxCallsPerHour / 3_600_000) * elapsedMs;
+		this.tokens = Math.min(this.burstSize, this.tokens + refillAmount);
+		this.lastRefillMs = now;
+	}
+
+	async acquire(waitMs: number): Promise<boolean> {
+		this.refill();
+		if (this.tokens >= 1) {
+			this.tokens -= 1;
+			this.totalConsumed++;
+			return true;
+		}
+		if (waitMs <= 0) {
+			this.totalThrottled++;
+			return false;
+		}
+		const deadline = Date.now() + waitMs;
+		const pollIntervalMs = Math.max(1, Math.floor(Math.min(100, waitMs / 4)));
+		while (Date.now() < deadline) {
+			await new Promise<void>((r) => setTimeout(r, pollIntervalMs));
+			this.refill();
+			if (this.tokens >= 1) {
+				this.tokens -= 1;
+				this.totalConsumed++;
+				return true;
+			}
+		}
+		this.totalThrottled++;
+		return false;
+	}
+
+	currentStats(): { readonly remaining: number; readonly totalConsumed: number; readonly totalThrottled: number } {
+		this.refill();
+		return {
+			remaining: Math.floor(this.tokens),
+			totalConsumed: this.totalConsumed,
+			totalThrottled: this.totalThrottled,
+		};
+	}
+}
+
+type RemoteProvider = Exclude<PipelineExtractionConfig["provider"], "none" | "ollama" | "command">;
+
+const RATE_LIMIT_PROVIDERS: ReadonlySet<string> = new Set([
+	"claude-code",
+	"anthropic",
+	"openrouter",
+	"codex",
+	"opencode",
+]);
+
+// Compile-time check: if a new remote provider is added to the union but
+// omitted from the set above, this produces a type error.
+const _exhaustiveCheck: Record<RemoteProvider, true> = {
+	"claude-code": true,
+	anthropic: true,
+	openrouter: true,
+	codex: true,
+	opencode: true,
+};
+void _exhaustiveCheck;
+
+function shouldRateLimit(providerName: string): boolean {
+	const base = providerName.split(":")[0];
+	return RATE_LIMIT_PROVIDERS.has(base);
+}
+
+export function withRateLimit(provider: LlmProvider, config?: ProviderRateLimitConfig): LlmProvider {
+	if (config === undefined) return provider;
+	if (Object.keys(config).length === 0) return provider;
+	const maxCallsPerHour = config.maxCallsPerHour ?? DEFAULT_PROVIDER_RATE_LIMIT.maxCallsPerHour;
+	const burstSize = config.burstSize ?? DEFAULT_PROVIDER_RATE_LIMIT.burstSize;
+	const waitTimeoutMs = config.waitTimeoutMs ?? DEFAULT_PROVIDER_RATE_LIMIT.waitTimeoutMs;
+	if (maxCallsPerHour <= 0 || burstSize <= 0) return provider;
+
+	if (!shouldRateLimit(provider.name)) {
+		logger.warn(
+			"pipeline",
+			`rateLimit config ignored for provider "${provider.name}" — only remote/paid providers are throttled`,
+			{
+				provider: provider.name,
+				allowedProviders: [...RATE_LIMIT_PROVIDERS],
+			},
+		);
+		return provider;
+	}
+
+	const bucket = new TokenBucketRateLimiter(maxCallsPerHour, burstSize);
+	let lastWarnMs = 0;
+	const WARN_INTERVAL_MS = 300_000;
+
+	function warnIfThrottled(): void {
+		const now = Date.now();
+		if (now - lastWarnMs > WARN_INTERVAL_MS) {
+			lastWarnMs = now;
+			const stats = bucket.currentStats();
+			logger.warn("pipeline", `Rate limit throttled ${provider.name} (${stats.totalThrottled} total)`, stats);
+		}
+	}
+
+	const genWithUsage = provider.generateWithUsage;
+	return {
+		name: provider.name,
+
+		async generate(prompt, opts): Promise<string> {
+			if (!(await bucket.acquire(waitTimeoutMs))) {
+				warnIfThrottled();
+				throw new RateLimitExceededError(provider.name, maxCallsPerHour);
+			}
+			const fn = provider.generate;
+			return fn.call(provider, prompt, opts);
+		},
+
+		...(genWithUsage
+			? {
+					async generateWithUsage(prompt, opts): Promise<LlmGenerateResult> {
+						if (!(await bucket.acquire(waitTimeoutMs))) {
+							warnIfThrottled();
+							throw new RateLimitExceededError(provider.name, maxCallsPerHour);
+						}
+						return genWithUsage.call(provider, prompt, opts);
+					},
+				}
+			: {}),
+
+		async available(): Promise<boolean> {
+			return provider.available();
+		},
+	};
+}
 
 /**
  * Run an async function guarded by the global subprocess semaphore.
