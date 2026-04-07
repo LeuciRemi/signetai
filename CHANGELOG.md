@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.96.0] - 2026-04-07
+
+### Features
+
+- **pipeline**: add token-bucket rate limiting for remote LLM providers (#469)
+
+
 ## [0.95.0] - 2026-04-07
 
 ### Features
