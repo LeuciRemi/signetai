@@ -13,9 +13,10 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Hono } from "hono";
 import { getDbAccessor } from "../db-accessor.js";
 import { logger } from "../logger.js";
-import { resolveScopedAgent } from "../request-scope.js";
 import { probeServer, removeProbeResult, storeProbeResult } from "../mcp-probe.js";
+import { resolveScopedAgent } from "../request-scope.js";
 import { getSecret } from "../secrets.js";
+import { authConfig } from "./state.js";
 
 const CATALOG_PAGE_SIZE = 30;
 const CATALOG_MAX_PAGES = 10;
@@ -1137,7 +1138,7 @@ function recordMcpInvocation(record: McpInvocationRecord): void {
 	}
 }
 
-export function mountMarketplaceRoutes(app: Hono, authMode?: import("../auth/index.js").AuthMode): void {
+export function mountMarketplaceRoutes(app: Hono): void {
 	app.get("/api/marketplace/mcp", (c) => {
 		const servers = readInstalledServers();
 		const context = extractContextFromRequest(c);
@@ -1556,7 +1557,7 @@ export function mountMarketplaceRoutes(app: Hono, authMode?: import("../auth/ind
 		const source = VALID_SOURCES.has(raw) ? raw : "mcp";
 		const scoped = resolveScopedAgent(
 			c.get("auth")?.claims ?? null,
-			authMode ?? "local",
+			authConfig.mode,
 			c.req.header("x-signet-agent-id") ?? undefined,
 		);
 		if (scoped.error) return c.json({ error: scoped.error }, 403);

@@ -1,9 +1,9 @@
 import type { Hono } from "hono";
-import type { AuthMode } from "../auth/index.js";
 import type { ReadDb } from "../db-accessor.js";
 import { getDbAccessor } from "../db-accessor.js";
 import { logger } from "../logger.js";
 import { resolveScopedAgent } from "../request-scope.js";
+import { authConfig } from "./state.js";
 
 export interface SkillStats {
 	readonly skillName: string;
@@ -96,9 +96,9 @@ export function querySkillAnalytics(
 	};
 }
 
-export function mountSkillAnalyticsRoutes(app: Hono, authMode: AuthMode = "local"): void {
+export function mountSkillAnalyticsRoutes(app: Hono): void {
 	app.get("/api/skills/analytics", (c) => {
-		const scoped = resolveScopedAgent(c.get("auth")?.claims ?? null, authMode, c.req.query("agent_id"));
+		const scoped = resolveScopedAgent(c.get("auth")?.claims ?? null, authConfig.mode, c.req.query("agent_id"));
 		if (scoped.error) return c.json({ error: scoped.error }, 403);
 
 		const since = c.req.query("since");
