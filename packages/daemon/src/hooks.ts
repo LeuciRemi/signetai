@@ -88,6 +88,7 @@ import { getSessionTranscriptContent, searchTranscriptFallback, upsertSessionTra
 import { type StructuralFeatures, buildCandidateFeatures, getStructuralFeatures } from "./structural-features";
 import { searchTemporalFallback } from "./temporal-fallback";
 import { writeTranscriptAudit } from "./transcript-audit";
+import { countTokens, truncateToTokens } from "./pipeline/tokenizer";
 import { getUpdateSummary } from "./update-system";
 
 function getAgentsDir(): string {
@@ -210,6 +211,12 @@ export interface HooksConfig {
 		includeRecentContext?: boolean;
 		recencyBias?: number;
 		query?: string;
+		maxInjectTokens?: number;
+		/**
+		 * @deprecated Renamed to `maxInjectTokens`. If set without `maxInjectTokens`,
+		 * the value is auto-migrated using `Math.round(maxInjectChars / 4)` (~4 chars/token
+		 * for ASCII; code or Unicode content may be 1–2 chars/token, so migrate explicitly.
+		 */
 		maxInjectChars?: number;
 	};
 	userPromptSubmit?: {
@@ -477,6 +484,39 @@ export function selectWithBudget<T extends { content: string }>(rows: ReadonlyAr
 		used += row.content.length;
 	}
 	return selected;
+}
+
+/** Truncate rows to fit a token budget using BPE token counts. */
+export function selectWithTokenBudget<T extends { content: string }>(
+	rows: ReadonlyArray<T>,
+	tokenBudget: number,
+): T[] {
+	const selected: T[] = [];
+	let used = 0;
+	for (const row of rows) {
+		const cost = countTokens(row.content);
+		if (used + cost > tokenBudget) break;
+		selected.push(row);
+		used += cost;
+	}
+	return selected;
+}
+
+const TRUNCATED_MARKER = "\n[context truncated]";
+const TRUNCATED_MARKER_TOKENS = countTokens(TRUNCATED_MARKER);
+
+/**
+ * Truncate `inject` to fit within `mainBudget` tokens.
+ * Returns an empty string when budget is zero (reserved sections exhausted it).
+ * Appends a truncation marker when budget permits; omits it when the budget is
+ * too small to fit the marker itself (avoids overflow in that range).
+ */
+export function applyTokenBudget(inject: string, mainBudget: number): string {
+	if (mainBudget <= 0) return "";
+	if (countTokens(inject) <= mainBudget) return inject;
+	// Budget too tight to fit content + marker — truncate without marker
+	if (mainBudget <= TRUNCATED_MARKER_TOKENS) return truncateToTokens(inject, mainBudget);
+	return truncateToTokens(inject, mainBudget - TRUNCATED_MARKER_TOKENS) + TRUNCATED_MARKER;
 }
 
 /** Build a brief "since your last session" summary for temporal awareness */
@@ -1438,7 +1478,23 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 	});
 
 	// Apply budget to select what we actually inject (on re-ranked order)
-	const memories = selectWithBudget(sortedCandidates, 2000);
+	if (config.maxInjectChars !== undefined && config.maxInjectTokens === undefined) {
+		logger.warn(
+			"hooks",
+			"hooks.sessionStart.maxInjectChars is deprecated — migrating to maxInjectTokens automatically. Rename it in agent.yaml to silence this warning.",
+			{ maxInjectChars: config.maxInjectChars, derivedTokens: Math.round(config.maxInjectChars / 4) },
+		);
+	}
+	const rawTokenBudget =
+		config.maxInjectTokens ??
+		(config.maxInjectChars ? Math.round(config.maxInjectChars / 4) : 20000);
+	if (rawTokenBudget <= 0) {
+		logger.warn("hooks", "maxInjectTokens must be positive — clamping to 1", {
+			configured: rawTokenBudget,
+		});
+	}
+	const tokenBudget = Math.max(1, rawTokenBudget);
+	const memories = selectWithTokenBudget(sortedCandidates, tokenBudget);
 
 	// Get predicted context from recent session analysis (~30% of budget)
 	const existingIds = new Set(memories.map((m) => m.id));
@@ -1716,14 +1772,21 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 	}
 
 	const duration = Date.now() - start;
-	const maxInject = config.maxInjectChars ?? 24000;
+	const maxTokens =
+		config.maxInjectTokens ??
+		(config.maxInjectChars ? Math.round(config.maxInjectChars / 4) : 20000);
 	// Pre-reserve space for constraints + recovery so they are never truncated
-	const reservedChars = recoverySection.length + constraintsSection.length;
-	const mainBudget = Math.max(0, maxInject - reservedChars);
+	const reservedTokens =
+		countTokens(recoverySection) + countTokens(constraintsSection);
+	const mainBudget = Math.max(0, maxTokens - reservedTokens);
 	let inject = injectParts.join("\n");
-	if (inject.length > mainBudget) {
-		inject = `${inject.slice(0, mainBudget)}\n[context truncated]`;
+	if (mainBudget === 0) {
+		logger.warn("hooks", "Session-start reserved sections exhaust token budget — main inject cleared", {
+			maxTokens,
+			reservedTokens,
+		});
 	}
+	inject = applyTokenBudget(inject, mainBudget);
 	if (constraintsSection) {
 		inject += constraintsSection;
 	}
@@ -1740,7 +1803,7 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 		traversalMemories,
 		traversalConstraints,
 		traversalTimedOut,
-		injectChars: inject.length,
+		injectTokens: countTokens(inject),
 		inject,
 		durationMs: duration,
 	});
@@ -2337,6 +2400,8 @@ export async function handleUserPromptSubmit(
 	try {
 		const cfg = deps.loadMemoryConfig(getAgentsDir());
 		const recallLimit = submitCfg.recallLimit ?? 10;
+		// userPromptSubmit.maxInjectChars already reads from config — no hardcoded fallback here.
+		// Falls back to pipelineV2.guardrails.contextBudgetChars when not set in agent.yaml.
 		const injectBudget = submitCfg.maxInjectChars ?? cfg.pipelineV2.guardrails.contextBudgetChars;
 		const minScore = resolveUserPromptMinScore(submitCfg.minScore);
 		const queryTerms = vectorQuery.slice(0, 80);
