@@ -283,4 +283,138 @@ describe("hybridRecall", () => {
 		expect(result.results.length).toBeGreaterThan(0);
 		expect(result.results.map((row) => row.id)).toContain("mem-null-vec");
 	});
+
+	it("reapplies project filtering during hydration for traversal results", async () => {
+		const now = new Date().toISOString();
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				`INSERT INTO memories (
+					id, content, type, agent_id, project, created_at, updated_at, updated_by
+				) VALUES (?, ?, 'fact', 'default', ?, ?, ?, 'test')`,
+			).run("mem-project", "Signet project memory for Nicholai", "/home/nicholai", now, now);
+
+			db.prepare(
+				`INSERT INTO memories (
+					id, content, type, agent_id, project, created_at, updated_at, updated_by
+				) VALUES (?, ?, 'fact', 'default', NULL, ?, ?, 'test')`,
+			).run("mem-null-project", "Signet global traversal memory", now, now);
+
+			db.prepare(
+				`INSERT INTO entities (
+					id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at
+				) VALUES (?, ?, ?, 'project', 'default', 5, ?, ?)`,
+			).run("ent-project-filter", "Signet", "signet", now, now);
+
+			db.prepare(
+				`INSERT INTO entity_aspects (
+					id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at
+				) VALUES (?, ?, 'default', 'context', 'context', 0.9, ?, ?)`,
+			).run("asp-project-filter", "ent-project-filter", now, now);
+
+			const attr = db.prepare(
+				`INSERT INTO entity_attributes (
+					id, aspect_id, agent_id, memory_id, kind, content, normalized_content, confidence, importance, status, created_at, updated_at
+				) VALUES (?, 'asp-project-filter', 'default', ?, 'attribute', ?, ?, 1, 0.9, 'active', ?, ?)`,
+			);
+			attr.run(
+				"attr-project-filter",
+				"mem-project",
+				"Signet project memory for Nicholai",
+				"signet project memory for nicholai",
+				now,
+				now,
+			);
+			attr.run(
+				"attr-null-project-filter",
+				"mem-null-project",
+				"Signet global traversal memory",
+				"signet global traversal memory",
+				now,
+				now,
+			);
+		});
+
+		const cfg = loadMemoryConfig(dir);
+		cfg.search.rehearsal_enabled = false;
+		cfg.search.min_score = 0;
+		cfg.pipelineV2.graph.enabled = true;
+		cfg.pipelineV2.traversal.enabled = true;
+		cfg.pipelineV2.traversal.primary = true;
+		cfg.pipelineV2.reranker.enabled = false;
+
+		const result = await hybridRecall(
+			{
+				query: "Signet",
+				keywordQuery: "Signet",
+				limit: 5,
+				agentId: "default",
+				readPolicy: "isolated",
+				project: "/home/nicholai",
+			},
+			cfg,
+			async () => null,
+		);
+
+		expect(result.results.map((row) => row.id)).toContain("mem-project");
+		expect(result.results.map((row) => row.id)).not.toContain("mem-null-project");
+	});
+
+	it("does not use pinned entities as implicit traversal ballast for recall queries", async () => {
+		const now = new Date().toISOString();
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				`INSERT INTO memories (
+					id, content, type, agent_id, created_at, updated_at, updated_by
+				) VALUES (?, ?, 'fact', 'default', ?, ?, 'test')`,
+			).run("mem-pinned-only", "Nicholai general pinned traversal memory", now, now);
+
+			db.prepare(
+				`INSERT INTO entities (
+					id, name, canonical_name, entity_type, agent_id, mentions, pinned, pinned_at, created_at, updated_at
+				) VALUES (?, ?, ?, 'person', 'default', 10, 1, ?, ?, ?)`,
+			).run("ent-pinned-only", "Nicholai", "nicholai", now, now, now);
+
+			db.prepare(
+				`INSERT INTO entity_aspects (
+					id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at
+				) VALUES (?, ?, 'default', 'context', 'context', 0.9, ?, ?)`,
+			).run("asp-pinned-only", "ent-pinned-only", now, now);
+
+			db.prepare(
+				`INSERT INTO entity_attributes (
+					id, aspect_id, agent_id, memory_id, kind, content, normalized_content, confidence, importance, status, created_at, updated_at
+				) VALUES (?, ?, 'default', ?, 'attribute', ?, ?, 1, 0.9, 'active', ?, ?)`,
+			).run(
+				"attr-pinned-only",
+				"asp-pinned-only",
+				"mem-pinned-only",
+				"Nicholai general pinned traversal memory",
+				"nicholai general pinned traversal memory",
+				now,
+				now,
+			);
+		});
+
+		const cfg = loadMemoryConfig(dir);
+		cfg.search.rehearsal_enabled = false;
+		cfg.search.min_score = 0;
+		cfg.pipelineV2.graph.enabled = true;
+		cfg.pipelineV2.traversal.enabled = true;
+		cfg.pipelineV2.traversal.primary = true;
+		cfg.pipelineV2.reranker.enabled = false;
+
+		const result = await hybridRecall(
+			{
+				query: "proud",
+				keywordQuery: "proud",
+				limit: 5,
+				agentId: "default",
+				readPolicy: "isolated",
+			},
+			cfg,
+			async () => null,
+		);
+
+		expect(result.results.map((row) => row.id)).not.toContain("mem-pinned-only");
+	});
 });
