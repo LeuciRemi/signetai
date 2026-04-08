@@ -112,6 +112,12 @@ export {
 } from "./search";
 export { applyRecallScoreThreshold, partitionRecallRows } from "./recall";
 export type { RecallPartitionableRow } from "./recall";
+export {
+	createMemoriesFts,
+	memoriesFtsNeedsTokenizerRepair,
+	readMemoriesFtsSql,
+	recreateMemoriesFts,
+} from "./fts-schema";
 export { migrate, MigrationSource } from "./migrate";
 export {
 	detectSchema,
