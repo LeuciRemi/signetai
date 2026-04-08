@@ -68,6 +68,29 @@ describe("hybridRecall", () => {
 		expect(result.sources).toBeDefined();
 		expect(result.sources?.["sess-shared"]).toBe("agent-a transcript context");
 		expect(Object.values(result.sources ?? {})).not.toContain("agent-b transcript context");
+		expect(result.meta.totalReturned).toBe(result.results.length);
+		expect(result.meta.noHits).toBe(false);
+	});
+
+	it("returns no-hit metadata when recall finds nothing", async () => {
+		const result = await hybridRecall(
+			{
+				query: "nothing to see here",
+				keywordQuery: "nothing to see here",
+				limit: 5,
+				agentId: "default",
+				readPolicy: "isolated",
+			},
+			loadMemoryConfig(dir),
+			async () => null,
+		);
+
+		expect(result.results).toEqual([]);
+		expect(result.meta).toEqual({
+			totalReturned: 0,
+			hasSupplementary: false,
+			noHits: true,
+		});
 	});
 
 	it("keeps score calibration stable when reranker provider is noop", async () => {
@@ -179,6 +202,7 @@ describe("hybridRecall", () => {
 		expect(card?.content).not.toContain("session:abc");
 		expect(card?.content).not.toContain("[[memory/");
 		expect(card?.content_length ?? 0).toBeLessThanOrEqual(900);
+		expect(result.meta.hasSupplementary).toBe(true);
 	});
 
 	it("skips null embedding vectors in traversal cosine scoring without crashing", async () => {

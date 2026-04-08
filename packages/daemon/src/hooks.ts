@@ -58,6 +58,7 @@ import {
 	traverseKnowledgeGraph,
 } from "./pipeline/graph-traversal";
 import { enqueueSummaryJob } from "./pipeline/summary-worker";
+import { countTokens, truncateToTokens } from "./pipeline/tokenizer";
 import {
 	type CandidateInput,
 	type CandidateSource,
@@ -88,7 +89,6 @@ import { getSessionTranscriptContent, searchTranscriptFallback, upsertSessionTra
 import { type StructuralFeatures, buildCandidateFeatures, getStructuralFeatures } from "./structural-features";
 import { searchTemporalFallback } from "./temporal-fallback";
 import { writeTranscriptAudit } from "./transcript-audit";
-import { countTokens, truncateToTokens } from "./pipeline/tokenizer";
 import { getUpdateSummary } from "./update-system";
 
 function getAgentsDir(): string {
@@ -364,22 +364,17 @@ export interface RememberResponse {
 export interface RecallRequest {
 	harness: string;
 	query: string;
+	keywordQuery?: string;
 	project?: string;
 	limit?: number;
+	type?: string;
+	tags?: string;
+	who?: string;
+	since?: string;
+	until?: string;
+	expand?: boolean;
 	sessionKey?: string;
 	runtimePath?: "plugin" | "legacy";
-}
-
-export interface RecallResponse {
-	results: Array<{
-		id: string;
-		content: string;
-		type: string;
-		importance: number;
-		tags: string | null;
-		created_at: string;
-	}>;
-	count: number;
 }
 
 // ============================================================================
@@ -435,10 +430,10 @@ function buildTranscriptFallbackResponse(
 	warnings?: string[],
 ): UserPromptSubmitResponse {
 	const rows = hits.map((hit) => ({
-		content: `- ${hit.excerpt} (${formatMemoryDate(hit.updatedAt)}, session ${formatTranscriptSessionLabel(hit.sessionKey)})`,
+		content: `- [transcript ${formatTranscriptSessionLabel(hit.sessionKey)}] ${hit.excerpt} (${formatMemoryDate(hit.updatedAt)})`,
 	}));
 	const lines = selectWithBudget(rows, charBudget).map((row) => row.content);
-	const inject = `${metadataHeader}\n[signet:recall | query="${queryTerms}" | results=${lines.length} | engine=transcript-fallback]\n${lines.join("\n")}`;
+	const inject = buildPromptRecallInject(metadataHeader, lines);
 	return {
 		inject,
 		memoryCount: lines.length,
@@ -461,10 +456,10 @@ function buildTemporalFallbackResponse(
 	warnings?: string[],
 ): UserPromptSubmitResponse {
 	const rows = hits.map((hit) => ({
-		content: `- [node ${hit.id}] ${hit.excerpt} (${formatMemoryDate(hit.latestAt)}, ${hit.threadLabel})`,
+		content: `- [thread ${hit.id}] ${hit.excerpt} (${formatMemoryDate(hit.latestAt)}, ${hit.threadLabel})`,
 	}));
 	const lines = selectWithBudget(rows, charBudget).map((row) => row.content);
-	const inject = `${metadataHeader}\n[signet:recall | query="${queryTerms}" | results=${lines.length} | engine=temporal-fallback]\n${lines.join("\n")}`;
+	const inject = buildPromptRecallInject(metadataHeader, lines);
 	return {
 		inject,
 		memoryCount: lines.length,
@@ -487,10 +482,7 @@ export function selectWithBudget<T extends { content: string }>(rows: ReadonlyAr
 }
 
 /** Truncate rows to fit a token budget using BPE token counts. */
-export function selectWithTokenBudget<T extends { content: string }>(
-	rows: ReadonlyArray<T>,
-	tokenBudget: number,
-): T[] {
+export function selectWithTokenBudget<T extends { content: string }>(rows: ReadonlyArray<T>, tokenBudget: number): T[] {
 	const selected: T[] = [];
 	let used = 0;
 	for (const row of rows) {
@@ -517,6 +509,18 @@ export function applyTokenBudget(inject: string, mainBudget: number): string {
 	// Budget too tight to fit content + marker — truncate without marker
 	if (mainBudget <= TRUNCATED_MARKER_TOKENS) return truncateToTokens(inject, mainBudget);
 	return truncateToTokens(inject, mainBudget - TRUNCATED_MARKER_TOKENS) + TRUNCATED_MARKER;
+}
+
+function buildPromptRecallInject(metadataHeader: string, lines: ReadonlyArray<string>): string {
+	// Keep formatting behavior aligned with daemon-rs
+	// `build_prompt_recall_inject()` in `packages/daemon-rs/.../routes/hooks.rs`.
+	const parts = [metadataHeader.trimEnd(), "", "## Relevant Memory", ""];
+	parts.push(...lines);
+	parts.push("");
+	parts.push(
+		"if you need deeper history, use /recall or memory_search. if you learn something durable, save it with /remember or memory_store.",
+	);
+	return `${parts.join("\n").trimEnd()}\n`;
 }
 
 /** Build a brief "since your last session" summary for temporal awareness */
@@ -1486,8 +1490,7 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 		);
 	}
 	const rawTokenBudget =
-		config.maxInjectTokens ??
-		(config.maxInjectChars ? Math.round(config.maxInjectChars / 4) : 20000);
+		config.maxInjectTokens ?? (config.maxInjectChars ? Math.round(config.maxInjectChars / 4) : 20000);
 	if (rawTokenBudget <= 0) {
 		logger.warn("hooks", "maxInjectTokens must be positive — clamping to 1", {
 			configured: rawTokenBudget,
@@ -1772,12 +1775,9 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 	}
 
 	const duration = Date.now() - start;
-	const maxTokens =
-		config.maxInjectTokens ??
-		(config.maxInjectChars ? Math.round(config.maxInjectChars / 4) : 20000);
+	const maxTokens = config.maxInjectTokens ?? (config.maxInjectChars ? Math.round(config.maxInjectChars / 4) : 20000);
 	// Pre-reserve space for constraints + recovery so they are never truncated
-	const reservedTokens =
-		countTokens(recoverySection) + countTokens(constraintsSection);
+	const reservedTokens = countTokens(recoverySection) + countTokens(constraintsSection);
 	const mainBudget = Math.max(0, maxTokens - reservedTokens);
 	let inject = injectParts.join("\n");
 	if (mainBudget === 0) {
@@ -2533,12 +2533,14 @@ export async function handleUserPromptSubmit(
 
 		const lines = selected.map((s) => {
 			const dateStr = formatMemoryDate(s.created_at);
-			return `- ${s.content} (${dateStr})`;
+			return `- [memory] ${s.content} (${dateStr})`;
 		});
 		if (omitted > 0) {
-			lines.push(`(+${omitted} more not shown — raise memory.guardrails.contextBudgetChars to include)`);
+			lines.push(
+				`[signet:note] ${omitted} additional ${omitted === 1 ? "match was" : "matches were"} omitted to keep this lightweight (raise memory.guardrails.contextBudgetChars to include more).`,
+			);
 		}
-		let inject = `${metadataHeader}\n[signet:recall | query="${queryTerms}" | results=${selected.length} | engine=hybrid]\n${lines.join("\n")}`;
+		let inject = buildPromptRecallInject(metadataHeader, lines);
 
 		// Append agent feedback request if enabled and there are injected memories
 		const selectedIds = selected.map((s) => s.id);
@@ -3401,97 +3403,6 @@ export function handleRemember(req: RememberRequest): RememberResponse {
 	} catch (e) {
 		logger.error("hooks", "Remember failed", e as Error);
 		return { saved: false, id: "" };
-	}
-}
-
-// ============================================================================
-// Recall
-// ============================================================================
-
-export function handleRecall(req: RecallRequest): RecallResponse {
-	const limit = req.limit || 10;
-
-	if (!existsSync(getMemoryDbPath())) {
-		return { results: [], count: 0 };
-	}
-
-	type RecallRow = {
-		id: string;
-		content: string;
-		type: string;
-		importance: number;
-		tags: string | null;
-		created_at: string;
-	};
-
-	try {
-		const rows = getDbAccessor().withReadDb((db) => {
-			let found: RecallRow[] = [];
-
-			// Try FTS search first
-			try {
-				const words = req.query
-					.toLowerCase()
-					.split(/\W+/)
-					.filter((w) => w.length >= 3)
-					.slice(0, 10);
-
-				if (words.length > 0) {
-					const ftsQuery = words.join(" OR ");
-					const baseQuery = req.project
-						? `SELECT m.id, m.content, m.type, m.importance, m.tags, m.created_at
-						   FROM memories m
-						   JOIN memories_fts f ON m.rowid = f.rowid
-						   WHERE memories_fts MATCH ?
-						   AND m.is_deleted = 0
-						   AND m.project = ?
-						   LIMIT ?`
-						: `SELECT m.id, m.content, m.type, m.importance, m.tags, m.created_at
-						   FROM memories m
-						   JOIN memories_fts f ON m.rowid = f.rowid
-						   WHERE memories_fts MATCH ?
-						   AND m.is_deleted = 0
-						   LIMIT ?`;
-
-					found = req.project
-						? (db.prepare(baseQuery).all(ftsQuery, req.project, limit) as RecallRow[])
-						: (db.prepare(baseQuery).all(ftsQuery, limit) as RecallRow[]);
-				}
-			} catch {
-				// FTS not available, fall through to LIKE
-			}
-
-			// Fallback to LIKE search
-			if (found.length === 0) {
-				const likePattern = `%${req.query}%`;
-				const baseQuery = req.project
-					? `SELECT id, content, type, importance, tags, created_at
-					   FROM memories
-					   WHERE content LIKE ? AND is_deleted = 0 AND project = ?
-					   ORDER BY importance DESC
-					   LIMIT ?`
-					: `SELECT id, content, type, importance, tags, created_at
-					   FROM memories
-					   WHERE content LIKE ? AND is_deleted = 0
-					   ORDER BY importance DESC
-					   LIMIT ?`;
-
-				found = req.project
-					? (db.prepare(baseQuery).all(likePattern, req.project, limit) as RecallRow[])
-					: (db.prepare(baseQuery).all(likePattern, limit) as RecallRow[]);
-			}
-
-			return found;
-		});
-
-		// Update access tracking
-		const ids = rows.map((r) => r.id);
-		updateAccessTracking(ids);
-
-		return { results: rows, count: rows.length };
-	} catch (e) {
-		logger.error("hooks", "Recall failed", e as Error);
-		return { results: [], count: 0 };
 	}
 }
 

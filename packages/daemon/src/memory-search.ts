@@ -68,6 +68,11 @@ export interface RecallResponse {
 	results: RecallResult[];
 	query: string;
 	method: "hybrid" | "keyword";
+	meta: {
+		totalReturned: number;
+		hasSupplementary: boolean;
+		noHits: boolean;
+	};
 	entities?: Array<{
 		name: string;
 		type: string;
@@ -860,7 +865,16 @@ export async function hybridRecall(
 	const topIds = scored.slice(0, preHydrate).map((s) => s.id);
 
 	if (topIds.length === 0) {
-		return { results: [], query, method: "hybrid" };
+		return {
+			results: [],
+			query,
+			method: "hybrid",
+			meta: {
+				totalReturned: 0,
+				hasSupplementary: false,
+				noHits: true,
+			},
+		};
 	}
 
 	// --- Fetch full memory rows ---
@@ -1231,6 +1245,11 @@ export async function hybridRecall(
 		results,
 		query,
 		method: vectorMap.size > 0 ? "hybrid" : "keyword",
+		meta: {
+			totalReturned: results.length,
+			hasSupplementary: results.some((row) => row.supplementary === true),
+			noHits: results.length === 0,
+		},
 		entities: entityContext && entityContext.length > 0 ? entityContext : undefined,
 		sources,
 	};

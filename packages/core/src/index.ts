@@ -110,6 +110,8 @@ export {
 	type VectorSearchOptions,
 	type HybridSearchOptions,
 } from "./search";
+export { applyRecallScoreThreshold, partitionRecallRows } from "./recall";
+export type { RecallPartitionableRow } from "./recall";
 export { migrate, MigrationSource } from "./migrate";
 export {
 	detectSchema,
