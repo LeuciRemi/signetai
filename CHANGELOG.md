@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.98.1] - 2026-04-08
+
+### Bug Fixes
+
+- **daemon**: honour maxInjectChars config in session-start hook (#482)
+
+
 ## [0.98.0] - 2026-04-07
 
 ### Refactoring
