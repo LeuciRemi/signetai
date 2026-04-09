@@ -58,7 +58,7 @@ Commands Overview
 | `signet import` | Import a portable bundle |
 | `signet migrate-schema` | Migrate database to unified schema |
 | `signet migrate-vectors` | Migrate BLOB vectors to sqlite-vec format |
-| `signet sync` | Sync built-in templates and skills |
+| `signet sync` | Sync hooks, extensions, built-in templates, and skills |
 | `signet secret` | Manage encrypted secrets |
 | `signet skill` | Manage agent skills from registry |
 | `signet git` | Git sync management for $SIGNET_WORKSPACE |
@@ -123,7 +123,7 @@ Options:
 | `--name <name>` | Agent name in non-interactive mode |
 | `--description <description>` | Agent description in non-interactive mode |
 | `--deployment-type <type>` | Deployment context (`local`, `vps`, `server`) used for interactive guidance and non-interactive inferred defaults |
-| `--harness <harness>` | Repeatable/comma-separated harness list (`claude-code`, `opencode`, `openclaw`, `codex`) |
+| `--harness <harness>` | Repeatable/comma-separated harness list (`claude-code`, `opencode`, `openclaw`, `oh-my-pi`, `pi`, `codex`, `forge`) |
 | `--embedding-provider <provider>` | Non-interactive embedding provider (`ollama`, `openai`, `native`, `none`) |
 | `--embedding-model <model>` | Non-interactive embedding model |
 | `--extraction-provider <provider>` | Non-interactive extraction provider (`claude-code`, `codex`, `ollama`, `opencode`, `openrouter`, `none`) |
@@ -566,9 +566,9 @@ Options:
 `signet sync`
 ---
 
-Sync built-in template files and skills to your `$SIGNET_WORKSPACE/` directory,
+Sync hooks, extensions, built-in template files, and skills to your `$SIGNET_WORKSPACE/` directory,
 and re-register hooks for any detected harnesses. Run this after an
-upgrade if built-in skills appear stale. If OpenClaw is still configured on
+upgrade if built-in skills appear stale or hooks need updating. If OpenClaw is still configured on
 the legacy Signet hook path, `signet sync` now migrates it to the plugin
 runtime path automatically so full lifecycle capture resumes.
 
