@@ -2,6 +2,13 @@
 
 All notable changes to Signet are documented here.
 
+## [0.98.7] - 2026-04-09
+
+### Bug Fixes
+
+- **web**: improve docs search and docs navigation (#485)
+
+
 ## [0.98.6] - 2026-04-08
 
 ### Docs
