@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-04-11
+- Docs: refresh public Signet positioning.
+
 ### 2026-04-10
 - Bug fixes: rebuild changelog with readable highlights.
 
@@ -25,10 +28,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 ### 2026-04-06
 - Features: add Hermes Agent memory provider integration; OpenClaw adapter request normalization.
 
-### 2026-04-04
-- Bug fixes: scope sub-agent memory dedupe and synthesis; prevent summary-worker retries on shared session-end keys.
-
 ## Release Ledger
+
+## [0.98.12] - 2026-04-11
+
+Release summary: 1 docs update.
+Tag range: `v0.98.11..v0.98.12`.
+
+### Docs
+
+- refresh public Signet positioning (#488)
 
 ## [0.98.11] - 2026-04-10
 
