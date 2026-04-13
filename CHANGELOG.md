@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-04-13
-- Bug fixes: enable Signet pipeline through GitHub Copilot providers.
+- Bug fixes: prompt agents to check memory before acting; enable Signet pipeline through GitHub Copilot providers.
 
 ### 2026-04-12
 - Bug fixes: emit valid Codex hooks.json schema; gate dependency synthesis on extraction progress; expose pinned param in memory_store and memory_modify.
@@ -33,6 +33,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Refactoring: extract routes from daemon.ts into separate modules.
 
 ## Release Ledger
+
+## [0.98.16] - 2026-04-13
+
+Release summary: 1 bug fix.
+Tag range: `v0.98.15..v0.98.16`.
+
+### Bug Fixes
+
+- **hooks**: prompt agents to check memory before acting (#500)
 
 ## [0.98.15] - 2026-04-13
 
