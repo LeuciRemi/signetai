@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-04-14
 - Features: add llama.cpp as default fallback runtime provider.
-- Bug fixes: reduce OpenCode session overhead for pipeline jobs; five correctness bugs found via sqmd structural review.
+- Bug fixes: prevent bypass memory leak in OpenCode provider; reduce OpenCode session overhead for pipeline jobs; five correctness bugs found via sqmd structural review.
 
 ### 2026-04-13
 - Bug fixes: prompt agents to check memory before acting; enable Signet pipeline through GitHub Copilot providers.
@@ -32,6 +32,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: sync root-derived docs.
 
 ## Release Ledger
+
+## [0.99.1] - 2026-04-14
+
+Release summary: 1 bug fix.
+Tag range: `v0.99.0..v0.99.1`.
+
+### Bug Fixes
+
+- **session-tracker**: prevent bypass memory leak in OpenCode provider (#502)
 
 ## [0.99.0] - 2026-04-14
 
