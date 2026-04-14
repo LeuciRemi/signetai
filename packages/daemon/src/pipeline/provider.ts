@@ -22,6 +22,7 @@ import {
 	type ProviderRateLimitConfig,
 } from "@signet/core";
 import { logger } from "../logger";
+import { bypassSession } from "../session-tracker";
 import { trimTrailingSlash } from "./url";
 
 // ---------------------------------------------------------------------------
@@ -2130,7 +2131,10 @@ export function createOpenCodeProvider(config?: Partial<OpenCodeProviderConfig>)
 		if (typeof id !== "string") {
 			throw new Error("OpenCode session response missing 'id' field");
 		}
-		logger.debug("pipeline", "OpenCode session created", { id });
+		// Bypass hooks for our own pipeline sessions so the OpenCode plugin
+		// does not trigger memory recall back to the daemon (circular loop).
+		bypassSession(id, { allowUnknown: true });
+		logger.debug("pipeline", "OpenCode session created", { id, bypassed: true });
 		return id;
 	}
 
@@ -2171,6 +2175,9 @@ export function createOpenCodeProvider(config?: Partial<OpenCodeProviderConfig>)
 	): Promise<OpenCodeMessageResponse> {
 		const timeoutMs = opts?.timeoutMs ?? cfg.defaultTimeoutMs;
 		const sid = await getOrCreateSession();
+		// Refresh bypass TTL on reused sessions so bypass-only entries do not
+		// expire while the provider is still actively sending messages.
+		bypassSession(sid, { allowUnknown: true });
 
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -2294,6 +2301,8 @@ export function createOpenCodeProvider(config?: Partial<OpenCodeProviderConfig>)
 					// Use createSession() (not getOrCreateSession()) so concurrent callers
 					// each get their own session, preventing message ordering issues from
 					// two callers POSTing to the same session ID simultaneously.
+					// Old session stays bypassed — TTL-backed cleanup in session-tracker
+					// evicts stale bypass entries automatically.
 					const retrySid = await createSession();
 					// Known: concurrent callers both writing sessionId here is a benign
 					// last-writer-wins race — each caller uses its own retrySid local for
