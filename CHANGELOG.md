@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-04-16
+- Bug fixes: resolve FD exhaustion and event loop blocking with thousands of memory artifacts.
+
 ### 2026-04-15
 - Bug fixes: thread deadline into OpenCode session creation.
 
@@ -26,10 +29,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 ### 2026-04-10
 - Bug fixes: rebuild changelog with readable highlights.
 
-### 2026-04-09
-- Bug fixes: block leaked workspace deps in release; improve docs search and docs navigation.
-
 ## Release Ledger
+
+## [0.99.4] - 2026-04-16
+
+Release summary: 1 bug fix.
+Tag range: `v0.99.3..v0.99.4`.
+
+### Bug Fixes
+
+- **daemon**: resolve FD exhaustion and event loop blocking with thousands of memory artifacts (#513)
 
 ## [0.99.3] - 2026-04-15
 
