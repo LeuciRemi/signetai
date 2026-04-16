@@ -911,10 +911,37 @@ specs:
     hard_depends_on:
       - signet-runtime
     soft_depends_on: []
-    blocks: []
-    informed_by: []
+    blocks:
+      - plugin-sdk-core-v1
+    informed_by:
+      - docs/research/technical/RESEARCH-PLUGIN-SDK-SECRETS.md
     success_criteria:
-      - "Plugin API supports dashboard/CLI integrations for first-party and third-party apps"
+      - "Plugin SDK supports first-party TypeScript plugins and managed Rust sidecar plugins through one manifest and capability model"
+      - "Plugins can declare daemon, CLI, MCP, dashboard, SDK, connector, and prompt-lifecycle contributions from one host-mediated contract"
+      - "Signet Secrets can run as a privileged core plugin while preserving existing local encrypted secrets without re-encryption or user action"
+      - "Secret providers can register modular backends such as local, 1Password, Bitwarden, Vault, cloud secret managers, and environment resolvers"
+      - "Plugin manifests are marketplace-ready without requiring full marketplace install support in the first implementation"
+    decision: null
+
+
+  - id: plugin-sdk-core-v1
+    status: approved
+    path: docs/specs/approved/plugin-sdk-core-v1.md
+    hard_depends_on:
+      - signet-runtime
+    soft_depends_on:
+      - plugin-api-ecosystem
+    blocks: []
+    informed_by:
+      - docs/research/technical/RESEARCH-PLUGIN-SDK-SECRETS.md
+      - docs/specs/planning/plugin-api-ecosystem.md
+    success_criteria:
+      - "Bundled TypeScript core plugins can register a manifest, lifecycle state, capabilities, surface metadata, health, and prompt contributions through a daemon-owned plugin host"
+      - "Plugin status and diagnostics expose enabled, disabled, blocked, active, and degraded states without crashing the daemon on plugin failure"
+      - "Prompt contributions are append-only/context-only, provenance-tagged, token-bounded, and removed when a plugin is disabled"
+      - "Signet Secrets is represented as a privileged bundled core plugin while existing /api/secrets routes, CLI, MCP, dashboard, and SDK behavior remain backward compatible"
+      - "The local Secrets provider adopts existing $SIGNET_WORKSPACE/.secrets/secrets.enc files in place without re-encryption, relocation, or user action"
+      - "The V1 manifest and registry store marketplace-ready metadata and future Rust sidecar compatibility fields without implementing marketplace install or Rust sidecar execution"
     decision: null
 
 

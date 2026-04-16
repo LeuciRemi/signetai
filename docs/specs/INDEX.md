@@ -668,7 +668,10 @@ Phase ordering based on hard dependencies and integration contracts.
 - **Connector: Hermes Agent** (`connector-hermes-agent`)
 - **Connector: Oh My Pi** (`connector-oh-my-pi`)
 - **Plugin API and App Ecosystem** (`plugin-api-ecosystem`)
-  - dashboard/CLI plugin surface for app integrations (e.g. Obsidian, Drive)
+  - cross-surface plugin SDK and host for daemon, CLI, MCP, dashboard,
+    connectors, SDK, and prompt lifecycle contributions
+  - uses Signet Secrets as the reference privileged core plugin and provider
+    architecture
 - **Unified Constellation Viewer** (`constellation-unified-viewer`)
   - realtime unified constellation/embedding/entity view, replace slow 3D path
 - **Dashboard IA Refactor** (`dashboard-information-architecture-refactor`)
@@ -764,7 +767,8 @@ Legend:
 | `connector-hermes-agent` | planning | `docs/specs/planning/connector-hermes-agent.md` | `signet-runtime` | - | Stub: Hermes Agent connector |
 | `connector-oh-my-pi` | planning | `docs/specs/planning/connector-oh-my-pi.md` | `signet-runtime` | - | Stub: Oh My Pi managed runtime extension and connector |
 | `connector-forgecode` | complete | `docs/specs/complete/connector-forgecode.md` | `signet-runtime` | - | ForgeCode connector: AGENTS.md, MCP server registration, skills symlink. MCP-only (no external hook API). |
-| `plugin-api-ecosystem` | planning | `docs/specs/planning/plugin-api-ecosystem.md` | `signet-runtime` | - | Stub: plugin/app API for dashboard and CLI integrations |
+| `plugin-api-ecosystem` | planning | `docs/specs/planning/plugin-api-ecosystem.md` | `signet-runtime` | `plugin-sdk-core-v1` | Cross-surface plugin SDK/host architecture with TypeScript and Rust support, marketplace-ready manifests, prompt contributions, and Signet Secrets as the reference core plugin/provider model |
+| `plugin-sdk-core-v1` | approved | `docs/specs/approved/plugin-sdk-core-v1.md` | `signet-runtime` | - | V1 plugin host and manifest contract for bundled TypeScript core plugins, prompt/surface metadata registries, diagnostics, and Signet Secrets local-provider extraction without rewriting existing `secrets.enc` |
 | `constellation-unified-viewer` | planning | `docs/specs/planning/constellation-unified-viewer.md` | `knowledge-architecture-schema` | - | Stub: realtime unified constellation/embedding/entity viewer |
 | `dashboard-information-architecture-refactor` | planning | `docs/specs/planning/dashboard-information-architecture-refactor.md` | `signet-runtime` | - | Stub: dashboard IA cleanup, settings split, breadcrumb navigation |
 | `postinstall-behavior-migration-audit` | planning | `docs/specs/planning/postinstall-behavior-migration-audit.md` | `memory-pipeline-v2` | - | Stub: ensure post-install behavior is daemon/CLI-owned |
