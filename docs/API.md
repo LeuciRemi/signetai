@@ -1537,11 +1537,154 @@ rebuild all harness config files from source. The script must exist at
 Returns `404` if the script is not found.
 
 
+Plugins
+-------
+
+Plugin diagnostics expose the daemon-owned Plugin SDK V1 registry. The
+first bundled core plugin is `signet.secrets`, which owns the existing
+Secrets API, CLI, MCP, dashboard, SDK, connector, and prompt-contribution
+surfaces. Diagnostics never include raw secret values.
+
+### GET /api/plugins
+
+List registered plugins and their lifecycle state, grants, pending
+capabilities, and active surface metadata. Active surface metadata is
+filtered by granted capabilities. Planned surfaces remain visible through
+plugin diagnostics.
+
+**Response**
+
+```json
+{
+  "plugins": [
+    {
+      "id": "signet.secrets",
+      "name": "Signet Secrets",
+      "state": "active",
+      "enabled": true,
+      "declaredCapabilities": ["secrets:list", "secrets:exec"],
+      "grantedCapabilities": ["secrets:list", "secrets:exec"],
+      "pendingCapabilities": [],
+      "surfaces": {
+        "daemonRoutes": [],
+        "cliCommands": [],
+        "mcpTools": [],
+        "dashboardPanels": [],
+        "sdkClients": [],
+        "connectorCapabilities": [],
+        "promptContributions": []
+      }
+    }
+  ]
+}
+```
+
+### GET /api/plugins/:id
+
+Return one plugin registry record. Returns `404` if the plugin is not
+registered.
+
+### GET /api/plugins/:id/diagnostics
+
+Return the registry record, manifest metadata, active surfaces, planned
+surfaces, prompt contributions, prompt inclusion/exclusion diagnostics, and
+validation errors for a plugin.
+
+### GET /api/plugins/prompt-contributions
+
+List active prompt contributions from enabled plugins with the required
+prompt capability grant.
+
+**Response**
+
+```json
+{
+  "contributions": [
+    {
+      "id": "signet.secrets.credential-guidance",
+      "pluginId": "signet.secrets",
+      "target": "user-prompt-submit",
+      "mode": "context",
+      "priority": 420,
+      "maxTokens": 80,
+      "content": "When the user provides credentials..."
+    }
+  ],
+  "activeCount": 1
+}
+```
+
+### GET /api/plugins/audit
+
+List durable plugin audit events from
+`$SIGNET_WORKSPACE/.daemon/plugins/audit-v1.ndjson`. Events are newest
+first, capped to 500 rows, and sensitive fields are redacted before they
+are written and again when read.
+
+**Query parameters**
+
+- `pluginId` - optional plugin id filter, for example `signet.secrets`
+- `event` - optional exact event name filter
+- `since` / `until` - optional ISO timestamp bounds
+- `limit` - optional row limit, default `100`, max `500`
+
+**Response**
+
+```json
+{
+  "events": [
+    {
+      "id": "m36n9q5a-x4w2k8p1",
+      "timestamp": "2026-04-16T12:00:00.000Z",
+      "event": "plugin.enabled",
+      "pluginId": "signet.secrets",
+      "result": "ok",
+      "source": "plugin-host",
+      "data": {
+        "state": "active",
+        "enabled": true
+      }
+    }
+  ],
+  "count": 1
+}
+```
+
+### PATCH /api/plugins/:id
+
+Enable or disable a registered plugin.
+
+**Request body**
+
+```json
+{ "enabled": false }
+```
+
+Disabling `signet.secrets` removes its active prompt and advertised
+surface metadata. It does not delete stored secrets.
+
+Plugin lifecycle changes emit structured daemon diagnostics including
+`plugin.discovered`, `plugin.enabled`, `plugin.disabled`,
+`plugin.blocked`, `plugin.degraded`, `plugin.health_failed`,
+`plugin.capability_denied`, `prompt.contribution_added`, and
+`prompt.contribution_removed`. The same events are appended to the durable
+plugin audit log for diagnostics and support.
+
+
 Secrets
 -------
 
-Secrets are stored encrypted on disk at `$SIGNET_WORKSPACE/.secrets/`. Values are
-never returned in API responses — only names are exposed.
+Secrets are owned by the bundled `signet.secrets` core plugin. Local
+secrets are stored encrypted on disk at `$SIGNET_WORKSPACE/.secrets/`.
+Values are never returned in ordinary API responses, only names are
+exposed. Bare names such as `OPENAI_API_KEY` are compatibility aliases
+for local provider references such as `local://OPENAI_API_KEY`.
+Secrets routes require the matching granted `signet.secrets` capability. If
+the plugin is disabled, blocked, or missing a route capability, the route
+returns a structured plugin-capability error without deleting stored data.
+Secret operations emit structured daemon diagnostics for listing,
+storage, deletion, command injection, and command completion. These
+diagnostics never include raw secret values.
 
 ### POST /api/secrets/:name
 

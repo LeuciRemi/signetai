@@ -1,7 +1,7 @@
 ---
 title: "Plugin SDK Core V1 and Secrets Local Provider Extraction"
 id: plugin-sdk-core-v1
-status: approved
+status: complete
 informed_by:
   - "docs/research/technical/RESEARCH-PLUGIN-SDK-SECRETS.md"
   - "docs/specs/planning/plugin-api-ecosystem.md"
@@ -557,6 +557,9 @@ Rules:
 
 - Add audit events.
 - Add docs/help metadata.
+- Add CLI setup selection for bundled core plugins. Existing installs default
+  `signet.secrets` to enabled; new interactive installs explain Signet Secrets
+  and ask whether to enable it.
 - Add degraded-mode tests.
 - Update `docs/API.md`, `docs/SECRETS.md`, `docs/SDK.md`, `docs/MCP.md`, and
   dashboard docs where behavior or ownership changed.
@@ -584,6 +587,8 @@ Required tests:
 - `execWithSecrets` injects resolved local values and redacts stdout/stderr.
 - ordinary API/MCP/dashboard/SDK responses do not include raw secret values.
 - 1Password compatibility routes do not regress.
+- setup registry tests prove new installs can persist `signet.secrets` enabled
+  or disabled without disturbing unrelated plugin registry entries.
 
 Required local commands before PR:
 
@@ -627,3 +632,6 @@ This spec is complete when:
 7. Tests prove secret values are not exposed through ordinary responses.
 8. Docs describe the plugin-owned Secrets architecture and compatibility
    guarantees.
+9. CLI setup enables `signet.secrets` by default for existing installs, prompts
+   new interactive installs in a Core plugins section, and supports
+   non-interactive opt-out without deleting stored secrets.

@@ -60,6 +60,8 @@ import {
 } from "./pipeline/graph-traversal";
 import { enqueueSummaryJob } from "./pipeline/summary-worker";
 import { countTokens, truncateToTokens } from "./pipeline/tokenizer";
+import { getDefaultPluginHost } from "./plugins/index";
+import type { PluginPromptTargetV1 } from "./plugins/types";
 import {
 	type CandidateInput,
 	type CandidateSource,
@@ -498,12 +500,13 @@ function buildTranscriptFallbackResponse(
 		readonly excerpt: string;
 	}>,
 	warnings?: string[],
+	pluginContext = "",
 ): UserPromptSubmitResponse {
 	const rows = hits.map((hit) => ({
 		content: `- [transcript ${formatTranscriptSessionLabel(hit.sessionKey)}] ${hit.excerpt} (${formatMemoryDate(hit.updatedAt)})`,
 	}));
 	const lines = selectWithBudget(rows, charBudget).map((row) => row.content);
-	const inject = buildPromptRecallInject(metadataHeader, lines);
+	const inject = buildPromptRecallInject(metadataHeader, lines, pluginContext);
 	return {
 		inject,
 		memoryCount: lines.length,
@@ -524,12 +527,13 @@ function buildTemporalFallbackResponse(
 		readonly excerpt: string;
 	}>,
 	warnings?: string[],
+	pluginContext = "",
 ): UserPromptSubmitResponse {
 	const rows = hits.map((hit) => ({
 		content: `- [thread ${hit.id}] ${hit.excerpt} (${formatMemoryDate(hit.latestAt)}, ${hit.threadLabel})`,
 	}));
 	const lines = selectWithBudget(rows, charBudget).map((row) => row.content);
-	const inject = buildPromptRecallInject(metadataHeader, lines);
+	const inject = buildPromptRecallInject(metadataHeader, lines, pluginContext);
 	return {
 		inject,
 		memoryCount: lines.length,
@@ -595,7 +599,30 @@ export function applyTokenBudget(inject: string, mainBudget: number): string {
 	return truncateToTokens(inject, mainBudget - TRUNCATED_MARKER_TOKENS) + TRUNCATED_MARKER;
 }
 
-function buildPromptRecallInject(metadataHeader: string, lines: ReadonlyArray<string>): string {
+function buildPluginPromptContributionSection(target: PluginPromptTargetV1, log: typeof logger): string {
+	try {
+		const contributions = getDefaultPluginHost().promptContributions({ target });
+		if (contributions.length === 0) return "";
+		const parts = ["## Plugin Context", ""];
+		for (const contribution of contributions) {
+			parts.push(
+				`<signet-plugin-context plugin="${contribution.pluginId}" id="${contribution.id}" target="${contribution.target}">`,
+			);
+			parts.push(contribution.content.trim());
+			parts.push("</signet-plugin-context>");
+			parts.push("");
+		}
+		return parts.join("\n").trimEnd();
+	} catch (err) {
+		log.warn("hooks", "Plugin prompt contribution lookup failed", {
+			target,
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return "";
+	}
+}
+
+function buildPromptRecallInject(metadataHeader: string, lines: ReadonlyArray<string>, pluginContext = ""): string {
 	// Keep formatting behavior aligned with daemon-rs
 	// `build_prompt_recall_inject()` in `packages/daemon-rs/.../routes/hooks.rs`.
 	const parts = [
@@ -605,24 +632,34 @@ function buildPromptRecallInject(metadataHeader: string, lines: ReadonlyArray<st
 		"",
 		"Use the memories below as starting context before acting. If the task depends on prior context and anything is missing, run 1-3 targeted recalls with /recall or memory_search, then expand with lcm_expand or knowledge_expand when needed.",
 		"",
-		"## Relevant Memory",
-		"",
 	];
+	if (pluginContext.trim().length > 0) {
+		parts.push(pluginContext.trimEnd());
+		parts.push("");
+	}
+	parts.push("## Relevant Memory");
+	parts.push("");
 	parts.push(...lines);
 	parts.push("");
 	parts.push("If you learn something durable, save it with /remember or memory_store.");
 	return `${parts.join("\n").trimEnd()}\n`;
 }
 
-function buildNoStrongMemoryMatchInject(metadataHeader: string): string {
-	return `${metadataHeader.trimEnd()}
-
-## Memory Check
-
-No strong automatic memory match was injected for this turn. If the request depends on prior context, preferences, project history, or unresolved work, run 1-3 targeted Signet recalls before executing commands, editing files, or making decisions.
-
-If you learn something durable, save it with /remember or memory_store.
-`;
+function buildNoStrongMemoryMatchInject(metadataHeader: string, pluginContext = ""): string {
+	const parts = [
+		metadataHeader.trimEnd(),
+		"",
+		"## Memory Check",
+		"",
+		"No strong automatic memory match was injected for this turn. If the request depends on prior context, preferences, project history, or unresolved work, run 1-3 targeted Signet recalls before executing commands, editing files, or making decisions.",
+		"",
+	];
+	if (pluginContext.trim().length > 0) {
+		parts.push(pluginContext.trimEnd());
+		parts.push("");
+	}
+	parts.push("If you learn something durable, save it with /remember or memory_store.");
+	return `${parts.join("\n").trimEnd()}\n`;
 }
 
 /** Build a brief "since your last session" summary for temporal awareness */
@@ -1723,6 +1760,10 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 	let recoverySection = "";
 
 	injectParts.push(buildSignetSystemPrompt());
+	const systemPluginContext = buildPluginPromptContributionSection("system", logger);
+	if (systemPluginContext) {
+		injectParts.push(systemPluginContext);
+	}
 	injectParts.push("[memory active | /remember | /recall]");
 	if (predictorStatusLine) {
 		injectParts.push(predictorStatusLine);
@@ -1856,6 +1897,11 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 	if (updateStatus) {
 		injectParts.push("\n## Signet Status\n");
 		injectParts.push(updateStatus);
+	}
+
+	const sessionPluginContext = buildPluginPromptContributionSection("session-start", logger);
+	if (sessionPluginContext) {
+		injectParts.push(sessionPluginContext);
 	}
 
 	// Surface available secrets so agents know what's available
@@ -2554,6 +2600,7 @@ export async function handleUserPromptSubmit(
 	const metadataHeader = `# Current Date & Time\n${now} (${tz})\n`;
 	const expiryWarning = req.sessionKey ? deps.getExpiryWarning(req.sessionKey) : null;
 	const warnings = expiryWarning ? [expiryWarning] : undefined;
+	const pluginContext = buildPluginPromptContributionSection("user-prompt-submit", deps.logger);
 
 	if (submitCfg.enabled === false) {
 		return finalizeUserPromptSubmitSuccess(
@@ -2561,7 +2608,7 @@ export async function handleUserPromptSubmit(
 			userMessage,
 			start,
 			{
-				inject: buildNoStrongMemoryMatchInject(metadataHeader),
+				inject: buildNoStrongMemoryMatchInject(metadataHeader, pluginContext),
 				memoryCount: 0,
 				warnings,
 			},
@@ -2576,7 +2623,7 @@ export async function handleUserPromptSubmit(
 			userMessage,
 			start,
 			{
-				inject: buildNoStrongMemoryMatchInject(metadataHeader),
+				inject: buildNoStrongMemoryMatchInject(metadataHeader, pluginContext),
 				memoryCount: 0,
 				warnings,
 			},
@@ -2629,7 +2676,14 @@ export async function handleUserPromptSubmit(
 					req,
 					userMessage,
 					start,
-					buildTemporalFallbackResponse(metadataHeader, queryTerms, injectBudget, temporalHits, warnings),
+					buildTemporalFallbackResponse(
+						metadataHeader,
+						queryTerms,
+						injectBudget,
+						temporalHits,
+						warnings,
+						pluginContext,
+					),
 					deps.logger,
 				);
 			}
@@ -2645,7 +2699,14 @@ export async function handleUserPromptSubmit(
 					req,
 					userMessage,
 					start,
-					buildTranscriptFallbackResponse(metadataHeader, queryTerms, injectBudget, transcriptHits, warnings),
+					buildTranscriptFallbackResponse(
+						metadataHeader,
+						queryTerms,
+						injectBudget,
+						transcriptHits,
+						warnings,
+						pluginContext,
+					),
 					deps.logger,
 				);
 			}
@@ -2655,7 +2716,7 @@ export async function handleUserPromptSubmit(
 					userMessage,
 					start,
 					{
-						inject: buildNoStrongMemoryMatchInject(metadataHeader),
+						inject: buildNoStrongMemoryMatchInject(metadataHeader, pluginContext),
 						memoryCount: 0,
 						warnings,
 					},
@@ -2670,7 +2731,7 @@ export async function handleUserPromptSubmit(
 				userMessage,
 				start,
 				{
-					inject: buildNoStrongMemoryMatchInject(metadataHeader),
+					inject: buildNoStrongMemoryMatchInject(metadataHeader, pluginContext),
 					memoryCount: 0,
 					warnings,
 				},
@@ -2722,7 +2783,7 @@ export async function handleUserPromptSubmit(
 				userMessage,
 				start,
 				{
-					inject: buildNoStrongMemoryMatchInject(metadataHeader),
+					inject: buildNoStrongMemoryMatchInject(metadataHeader, pluginContext),
 					memoryCount: 0,
 					warnings,
 				},
@@ -2737,7 +2798,7 @@ export async function handleUserPromptSubmit(
 				`[signet:note] ${omitted} additional ${omitted === 1 ? "match was" : "matches were"} omitted to keep this lightweight (raise memory.guardrails.contextBudgetChars to include more).`,
 			);
 		}
-		let inject = buildPromptRecallInject(metadataHeader, lines);
+		let inject = buildPromptRecallInject(metadataHeader, lines, pluginContext);
 
 		// Append agent feedback request if enabled and there are injected memories
 		const selectedIds = selected.map((s) => s.id);
@@ -2778,7 +2839,7 @@ export async function handleUserPromptSubmit(
 		);
 	} catch (e) {
 		deps.logger.error("hooks", "User prompt submit failed", e as Error);
-		return { inject: buildNoStrongMemoryMatchInject(metadataHeader), memoryCount: 0, warnings };
+		return { inject: buildNoStrongMemoryMatchInject(metadataHeader, pluginContext), memoryCount: 0, warnings };
 	}
 }
 

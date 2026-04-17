@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { handleUserPromptSubmit } from "./hooks";
+import { SIGNET_SECRETS_PLUGIN_ID, getDefaultPluginHost, resetDefaultPluginHostForTests } from "./plugins/index";
 
 const originalSignetPath = process.env.SIGNET_PATH;
 const agentsDir = mkdtempSync(join(tmpdir(), "signet-hooks-prompt-submit-"));
@@ -109,12 +110,14 @@ describe("handleUserPromptSubmit observability", () => {
 		searchTemporalFallbackMock.mockClear();
 		searchTranscriptFallbackMock.mockClear();
 		ensureMemoryDbExists();
+		resetDefaultPluginHostForTests();
+		getDefaultPluginHost().setEnabled(SIGNET_SECRETS_PLUGIN_ID, true);
 	});
 
 	afterAll(() => {
 		rmSync(agentsDir, { recursive: true, force: true });
 		if (originalSignetPath === undefined) {
-			process.env.SIGNET_PATH = undefined;
+			Reflect.deleteProperty(process.env, "SIGNET_PATH");
 		} else {
 			process.env.SIGNET_PATH = originalSignetPath;
 		}
@@ -133,12 +136,33 @@ describe("handleUserPromptSubmit observability", () => {
 		expect(result.inject).toContain("## Memory Check");
 		expect(result.inject).toContain("No strong automatic memory match was injected");
 		expect(result.inject).toContain("run 1-3 targeted Signet recalls before executing commands");
+		expect(result.inject).toContain("## Plugin Context");
+		expect(result.inject).toContain('plugin="signet.secrets"');
+		expect(result.inject).toContain("prefer storing them in Signet Secrets");
 		expect(result.inject).toContain("save it with /remember or memory_store");
 		const submitCalls = infoMock.mock.calls.filter((call) => call[1] === "User prompt submit");
 		expect(submitCalls).toHaveLength(1);
 		const payload = submitCalls[0]?.[2];
 		expect(payload?.engine).toBe("no-query");
 		expect(payload?.memoryCount).toBe(0);
+	});
+
+	it("removes Secrets prompt contribution when signet.secrets is disabled", async () => {
+		getDefaultPluginHost().setEnabled(SIGNET_SECRETS_PLUGIN_ID, false);
+
+		const result = await handleUserPromptSubmit(
+			{
+				harness: "vscode-custom-agent",
+				userMessage: "   ",
+			},
+			makeDeps(),
+		);
+
+		expect(result.inject).toContain("## Memory Check");
+		expect(result.inject).toContain("No strong automatic memory match was injected");
+		expect(result.inject).not.toContain("## Plugin Context");
+		expect(result.inject).not.toContain('plugin="signet.secrets"');
+		expect(result.inject).not.toContain("prefer storing them in Signet Secrets");
 	});
 
 	it("logs successful temporal fallback outcomes", async () => {

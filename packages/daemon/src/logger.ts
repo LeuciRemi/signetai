@@ -36,6 +36,7 @@ export type LogCategory =
 	| "embedding" // Embedding operations
 	| "harness" // Harness configuration
 	| "skills" // Skills management
+	| "plugins" // Plugin lifecycle and diagnostics
 	| "secrets" // Secrets management
 	| "hooks" // Hook handlers
 	| "pipeline" // Extraction/decision pipeline
@@ -59,7 +60,7 @@ export type LogCategory =
 	| "mcp-analytics" // MCP invocation analytics
 	| "config" // Configuration loading and resolution
 	| "resources" // FD / event-loop resource monitoring
-    | "shadow"; // Shadow logs for sensitive data (not written to disk, only emitted for real-time streaming)
+	| "shadow"; // Shadow logs for sensitive data (not written to disk, only emitted for real-time streaming)
 
 export interface LogEntry {
 	timestamp: string;

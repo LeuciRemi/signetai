@@ -372,8 +372,9 @@ hooks are silenced.
 
 ### secret_list
 
-List available secret names. Returns names only — raw secret values are
-never exposed to agents.
+List available secret names. This value-safe tool is owned by the
+`signet.secrets` core plugin. It returns names only, raw secret values
+are never exposed to agents.
 
 **Parameters:** None.
 
@@ -390,7 +391,9 @@ never exposed to agents.
 ### secret_exec
 
 Run a shell command with secrets injected as environment variables. Output
-is automatically redacted — secret values never appear in results.
+is automatically redacted, secret values never appear in results. Bare
+secret names resolve through the local provider, for example
+`OPENAI_API_KEY` is equivalent to `local://OPENAI_API_KEY`.
 
 **Parameters:**
 

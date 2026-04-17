@@ -176,9 +176,11 @@ and labeled by category: `daemon`, `api`, `memory`, `sync`, `git`,
 entry to open a split detail panel with the full JSON payload,
 duration display, and a copy-to-clipboard button.
 
-**Secrets** — Shows stored secret names. Values are always masked. You
-can add new secrets (via a password input) or delete existing ones. For
-CLI use, prefer `signet secret put <NAME>`.
+**Secrets**: Shows stored secret names. Values are always masked. This
+surface is owned by the `signet.secrets` core plugin, backed by the local
+encrypted provider and 1Password compatibility flow. You can add new
+secrets (via a password input) or delete existing ones. For CLI use,
+prefer `signet secret put <NAME>`.
 
 **Skills** — Lists installed skills and lets you browse the skills.sh
 registry. Click a skill name to read its full `SKILL.md` before

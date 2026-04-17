@@ -133,6 +133,7 @@ Options:
 | `--configure-openclaw-workspace` | Patch discovered OpenClaw configs to `$SIGNET_WORKSPACE` |
 | `--open-dashboard` | Open dashboard after non-interactive setup |
 | `--skip-git` | Skip git initialization/commits in non-interactive mode |
+| `--disable-signet-secrets` | Leave the bundled Signet Secrets core plugin installed but disabled |
 | `--create-local-backup` | If OpenClaw points at this workspace and no origin exists, create a local snapshot automatically |
 | `--allow-unprotected-workspace` | Explicitly allow setup to finish without origin or snapshot in non-interactive mode |
 
@@ -147,6 +148,8 @@ Non-interactive behavior:
   `none` when needed
 - for existing-identity migration, previously configured extraction providers
   are preserved unless `--extraction-provider` is explicitly passed
+- the bundled Signet Secrets core plugin is enabled by default; pass
+  `--disable-signet-secrets` to opt out while leaving it installed
 - explicit provider flags override inferred defaults
 - git: enabled unless `--skip-git` is passed
 - when OpenClaw points at this workspace and no `origin` remote exists, setup
@@ -177,14 +180,18 @@ Wizard steps:
    is detected; workspace is patched only if you opt in, and setup warns
    that uninstalling OpenClaw can delete this workspace unless backups exist
 4. **Description** - Short agent description
-5. **Deployment Context** - Where Signet is running (`local`, `vps`, `server`)
+5. **Core Plugins** - Signet Secrets explains encrypted local storage,
+   value-safe CLI/MCP/SDK access, command injection with output redaction, and
+   connections to Signet's local encrypted store and compatible 1Password
+   references, then asks whether to enable the bundled `signet.secrets` plugin
+6. **Deployment Context** - Where Signet is running (`local`, `vps`, `server`)
    to show environment-aware guidance before extraction provider selection
-6. **Embedding Provider**:
+7. **Embedding Provider**:
    - Built-in (recommended, no setup required)
    - Ollama (local)
    - OpenAI API
    - Skip embeddings
-7. **Embedding Model** - Based on provider:
+8. **Embedding Model** - Based on provider:
    - Built-in: `nomic-embed-text-v1.5`
    - Ollama: `nomic-embed-text`, `all-minilm`, `mxbai-embed-large`
    - OpenAI: text-embedding-3-small, text-embedding-3-large
@@ -192,15 +199,15 @@ Wizard steps:
      service health, and model presence; if checks fail, setup offers
      retry, switch to built-in embeddings, switch to OpenAI, or
      continue without embeddings
-8. **Search Balance** - Semantic vs keyword weighting
-9. **Advanced Settings** (optional):
+9. **Search Balance** - Semantic vs keyword weighting
+10. **Advanced Settings** (optional):
    - `top_k` - Search candidates per source
    - `min_score` - Minimum search score threshold
    - `session_budget` - Context character limit
    - `decay_rate` - Memory importance decay
-10. **Import** - Optionally import from another platform
-11. **Git** - Initialize version control
-12. **Launch Dashboard** - Open web UI
+11. **Import** - Optionally import from another platform
+12. **Git** - Initialize version control
+13. **Launch Dashboard** - Open web UI
 
 What gets created:
 
@@ -216,6 +223,7 @@ $SIGNET_WORKSPACE/
 ├── hooks/               # OpenClaw hooks (if selected)
 │   └── agent-memory/
 └── .daemon/
+    ├── plugins/         # Bundled core plugin registry
     └── logs/
 ```
 

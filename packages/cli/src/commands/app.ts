@@ -20,6 +20,7 @@ interface SetupOptions {
 	skipGit?: boolean;
 	allowUnprotectedWorkspace?: boolean;
 	createLocalBackup?: boolean;
+	disableSignetSecrets?: boolean;
 }
 
 interface PathOptions {
@@ -86,6 +87,10 @@ export function registerAppCommands(program: Command, deps: AppDeps): void {
 			"--create-local-backup",
 			"Create a local snapshot backup automatically when OpenClaw points at this workspace and no origin remote exists",
 		)
+		.option(
+			"--disable-signet-secrets",
+			"Leave the bundled Signet Secrets core plugin installed but disabled during setup",
+		)
 		.action(deps.setupWizard);
 
 	const dashboard = program
@@ -112,5 +117,8 @@ export function registerAppCommands(program: Command, deps: AppDeps): void {
 
 	program.command("configure").alias("config").description("Configure agent settings").action(deps.configureAgent);
 
-	program.command("sync").description("Sync hooks, extensions, built-in templates, and skills").action(deps.syncTemplates);
+	program
+		.command("sync")
+		.description("Sync hooks, extensions, built-in templates, and skills")
+		.action(deps.syncTemplates);
 }

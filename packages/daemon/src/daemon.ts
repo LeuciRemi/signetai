@@ -181,6 +181,7 @@ import { registerMiscRoutes } from "./routes/misc-routes.js";
 import { mountOsAgentRoutes } from "./routes/os-agent.js";
 import { mountOsChatRoutes } from "./routes/os-chat.js";
 import { registerPipelineRoutes } from "./routes/pipeline-routes.js";
+import { registerPluginRoutes } from "./routes/plugins-routes.js";
 import { registerRepairRoutes } from "./routes/repair-routes.js";
 import { registerSecretRoutes } from "./routes/secrets-routes.js";
 import { registerSessionRoutes } from "./routes/session-routes.js";
@@ -544,6 +545,13 @@ app.use("/api/repair/*", async (c, next) => {
 	return requirePermission("admin", authConfig)(c, next);
 });
 
+app.use("/api/plugins", async (c, next) => {
+	return requirePermission("admin", authConfig)(c, next);
+});
+app.use("/api/plugins/*", async (c, next) => {
+	return requirePermission("admin", authConfig)(c, next);
+});
+
 app.use("/api/secrets", async (c, next) => {
 	return requirePermission("admin", authConfig)(c, next);
 });
@@ -620,6 +628,7 @@ registerHooksRoutes(app);
 registerKnowledgeRoutes(app);
 registerRepairRoutes(app);
 registerConnectorRoutes(app);
+registerPluginRoutes(app);
 registerSecretRoutes(app);
 registerSessionRoutes(app, { getGitStatus, gitSync });
 registerPipelineRoutes(app);

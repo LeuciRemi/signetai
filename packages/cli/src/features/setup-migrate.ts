@@ -23,6 +23,7 @@ import { daemonAccessLines } from "../lib/network.js";
 import Database from "../sqlite.js";
 import { installForge, managedForgeInstallSupportedOnCurrentPlatform } from "./forge.js";
 import { buildSetupPipeline, defaultExtractionModel } from "./setup-pipeline.js";
+import { writeSetupCorePluginRegistry } from "./setup-plugins.js";
 import { enforceSetupProtection, printSetupProtectionSummary, refreshSnapshotProtection } from "./setup-protection.js";
 import {
 	type EmbeddingProviderChoice,
@@ -51,9 +52,11 @@ export async function runExistingSetupWizard(
 		embeddingModel?: string;
 		extractionProvider?: ExtractionProviderChoice;
 		extractionModel?: string;
+		signetSecretsEnabled?: boolean;
 	},
 ): Promise<void> {
 	const spinner = ora("Setting up Signet for existing identity...").start();
+	const signetSecretsEnabled = options?.signetSecretsEnabled ?? true;
 
 	try {
 		const templatesDir = deps.getTemplatesDir();
@@ -209,6 +212,8 @@ export async function runExistingSetupWizard(
 			writeFileSync(join(basePath, "agent.yaml"), formatYaml(config));
 		}
 
+		writeSetupCorePluginRegistry(basePath, { signetSecretsEnabled });
+
 		const agentsPath = join(basePath, "AGENTS.md");
 		if (!existsSync(agentsPath)) {
 			const agentsTemplate = join(templatesDir, "AGENTS.md.template");
@@ -333,6 +338,13 @@ export async function runExistingSetupWizard(
 		console.log();
 		console.log(chalk.dim("  Your existing identity files are now managed by Signet."));
 		console.log(chalk.dim(`    ${basePath}`));
+		console.log();
+		console.log(chalk.dim("  Core plugins:"));
+		console.log(
+			chalk.dim(
+				`    ${signetSecretsEnabled ? "✓" : "○"} Signet Secrets ${signetSecretsEnabled ? "enabled" : "installed but disabled"}`,
+			),
+		);
 		console.log();
 
 		if (importResult && importResult.imported > 0) {

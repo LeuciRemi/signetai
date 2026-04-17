@@ -925,8 +925,8 @@ specs:
 
 
   - id: plugin-sdk-core-v1
-    status: approved
-    path: docs/specs/approved/plugin-sdk-core-v1.md
+    status: complete
+    path: docs/specs/complete/plugin-sdk-core-v1.md
     hard_depends_on:
       - signet-runtime
     soft_depends_on:
@@ -940,6 +940,7 @@ specs:
       - "Plugin status and diagnostics expose enabled, disabled, blocked, active, and degraded states without crashing the daemon on plugin failure"
       - "Prompt contributions are append-only/context-only, provenance-tagged, token-bounded, and removed when a plugin is disabled"
       - "Signet Secrets is represented as a privileged bundled core plugin while existing /api/secrets routes, CLI, MCP, dashboard, and SDK behavior remain backward compatible"
+      - "CLI setup enables Signet Secrets by default for existing installs, asks new interactive installs whether to enable the bundled core plugin, and supports non-interactive opt-out without deleting stored secrets"
       - "The local Secrets provider adopts existing $SIGNET_WORKSPACE/.secrets/secrets.enc files in place without re-encryption, relocation, or user action"
       - "The V1 manifest and registry store marketplace-ready metadata and future Rust sidecar compatibility fields without implementing marketplace install or Rust sidecar execution"
     decision: null
