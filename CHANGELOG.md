@@ -7,6 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-04-17
+- Features: add plugin SDK core v1 secrets registry.
 - Bug fixes: prevent session-start hook timeouts.
 - Performance: paginate entity IDs before counting to avoid full GROUP BY.
 - Docs: add recall confidence gate record; define plugin sdk core v1.
@@ -33,6 +34,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: refresh public Signet positioning.
 
 ## Release Ledger
+
+## [0.100.0] - 2026-04-17
+
+Release summary: 1 feature.
+Tag range: `v0.99.8..v0.100.0`.
+
+### Features
+
+- **plugins**: add plugin SDK core v1 secrets registry (#518)
 
 ## [0.99.8] - 2026-04-17
 
