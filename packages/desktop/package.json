@@ -1,6 +1,6 @@
 {
   "name": "@signet/desktop",
-  "version": "0.101.0",
+  "version": "0.101.1",
   "private": true,
   "description": "Electron desktop distribution layer for Signet",
   "type": "module",

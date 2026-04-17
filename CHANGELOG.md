@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-04-17
 - Features: replace Tauri shell with Electron app; add plugin SDK core v1 secrets registry.
-- Bug fixes: wire enableOllamaFallback config and add native embedding init cooldown; prevent session-start hook timeouts.
+- Bug fixes: pass AGENTS_DIR directly in runSyncTemplates instead of accepting a parameter; wire enableOllamaFallback config and add native embedding init cooldown; prevent session-start hook timeouts.
 - Performance: paginate entity IDs before counting to avoid full GROUP BY.
 - Docs: add recall confidence gate record; define plugin sdk core v1.
 
@@ -34,6 +34,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: refresh public Signet positioning.
 
 ## Release Ledger
+
+## [0.101.1] - 2026-04-17
+
+Release summary: 1 bug fix.
+Tag range: `v0.101.0..v0.101.1`.
+
+### Bug Fixes
+
+- **cli**: pass AGENTS_DIR directly in runSyncTemplates instead of accepting a parameter (#523)
 
 ## [0.101.0] - 2026-04-17
 
