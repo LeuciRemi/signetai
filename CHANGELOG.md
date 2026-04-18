@@ -7,6 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-04-18
+- Features: add plugin registry panel.
 - Bug fixes: align desktop release build prerequisites.
 
 ### 2026-04-17
@@ -34,6 +35,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: add Ostico as contributor; align generated site metadata.
 
 ## Release Ledger
+
+## [0.102.0] - 2026-04-18
+
+Release summary: 1 feature.
+Tag range: `v0.101.2..v0.102.0`.
+
+### Features
+
+- **dashboard**: add plugin registry panel (#524)
 
 ## [0.101.2] - 2026-04-18
 
