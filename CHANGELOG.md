@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-04-18
+- Bug fixes: align desktop release build prerequisites.
+
 ### 2026-04-17
 - Features: replace Tauri shell with Electron app; add plugin SDK core v1 secrets registry.
 - Bug fixes: pass AGENTS_DIR directly in runSyncTemplates instead of accepting a parameter; wire enableOllamaFallback config and add native embedding init cooldown; prevent session-start hook timeouts.
@@ -30,10 +33,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: emit valid Codex hooks.json schema; gate dependency synthesis on extraction progress; expose pinned param in memory_store and memory_modify.
 - Docs: add Ostico as contributor; align generated site metadata.
 
-### 2026-04-11
-- Docs: refresh public Signet positioning.
-
 ## Release Ledger
+
+## [0.101.2] - 2026-04-18
+
+Release summary: 1 bug fix.
+Tag range: `v0.101.1..v0.101.2`.
+
+### Bug Fixes
+
+- **ci**: align desktop release build prerequisites (#525)
 
 ## [0.101.1] - 2026-04-17
 
