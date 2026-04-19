@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-04-19
+- Bug fixes: resolve all typescript strict-mode errors in daemon package.
+
 ### 2026-04-18
 - Features: add plugin registry panel.
 - Bug fixes: scope Signet memory to named agents; align desktop release build prerequisites.
@@ -31,6 +34,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: prompt agents to check memory before acting; enable Signet pipeline through GitHub Copilot providers.
 
 ## Release Ledger
+
+## [0.102.3] - 2026-04-19
+
+Release summary: 1 bug fix.
+Tag range: `v0.102.2..v0.102.3`.
+
+### Bug Fixes
+
+- **daemon**: resolve all typescript strict-mode errors in daemon package (#527)
 
 ## [0.102.2] - 2026-04-19
 
