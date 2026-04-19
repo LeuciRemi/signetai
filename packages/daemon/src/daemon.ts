@@ -5,86 +5,53 @@
  */
 
 import type { ChildProcess } from "node:child_process";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, copyFileSync } from "node:fs";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { createAdaptorServer } from "@hono/node-server";
-import { serveStatic } from "@hono/node-server/serve-static";
 import {
 	type AgentDefinition,
+	type PipelineSynthesisConfig,
 	buildArchitectureDoc,
-	networkModeFromBindHost,
 	normalizeAgentRosterEntry,
 	parseSimpleYaml,
 	stripSignetBlock,
 } from "@signet/core";
 import { watch } from "chokidar";
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { resolveAgentId, resolveDaemonAgentId } from "./agent-id";
-import {
-	type TokenRole,
-	type TokenScope,
-	checkScope,
-	createAuthMiddleware,
-	createToken,
-	requirePermission,
-	requireRateLimit,
-} from "./auth";
 import { bindWithRetry } from "./bind-with-retry";
 import { migrateConfig } from "./config-migration";
 import { listConnectors } from "./connectors/registry";
-import { normalizeAndHashContent } from "./content-normalization";
 import { clearAllPresence } from "./cross-agent";
 import { closeDbAccessor, getDbAccessor, getVectorRuntimeStatus, initDbAccessor } from "./db-accessor";
-import { syncVecDeleteBySourceId, syncVecInsert } from "./db-helpers";
 import { fetchEmbedding } from "./embedding-fetch";
 import { type EmbeddingTrackerHandle, startEmbeddingTracker } from "./embedding-tracker";
-import { getAllFeatureFlags, initFeatureFlags } from "./feature-flags";
+import { initFeatureFlags } from "./feature-flags";
 import { writeFileIfChangedAsync } from "./file-sync";
 import { syncAgentWorkspaces } from "./identity-sync";
 import { closeLlmProvider, getLlmProvider, initLlmProvider } from "./llm";
-import { type LogEntry, logger } from "./logger";
-import { type EmbeddingConfig, type ResolvedMemoryConfig, loadMemoryConfig } from "./memory-config";
+import { logger } from "./logger";
+import { type ResolvedMemoryConfig, loadMemoryConfig } from "./memory-config";
+import { registerGlobalMiddleware } from "./middleware";
+import { DEFAULT_RETENTION, ensureRetentionWorker, setDreamingWorker, startPipeline, stopPipeline } from "./pipeline";
+import { type DreamingWorkerHandle, startDreamingWorker } from "./pipeline/dreaming-worker";
+import { deadLetterPendingExtractionJobs } from "./pipeline/extraction-fallback";
+import { invalidateTraversalCache } from "./pipeline/graph-traversal";
+import { initModelRegistry, stopModelRegistry } from "./pipeline/model-registry";
 import {
-	DEFAULT_RETENTION,
-	enqueueDocumentIngestJob,
-	ensureRetentionWorker,
-	getDreamingPasses,
-	getDreamingState,
-	getDreamingWorker,
-	getPipelineWorkerStatus,
-	getSynthesisWorker,
-	nudgeExtractionWorker,
-	readLastSynthesisTime,
-	setDreamingWorker,
-	startPipeline,
-	stopPipeline,
-} from "./pipeline";
-import { AlreadyRunningError, type DreamingWorkerHandle, startDreamingWorker } from "./pipeline/dreaming-worker";
-import { deadLetterExtractionJob, deadLetterPendingExtractionJobs } from "./pipeline/extraction-fallback";
-import { getGraphBoostIds } from "./pipeline/graph-search";
-import {
-	getTraversalStatus,
-	invalidateTraversalCache,
-	resolveFocalEntities,
-	traverseKnowledgeGraph,
-} from "./pipeline/graph-traversal";
-import {
-	getAvailableModels,
-	getModelsByProvider,
-	getRegistryStatus,
-	initModelRegistry,
-	refreshRegistry,
-	stopModelRegistry,
-} from "./pipeline/model-registry";
-import {
-	DEFAULT_OLLAMA_FALLBACK_MODEL,
 	createAnthropicProvider,
 	createClaudeCodeProvider,
 	createCodexProvider,
@@ -100,19 +67,10 @@ import {
 import { resolveRuntimeModel } from "./pipeline/provider-resolution";
 import { startReconciler } from "./pipeline/skill-reconciler";
 import { type PredictorClient, createPredictorClient } from "./predictor-client";
-import { detectDrift } from "./predictor-comparison";
-import { getPredictorState } from "./predictor-state";
 import { type RepairContext, structuralBackfill } from "./repair-actions";
-import {
-	getResourceSnapshot,
-	logFdSnapshot,
-	startEventLoopMonitor,
-	startFdPollMonitor,
-	stopResourceMonitors,
-} from "./resource-monitor";
+import { logFdSnapshot, startEventLoopMonitor, startFdPollMonitor, stopResourceMonitors } from "./resource-monitor";
 import {
 	AGENTS_DIR,
-	ALLOWED_ORIGINS,
 	BIND_HOST,
 	CURRENT_VERSION,
 	DAEMON_DIR,
@@ -120,25 +78,15 @@ import {
 	INTERNAL_SELF_HOST,
 	LOG_DIR,
 	MEMORY_DB,
-	NETWORK_MODE,
 	PID_FILE,
 	PORT,
 	analyticsCollector,
-	authAdminLimiter,
-	authBatchForgetLimiter,
-	authConfig,
-	authCrossAgentMessageLimiter,
-	authForgetLimiter,
-	authModifyLimiter,
-	authSecret,
 	bindAbort,
 	invalidateDiagnosticsCache,
-	isAllowedOrigin,
 	isManagedOpenCodeLocalEndpoint,
 	normalizeRuntimeBaseUrl,
 	providerRuntimeResolution,
 	providerTracker,
-	queueExtractionJob,
 	readEnvTrimmed,
 	redactUrlForLogs,
 	reloadAuthState,
@@ -152,25 +100,37 @@ import {
 	setTelemetryRef,
 	shuttingDown,
 } from "./routes/state.js";
-import { isHarnessAvailable, startSchedulerWorker } from "./scheduler/index.js";
-import { getSecret, hasSecret } from "./secrets.js";
+import { startSchedulerWorker } from "./scheduler";
+import { getSecret } from "./secrets.js";
 import { flushPendingCheckpoints, initCheckpointFlush, pruneCheckpoints } from "./session-checkpoints";
 import { releaseAllSessions, startSessionCleanup, stopSessionCleanup } from "./session-tracker";
 import { createSingleFlightRunner } from "./single-flight-runner";
 import { closeSynthesisProvider, initSynthesisProvider } from "./synthesis-llm";
-import { type TelemetryCollector, type TelemetryEventType, createTelemetryCollector } from "./telemetry";
+import { type TelemetryCollector, createTelemetryCollector } from "./telemetry";
 import { closeWidgetProvider, initWidgetProvider } from "./widget-llm";
 
 import {
 	getSynthesisWorker as getSynthesisRenderWorker,
 	setSynthesisWorker as setSynthesisRenderWorker,
 } from "./hooks";
-import { mountMcpRoute } from "./mcp/route.js";
+import { mountMcpRoute } from "./mcp";
 import { mountAppTrayRoutes } from "./routes/app-tray.js";
+import { registerAuthRoutes } from "./routes/auth-routes.js";
 import { mountChangelogRoutes } from "./routes/changelog.js";
 import { registerConnectorRoutes } from "./routes/connectors-routes.js";
+import { setupDashboardRoutes } from "./routes/dashboard.js";
 import { mountEventBusRoutes } from "./routes/event-bus.js";
-import { getGitStatus, gitSync, scheduleAutoCommit, startGitSyncTimer, stopGitSyncTimer } from "./routes/git-sync.js";
+import {
+	getGitStatus,
+	gitConfig,
+	gitPull,
+	gitPush,
+	gitSync,
+	scheduleAutoCommit,
+	startGitSyncTimer,
+	stopGitSyncTimer,
+} from "./routes/git-sync.js";
+import { mountHealthRoutes } from "./routes/health.js";
 import { registerHooksRoutes } from "./routes/hooks-routes.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge-routes.js";
 import { mountMarketplaceReviewsRoutes } from "./routes/marketplace-reviews.js";
@@ -191,23 +151,10 @@ import { registerTelemetryRoutes } from "./routes/telemetry-routes.js";
 import { checkEmbeddingProvider, getConfiguredProviderHints } from "./routes/utils.js";
 import { mountWidgetRoutes } from "./routes/widget.js";
 import { isReadyResponse } from "./synthesis-worker-protocol";
-import {
-	MAX_UPDATE_INTERVAL_SECONDS,
-	MIN_UPDATE_INTERVAL_SECONDS,
-	type UpdateConfig,
-	checkForUpdates as checkForUpdatesImpl,
-	getUpdateState,
-	initUpdateSystem,
-	parseBooleanFlag,
-	parseUpdateInterval,
-	runUpdate as runUpdateImpl,
-	setUpdateConfig,
-	startUpdateTimer,
-	stopUpdateTimer,
-} from "./update-system";
+import { initUpdateSystem, startUpdateTimer, stopUpdateTimer } from "./update-system";
 import { createAgentsWatcherIgnoreMatcher } from "./watcher-ignore";
 
-let httpServer: ReturnType<typeof createAdaptorServer> | null = null;
+let httpServer: import("node:net").Server | null = null;
 let dreamingWorkerHandle: DreamingWorkerHandle | null = null;
 let shadowProcess: ChildProcess | null = null;
 let predictorClientRef: PredictorClient | null = null;
@@ -221,6 +168,13 @@ let structuralBackfillTimer: ReturnType<typeof setTimeout> | null = null;
 let telemetryRef: TelemetryCollector | undefined;
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 let checkpointPruneTimer: ReturnType<typeof setInterval> | undefined;
+
+export function countConnectorsActive(connectors: readonly { readonly status: string }[]): number {
+	// ConnectorStatus is "idle" | "syncing" | "error"; there is no "active"
+	// state. The heartbeat field keeps its historical name, but means
+	// connectors that are registered and not currently errored.
+	return connectors.filter((cn) => cn.status !== "error").length;
+}
 
 export function getPredictorClient(): PredictorClient | null {
 	return predictorClientRef;
@@ -236,392 +190,11 @@ export function recordPredictorLatency(operation: "predictor_score" | "predictor
 
 export const app = new Hono();
 
-// ============================================================================
-// Middleware
-// ============================================================================
+registerGlobalMiddleware(app, { getShadowProcess: () => shadowProcess });
 
-app.use(
-	"*",
-	cors({
-		origin: (origin) => (isAllowedOrigin(origin) ? origin : null),
-		credentials: true,
-	}),
-);
-
-app.use("*", async (c, next) => {
-	if (shuttingDown && c.req.path !== "/health") {
-		c.status(503);
-		return c.json({ error: "shutting down" });
-	}
-	return next();
-});
-
-app.use("*", async (c, next) => {
-	if (authConfig.mode !== "local" && !authSecret) {
-		c.status(503);
-		return c.json({ error: "server initializing" });
-	}
-	const mw = createAuthMiddleware(authConfig, authSecret);
-	return mw(c, next);
-});
-
-app.use("*", async (c, next) => {
-	const start = Date.now();
-	await next();
-	const duration = Date.now() - start;
-	logger.api.request(c.req.method, c.req.path, c.res.status, duration);
-	const actor = c.req.header("x-signet-actor");
-	analyticsCollector.recordRequest(c.req.method, c.req.path, c.res.status, duration, actor ?? undefined);
-	const p = c.req.path;
-	if (p.includes("/remember") || p.includes("/save")) {
-		analyticsCollector.recordLatency("remember", duration);
-	} else if (p.includes("/recall") || p.includes("/search") || p.includes("/similar")) {
-		analyticsCollector.recordLatency("recall", duration);
-	} else if (p.includes("/modify") || p.includes("/forget") || p.includes("/recover")) {
-		analyticsCollector.recordLatency("mutate", duration);
-	}
-});
-
-app.use("*", async (c, next) => {
-	const method = c.req.method;
-	const bodyP = ["POST", "PUT", "PATCH"].includes(method)
-		? c.req.text().catch(() => undefined)
-		: Promise.resolve(undefined);
-	await next();
-	if (!shadowProcess) return;
-	const reqPath = c.req.path;
-	const search = new URL(c.req.url).search;
-	const primaryStatus = c.res.status;
-	bodyP
-		.then((rawBody) =>
-			fetch(`http://localhost:3851${reqPath}${search}`, {
-				method,
-				headers: Object.fromEntries(c.req.raw.headers),
-				body: rawBody,
-				signal: AbortSignal.timeout(5000),
-			}),
-		)
-		.then((shadow) => {
-			if (primaryStatus !== shadow.status) {
-				appendDivergence(AGENTS_DIR, {
-					path: reqPath,
-					method,
-					primaryStatus,
-					shadowStatus: shadow.status,
-				});
-			}
-			return shadow.body?.cancel();
-		})
-		.catch(() => {});
-});
-
-// ============================================================================
-// Health + Features
-// ============================================================================
-
-app.get("/health", (c) => {
-	const us = getUpdateState();
-	let dbOk = false;
-	try {
-		getDbAccessor().withReadDb((db) => {
-			db.prepare("SELECT 1").get();
-			dbOk = true;
-		});
-	} catch {}
-	const workers = getPipelineWorkerStatus();
-	const extraction = workers.extraction;
-	const stalled =
-		extraction.running &&
-		extraction.stats !== undefined &&
-		extraction.stats.pending > 0 &&
-		Date.now() - extraction.stats.lastProgressAt > 60_000;
-
-	return c.json({
-		status: shuttingDown ? "shutting_down" : "healthy",
-		uptime: process.uptime(),
-		pid: process.pid,
-		version: CURRENT_VERSION,
-		port: PORT,
-		agentsDir: AGENTS_DIR,
-		db: dbOk,
-		shuttingDown,
-		updateAvailable: us.lastCheck?.updateAvailable ?? false,
-		pendingRestart: us.pendingRestartVersion !== null,
-		pipeline: {
-			extractionRunning: extraction.running,
-			extractionStalled: stalled,
-			extractionPending: extraction.stats?.pending ?? 0,
-			extractionBackoffMs: extraction.stats?.backoffMs ?? 0,
-		},
-		resources: getResourceSnapshot(),
-	});
-});
-
-app.get("/api/features", (c) => {
-	return c.json(getAllFeatureFlags());
-});
-
-// ============================================================================
-// MCP Server
-// ============================================================================
-
+mountHealthRoutes(app);
 mountMcpRoute(app);
-
-app.get("/api/auth/whoami", (c) => {
-	const auth = c.get("auth");
-	return c.json({
-		authenticated: auth?.authenticated ?? false,
-		claims: auth?.claims ?? null,
-		mode: authConfig.mode,
-	});
-});
-
-app.use("/api/auth/token", async (c, next) => {
-	const perm = requirePermission("admin", authConfig);
-	const rate = requireRateLimit("admin", authAdminLimiter, authConfig);
-	await perm(c, async () => {
-		await rate(c, next);
-	});
-});
-
-app.post("/api/auth/token", async (c) => {
-	if (!authSecret) {
-		return c.json({ error: "auth secret not available (local mode?)" }, 400);
-	}
-
-	const payload = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
-	if (!payload) {
-		return c.json({ error: "invalid request body" }, 400);
-	}
-
-	const role = payload.role as string | undefined;
-	const validRoles: TokenRole[] = ["admin", "operator", "agent", "readonly"];
-	if (!role || !validRoles.includes(role as TokenRole)) {
-		return c.json({ error: `role must be one of: ${validRoles.join(", ")}` }, 400);
-	}
-
-	const scope = (payload.scope ?? {}) as TokenScope;
-	const ttl =
-		typeof payload.ttlSeconds === "number" && payload.ttlSeconds > 0
-			? payload.ttlSeconds
-			: authConfig.defaultTokenTtlSeconds;
-
-	const token = createToken(authSecret, { sub: `token:${role}`, scope, role: role as TokenRole }, ttl);
-	const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
-	return c.json({ token, expiresAt });
-});
-
-// ============================================================================
-// Route-level permission guards
-// ============================================================================
-
-app.use("/api/memory/remember", async (c, next) => {
-	return requirePermission("remember", authConfig)(c, next);
-});
-app.use("/api/memory/save", async (c, next) => {
-	return requirePermission("remember", authConfig)(c, next);
-});
-app.use("/api/hook/remember", async (c, next) => {
-	return requirePermission("remember", authConfig)(c, next);
-});
-app.use("/api/memory/recall", async (c, next) => {
-	return requirePermission("recall", authConfig)(c, next);
-});
-app.use("/api/memory/search", async (c, next) => {
-	return requirePermission("recall", authConfig)(c, next);
-});
-app.use("/memory/search", async (c, next) => {
-	return requirePermission("recall", authConfig)(c, next);
-});
-app.use("/memory/similar", async (c, next) => {
-	return requirePermission("recall", authConfig)(c, next);
-});
-app.use("/api/memory/timeline", async (c, next) => {
-	return requirePermission("recall", authConfig)(c, next);
-});
-app.use("/api/sessions/summaries", async (c, next) => {
-	return requirePermission("recall", authConfig)(c, next);
-});
-app.use("/api/knowledge/expand", async (c, next) => {
-	return requirePermission("recall", authConfig)(c, next);
-});
-app.use("/api/knowledge/expand/session", async (c, next) => {
-	return requirePermission("recall", authConfig)(c, next);
-});
-app.use("/api/graph/impact", async (c, next) => {
-	return requirePermission("recall", authConfig)(c, next);
-});
-
-app.use("/api/memory/modify", async (c, next) => {
-	const perm = requirePermission("modify", authConfig);
-	const rate = requireRateLimit("modify", authModifyLimiter, authConfig);
-	await perm(c, async () => {
-		await rate(c, next);
-	});
-});
-
-app.use("/api/memory/forget", async (c, next) => {
-	const perm = requirePermission("forget", authConfig);
-	const rate = requireRateLimit("batchForget", authBatchForgetLimiter, authConfig);
-	await perm(c, async () => {
-		await rate(c, next);
-	});
-});
-
-app.use("/api/memory/:id/recover", async (c, next) => {
-	return requirePermission("recover", authConfig)(c, next);
-});
-
-app.use("/api/documents", async (c, next) => {
-	return requirePermission("documents", authConfig)(c, next);
-});
-app.use("/api/documents/*", async (c, next) => {
-	return requirePermission("documents", authConfig)(c, next);
-});
-
-app.use("/api/connectors", async (c, next) => {
-	if (c.req.method === "GET") return next();
-	return requirePermission("admin", authConfig)(c, next);
-});
-app.use("/api/connectors/*", async (c, next) => {
-	if (c.req.method === "GET") return next();
-	return requirePermission("admin", authConfig)(c, next);
-});
-
-app.use("/api/diagnostics", async (c, next) => {
-	return requirePermission("diagnostics", authConfig)(c, next);
-});
-app.use("/api/diagnostics/*", async (c, next) => {
-	return requirePermission("diagnostics", authConfig)(c, next);
-});
-
-app.use("/api/analytics", async (c, next) => {
-	return requirePermission("analytics", authConfig)(c, next);
-});
-app.use("/api/analytics/*", async (c, next) => {
-	return requirePermission("analytics", authConfig)(c, next);
-});
-app.use("/api/mcp/analytics", async (c, next) => {
-	return requirePermission("analytics", authConfig)(c, next);
-});
-app.use("/api/mcp/analytics/*", async (c, next) => {
-	return requirePermission("analytics", authConfig)(c, next);
-});
-app.use("/api/skills/analytics", async (c, next) => {
-	return requirePermission("analytics", authConfig)(c, next);
-});
-app.use("/api/skills/analytics/*", async (c, next) => {
-	return requirePermission("analytics", authConfig)(c, next);
-});
-
-app.use("/api/cross-agent", async (c, next) => {
-	if (c.req.method === "GET") {
-		return requirePermission("recall", authConfig)(c, next);
-	}
-	return requirePermission("remember", authConfig)(c, next);
-});
-app.use("/api/cross-agent/*", async (c, next) => {
-	if (c.req.method === "GET") {
-		return requirePermission("recall", authConfig)(c, next);
-	}
-	return requirePermission("remember", authConfig)(c, next);
-});
-app.use("/api/cross-agent/messages", async (c, next) => {
-	if (c.req.method !== "POST") {
-		await next();
-		return;
-	}
-	return requireRateLimit("cross-agent-message", authCrossAgentMessageLimiter, authConfig)(c, next);
-});
-
-app.use("/api/predictor/*", async (c, next) => {
-	return requirePermission("analytics", authConfig)(c, next);
-});
-app.use("/api/timeline/*", async (c, next) => {
-	return requirePermission("analytics", authConfig)(c, next);
-});
-
-app.use("/api/repair/*", async (c, next) => {
-	return requirePermission("admin", authConfig)(c, next);
-});
-
-app.use("/api/plugins", async (c, next) => {
-	return requirePermission("admin", authConfig)(c, next);
-});
-app.use("/api/plugins/*", async (c, next) => {
-	return requirePermission("admin", authConfig)(c, next);
-});
-
-app.use("/api/secrets", async (c, next) => {
-	return requirePermission("admin", authConfig)(c, next);
-});
-app.use("/api/secrets/*", async (c, next) => {
-	return requirePermission("admin", authConfig)(c, next);
-});
-
-app.use("/api/git/*", async (c, next) => {
-	return requirePermission("admin", authConfig)(c, next);
-});
-
-app.use("/api/troubleshoot/*", async (c, next) => {
-	return requirePermission("admin", authConfig)(c, next);
-});
-
-const MAX_CONFIG_BYTES = 1_048_576;
-app.use("/api/config", async (c, next) => {
-	if (c.req.method === "POST") {
-		const cl = c.req.header("content-length");
-		if (cl && Number(cl) > MAX_CONFIG_BYTES) {
-			return c.json({ error: `payload exceeds ${MAX_CONFIG_BYTES} byte limit` }, 413);
-		}
-		return requirePermission("admin", authConfig)(c, next);
-	}
-	return next();
-});
-
-app.use("/api/memory/:id", async (c, next) => {
-	if (authConfig.mode !== "local" && (c.req.method === "PATCH" || c.req.method === "DELETE")) {
-		const auth = c.get("auth");
-		if (auth?.claims?.scope?.project) {
-			const memoryId = c.req.param("id");
-			const row = getDbAccessor().withReadDb(
-				(db) =>
-					db.prepare("SELECT project FROM memories WHERE id = ?").get(memoryId) as
-						| { project: string | null }
-						| undefined,
-			);
-			if (row) {
-				const decision = checkScope(auth.claims, { project: row.project ?? undefined }, authConfig.mode);
-				if (!decision.allowed) {
-					return c.json({ error: decision.reason ?? "scope violation" }, 403);
-				}
-			}
-		}
-	}
-
-	if (c.req.method === "PATCH") {
-		const perm = requirePermission("modify", authConfig);
-		const rate = requireRateLimit("modify", authModifyLimiter, authConfig);
-		return perm(c, async () => {
-			await rate(c, next);
-		});
-	}
-	if (c.req.method === "DELETE") {
-		const perm = requirePermission("forget", authConfig);
-		const rate = requireRateLimit("forget", authForgetLimiter, authConfig);
-		return perm(c, async () => {
-			await rate(c, next);
-		});
-	}
-	if (c.req.method === "GET") {
-		return requirePermission("recall", authConfig)(c, next);
-	}
-	return next();
-});
-
-// ============================================================================
-// Register all route modules
-// ============================================================================
+registerAuthRoutes(app);
 
 registerMemoryRoutes(app);
 registerHooksRoutes(app);
@@ -630,7 +203,7 @@ registerRepairRoutes(app);
 registerConnectorRoutes(app);
 registerPluginRoutes(app);
 registerSecretRoutes(app);
-registerSessionRoutes(app, { getGitStatus, gitSync });
+registerSessionRoutes(app, { gitConfig, stopGitSyncTimer, startGitSyncTimer, getGitStatus, gitPull, gitPush, gitSync });
 registerPipelineRoutes(app);
 registerTelemetryRoutes(app);
 registerMiscRoutes(app);
@@ -651,12 +224,12 @@ mountMarketplaceReviewsRoutes(app);
 mountChangelogRoutes(app);
 mountOsChatRoutes(app);
 mountOsAgentRoutes(app);
+setupDashboardRoutes(app);
 
 // ============================================================================
 // CLI preflight check
 // ============================================================================
 
-/** Spawn a CLI with --version and return true if it exits 0. */
 async function checkCliAvailable(binary: string, extraEnv?: Record<string, string>): Promise<boolean> {
 	const exitCode = await new Promise<number>((resolve) => {
 		const proc = spawn(binary, ["--version"], {
@@ -669,83 +242,6 @@ async function checkCliAvailable(binary: string, extraEnv?: Record<string, strin
 	});
 	return exitCode === 0;
 }
-
-// ============================================================================
-// Dashboard static serving
-// ============================================================================
-
-function getDashboardCandidates(): string[] {
-	const __filename = fileURLToPath(import.meta.url);
-	const __dirname = dirname(__filename);
-
-	return [
-		join(__dirname, "..", "..", "cli", "dashboard", "build"),
-		join(__dirname, "..", "..", "..", "cli", "dashboard", "build"),
-		join(__dirname, "..", "dashboard"),
-		join(__dirname, "dashboard"),
-	];
-}
-
-function getDashboardPath(): string | null {
-	const candidates = getDashboardCandidates();
-
-	for (const candidate of candidates) {
-		if (existsSync(join(candidate, "index.html"))) {
-			return candidate;
-		}
-	}
-
-	return null;
-}
-
-function setupStaticServing() {
-	const dashboardPath = getDashboardPath();
-
-	if (dashboardPath) {
-		app.use("/*", async (c, next) => {
-			const path = c.req.path;
-			if (path.startsWith("/api/") || path === "/health" || path === "/sse") {
-				return next();
-			}
-			return serveStatic({
-				root: dashboardPath,
-				rewriteRequestPath: (p) => {
-					if (!p.includes(".") || p === "/") {
-						return "/index.html";
-					}
-					return p;
-				},
-			})(c, next);
-		});
-	} else {
-		logger.warn("daemon", "Dashboard not found - API-only mode", {
-			candidates: getDashboardCandidates(),
-		});
-		app.get("/", (c) => {
-			return c.html(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Signet Daemon</title></head>
-        <body style="font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px;">
-          <h1>◈ Signet Daemon</h1>
-          <p>The daemon is running, but the dashboard is not installed.</p>
-          <p>API endpoints:</p>
-          <ul>
-            <li><a href="/health">/health</a> - Health check</li>
-            <li><a href="/api/status">/api/status</a> - Daemon status</li>
-            <li><a href="/api/config">/api/config</a> - Config files</li>
-            <li><a href="/api/memories">/api/memories</a> - Memories</li>
-            <li><a href="/api/harnesses">/api/harnesses</a> - Harnesses</li>
-            <li><a href="/api/skills">/api/skills</a> - Skills</li>
-          </ul>
-        </body>
-        </html>
-      `);
-		});
-	}
-}
-
-setupStaticServing();
 
 // ============================================================================
 // File Watcher
@@ -1452,11 +948,6 @@ function setupShadowDb(agentsDir: string): string {
 	return shadowRoot;
 }
 
-function appendDivergence(agentsDir: string, entry: Record<string, unknown>) {
-	const logPath = join(agentsDir, ".daemon", "logs", "shadow-divergences.jsonl");
-	appendFileSync(logPath, `${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`);
-}
-
 // ============================================================================
 // Pipeline runtime
 // ============================================================================
@@ -1481,7 +972,7 @@ async function stopPipelineRuntime(): Promise<void> {
 
 	if (skillReconcilerHandle) {
 		try {
-			await skillReconcilerHandle.stop();
+			await Promise.resolve(skillReconcilerHandle.stop());
 		} catch {}
 		skillReconcilerHandle = null;
 	}
@@ -1593,6 +1084,7 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 	reloadAuthState(AGENTS_DIR);
 
 	const providerHints = getConfiguredProviderHints(AGENTS_DIR);
+	const extractionFallbackProvider = memoryCfg.pipelineV2.extraction.fallbackProvider;
 	const validExtractionProviders = new Set([
 		"none",
 		"llama-cpp",
@@ -1619,7 +1111,7 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 		configured: providerHints.extraction,
 		resolved: memoryCfg.pipelineV2.extraction.provider,
 		effective: memoryCfg.pipelineV2.extraction.provider,
-		fallbackProvider: memoryCfg.pipelineV2.extraction.fallbackProvider,
+		fallbackProvider: extractionFallbackProvider,
 		status: "active",
 		degraded: false,
 		fallbackApplied: false,
@@ -1648,7 +1140,6 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 		});
 	}
 
-	const extractionFallbackProvider = memoryCfg.pipelineV2.extraction.fallbackProvider;
 	let effectiveExtractionProvider = memoryCfg.pipelineV2.extraction.provider;
 	let extractionStatus: "active" | "degraded" | "blocked" | "disabled" | "paused" = "active";
 	let extractionDegraded = false;
@@ -2011,7 +1502,7 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 	} else if (memoryCfg.pipelineV2.synthesis.provider === "none") {
 		logger.info("config", "Synthesis provider set to 'none', synthesis disabled");
 	} else if (memoryCfg.pipelineV2.synthesis.enabled) {
-		let effectiveSynthesisProvider = memoryCfg.pipelineV2.synthesis.provider;
+		let effectiveSynthesisProvider: PipelineSynthesisConfig["provider"] = memoryCfg.pipelineV2.synthesis.provider;
 		const synthesisFallback =
 			extractionFallbackProvider === "llama-cpp"
 				? "llama-cpp"
@@ -2429,7 +1920,7 @@ async function cleanup() {
 
 	if (watcher) {
 		logFdSnapshot("pre-cleanup-watcher");
-		watcher.close();
+		await watcher.close();
 		logFdSnapshot("post-cleanup-watcher");
 	}
 
@@ -2456,10 +1947,12 @@ process.on("uncaughtException", (err) => {
 });
 
 process.on("unhandledRejection", (reason) => {
-	logger.error("daemon", "Unhandled rejection", {
-		error: reason instanceof Error ? reason : String(reason),
-		stack: reason instanceof Error ? reason.stack : undefined,
-	});
+	logger.error(
+		"daemon",
+		"Unhandled rejection",
+		reason instanceof Error ? reason : undefined,
+		reason instanceof Error ? undefined : { reason: String(reason) },
+	);
 	if (shuttingDown) return;
 	setShuttingDown(true);
 	cleanup().finally(() => process.exit(1));
@@ -2606,7 +2099,7 @@ async function main() {
 					telemetryRef.record("daemon.heartbeat", {
 						uptimeMs: Date.now() - daemonStartTime,
 						memoryCount,
-						connectorsActive: connectors.filter((cn) => cn.status === "active").length,
+						connectorsActive: countConnectorsActive(connectors),
 						pipelineMode: readPipelineMode(liveCfg.pipelineV2),
 						extractionProvider: liveCfg.pipelineV2.extraction.provider,
 						embeddingProvider: liveCfg.embedding.provider,
@@ -2679,7 +2172,7 @@ async function main() {
 
 	const REQUEST_BODY_LIMIT = 10 * 1_048_576;
 	const { createServer: nodeCreateServer } = await import("node:http");
-	const createBoundedServer: typeof nodeCreateServer = (...args: Parameters<typeof nodeCreateServer>) => {
+	const createBoundedServer = (...args: Parameters<typeof nodeCreateServer>) => {
 		const server = nodeCreateServer(...args);
 		server.on("request", (req, res) => {
 			let bytes = 0;
@@ -2762,7 +2255,10 @@ async function main() {
 			createAdaptorServer({
 				fetch: app.fetch,
 				hostname: BIND_HOST,
-				createServer: createBoundedServer,
+				// Type assertion needed: arrow functions cannot satisfy overloaded
+				// function types. The wrapper passes all args through to nodeCreateServer
+				// so it is correct at runtime for every overload.
+				createServer: createBoundedServer as typeof nodeCreateServer,
 			}),
 		onBound: (server) => {
 			httpServer = server;

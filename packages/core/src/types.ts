@@ -22,8 +22,11 @@ export interface LlmGenerateResult {
 
 export interface LlmProvider {
 	readonly name: string;
-	generate(prompt: string, opts?: { timeoutMs?: number; maxTokens?: number }): Promise<string>;
-	generateWithUsage?(prompt: string, opts?: { timeoutMs?: number; maxTokens?: number }): Promise<LlmGenerateResult>;
+	generate(prompt: string, opts?: { timeoutMs?: number; maxTokens?: number; temperature?: number }): Promise<string>;
+	generateWithUsage?(
+		prompt: string,
+		opts?: { timeoutMs?: number; maxTokens?: number; temperature?: number },
+	): Promise<LlmGenerateResult>;
 	available(): Promise<boolean>;
 }
 
@@ -294,6 +297,7 @@ export interface PipelineGuardrailsConfig {
 	readonly maxContentChars: number;
 	readonly chunkTargetChars: number;
 	readonly recallTruncateChars: number;
+	readonly contextBudgetChars?: number;
 }
 
 export interface PipelineTelemetryConfig {

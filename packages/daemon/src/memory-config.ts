@@ -11,7 +11,7 @@ import {
 	isPipelineProvider,
 	parseSimpleYaml,
 } from "@signet/core";
-import { type AuthConfig, parseAuthConfig } from "./auth/config";
+import { type AuthConfig, parseAuthConfig } from "./auth";
 import { logger } from "./logger";
 
 export interface EmbeddingConfig {
@@ -50,7 +50,18 @@ class PipelineConfigValidationError extends Error {
 	}
 }
 
-export const DEFAULT_PIPELINE_V2: PipelineV2Config = {
+type ExtractionFallbackProvider = NonNullable<PipelineV2Config["extraction"]["fallbackProvider"]>;
+
+export type ResolvedPipelineV2Config = Omit<PipelineV2Config, "extraction"> & {
+	readonly extraction: Omit<PipelineV2Config["extraction"], "fallbackProvider"> & {
+		readonly fallbackProvider: ExtractionFallbackProvider;
+	};
+	readonly guardrails: Omit<PipelineV2Config["guardrails"], "contextBudgetChars"> & {
+		readonly contextBudgetChars: number;
+	};
+};
+
+export const DEFAULT_PIPELINE_V2: ResolvedPipelineV2Config = {
 	enabled: true,
 	paused: false,
 	shadowMode: false,
@@ -248,7 +259,7 @@ export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 export interface ResolvedMemoryConfig {
 	embedding: EmbeddingConfig;
 	search: MemorySearchConfig;
-	pipelineV2: PipelineV2Config;
+	pipelineV2: ResolvedPipelineV2Config;
 	dreaming: DreamingConfig;
 	auth: AuthConfig;
 }
@@ -286,8 +297,8 @@ function isExtractionFallbackProvider(v: unknown): v is "llama-cpp" | "ollama" |
 
 function resolveExtractionFallbackProvider(
 	raw: unknown,
-	fallback: "llama-cpp" | "ollama" | "none",
-): "llama-cpp" | "ollama" | "none" {
+	fallback: ExtractionFallbackProvider,
+): ExtractionFallbackProvider {
 	if (raw === undefined || raw === null) return fallback;
 	if (isExtractionFallbackProvider(raw)) return raw;
 	throw new MemoryConfigValidationError(
@@ -380,7 +391,7 @@ function parseCommandConfig(raw: unknown): PipelineV2Config["extraction"]["comma
  * Flat extraction keys (dashboard-written) take precedence over nested keys.
  * Provider and model are paired — if flat provider wins, flat model wins too.
  */
-export function loadPipelineConfig(yaml: Record<string, unknown>): PipelineV2Config {
+export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipelineV2Config {
 	const mem = yaml.memory as Record<string, unknown> | undefined;
 	const raw = mem?.pipelineV2 as Record<string, unknown> | undefined;
 	if (!raw) return { ...DEFAULT_PIPELINE_V2 };
@@ -476,7 +487,7 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): PipelineV2Con
 	);
 	const resolvedFallbackProvider = resolveExtractionFallbackProvider(
 		extractionRaw?.fallbackProvider ?? raw.extractionFallbackProvider,
-		d.extraction.fallbackProvider,
+		d.extraction.fallbackProvider ?? "llama-cpp",
 	);
 	const resolvedCommandConfig = parseCommandConfig(extractionRaw?.command ?? raw.extractionCommand);
 	if (resolvedProvider === "command" && !resolvedCommandConfig) {
@@ -490,9 +501,10 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): PipelineV2Con
 		);
 	}
 
-	const synthesisProviderWon = isSynthesisProvider(synthesisRaw?.provider);
-	const resolvedSynthesisProvider: SynthesisProviderKind = synthesisProviderWon
-		? synthesisRaw.provider
+	const rawSynthProvider = synthesisRaw?.provider;
+	const synthesisProviderWon = isSynthesisProvider(rawSynthProvider);
+	const resolvedSynthesisProvider: SynthesisProviderKind = isSynthesisProvider(rawSynthProvider)
+		? rawSynthProvider
 		: resolvedProvider === "command"
 			? d.synthesis.provider
 			: resolvedProvider;
