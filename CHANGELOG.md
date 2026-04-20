@@ -30,10 +30,14 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Features: add llama.cpp as default fallback runtime provider.
 - Bug fixes: unify LLM concurrency (#509); prevent bypass memory leak in OpenCode provider; reduce OpenCode session overhead for pipeline jobs; five correctness bugs found via sqmd structural review.
 
-### 2026-04-13
-- Bug fixes: prompt agents to check memory before acting; enable Signet pipeline through GitHub Copilot providers.
-
 ## Release Ledger
+
+## [0.102.4] - 2026-04-20
+
+Release summary: internal maintenance release with no conventional commit entries captured.
+Tag range: `v0.102.3..v0.102.4`.
+
+No notable changes were captured from conventional commit subjects for this release.
 
 ## [0.102.3] - 2026-04-19
 
