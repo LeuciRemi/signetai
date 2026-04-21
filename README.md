@@ -4,7 +4,7 @@
 
 # S I G N E T   A I
 
-**Local-first identity, memory, and secrets for AI agents**
+**Bring your own context to any AI agent**
 
 <a href="https://github.com/Signet-AI/signetai/actions"><img src="https://img.shields.io/github/actions/workflow/status/Signet-AI/signetai/release.yml?branch=main&style=for-the-badge" alt="CI status"></a>
 <a href="https://github.com/Signet-AI/signetai/releases"><img src="https://img.shields.io/github/v/release/Signet-AI/signetai?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
@@ -16,7 +16,7 @@
 <a href="./docs/BENCHMARKING.md#current-longmemeval-score"><img src="https://img.shields.io/badge/LongMemEval-97.6%25-black?style=for-the-badge" alt="LongMemEval 97.6% answer accuracy"></a>
 
 **97.6% LongMemEval answer accuracy**<br />
-Strict MemoryBench rules profile · daemon recall · no search-time LLM
+Readable record · inspectable recall · harnesses are replaceable
 
 [Website](https://signetai.sh) · [Docs](https://signetai.sh/docs) · [Benchmarks](./docs/BENCHMARKING.md) · [Vision](VISION.md) · [Discussions](https://github.com/Signet-AI/signetai/discussions) · [Discord](https://discord.gg/pHa5scah9C) · [Contributing](docs/CONTRIBUTING.md) · [AI Policy](AI_POLICY.md)
 
@@ -24,30 +24,28 @@ Strict MemoryBench rules profile · daemon recall · no search-time LLM
 
 ---
 
-**Portable AI agent state, across sessions, models, and harnesses.**
+**Models change. Harnesses change. Providers change. Your context should not.**
 
-**TL;DR**
-- Works beneath your existing harness
-- Captures and injects relevant memory automatically between sessions
-- Runs local-first, with inspectable storage and no vendor lock-in
+Signet is the portable context layer for AI agents. It keeps identity,
+memory, provenance, secrets, skills, and working knowledge outside any
+single chat app, model provider, or harness. The execution surface can
+change. The agent keeps its footing.
 
-Signet keeps an agent's identity, memory, secrets, and skills outside
-any single model or harness. The harness can change. The model can
-change. The agent keeps its state.
+The job is simple: bring your own context to the agents you already use,
+then keep that context inspectable and under your control. Signet runs
+beneath Claude Code, OpenCode, OpenClaw, Codex, Hermes Agent, and other
+harnesses so the durable layer survives the tool of the week.
 
-Memory is ambient. Signet extracts and injects relevant context
-automatically, between sessions, before the next prompt starts. Your
-agent wakes up with the continuity it needs instead of asking you to
-rebuild the room by hand.
-
-Structured memory, graph traversal, and hybrid retrieval are the
-substrate. The larger job is behavioral context portability: keeping the
-agent's accumulated understanding under the user's control.
+Memory is ambient. Signet captures useful context between sessions,
+preserves the raw record, indexes it for recall, and injects relevant
+context before the next prompt starts. The agent wakes up with continuity
+instead of asking you to rebuild the room by hand.
 
 Why teams adopt it:
 - less prompt re-explaining between sessions
-- one memory layer across Claude Code, OpenCode, OpenClaw, Codex, and Hermes Agent
-- clear visibility into what was recalled, why, and from which scope
+- one context layer across agents, models, harnesses, and providers
+- local-first storage with inspectable provenance and repair tools
+- a path away from harness-locked behavioral context
 
 ## Quick start (about 5 minutes)
 
@@ -73,6 +71,19 @@ docker compose up -d --build
 
 See [`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md) for token bootstrap,
 backup, and upgrade runbook details.
+
+## Bring your own context
+
+Portable memory only matters if the agent can see the world you already
+work inside. Signet is built around ordinary context, not a special
+knowledge-base ritual: project notes, transcripts, markdown files, PDFs,
+URLs, identity files, decisions, preferences, and the corrections that
+shape how work actually happens.
+
+The durable record stays readable. The semantic layer helps the agent
+navigate it. Retrieval is a lens over the record, not a replacement for
+it. When a summary is stale, conflict-heavy, or decision-critical, the
+agent can climb back down to the source.
 
 ## First proof of value (2-session test)
 
@@ -103,29 +114,46 @@ These are the product surface areas Signet is optimized around:
 
 | Core | What it does |
 |---|---|
-| 🧠 Ambient memory extraction | Sessions are distilled automatically, no memory tool calls required |
-| 🎯 Structured context selection | Graph traversal, hybrid search, provenance, and scoped ranking surface useful context without flooding the window |
-| 💾 Session continuity | Checkpoint and transcript-backed context carried across sessions |
-| 🏠 Local-first storage | Data lives on your machine in SQLite and markdown, portable by default |
-| 🤝 Cross-harness runtime | Claude Code, OpenCode, OpenClaw, Codex, Pi, one shared memory substrate |
+| 🧠 Ambient memory | Sessions are captured automatically, no manual memory ceremony required |
+| 🗂️ Source-backed context | Raw transcripts and workspace files remain available beneath summaries and recall results |
+| 🎯 Inspectable recall | Hybrid search, graph traversal, provenance, scopes, and ranking signals explain why context surfaced |
+| 🏠 Local-first substrate | Data lives on your machine in SQLite and markdown, portable by default |
+| 🤝 Cross-harness continuity | Claude Code, OpenCode, OpenClaw, Codex, Pi, Hermes Agent, one shared context layer |
+| 🧩 SDK-first extensibility | Typed SDKs, middleware, and plugin surfaces let builders shape Signet around their own agents |
 
 ## Is Signet right for you?
 
 Use Signet if you want:
 - memory continuity across sessions without manual prompt bootstrapping
 - local ownership of agent state and history
-- one memory layer across multiple agent harnesses
+- one context layer across multiple agent harnesses
 
 Signet may be overkill if you only need short-lived chat memory inside a
 single hosted assistant.
 
+## What Signet is not
+
+Signet is not a chat app, not a harness, and not a fake second brain
+trying to outsmart the model. It is the durable layer underneath: files,
+memory, identity, provenance, retrieval, secrets, and permissions.
+
+The harness should stay replaceable. The provider should provide
+intelligence, not custody. Signet keeps the continuity somewhere you can
+inspect, repair, move, and rebuild.
+
 ## Why you can trust this
 
 - runs local-first by default
-- memory is stored in SQLite + markdown
-- recall is inspectable with provenance and scopes
+- raw records and workspace files stay inspectable
+- SQLite powers the query layer; recall keeps provenance and source references
 - memory can be repaired (edit, supersede, delete, reclassify)
-- no vendor lock-in, your data stays portable
+- easy to build on: SDK, connectors, MCP, and workspace primitives let teams
+  shape Signet around their agents, policies, and workflows
+- no vendor lock-in, your context stays portable
+
+If you are building agents for an organization, Signet is meant to be shaped,
+not merely installed. Use the SDK, plugin SDK, connectors, and MCP surface to
+fit your own agents, permission model, workflows, and deployment style.
 
 ## What keeps it reliable
 
@@ -149,7 +177,7 @@ These extend Signet for larger deployments and custom integrations:
 | 🔐 Agent-blind secrets | Encrypted secret storage, injected at execution time, not exposed to agent text |
 | 👯 Multi-agent policies | Isolated/shared/group memory visibility for multiple named agents |
 | 🔄 Git sync | Identity and memory can be versioned in your own remote |
-| 📦 SDK + middleware | Typed client, React hooks, and Vercel AI SDK middleware |
+| 📦 SDK + plugin SDK | Typed client, React hooks, Vercel/OpenAI helpers, and plugin surfaces for extending the ecosystem |
 | 🔌 MCP aggregation | Register MCP servers once, expose across connected harnesses |
 | 👥 Team controls | RBAC, token policy, and rate limits for shared deployments |
 | 🏪 Ecosystem installs | Install skills and MCP servers from [skills.sh](https://skills.sh) and [ClawHub](https://clawhub.ai) |
@@ -262,57 +290,65 @@ In connected harnesses, skills work directly:
 
 ## How it works
 
-```
-session ends
-  → raw transcript is preserved and distilled into structured memory
-  → entities, constraints, and relations are linked into a navigable graph
-  → traversal + flat search build a bounded candidate pool
-  → scoped ranking and provenance checks keep retrieval inspectable
-  → dampening and feedback signals separate signal from repeated noise
-  → right context injected before the next prompt starts
+Signet separates memory into three layers:
+
+```text
+workspace / transcripts
+  truth layer: raw files, identity docs, source records, session history
+
+semantic memory
+  navigation layer: summaries, entities, decisions, constraints, relations
+
+query layer
+  retrieval lens: FTS, vector search, graph traversal, scopes, provenance
 ```
 
-No configuration required. No tool calls. The pipeline runs in the
-background and the agent wakes up with its memory intact.
+The record is preserved first. The daemon indexes it, extracts useful
+structure, and keeps recall bounded and inspectable. The agent gets the
+right context before the next prompt starts, with a path back to the raw
+source when the semantic layer is not enough.
+
+After setup, there is no per-session memory ceremony. The pipeline runs
+in the background and the agent wakes up with its memory intact.
 
 Read more: [Why Signet](./docs/QUICKSTART.md#why-signet) · [Architecture](./docs/ARCHITECTURE.md) · [Knowledge Graph](./docs/KNOWLEDGE-GRAPH.md) · [Pipeline](./docs/PIPELINE.md)
 
 ## Architecture
 
 ```text
+Workspace (~/.agents/)
+  AGENTS.md, SOUL.md, IDENTITY.md, USER.md, MEMORY.md, transcripts, memory files
+  readable source records and agent identity files
+
 CLI (signet)
   setup, knowledge, secrets, skills, hooks, git sync, service mgmt
 
 Daemon (@signet/daemon, localhost:3850)
-  |-- HTTP API (modular endpoints for memory, retrieval, auth, and tooling)
+  |-- HTTP API (memory, retrieval, auth, skills, updates, tooling)
+  |-- File Watcher
+  |     identity sync, per-agent workspace sync, git auto-commit
   |-- Distillation Layer
   |     extraction -> decision -> graph -> retention
   |-- Retrieval
-  |     traversal + flat search -> fusion -> dampening
+  |     FTS + vectors + graph traversal -> fusion -> dampening
   |-- Lossless Transcripts
   |     raw session storage -> expand-on-recall join
-  |-- Hints Worker
-  |     prospective indexing -> FTS5 index
-  |-- Inline Entity Linker
-  |     write-time entity extraction (no LLM), decision auto-protection
-  |-- Ranking + Feedback
-  |     bounded candidate ordering, dampening, and provenance signals
   |-- Document Worker
   |     ingest -> chunk -> embed -> index
+  |-- Ranking + Feedback
+  |     bounded candidate ordering, provenance, source-aware scoring
   |-- MCP Server
   |     tool registration, aggregation, blast radius endpoint
   |-- Auth Middleware
   |     local / team / hybrid, RBAC, rate limiting
-  |-- File Watcher
-        identity sync, per-agent workspace sync, git auto-commit
   |-- Multi-Agent
         roster sync, agent_id scoping, read-policy SQL enforcement
 
 Core (@signet/core)
-  types, identity, SQLite, hybrid search, graph traversal
+  types, identity, SQLite storage/query, hybrid search, graph traversal
 
 SDK (@signet/sdk)
-  typed client, React hooks, Vercel AI SDK middleware
+  typed client, React hooks, Vercel/OpenAI helpers, plugin-facing primitives
 
 Connectors
   claude-code, opencode, openclaw, codex, oh-my-pi, pi, hermes-agent, forge
@@ -325,7 +361,7 @@ Connectors
 | [`@signet/core`](./packages/core) | Types, identity, SQLite, hybrid + graph search |
 | [`@signet/cli`](./packages/cli) | CLI, setup wizard, dashboard |
 | [`@signet/daemon`](./packages/daemon) | API server, distillation layer, auth, analytics, diagnostics |
-| [`@signet/sdk`](./packages/sdk) | Typed client, React hooks, Vercel AI SDK middleware |
+| [`@signet/sdk`](./packages/sdk) | Typed client, React hooks, Vercel/OpenAI helpers, plugin-facing primitives |
 | [`packages/forge`](./packages/forge) | Forge native terminal harness and reference runtime implementation |
 | [`@signet/connector-base`](./packages/connector-base) | Shared connector primitives and utilities |
 | [`@signet/connector-claude-code`](./packages/connector-claude-code) | Claude Code integration |
@@ -426,10 +462,65 @@ contributing significant features. Read the
 
 ## Contributors
 
-<p align="left">
-  <a href="https://github.com/NicholaiVogel"><img src="https://avatars.githubusercontent.com/u/217880623?v=4&s=48" width="48" height="48" alt="NicholaiVogel" title="NicholaiVogel"/></a> <a href="https://github.com/BusyBee3333"><img src="https://avatars.githubusercontent.com/u/241850310?v=4&s=48" width="48" height="48" alt="BusyBee3333" title="BusyBee3333"/></a> <a href="https://github.com/stephenwoska2-cpu"><img src="https://avatars.githubusercontent.com/u/258141506?v=4&s=48" width="48" height="48" alt="stephenwoska2-cpu" title="stephenwoska2-cpu"/></a> <a href="https://github.com/PatchyToes"><img src="https://avatars.githubusercontent.com/u/256889430?v=4&s=48" width="48" height="48" alt="PatchyToes" title="PatchyToes"/></a> <a href="https://github.com/aaf2tbz"><img src="https://avatars.githubusercontent.com/u/260091788?v=4&s=48" width="48" height="48" alt="aaf2tbz" title="aaf2tbz"/></a> <a href="https://github.com/ddasgupta4"><img src="https://avatars.githubusercontent.com/ddasgupta4?v=4&s=48" width="48" height="48" alt="ddasgupta4" title="ddasgupta4"/></a> <a href="https://github.com/alcar2364"><img src="https://avatars.githubusercontent.com/alcar2364?v=4&s=48" width="48" height="48" alt="alcar2364" title="alcar2364"/></a> <a href="https://github.com/maximhar"><img src="https://avatars.githubusercontent.com/maximhar?v=4&s=48" width="48" height="48" alt="maximhar" title="maximhar"/></a> <a href="https://github.com/lost-orchard"><img src="https://avatars.githubusercontent.com/lost-orchard?v=4&s=48" width="48" height="48" alt="lost-orchard" title="lost-orchard"/></a> <a href="https://github.com/Ostico"><img src="https://avatars.githubusercontent.com/u/8008416?v=4&s=48" width="48" height="48" alt="Ostico" title="Ostico"/></a> 
-<a href="https://github.com/gpzack"><img src="https://avatars.githubusercontent.com/u/271398594?v=4&s=48" width="48" height="48" alt="gpzack" title="gpzack"/></a>
-</p>
+<table>
+  <tr>
+    <td align="center" width="54">
+      <a href="https://github.com/NicholaiVogel">
+        <img src="https://avatars.githubusercontent.com/u/217880623?v=4&s=48" width="48" height="48" alt="NicholaiVogel" title="NicholaiVogel" />
+      </a>
+    </td>
+    <td align="center" width="54">
+      <a href="https://github.com/BusyBee3333">
+        <img src="https://avatars.githubusercontent.com/u/241850310?v=4&s=48" width="48" height="48" alt="BusyBee3333" title="BusyBee3333" />
+      </a>
+    </td>
+    <td align="center" width="54">
+      <a href="https://github.com/stephenwoska2-cpu">
+        <img src="https://avatars.githubusercontent.com/u/258141506?v=4&s=48" width="48" height="48" alt="stephenwoska2-cpu" title="stephenwoska2-cpu" />
+      </a>
+    </td>
+    <td align="center" width="54">
+      <a href="https://github.com/PatchyToes">
+        <img src="https://avatars.githubusercontent.com/u/256889430?v=4&s=48" width="48" height="48" alt="PatchyToes" title="PatchyToes" />
+      </a>
+    </td>
+    <td align="center" width="54">
+      <a href="https://github.com/aaf2tbz">
+        <img src="https://avatars.githubusercontent.com/u/260091788?v=4&s=48" width="48" height="48" alt="aaf2tbz" title="aaf2tbz" />
+      </a>
+    </td>
+    <td align="center" width="54">
+      <a href="https://github.com/ddasgupta4">
+        <img src="https://avatars.githubusercontent.com/ddasgupta4?v=4&s=48" width="48" height="48" alt="ddasgupta4" title="ddasgupta4" />
+      </a>
+    </td>
+    <td align="center" width="54">
+      <a href="https://github.com/alcar2364">
+        <img src="https://avatars.githubusercontent.com/alcar2364?v=4&s=48" width="48" height="48" alt="alcar2364" title="alcar2364" />
+      </a>
+    </td>
+    <td align="center" width="54">
+      <a href="https://github.com/maximhar">
+        <img src="https://avatars.githubusercontent.com/maximhar?v=4&s=48" width="48" height="48" alt="maximhar" title="maximhar" />
+      </a>
+    </td>
+    <td align="center" width="54">
+      <a href="https://github.com/lost-orchard">
+        <img src="https://avatars.githubusercontent.com/lost-orchard?v=4&s=48" width="48" height="48" alt="lost-orchard" title="lost-orchard" />
+      </a>
+    </td>
+    <td align="center" width="54">
+      <a href="https://github.com/Ostico">
+        <img src="https://avatars.githubusercontent.com/u/8008416?v=4&s=48" width="48" height="48" alt="Ostico" title="Ostico" />
+      </a>
+    </td>
+    <td align="center" width="54">
+      <a href="https://github.com/gpzack">
+        <img src="https://avatars.githubusercontent.com/u/271398594?v=4&s=48" width="48" height="48" alt="gpzack" title="gpzack" />
+      </a>
+    </td>
+  </tr>
+</table>
 
 Made with love by members of Dashore Incubator & friends of Jake Shore and Nicholai Vogel.
 
