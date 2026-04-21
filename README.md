@@ -13,8 +13,12 @@
 <a href="https://discord.gg/pHa5scah9C"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge" alt="Apache-2.0 License"></a>
 <a href="https://github.com/openclaw/openclaw"><img src="https://img.shields.io/badge/OpenClaw-Compatible-orange?style=for-the-badge" alt="OpenClaw Compatible"></a>
+<a href="./docs/BENCHMARKING.md#current-longmemeval-score"><img src="https://img.shields.io/badge/LongMemEval-97.6%25-black?style=for-the-badge" alt="LongMemEval 97.6% answer accuracy"></a>
 
-[Website](https://signetai.sh) · [Docs](https://signetai.sh/docs) · [Vision](VISION.md) · [Discussions](https://github.com/Signet-AI/signetai/discussions) · [Discord](https://discord.gg/pHa5scah9C) · [Contributing](docs/CONTRIBUTING.md) · [AI Policy](AI_POLICY.md)
+**97.6% LongMemEval answer accuracy**<br />
+Strict MemoryBench rules profile · daemon recall · no search-time LLM
+
+[Website](https://signetai.sh) · [Docs](https://signetai.sh/docs) · [Benchmarks](./docs/BENCHMARKING.md) · [Vision](VISION.md) · [Discussions](https://github.com/Signet-AI/signetai/discussions) · [Discord](https://discord.gg/pHa5scah9C) · [Contributing](docs/CONTRIBUTING.md) · [AI Policy](AI_POLICY.md)
 
 </div>
 
@@ -44,10 +48,6 @@ Why teams adopt it:
 - less prompt re-explaining between sessions
 - one memory layer across Claude Code, OpenCode, OpenClaw, Codex, and Hermes Agent
 - clear visibility into what was recalled, why, and from which scope
-
-**Benchmark note:** early LoCoMo results show **87.5% answer accuracy**
-and **100% Hit@10 retrieval** on an **8-question full-stack sample**.
-Larger evaluation runs are in progress. [Details](#locomo-benchmark)
 
 ## Quick start (about 5 minutes)
 
@@ -187,42 +187,19 @@ underneath it.
 
 > Don't see your favorite harness? file an [issue](https://github.com/Signet-AI/signetai/issues) and request that it be added!
 
-## LoCoMo Benchmark
+## LongMemEval Benchmark
 
-[LoCoMo](https://arxiv.org/abs/2402.17753) is the standard benchmark
-for conversational memory systems. No standardized leaderboard exists —
-each system uses different judge models, question subsets, and evaluation
-prompts. These numbers are collected from published papers and repos.
+[LongMemEval](https://arxiv.org/abs/2410.10813) measures whether a memory
+system can recover and use facts across long-running, multi-session
+assistant conversations. Signet's current published run scores **97.6% answer
+accuracy** under the MemoryBench `rules` profile.
 
-| Rank | System | Score | Metric | Open Source | Local? | LLM at Search? |
-|------|--------|-------|--------|-------------|--------|----------------|
-| 1 | [Kumiho](https://arxiv.org/abs/2603.17244) | 97.5% adv, 0.565 F1 | Official F1 + adv subset | SDK open | No | Yes |
-| 2 | EverMemOS | 93.05% | Judge (self-reported) | No | No | Yes |
-| 3 | [MemU](https://memu.pro/benchmark) | 92.09% | Judge | Yes | No | Yes |
-| 4 | MemMachine | 91.7% | Judge | No | No | Yes |
-| 5 | [Hindsight](https://arxiv.org/abs/2512.12818) | 89.6% | Judge | Yes (MIT) | No | Yes |
-| 6 | [SLM V3 Mode C](https://arxiv.org/abs/2603.14588) | 87.7% | Judge | Yes (MIT) | Partial | Yes |
-| 7 | **Signet** | **87.5%** | **Judge (GPT-4o)** | **Yes (Apache)** | **Yes** | **No** |
-| 8 | [Zep/Graphiti](https://arxiv.org/abs/2501.13956) | ~85% | Judge (third-party est) | Partial | No | Yes |
-| 9 | [Letta/MemGPT](https://letta.com) | ~83% | Judge | Yes (Apache) | No | Yes |
-| 10 | [Engram](https://arxiv.org/abs/2511.12960) | 80% | Judge | Yes | No | Yes |
-| 11 | [SLM V3 Mode A](https://arxiv.org/abs/2603.14588) | 74.8% | Judge | Yes (MIT) | Yes | No |
-| 12 | [Mem0+Graph](https://arxiv.org/abs/2504.19413) | 68.4% | J-score (disputed) | Partial | No | Yes |
-| 13 | [SLM Zero-LLM](https://arxiv.org/abs/2603.14588) | 60.4% | Judge | Yes (MIT) | Yes | No |
-| 14 | [Mem0](https://mem0.ai) (independent) | ~58% | Judge | Partial | No | Yes |
+That profile keeps the benchmark contract strict: memories are ingested through
+`/api/memory/remember`, recalled through `/api/memory/recall`, and answered
+from bounded daemon recall results. Search does not call an LLM.
 
-**Current Signet run: 87.5% answer accuracy, 100% Hit@10 retrieval, MRR 0.615 on an 8-question sample.**
-
-We treat this as an encouraging early signal, not a final claim. The sample
-size is small and larger-scale runs are in progress.
-
-What this result does show today:
-- retrieval hit rate was 100% for this run (no empty recalls)
-- the correct supporting memory typically surfaced near the top (MRR 0.615)
-- search-time recall operated without extra LLM inference calls
-
-See [Benchmarks](./docs/BENCHMARKING.md) for methodology, progression, and
-how to run your own evaluation.
+See [Benchmarks](./docs/BENCHMARKING.md#current-longmemeval-score) for the
+methodology and run workflow.
 
 ## Install (detailed)
 
@@ -437,10 +414,21 @@ For code conventions and project structure, see
 contributing significant features. Read the
 [AI Policy](./AI_POLICY.md) before submitting AI-assisted work.
 
+## Star History
+
+<a href="https://star-history.com/#Signet-AI/signetai&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Signet-AI/signetai&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Signet-AI/signetai&type=Date" />
+    <img alt="Star history chart for Signet-AI/signetai" src="https://api.star-history.com/svg?repos=Signet-AI/signetai&type=Date" />
+  </picture>
+</a>
+
 ## Contributors
 
 <p align="left">
-  <a href="https://github.com/NicholaiVogel"><img src="https://avatars.githubusercontent.com/u/217880623?v=4&s=48" width="48" height="48" alt="NicholaiVogel" title="NicholaiVogel"/></a> <a href="https://github.com/BusyBee3333"><img src="https://avatars.githubusercontent.com/u/241850310?v=4&s=48" width="48" height="48" alt="BusyBee3333" title="BusyBee3333"/></a> <a href="https://github.com/stephenwoska2-cpu"><img src="https://avatars.githubusercontent.com/u/258141506?v=4&s=48" width="48" height="48" alt="stephenwoska2-cpu" title="stephenwoska2-cpu"/></a> <a href="https://github.com/PatchyToes"><img src="https://avatars.githubusercontent.com/u/256889430?v=4&s=48" width="48" height="48" alt="PatchyToes" title="PatchyToes"/></a> <a href="https://github.com/aaf2tbz"><img src="https://avatars.githubusercontent.com/u/260091788?v=4&s=48" width="48" height="48" alt="aaf2tbz" title="aaf2tbz"/></a> <a href="https://github.com/ddasgupta4"><img src="https://avatars.githubusercontent.com/ddasgupta4?v=4&s=48" width="48" height="48" alt="ddasgupta4" title="ddasgupta4"/></a> <a href="https://github.com/alcar2364"><img src="https://avatars.githubusercontent.com/alcar2364?v=4&s=48" width="48" height="48" alt="alcar2364" title="alcar2364"/></a> <a href="https://github.com/maximhar"><img src="https://avatars.githubusercontent.com/maximhar?v=4&s=48" width="48" height="48" alt="maximhar" title="maximhar"/></a> <a href="https://github.com/lost-orchard"><img src="https://avatars.githubusercontent.com/lost-orchard?v=4&s=48" width="48" height="48" alt="lost-orchard" title="lost-orchard"/></a> <a href="https://github.com/Ostico"><img src="https://avatars.githubusercontent.com/u/8008416?v=4&s=48" width="48" height="48" alt="Ostico" title="Ostico"/></a> <a href="https://github.com/gpzack"><img src="https://avatars.githubusercontent.com/u/271398594?v=4&s=48" width="48" height="48" alt="gpzack" title="gpzack"/></a>
+  <a href="https://github.com/NicholaiVogel"><img src="https://avatars.githubusercontent.com/u/217880623?v=4&s=48" width="48" height="48" alt="NicholaiVogel" title="NicholaiVogel"/></a> <a href="https://github.com/BusyBee3333"><img src="https://avatars.githubusercontent.com/u/241850310?v=4&s=48" width="48" height="48" alt="BusyBee3333" title="BusyBee3333"/></a> <a href="https://github.com/stephenwoska2-cpu"><img src="https://avatars.githubusercontent.com/u/258141506?v=4&s=48" width="48" height="48" alt="stephenwoska2-cpu" title="stephenwoska2-cpu"/></a> <a href="https://github.com/PatchyToes"><img src="https://avatars.githubusercontent.com/u/256889430?v=4&s=48" width="48" height="48" alt="PatchyToes" title="PatchyToes"/></a> <a href="https://github.com/aaf2tbz"><img src="https://avatars.githubusercontent.com/u/260091788?v=4&s=48" width="48" height="48" alt="aaf2tbz" title="aaf2tbz"/></a> <a href="https://github.com/ddasgupta4"><img src="https://avatars.githubusercontent.com/ddasgupta4?v=4&s=48" width="48" height="48" alt="ddasgupta4" title="ddasgupta4"/></a> <a href="https://github.com/alcar2364"><img src="https://avatars.githubusercontent.com/alcar2364?v=4&s=48" width="48" height="48" alt="alcar2364" title="alcar2364"/></a> <a href="https://github.com/maximhar"><img src="https://avatars.githubusercontent.com/maximhar?v=4&s=48" width="48" height="48" alt="maximhar" title="maximhar"/></a> <a href="https://github.com/lost-orchard"><img src="https://avatars.githubusercontent.com/lost-orchard?v=4&s=48" width="48" height="48" alt="lost-orchard" title="lost-orchard"/></a> <a href="https://github.com/Ostico"><img src="https://avatars.githubusercontent.com/u/8008416?v=4&s=48" width="48" height="48" alt="Ostico" title="Ostico"/></a> 
+<a href="https://github.com/gpzack"><img src="https://avatars.githubusercontent.com/u/271398594?v=4&s=48" width="48" height="48" alt="gpzack" title="gpzack"/></a>
 </p>
 
 Made with love by members of Dashore Incubator & friends of Jake Shore and Nicholai Vogel.
