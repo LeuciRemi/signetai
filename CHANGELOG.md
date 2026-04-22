@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-04-22
-- Features: add GraphIQ plugin integration.
+- Features: add desktop source install command; add GraphIQ plugin integration.
 - Bug fixes: write named-agent memory heads locally.
 
 ### 2026-04-21
@@ -36,6 +36,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Refactoring: prompt for sync after restart.
 
 ## Release Ledger
+
+## [0.105.0] - 2026-04-22
+
+Release summary: 1 feature.
+Tag range: `v0.104.1..v0.105.0`.
+
+### Features
+
+- **cli**: add desktop source install command (#546)
 
 ## [0.104.1] - 2026-04-22
 
