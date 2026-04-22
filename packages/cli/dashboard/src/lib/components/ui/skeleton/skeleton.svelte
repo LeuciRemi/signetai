@@ -12,6 +12,6 @@ let {
 <div
 	bind:this={ref}
 	data-slot="skeleton"
-	class={cn("bg-accent animate-pulse rounded-md", className)}
+	class={cn("animate-pulse rounded-md bg-[var(--sig-skeleton)]", className)}
 	{...restProps}
 ></div>
