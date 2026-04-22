@@ -5,7 +5,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
-	readlinkSync,
+	renameSync,
 	rmSync,
 	symlinkSync,
 	utimesSync,
@@ -40,9 +40,83 @@ describe("desktop source checkout resolution", () => {
 		const root = makeCheckout();
 		try {
 			const cwd = join(root, "packages", "desktop");
-			expect(resolveDesktopSourceCheckout(undefined, { cwd, home: join(root, "home"), env: {} })).toBe(root);
+			expect(
+				resolveDesktopSourceCheckout(undefined, {
+					cwd,
+					env: { SIGNET_PATH: join(root, "missing-workspace") },
+				}),
+			).toBe(root);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("finds the checkout under the configured workspace", () => {
+		const home = mkdtempSync(join(tmpdir(), "signet-desktop-home-"));
+		const workspace = join(home, "workspace");
+		const checkout = makeCheckout();
+		const repo = join(workspace, "signetai");
+		const outside = join(home, "outside");
+		try {
+			mkdirSync(workspace, { recursive: true });
+			mkdirSync(outside, { recursive: true });
+			rmSync(repo, { recursive: true, force: true });
+			mkdirSync(repo, { recursive: true });
+			for (const entry of ["package.json", "packages"]) {
+				renameSync(join(checkout, entry), join(repo, entry));
+			}
+
+			expect(resolveDesktopSourceCheckout(undefined, { cwd: outside, env: { SIGNET_PATH: workspace } })).toBe(repo);
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+			rmSync(checkout, { recursive: true, force: true });
+		}
+	});
+
+	test("finds the checkout under the workspace config path", () => {
+		const home = mkdtempSync(join(tmpdir(), "signet-desktop-home-"));
+		const configHome = join(home, "config");
+		const workspace = join(home, "configured-workspace");
+		const repo = join(workspace, "signetai");
+		const checkout = makeCheckout();
+		const outside = join(home, "outside");
+		try {
+			mkdirSync(join(configHome, "signet"), { recursive: true });
+			mkdirSync(workspace, { recursive: true });
+			mkdirSync(outside, { recursive: true });
+			writeFileSync(join(configHome, "signet", "workspace.json"), JSON.stringify({ version: 1, workspace }));
+			mkdirSync(repo, { recursive: true });
+			for (const entry of ["package.json", "packages"]) {
+				renameSync(join(checkout, entry), join(repo, entry));
+			}
+
+			expect(resolveDesktopSourceCheckout(undefined, { cwd: outside, env: { XDG_CONFIG_HOME: configHome } })).toBe(
+				repo,
+			);
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+			rmSync(checkout, { recursive: true, force: true });
+		}
+	});
+
+	test("honors SIGNET_SOURCE_DIR before the configured workspace", () => {
+		const explicit = makeCheckout();
+		const workspaceRepo = makeCheckout();
+		const home = mkdtempSync(join(tmpdir(), "signet-desktop-home-"));
+		const workspace = join(home, "workspace");
+		try {
+			mkdirSync(workspace, { recursive: true });
+			rmSync(join(workspace, "signetai"), { recursive: true, force: true });
+			renameSync(workspaceRepo, join(workspace, "signetai"));
+			expect(
+				resolveDesktopSourceCheckout(undefined, {
+					cwd: home,
+					env: { SIGNET_PATH: workspace, SIGNET_SOURCE_DIR: explicit },
+				}),
+			).toBe(explicit);
+		} finally {
+			rmSync(explicit, { recursive: true, force: true });
+			rmSync(home, { recursive: true, force: true });
 		}
 	});
 
@@ -117,13 +191,19 @@ describe("linux desktop install", () => {
 			utimesSync(wrongArchArtifact, new Date(3_000), new Date(3_000));
 			utimesSync(nestedArtifact, new Date(4_000), new Date(4_000));
 
-			const result = installLinuxDesktopApp(root, home);
+			const workspace = join(home, "workspace");
+			const result = installLinuxDesktopApp(root, home, workspace);
 
 			expect(readFileSync(result.appImage, "utf8")).toBe("new");
-			expect(readlinkSync(result.binary)).toBe(result.appImage);
+			expect(lstatSync(result.binary).isSymbolicLink()).toBe(false);
+			const launcher = readFileSync(result.binary, "utf8");
+			expect(launcher).toContain("# signet-desktop managed launcher");
+			expect(launcher).toContain(`export SIGNET_PATH='${workspace}'`);
+			expect(launcher).toContain(`exec '${result.appImage}' "$@"`);
 			expect(readFileSync(result.desktopEntry, "utf8")).toContain("Name=Signet");
 			expect(readFileSync(result.desktopEntry, "utf8")).toContain(`Exec=\"${result.binary}\" %U`);
 			expect(existsSync(result.icon)).toBe(true);
+			expect(result.workspace).toBe(workspace);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 			rmSync(home, { recursive: true, force: true });
@@ -142,7 +222,9 @@ describe("linux desktop install", () => {
 			const existing = join(binDir, "signet-desktop");
 			writeFileSync(existing, "custom launcher");
 
-			expect(() => installLinuxDesktopApp(root, home)).toThrow("Refusing to replace existing non-symlink launcher");
+			expect(() => installLinuxDesktopApp(root, home, join(home, "workspace"))).toThrow(
+				"Refusing to replace existing non-managed launcher",
+			);
 			expect(readFileSync(existing, "utf8")).toBe("custom launcher");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -166,10 +248,10 @@ describe("linux desktop install", () => {
 			const binary = join(binDir, "signet-desktop");
 			symlinkSync(oldTarget, binary);
 
-			const result = installLinuxDesktopApp(root, home);
+			const result = installLinuxDesktopApp(root, home, join(home, "workspace"));
 
-			expect(lstatSync(result.binary).isSymbolicLink()).toBe(true);
-			expect(readlinkSync(result.binary)).toBe(result.appImage);
+			expect(lstatSync(result.binary).isSymbolicLink()).toBe(false);
+			expect(readFileSync(result.binary, "utf8")).toContain(`exec '${result.appImage}' "$@"`);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 			rmSync(home, { recursive: true, force: true });
@@ -188,6 +270,7 @@ describe("linux desktop install", () => {
 				{ repo: root, skipBuild: true },
 				{
 					home,
+					env: { SIGNET_PATH: join(home, "workspace") },
 					platform: "linux",
 					runner: () => {
 						throw new Error("runner should not be called");

@@ -16,7 +16,10 @@ export function registerDesktopCommands(program: Command, deps: DesktopDeps): vo
 	desktop
 		.command("build")
 		.description("Build the Signet Electron desktop app from a source checkout")
-		.option("--repo <path>", "Signet source checkout path (defaults to cwd, SIGNET_SOURCE_DIR, or ~/signet/signetai)")
+		.option(
+			"--repo <path>",
+			"Signet source checkout path (defaults to SIGNET_SOURCE_DIR, <configured workspace>/signetai, or cwd)",
+		)
 		.action((options: { readonly repo?: string }) => {
 			try {
 				console.log(chalk.cyan("Building Signet desktop from source..."));
@@ -34,7 +37,10 @@ export function registerDesktopCommands(program: Command, deps: DesktopDeps): vo
 	desktop
 		.command("install")
 		.description("Build and install the Signet Electron desktop app")
-		.option("--repo <path>", "Signet source checkout path (defaults to cwd, SIGNET_SOURCE_DIR, or ~/signet/signetai)")
+		.option(
+			"--repo <path>",
+			"Signet source checkout path (defaults to SIGNET_SOURCE_DIR, <configured workspace>/signetai, or cwd)",
+		)
 		.option("--skip-build", "Install the newest existing desktop artifact without rebuilding")
 		.action((options: { readonly repo?: string; readonly skipBuild?: boolean }) => {
 			try {
@@ -49,6 +55,7 @@ export function registerDesktopCommands(program: Command, deps: DesktopDeps): vo
 				console.log(chalk.dim(`  AppImage: ${result.appImage}`));
 				console.log(chalk.dim(`  Launcher: ${result.binary}`));
 				console.log(chalk.dim(`  Desktop:  ${result.desktopEntry}`));
+				console.log(chalk.dim(`  Workspace: ${result.workspace}`));
 				console.log(chalk.cyan("\n  Run: signet-desktop"));
 			} catch (err) {
 				console.error(chalk.red("Signet desktop install failed"));

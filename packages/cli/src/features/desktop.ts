@@ -10,12 +10,13 @@ import {
 	readlinkSync,
 	rmSync,
 	statSync,
-	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveWorkspaceSourceRepoPath } from "@signet/core";
+import { resolveAgentsDir } from "../lib/workspace.js";
 
 export interface DesktopCommandOptions {
 	readonly repo?: string;
@@ -35,6 +36,7 @@ export interface DesktopLinuxInstallResult extends DesktopBuildResult {
 	readonly binary: string;
 	readonly desktopEntry: string;
 	readonly icon: string;
+	readonly workspace: string;
 }
 
 interface DesktopCommandContext {
@@ -69,14 +71,7 @@ export function resolveDesktopSourceCheckout(
 	ctx: Pick<DesktopCommandContext, "cwd" | "env" | "home"> = {},
 ): string {
 	const explicit = repo?.trim() || ctx.env?.SIGNET_SOURCE_DIR?.trim();
-	const candidates = explicit
-		? [explicit]
-		: [
-				ctx.cwd ?? process.cwd(),
-				dirname(fileURLToPath(import.meta.url)),
-				join(ctx.home ?? homedir(), "signet", "signetai"),
-				join(ctx.home ?? homedir(), "signet", "signetai4"),
-			].flatMap((candidate) => ancestorCandidates(candidate));
+	const candidates = explicit ? [explicit] : desktopSourceCheckoutCandidates(ctx);
 
 	for (const candidate of candidates) {
 		const resolved = resolve(candidate);
@@ -87,8 +82,24 @@ export function resolveDesktopSourceCheckout(
 
 	const hint = explicit
 		? `Not a Signet source checkout: ${resolve(explicit)}`
-		: "Could not find a Signet source checkout. Run from the repo root, set SIGNET_SOURCE_DIR, or pass --repo <path>.";
+		: "Could not find a Signet source checkout. Run from the repo root, set SIGNET_SOURCE_DIR, pass --repo <path>, or keep the checkout at <configured Signet workspace>/signetai.";
 	throw new Error(hint);
+}
+
+function desktopSourceCheckoutCandidates(ctx: Pick<DesktopCommandContext, "cwd" | "env">): string[] {
+	const seen = new Set<string>();
+	const candidates = [
+		resolveWorkspaceSourceRepoPath(resolveAgentsDir(ctx.env ?? process.env).path),
+		...[ctx.cwd ?? process.cwd(), dirname(fileURLToPath(import.meta.url))].flatMap((candidate) =>
+			ancestorCandidates(candidate),
+		),
+	];
+	return candidates.filter((candidate) => {
+		const resolved = resolve(candidate);
+		if (seen.has(resolved)) return false;
+		seen.add(resolved);
+		return true;
+	});
 }
 
 export function buildDesktopFromSource(
@@ -110,6 +121,7 @@ export function installDesktopFromSource(
 	ctx: DesktopCommandContext = {},
 ): DesktopLinuxInstallResult {
 	const repo = resolveDesktopSourceCheckout(options.repo, ctx);
+	const workspace = resolveAgentsDir(ctx.env ?? process.env).path;
 	if (!options.skipBuild) {
 		buildDesktopFromSource({ repo }, ctx);
 	}
@@ -121,10 +133,14 @@ export function installDesktopFromSource(
 		);
 	}
 
-	return installLinuxDesktopApp(repo, ctx.home ?? homedir());
+	return installLinuxDesktopApp(repo, ctx.home ?? homedir(), workspace);
 }
 
-export function installLinuxDesktopApp(repo: string, home: string): DesktopLinuxInstallResult {
+export function installLinuxDesktopApp(
+	repo: string,
+	home: string,
+	workspace = resolveAgentsDir().path,
+): DesktopLinuxInstallResult {
 	const releaseDir = desktopReleaseDir(repo);
 	const source = findLinuxAppImage(releaseDir, process.arch);
 	if (!source) {
@@ -150,12 +166,12 @@ export function installLinuxDesktopApp(repo: string, home: string): DesktopLinux
 	copyFileSync(join(repo, "packages", "desktop", "icons", "icon.png"), icon);
 
 	const binary = join(binDir, "signet-desktop");
-	replaceSymlink(binary, appImage);
+	writeManagedLauncher(binary, appImage, workspace);
 
 	const desktopEntry = join(applicationsDir, "signet.desktop");
 	writeFileSync(desktopEntry, desktopEntryContent(binary, icon));
 
-	return { repo, releaseDir, appImage, binary, desktopEntry, icon };
+	return { repo, releaseDir, appImage, binary, desktopEntry, icon, workspace };
 }
 
 function ancestorCandidates(path: string): string[] {
@@ -266,31 +282,44 @@ function linuxArtifactArchNames(arch: string): ReadonlySet<string> {
 	}
 }
 
-function replaceSymlink(path: string, target: string): void {
+const MANAGED_LAUNCHER_MARKER = "# signet-desktop managed launcher";
+
+function writeManagedLauncher(path: string, target: string, workspace: string): void {
+	const appDir = dirname(target);
 	try {
 		const stat = lstatSync(path);
-		if (!stat.isSymbolicLink()) {
+		if (stat.isSymbolicLink()) {
+			const current = resolve(dirname(path), readlinkSync(path));
+			if (current !== target && !current.startsWith(`${appDir}/`)) {
+				throw new Error(
+					`Refusing to replace launcher symlink at ${path} because it does not point at Signet's desktop install directory.`,
+				);
+			}
+			rmSync(path, { force: true });
+		} else if (readFileSync(path, "utf8").includes(MANAGED_LAUNCHER_MARKER)) {
+			rmSync(path, { force: true });
+		} else {
 			throw new Error(
-				`Refusing to replace existing non-symlink launcher at ${path}. Remove it first if it is not needed.`,
+				`Refusing to replace existing non-managed launcher at ${path}. Remove it first if it is not needed.`,
 			);
 		}
-
-		const current = resolve(dirname(path), readlinkSync(path));
-		const ownedDir = dirname(target);
-		if (current !== target && !current.startsWith(`${ownedDir}/`)) {
-			throw new Error(
-				`Refusing to replace launcher symlink at ${path} because it does not point at Signet's desktop install directory.`,
-			);
-		}
-
-		rmSync(path, { force: true });
 	} catch (err) {
 		const code = err && typeof err === "object" && "code" in err ? err.code : undefined;
 		if (code !== "ENOENT") {
 			throw err;
 		}
 	}
-	symlinkSync(target, path);
+	writeFileSync(path, launcherContent(target, workspace), { mode: 0o755 });
+	chmodSync(path, 0o755);
+}
+
+function launcherContent(target: string, workspace: string): string {
+	return `#!/usr/bin/env sh
+${MANAGED_LAUNCHER_MARKER}
+export SIGNET_PATH=${quoteShellPath(workspace)}
+export SIGNET_WORKSPACE="$SIGNET_PATH"
+exec ${quoteShellPath(target)} "$@"
+`;
 }
 
 function desktopEntryContent(binary: string, icon: string): string {
@@ -308,4 +337,8 @@ StartupWMClass=Signet
 
 function quoteDesktopPath(path: string): string {
 	return `"${path.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
+function quoteShellPath(path: string): string {
+	return `'${path.replaceAll("'", "'\\''")}'`;
 }

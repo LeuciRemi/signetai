@@ -4,11 +4,15 @@ import { BrowserWindow, Menu, app, ipcMain, protocol, shell } from "electron";
 import { DaemonManager } from "./daemon-manager.js";
 import { dashboardRoot, preloadPath } from "./paths.js";
 import { DesktopTray } from "./tray.js";
+import { applyDesktopWorkspaceEnv, resolveDesktopWorkspace } from "./workspace.js";
 
-const daemon = new DaemonManager();
+const workspace = applyDesktopWorkspaceEnv(resolveDesktopWorkspace());
+const daemon = new DaemonManager({ workspacePath: workspace.path });
 let mainWindow: BrowserWindow | null = null;
 let tray: DesktopTray | null = null;
 let quitting = false;
+let daemonStartupError: string | null = null;
+let loadedMainWindowUrl: string | null = null;
 
 function enableGpuRendering(): void {
 	if (process.env.SIGNET_DESKTOP_DISABLE_GPU === "1") return;
@@ -122,22 +126,101 @@ function createMainWindow(): BrowserWindow {
 		mainWindow = null;
 	});
 
-	mainWindow.loadURL("app://signet/").catch((err) => {
-		console.error("Failed to load dashboard", err);
-	});
 	return mainWindow;
 }
 
 function showDashboard(): void {
+	void showDashboardReady();
+}
+
+async function showDashboardReady(): Promise<void> {
+	await prepareDaemonForDashboard();
 	const win = createMainWindow();
+	loadMainWindow(win);
 	if (win.isMinimized()) win.restore();
 	win.show();
 	win.focus();
 }
 
+async function prepareDaemonForDashboard(): Promise<void> {
+	try {
+		await daemon.ensureStarted();
+		daemonStartupError = null;
+	} catch (err) {
+		daemonStartupError = errorMessage(err);
+		console.error(err);
+	}
+}
+
+async function assertDaemonUsable(): Promise<void> {
+	try {
+		await daemon.ensureStarted();
+		daemonStartupError = null;
+	} catch (err) {
+		daemonStartupError = errorMessage(err);
+		throw err;
+	}
+}
+
+function loadMainWindow(win: BrowserWindow): void {
+	const url = daemonStartupError ? startupErrorUrl(daemonStartupError) : "app://signet/";
+	if (loadedMainWindowUrl === url) return;
+	loadedMainWindowUrl = url;
+	win.loadURL(url).catch((err) => {
+		console.error(daemonStartupError ? "Failed to load startup error" : "Failed to load dashboard", err);
+	});
+}
+
+function startupErrorUrl(message: string): string {
+	return `data:text/html;charset=utf-8,${encodeURIComponent(startupErrorHtml(message))}`;
+}
+
+function startupErrorHtml(message: string): string {
+	const safeMessage = escapeHtml(message);
+	const safeWorkspace = escapeHtml(workspace.path);
+	return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Signet daemon blocked</title>
+<style>
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0f0f0f; color: #f2f2f2; font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; }
+main { max-width: 720px; padding: 40px; border: 1px solid #333; background: #151515; box-shadow: 0 24px 80px rgba(0,0,0,.45); }
+h1 { margin: 0 0 16px; font-size: 22px; letter-spacing: .08em; text-transform: uppercase; }
+p { line-height: 1.6; color: #cfcfcf; }
+code { color: #b7ff00; word-break: break-all; }
+.error { color: #ff8f8f; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<main>
+<h1>Daemon workspace mismatch</h1>
+<p>Signet blocked the dashboard because the daemon on the configured port is not confirmed to be using this desktop workspace.</p>
+<p>Expected workspace: <code>${safeWorkspace}</code></p>
+<p class="error">${safeMessage}</p>
+<p>Stop the other daemon or restart it with the configured workspace, then reopen Signet.</p>
+</main>
+</body>
+</html>`;
+}
+
+function escapeHtml(value: string): string {
+	return value
+		.replaceAll("&", "&amp;")
+		.replaceAll("<", "&lt;")
+		.replaceAll(">", "&gt;")
+		.replaceAll('"', "&quot;")
+		.replaceAll("'", "&#39;");
+}
+
+function errorMessage(err: unknown): string {
+	return err instanceof Error ? err.message : String(err);
+}
+
 async function quickCapture(content: string): Promise<void> {
 	const trimmed = content.trim();
 	if (!trimmed) throw new Error("content is required");
+	await assertDaemonUsable();
 	const response = await fetch(`${daemon.baseUrl}/api/memory/remember`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
@@ -149,6 +232,7 @@ async function quickCapture(content: string): Promise<void> {
 async function searchMemories(query: string, limit?: number): Promise<string> {
 	const trimmed = query.trim();
 	if (!trimmed) throw new Error("query is required");
+	await assertDaemonUsable();
 	const response = await fetch(`${daemon.baseUrl}/api/memory/recall`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
@@ -169,9 +253,17 @@ function registerIpc(): void {
 	});
 	ipcMain.handle("desktop:close", () => focusedWindow()?.close());
 	ipcMain.handle("desktop:isMaximized", () => focusedWindow()?.isMaximized() ?? false);
-	ipcMain.handle("desktop:startDaemon", () => daemon.start());
+	ipcMain.handle("desktop:startDaemon", async () => {
+		const status = await daemon.start();
+		daemonStartupError = null;
+		return status;
+	});
 	ipcMain.handle("desktop:stopDaemon", () => daemon.stop());
-	ipcMain.handle("desktop:restartDaemon", () => daemon.restart());
+	ipcMain.handle("desktop:restartDaemon", async () => {
+		const status = await daemon.restart();
+		daemonStartupError = null;
+		return status;
+	});
 	ipcMain.handle("desktop:getDaemonStatus", () => daemon.status());
 	ipcMain.handle("desktop:openDashboard", () => showDashboard());
 	ipcMain.handle("desktop:quickCapture", (_event, content: string) => quickCapture(content));
@@ -194,11 +286,6 @@ app.whenReady().then(async () => {
 	registerIpc();
 	tray = new DesktopTray(daemon, showDashboard);
 	tray.start();
-	try {
-		await daemon.ensureStarted();
-	} catch (err) {
-		console.error(err);
-	}
 	showDashboard();
 
 	app.on("activate", () => showDashboard());

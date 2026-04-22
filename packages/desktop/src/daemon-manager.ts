@@ -1,13 +1,15 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { type WriteStream, createWriteStream, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { app } from "electron";
+import { type WorkspaceMismatch, healthWorkspaceMismatch } from "./daemon-workspace.js";
 import { bunPath, daemonEntry, daemonRoot } from "./paths.js";
 
 export interface HealthStatus {
 	readonly version: string;
 	readonly pid: number;
 	readonly uptime: number;
+	readonly agentsDir: string | null;
 }
 
 export interface DesktopDaemonStatus {
@@ -18,6 +20,12 @@ export interface DesktopDaemonStatus {
 	readonly uptime: number | null;
 	readonly port: number;
 	readonly baseUrl: string;
+	readonly workspacePath: string;
+	readonly mismatch: WorkspaceMismatch | null;
+}
+
+export interface DaemonManagerOptions {
+	readonly workspacePath: string;
 }
 
 function readPort(): number {
@@ -49,13 +57,27 @@ function stringOrNull(value: unknown): string | null {
 export class DaemonManager {
 	readonly port = readPort();
 	readonly baseUrl = `http://localhost:${this.port}`;
+	readonly #workspacePath: string;
 	#child: ChildProcess | null = null;
 	#owned = false;
 	#startPromise: Promise<DesktopDaemonStatus> | null = null;
 	#stdout: WriteStream | null = null;
 	#stderr: WriteStream | null = null;
+	#lastMismatch: WorkspaceMismatch | null = null;
+
+	constructor(options: DaemonManagerOptions) {
+		this.#workspacePath = resolve(options.workspacePath);
+		process.env.SIGNET_DESKTOP_DAEMON_BASE_URL = this.baseUrl;
+	}
 
 	async probe(timeoutMs = 1200): Promise<HealthStatus | null> {
+		const health = await this.#probeRaw(timeoutMs);
+		const mismatch = health ? healthWorkspaceMismatch(this.#workspacePath, health.agentsDir) : null;
+		this.#lastMismatch = mismatch;
+		return mismatch ? null : health;
+	}
+
+	async #probeRaw(timeoutMs = 1200): Promise<HealthStatus | null> {
 		const { signal, cancel } = controllerSignal(timeoutMs);
 		try {
 			const response = await fetch(`${this.baseUrl}/health`, { signal });
@@ -66,6 +88,7 @@ export class DaemonManager {
 				version: stringOrNull(data.version) ?? "unknown",
 				pid: pid ?? 0,
 				uptime: numberOrNull(data.uptime) ?? 0,
+				agentsDir: stringOrNull(data.agentsDir),
 			};
 		} catch {
 			return null;
@@ -84,6 +107,8 @@ export class DaemonManager {
 			uptime: health?.uptime ?? null,
 			port: this.port,
 			baseUrl: this.baseUrl,
+			workspacePath: this.#workspacePath,
+			mismatch: this.#lastMismatch,
 		};
 	}
 
@@ -98,7 +123,15 @@ export class DaemonManager {
 	}
 
 	async #ensureStarted(): Promise<DesktopDaemonStatus> {
-		const existing = await this.probe();
+		const raw = await this.#probeRaw();
+		const mismatch = raw ? healthWorkspaceMismatch(this.#workspacePath, raw.agentsDir) : null;
+		this.#lastMismatch = mismatch;
+		if (mismatch) {
+			throw new Error(
+				`Signet daemon on ${this.baseUrl} is using workspace ${mismatch.actual}, expected ${mismatch.expected}. Stop that daemon or start it with the configured workspace before opening the desktop app.`,
+			);
+		}
+		const existing = raw;
 		if (existing) {
 			this.#owned = false;
 			return this.status();
@@ -193,6 +226,8 @@ export class DaemonManager {
 			env: {
 				...process.env,
 				SIGNET_PORT: String(this.port),
+				SIGNET_PATH: this.#workspacePath,
+				SIGNET_WORKSPACE: this.#workspacePath,
 				SIGNET_DESKTOP: "1",
 			},
 		});

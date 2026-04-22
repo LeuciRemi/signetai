@@ -1,8 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+const daemonPort = Number.parseInt(process.env.SIGNET_PORT ?? "3850", 10);
+const daemonBaseUrl = process.env.SIGNET_DESKTOP_DAEMON_BASE_URL ?? `http://localhost:${daemonPort}`;
+
 contextBridge.exposeInMainWorld("signetDesktop", {
 	platform: process.platform,
-	daemonPort: Number.parseInt(process.env.SIGNET_PORT ?? "3850", 10),
+	daemonPort,
+	daemonBaseUrl,
+	workspacePath: process.env.SIGNET_PATH ?? process.env.SIGNET_WORKSPACE ?? null,
 	nativeFrame: process.env.SIGNET_DESKTOP_NATIVE_FRAME === "1",
 	minimize: () => ipcRenderer.invoke("desktop:minimize"),
 	toggleMaximize: () => ipcRenderer.invoke("desktop:toggleMaximize"),

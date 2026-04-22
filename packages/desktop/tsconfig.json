@@ -13,5 +13,6 @@
 		"types": ["node", "electron"],
 		"declarationMap": false
 	},
-	"include": ["src/**/*.ts"]
+	"include": ["src/**/*.ts"],
+	"exclude": ["src/**/*.test.ts"]
 }

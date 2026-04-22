@@ -16,6 +16,8 @@ export interface SignetDesktopBridge {
 		| "cygwin"
 		| "netbsd";
 	readonly daemonPort: number;
+	readonly daemonBaseUrl?: string;
+	readonly workspacePath?: string | null;
 	readonly nativeFrame: boolean;
 	minimize(): Promise<void>;
 	toggleMaximize(): Promise<void>;
@@ -45,6 +47,7 @@ export function isDesktopShell(): boolean {
 export function desktopApiBase(): string {
 	const shell = getDesktopShell();
 	if (!shell) return "";
+	if (shell.daemonBaseUrl) return shell.daemonBaseUrl;
 	const port = Number.isFinite(shell.daemonPort) && shell.daemonPort > 0 ? shell.daemonPort : 3850;
 	return `http://localhost:${port}`;
 }
