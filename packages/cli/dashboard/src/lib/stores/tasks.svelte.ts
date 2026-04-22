@@ -4,6 +4,7 @@
  */
 
 import {
+	API_BASE,
 	type CronPreset,
 	type ScheduledTask,
 	type TaskRun,
@@ -109,7 +110,6 @@ function isTaskStreamEvent(value: unknown): value is TaskStreamEvent {
 	}
 }
 
-const TASKS_STREAM_BASE = import.meta.env.DEV ? "http://localhost:3850" : "";
 let detailEventSource: EventSource | null = null;
 let detailReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -258,7 +258,7 @@ function upsertRun(run: TaskRun): void {
 function startDetailStream(taskId: string): void {
 	closeDetailStream();
 
-	const url = `${TASKS_STREAM_BASE}/api/tasks/${encodeURIComponent(taskId)}/stream`;
+	const url = `${API_BASE}/api/tasks/${encodeURIComponent(taskId)}/stream`;
 	detailEventSource = new EventSource(url);
 
 	detailEventSource.onmessage = (event) => {

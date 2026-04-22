@@ -1,4 +1,5 @@
 <script lang="ts">
+import { API_BASE } from "$lib/api";
 import PageBanner from "$lib/components/layout/PageBanner.svelte";
 import TabGroupBar from "$lib/components/layout/TabGroupBar.svelte";
 import { ENGINE_TAB_ITEMS } from "$lib/components/layout/page-headers";
@@ -13,9 +14,6 @@ import { onMount } from "svelte";
 import ConvergenceChart from "./ConvergenceChart.svelte";
 import PredictorColumn from "./PredictorColumn.svelte";
 import PredictorStatusBar from "./PredictorStatusBar.svelte";
-
-const isDev = import.meta.env.DEV;
-const API_BASE = isDev ? "http://localhost:3850" : "";
 
 // ---------------------------------------------------------------------------
 // Types

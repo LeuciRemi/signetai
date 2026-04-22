@@ -1,9 +1,6 @@
 <script lang="ts">
-import type { DaemonStatus } from "$lib/api";
+import { API_BASE, type DaemonStatus } from "$lib/api";
 import { setTab } from "$lib/stores/navigation.svelte";
-
-const isDev = import.meta.env.DEV;
-const API_BASE = isDev ? "http://localhost:3850" : "";
 
 interface PredictorHealth {
 	score: number;

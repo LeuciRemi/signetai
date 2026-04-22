@@ -3,6 +3,7 @@ import { extname, normalize, relative, sep } from "node:path";
 import { BrowserWindow, Menu, app, ipcMain, protocol, shell } from "electron";
 import { DaemonManager } from "./daemon-manager.js";
 import { dashboardRoot, preloadPath } from "./paths.js";
+import { daemonRouteTarget, isDaemonRouteUrl } from "./protocol-routes.js";
 import { DesktopTray } from "./tray.js";
 import { applyDesktopWorkspaceEnv, resolveDesktopWorkspace } from "./workspace.js";
 
@@ -58,8 +59,32 @@ function dashboardFile(url: string): string {
 	return file;
 }
 
+async function proxyDaemonRoute(request: Request): Promise<Response> {
+	const target = daemonRouteTarget(daemon.baseUrl, request.url);
+	const headers = new Headers(request.headers);
+	headers.delete("host");
+	headers.delete("origin");
+	const body =
+		request.method === "GET" || request.method === "HEAD"
+			? undefined
+			: await request.arrayBuffer().catch(() => undefined);
+
+	try {
+		return await fetch(target, {
+			method: request.method,
+			headers,
+			body,
+			redirect: "manual",
+		});
+	} catch (err) {
+		return Response.json({ error: "Failed to reach Signet daemon", detail: errorMessage(err) }, { status: 502 });
+	}
+}
+
 async function registerDashboardProtocol(): Promise<void> {
 	protocol.handle("app", async (request) => {
+		if (isDaemonRouteUrl(request.url)) return proxyDaemonRoute(request);
+
 		let file = dashboardFile(request.url);
 		const info = await stat(file).catch(() => null);
 		if (!info?.isFile()) file = `${dashboardRoot()}${sep}index.html`;

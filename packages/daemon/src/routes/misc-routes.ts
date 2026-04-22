@@ -4,7 +4,14 @@ import type { Hono } from "hono";
 import { requirePermission } from "../auth";
 import { getDbAccessor } from "../db-accessor.js";
 import { type LogCategory, type LogEntry, logger } from "../logger.js";
-import { CRON_PRESETS, computeNextRun, isHarnessAvailable, resolveSkillPrompt, resolveTaskModel, validateCron } from "../scheduler";
+import {
+	CRON_PRESETS,
+	computeNextRun,
+	isHarnessAvailable,
+	resolveSkillPrompt,
+	resolveTaskModel,
+	validateCron,
+} from "../scheduler";
 import { emitTaskStream, getTaskStreamSnapshot, subscribeTaskStream } from "../scheduler/task-stream.js";
 import { readScopedTask, readTaskAgentId } from "../task-scope.js";
 import {
@@ -17,6 +24,7 @@ import {
 	runUpdate as runUpdateImpl,
 	setUpdateConfig,
 } from "../update-system.js";
+import { loadDashboardIdentity } from "./dashboard-identity.js";
 import { AGENTS_DIR, authConfig } from "./state.js";
 import { parseOptionalString, resolveScopedAgentId, shouldEnforceAuthScope, toRecord } from "./utils.js";
 
@@ -162,25 +170,11 @@ export function registerMiscRoutes(app: Hono): void {
 	});
 
 	app.get("/api/identity", (c) => {
-		try {
-			const content = readFileSync(join(AGENTS_DIR, "IDENTITY.md"), "utf-8");
-			const lines = content.split("\n");
-			const identity: { name: string; creature: string; vibe: string } = {
-				name: "",
-				creature: "",
-				vibe: "",
-			};
-
-			for (const line of lines) {
-				if (line.startsWith("- name:")) identity.name = line.replace("- name:", "").trim();
-				if (line.startsWith("- creature:")) identity.creature = line.replace("- creature:", "").trim();
-				if (line.startsWith("- vibe:")) identity.vibe = line.replace("- vibe:", "").trim();
-			}
-
-			return c.json(identity);
-		} catch {
-			return c.json({ name: "Unknown", creature: "", vibe: "" });
-		}
+		return c.json(
+			loadDashboardIdentity(AGENTS_DIR, (message, err) => {
+				logger.warn("api", message, { error: err instanceof Error ? err.message : String(err) });
+			}),
+		);
 	});
 
 	app.get("/api/agents", (c) => {
@@ -719,7 +713,8 @@ export function registerMiscRoutes(app: Hono): void {
 		const taskSkillMode = typeof task.skill_mode === "string" ? task.skill_mode : null;
 		const taskWorkingDir = typeof task.working_directory === "string" ? task.working_directory : null;
 		const taskAgentId = readTaskAgentId(task, scoped.agentId);
-		const taskModel = taskHarness === "claude-code" || taskHarness === "codex" ? resolveTaskModel(taskHarness) : undefined;
+		const taskModel =
+			taskHarness === "claude-code" || taskHarness === "codex" ? resolveTaskModel(taskHarness) : undefined;
 
 		const effectivePrompt = resolveSkillPrompt(taskPrompt, taskSkillName, taskSkillMode);
 		const startedMs = Date.now();

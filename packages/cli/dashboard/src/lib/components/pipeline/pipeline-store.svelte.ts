@@ -5,7 +5,7 @@
  * and polls /api/pipeline/status every 5s for health + queue data.
  */
 
-import { getPipelineStatus } from "$lib/api";
+import { API_BASE, getPipelineStatus } from "$lib/api";
 import {
 	type HealthStatus,
 	type LogEntry,
@@ -67,9 +67,7 @@ export function connectSSE(): void {
 		eventSource = null;
 	}
 
-	const isDev = import.meta.env.DEV;
-	const base = isDev ? "http://localhost:3850" : "";
-	eventSource = new EventSource(`${base}/api/logs/stream`);
+	eventSource = new EventSource(`${API_BASE}/api/logs/stream`);
 
 	eventSource.onopen = () => {
 		pipeline.connected = true;
