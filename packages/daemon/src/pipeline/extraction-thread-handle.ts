@@ -10,15 +10,24 @@
 import { Worker } from "node:worker_threads";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
+import type { AnalyticsCollector } from "../analytics";
 import { logger } from "../logger";
 import type { LogCategory } from "../logger";
+import type { TelemetryCollector, TelemetryEventType, TelemetryProperties } from "../telemetry";
 import type { WorkerInit, WorkerToMainMessage } from "./extraction-thread-protocol";
 import type { WorkerHandle, WorkerStats } from "./worker";
 
 const READY_TIMEOUT_MS = 30_000;
 const STOP_TIMEOUT_MS = 10_000;
 
-export function startExtractionThread(init: WorkerInit): Promise<WorkerHandle> {
+export interface ExtractionThreadOpts {
+	readonly init: WorkerInit;
+	readonly analytics?: AnalyticsCollector;
+	readonly telemetry?: TelemetryCollector;
+}
+
+export function startExtractionThread(opts: ExtractionThreadOpts): Promise<WorkerHandle> {
+	const { init, analytics, telemetry } = opts;
 	return new Promise<WorkerHandle>((resolve, reject) => {
 		const bundled = join(import.meta.dir, "extraction-thread.js");
 		const workerPath = existsSync(bundled) ? bundled : join(import.meta.dir, "extraction-thread.ts");
@@ -85,8 +94,16 @@ export function startExtractionThread(init: WorkerInit): Promise<WorkerHandle> {
 					break;
 
 				case "telemetry":
-				case "analytics":
+					telemetry?.record(msg.event as TelemetryEventType, msg.data as TelemetryProperties);
 					break;
+
+				case "analytics": {
+					const fn = analytics?.[msg.method as keyof AnalyticsCollector];
+					if (typeof fn === "function") {
+						(fn as (...a: unknown[]) => void).apply(analytics, msg.args as unknown[]);
+					}
+					break;
+				}
 			}
 		});
 

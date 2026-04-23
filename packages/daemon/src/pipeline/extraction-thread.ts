@@ -11,12 +11,14 @@
  */
 
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
+import type { AnalyticsCollector } from "../analytics";
 import { getDbAccessor } from "../db-accessor";
 import { initDbAccessorLite } from "../db-accessor";
 import { fetchEmbedding } from "../embedding-fetch";
 import { getOrCreateInferenceRouter } from "../inference-router";
 import { getInferenceProvider, initInferenceProviderResolver } from "../llm";
 import type { PipelineV2Config, EmbeddingConfig, MemorySearchConfig } from "../memory-config";
+import type { TelemetryCollector } from "../telemetry";
 import type { DecisionConfig } from "./decision";
 import type { MainToWorkerMessage, WorkerInit, WorkerToMainMessage } from "./extraction-thread-protocol";
 import type { LogSink } from "./worker";
@@ -61,6 +63,48 @@ const ipcLog: LogSink = {
 };
 
 // ---------------------------------------------------------------------------
+// IPC proxy collectors — forward analytics/telemetry to main thread
+// ---------------------------------------------------------------------------
+
+/** Proxy that forwards telemetry.record() calls to the main thread via IPC. */
+const ipcTelemetry: TelemetryCollector = {
+	enabled: true,
+	record(event, properties): void {
+		send({ type: "telemetry", event, data: properties as Record<string, unknown> });
+	},
+	/* Lifecycle and query methods are no-ops — the main thread owns the store. */
+	flush: () => Promise.resolve(),
+	start(): void {},
+	stop: () => Promise.resolve(),
+	query: () => [],
+};
+
+/** Proxy that forwards analytics calls to the main thread via IPC. */
+const ipcAnalytics: AnalyticsCollector = {
+	recordRequest(method, path, status, durationMs, actor): void {
+		send({ type: "analytics", method: "recordRequest", args: [method, path, status, durationMs, actor] });
+	},
+	recordProvider(provider, durationMs, success): void {
+		send({ type: "analytics", method: "recordProvider", args: [provider, durationMs, success] });
+	},
+	recordConnector(connectorId, event, count): void {
+		send({ type: "analytics", method: "recordConnector", args: [connectorId, event, count] });
+	},
+	recordError(entry): void {
+		send({ type: "analytics", method: "recordError", args: [entry] });
+	},
+	recordLatency(operation, ms): void {
+		send({ type: "analytics", method: "recordLatency", args: [operation, ms] });
+	},
+	/* Query/read methods are no-ops — the main thread owns the store. */
+	getUsage: () => ({ endpoints: {}, actors: {}, providers: {}, connectors: {} }),
+	getErrors: () => [],
+	getErrorSummary: () => ({}),
+	getLatency: () => ({}) as ReturnType<AnalyticsCollector["getLatency"]>,
+	reset(): void {},
+};
+
+// ---------------------------------------------------------------------------
 // Bootstrap
 // ---------------------------------------------------------------------------
 
@@ -97,16 +141,14 @@ async function bootstrap(): Promise<void> {
 			fetchEmbedding: (text: string, cfg: EmbeddingConfig) => fetchEmbedding(text, cfg),
 		};
 
-		// 4. Start extraction worker
-		//    Analytics and telemetry are omitted — the main-thread adapter
-		//    can record its own metrics based on IPC stats messages.
+		// 4. Start extraction worker with IPC-backed instrumentation
 		const handle = startWorker(
 			accessor,
 			provider,
 			pipelineCfg,
 			decisionCfg,
-			undefined,
-			undefined,
+			ipcAnalytics,
+			ipcTelemetry,
 			undefined,
 			ipcLog,
 		);

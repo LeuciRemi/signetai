@@ -27,6 +27,7 @@ import { type SummaryWorkerHandle, startSummaryWorker } from "./summary-worker";
 import { type SynthesisWorkerHandle, startSynthesisWorker } from "./synthesis-worker";
 import { type WorkerHandle, type WorkerProgressStats, type WorkerStats, startWorker } from "./worker";
 import { startExtractionThread } from "./extraction-thread-handle";
+import type { ExtractionThreadOpts } from "./extraction-thread-handle";
 import type { WorkerInit } from "./extraction-thread-protocol";
 
 export { enqueueExtractionJob } from "./worker";
@@ -178,7 +179,7 @@ export function startPipeline(
 	};
 
 	if (pipelineCfg.worker.threadedExtraction && workerInit) {
-		pendingStartup = startExtractionThread(workerInit)
+		pendingStartup = startExtractionThread({ init: workerInit, analytics, telemetry })
 			.then((handle) => {
 				workerHandle = handle;
 				logger.info("pipeline", "Extraction worker thread started");
