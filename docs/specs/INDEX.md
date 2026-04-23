@@ -151,6 +151,7 @@ and market subdirectories). Reference repos live in `references/`.
 | `markdown-embedding-normalization-hardening` | RESEARCH-MARKDOWN-EMBEDDING-NORMALIZATION | How should Signet preserve structured markdown for embeddings while preventing repeated poison-pill retries from malformed or provider-sensitive payloads? |
 | `connector-forgecode` | RESEARCH-REFERENCE-REPOS | How should Signet bridge its portable identity, skills, and MCP surfaces into ForgeCode's `~/forge` environment without relying on unavailable lifecycle hooks? |
 | `dreaming-memory-consolidation` | LCM-PATTERNS, memory-pipeline-plan, knowledge-architecture-schema | How should Signet consolidate accumulated session knowledge into a cleaner entity graph during idle periods? |
+| `model-provider-router` | RESEARCH-INFERENCE-CONTROL-PLANE, RESEARCH-COMPETITIVE-SYSTEMS | How should Signet centralize inference across harnesses, daemon workloads, and heterogeneous provider backends under one policy surface? |
 
 ### Research Adoption Ledger (high-impact)
 
@@ -723,6 +724,7 @@ Legend:
 | `predictive-memory-scorer` | approved | `docs/specs/approved/predictive-memory-scorer.md` | `memory-pipeline-v2`, `knowledge-architecture-schema`, `session-continuity-protocol` | - | |
 | `multi-agent-support` | approved | `docs/specs/approved/multi-agent-support.md` | `memory-pipeline-v2` | - | |
 | `signet-runtime` | approved | `docs/specs/approved/signet-runtime.md` | `memory-pipeline-v2` | - | |
+| `model-provider-router` | approved | `docs/specs/approved/model-provider-router.md` | `signet-runtime` | - | Shared inference control plane for per-agent rosters, daemon workloads, native RPC, and OpenAI-compatible gateway routing |
 | `pipeline-pause-control` | complete | `docs/specs/complete/pipeline-pause-control.md` | `memory-pipeline-v2` | - | CLI and dashboard pause/resume shipped on top of live daemon pause/resume API, paused-mode observability, and local Ollama unload |
 | `daemon-startup-responsiveness` | planning | `docs/specs/planning/daemon-startup-responsiveness.md` | `memory-pipeline-v2` | - | Incident-driven stub for issue #331: keep /health responsive during large-db startup recovery and recover stale managed daemon processes cleanly |
 | `runtime-upgrade-regression-hardening` | planning | `docs/specs/planning/runtime-upgrade-regression-hardening.md` | `signet-runtime` | - | Incident-driven stub for the March 29, 2026 `0.83.0` → `0.85.3` runtime regressions: hook transport wiring and dashboard publish contract hardening |
