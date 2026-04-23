@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-04-23
-- Features: index native harness memories; unify LLM provider plumbing.
+- Features: add GraphIQ plugin management UI and daemon API; index native harness memories; unify LLM provider plumbing.
 
 ### 2026-04-22
 - Features: add desktop source install command; add GraphIQ plugin integration.
@@ -35,6 +35,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: add recall confidence gate record; define plugin sdk core v1.
 
 ## Release Ledger
+
+## [0.108.0] - 2026-04-23
+
+Release summary: 1 feature.
+Tag range: `v0.107.0..v0.108.0`.
+
+### Features
+
+- **dashboard**: add GraphIQ plugin management UI and daemon API (#553)
 
 ## [0.107.0] - 2026-04-23
 
