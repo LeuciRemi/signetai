@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-04-24
-- Bug fixes: bound prompt-submit embedding latency; detect default install path; emit structured hook JSON.
+- Bug fixes: bundle install-graphiq.sh so graphiq install/update works; bound prompt-submit embedding latency; detect default install path; emit structured hook JSON.
 - Refactoring: replace brew/cargo install with shell script; add session auto-connect.
 
 ### 2026-04-23
@@ -33,6 +33,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: scope Signet memory to named agents; align desktop release build prerequisites.
 
 ## Release Ledger
+
+## [0.108.6] - 2026-04-24
+
+Release summary: 1 bug fix.
+Tag range: `v0.108.5..v0.108.6`.
+
+### Bug Fixes
+
+- **daemon**: bundle install-graphiq.sh so graphiq install/update works (#562)
 
 ## [0.108.5] - 2026-04-24
 
