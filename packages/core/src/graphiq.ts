@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { SIGNET_GRAPHIQ_PLUGIN_ID } from "./plugins";
 
@@ -17,7 +17,7 @@ export interface GraphiqPluginState {
 	readonly pluginId: typeof SIGNET_GRAPHIQ_PLUGIN_ID;
 	readonly enabled: boolean;
 	readonly managedBy: "signet";
-	readonly installSource?: "homebrew" | "source" | "existing";
+	readonly installSource?: "script" | "homebrew" | "source" | "existing";
 	readonly activeProject?: string;
 	readonly indexedProjects: readonly GraphiqIndexedProject[];
 	readonly updatedAt: string;
@@ -65,6 +65,51 @@ export function writeGraphiqState(basePath: string, state: GraphiqPluginState): 
 	const path = getGraphiqStatePath(basePath);
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+}
+
+export function setGraphiqActiveProject(basePath: string, activeProject: string): void {
+	const statePath = getGraphiqStatePath(basePath);
+	const lockDir = `${statePath}.lock`;
+	const maxAttempts = 50;
+	const retryMs = 20;
+	let locked = false;
+
+	for (let attempt = 0; attempt < maxAttempts; attempt++) {
+		try {
+			mkdirSync(lockDir, { recursive: false });
+			locked = true;
+			break;
+		} catch (err) {
+			const code = (err as NodeJS.ErrnoException).code;
+			if (code !== "EEXIST") {
+				throw new Error(`graphiq state lock failed: ${code ?? "unknown"} — ${String(err)}`);
+			}
+			if (attempt === maxAttempts - 1) {
+				throw new Error("graphiq state lock timeout: could not acquire after 50 attempts");
+			}
+			const start = Date.now();
+			while (Date.now() - start < retryMs) {
+				// busy-wait
+			}
+		}
+	}
+
+	if (!locked) return;
+
+	try {
+		const fresh = readGraphiqState(basePath);
+		const tmpPath = `${statePath}.tmp`;
+		const next = { ...fresh, activeProject };
+		mkdirSync(dirname(statePath), { recursive: true });
+		writeFileSync(tmpPath, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+		renameSync(tmpPath, statePath);
+	} finally {
+		try {
+			rmSync(lockDir, { recursive: false, force: true });
+		} catch {
+			// lock cleanup best-effort
+		}
+	}
 }
 
 export function updateGraphiqActiveProject(
@@ -162,7 +207,7 @@ function parseIndexedProject(value: unknown): GraphiqIndexedProject | null {
 }
 
 function parseInstallSource(value: unknown): GraphiqPluginState["installSource"] | undefined {
-	return value === "homebrew" || value === "source" || value === "existing" ? value : undefined;
+	return value === "script" || value === "homebrew" || value === "source" || value === "existing" ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
