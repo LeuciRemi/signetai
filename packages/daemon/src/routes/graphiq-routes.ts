@@ -1,6 +1,5 @@
 import { constants, accessSync, existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import {
 	disableGraphiqState,
 	enableGraphiqState,
@@ -13,6 +12,7 @@ import { requirePermission } from "../auth";
 import { getActiveGraphiqDbPath, getAgentsDir, resolveGraphiqBinary, runCommand } from "../graphiq.js";
 import { SIGNET_GRAPHIQ_PLUGIN_ID } from "../plugins/bundled/graphiq.js";
 import { getDefaultPluginHost } from "../plugins/index.js";
+import { getInstallScriptPath } from "./graphiq-install-path.js";
 import { authConfig } from "./state.js";
 
 export function registerGraphiqRoutes(app: Hono): void {
@@ -148,11 +148,6 @@ export function registerGraphiqRoutes(app: Hono): void {
 
 function isGraphiqInstalled(): boolean {
 	return resolveGraphiqBinary() !== null;
-}
-
-function getInstallScriptPath(): string {
-	const thisDir = dirname(fileURLToPath(import.meta.url));
-	return resolve(thisDir, "../../../../scripts/install-graphiq.sh");
 }
 
 async function installGraphiq(): Promise<{ success: boolean; source?: string; error?: string }> {
