@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import { fetchEmbedding, requiresOpenAiApiKey, setNativeFallbackProvider } from "./embedding-fetch";
 
 const originalFetch = globalThis.fetch;
+const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
 
 describe("requiresOpenAiApiKey", () => {
 	it("requires a key for official OpenAI endpoints", () => {
@@ -21,7 +22,11 @@ describe("fetchEmbedding", () => {
 	afterEach(() => {
 		globalThis.fetch = originalFetch;
 		setNativeFallbackProvider(null);
-		delete process.env.OPENAI_API_KEY;
+		if (originalOpenAiApiKey === undefined) {
+			Reflect.deleteProperty(process.env, "OPENAI_API_KEY");
+		} else {
+			process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+		}
 	});
 
 	it("allows keyless requests for custom OpenAI-compatible endpoints", async () => {
@@ -42,6 +47,33 @@ describe("fetchEmbedding", () => {
 		expect(capturedHeaders).toEqual({
 			"Content-Type": "application/json",
 		});
+	});
+
+	it("composes caller abort signals with provider timeouts", async () => {
+		const controller = new AbortController();
+		let capturedSignal: AbortSignal | null | undefined;
+		globalThis.fetch = mock((_url: string | URL | Request, init?: RequestInit) => {
+			capturedSignal = init?.signal;
+			expect(capturedSignal).not.toBe(controller.signal);
+			expect(capturedSignal?.aborted).toBe(false);
+			controller.abort();
+			expect(capturedSignal?.aborted).toBe(true);
+			return Promise.resolve(Response.json({ data: [{ embedding: [0.1, 0.2, 0.3] }] }));
+		}) as unknown as typeof fetch;
+
+		const result = await fetchEmbedding(
+			"hello",
+			{
+				provider: "openai",
+				model: "text-embedding-3-small",
+				dimensions: 3,
+				base_url: "http://localhost:1234/v1",
+			},
+			{ signal: controller.signal },
+		);
+
+		expect(result).toEqual([0.1, 0.2, 0.3]);
+		expect(capturedSignal?.aborted).toBe(true);
 	});
 
 	it("routes to ollama when nativeFallbackProvider is 'ollama'", async () => {
