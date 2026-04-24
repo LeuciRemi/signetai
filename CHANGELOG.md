@@ -8,6 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-04-24
 - Bug fixes: detect default install path; emit structured hook JSON.
+- Refactoring: replace brew/cargo install with shell script; add session auto-connect.
 
 ### 2026-04-23
 - Features: add GraphIQ plugin management UI and daemon API; index native harness memories; unify LLM provider plumbing.
@@ -32,6 +33,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: scope Signet memory to named agents; align desktop release build prerequisites.
 
 ## Release Ledger
+
+## [0.108.4] - 2026-04-24
+
+Release summary: 1 refactor.
+Tag range: `v0.108.3..v0.108.4`.
+
+### Refactoring
+
+- **graphiq**: replace brew/cargo install with shell script; add session auto-connect (#560)
 
 ## [0.108.3] - 2026-04-24
 
