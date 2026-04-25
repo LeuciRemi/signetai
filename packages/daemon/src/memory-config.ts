@@ -93,6 +93,7 @@ export const DEFAULT_PIPELINE_V2: ResolvedPipelineV2Config = {
 		leaseTimeoutMs: 300000,
 		maxLoadPerCpu: 0.8,
 		overloadBackoffMs: 30000,
+		threadedExtraction: false,
 	},
 	graph: {
 		enabled: true,
@@ -645,6 +646,7 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 				300000,
 				d.worker.overloadBackoffMs,
 			),
+			threadedExtraction: workerRaw?.threadedExtraction === true,
 		},
 
 		graph: {

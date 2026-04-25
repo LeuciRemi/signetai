@@ -83,6 +83,13 @@ interface WorkerRuntimeDeps {
 	readonly getLoadPerCpu: () => number | null;
 }
 
+/** Injectable log sink — defaults to the global logger, overridden in worker thread. */
+export interface LogSink {
+	info(category: string, message: string, data?: Record<string, unknown>): void;
+	warn(category: string, message: string, data?: Record<string, unknown>): void;
+	error(category: string, message: string, error?: Error | unknown, data?: Record<string, unknown>): void;
+}
+
 interface WrittenFact {
 	readonly memoryId: string;
 	readonly content: string;
@@ -826,7 +833,7 @@ interface StructuralPass1Stats {
 }
 
 export function shouldPersistExtractionGraph(cfg: PipelineV2Config, entityCount: number): boolean {
-	return cfg.graph.enabled && cfg.graph.extractionWritesEnabled && entityCount > 0;
+	return cfg.graph.enabled && cfg.graph.extractionWritesEnabled === true && entityCount > 0;
 }
 
 /**
@@ -1003,6 +1010,7 @@ export function startWorker(
 	analytics?: AnalyticsCollector,
 	telemetry?: TelemetryCollector,
 	runtimeDeps?: Partial<WorkerRuntimeDeps>,
+	logSink?: LogSink,
 ): WorkerHandle {
 	const runtime: WorkerRuntimeDeps = {
 		now: runtimeDeps?.now ?? (() => Date.now()),
@@ -1017,6 +1025,7 @@ export function startWorker(
 				return oneMinuteLoad / cpuCount;
 			}),
 	};
+	const log: LogSink = logSink ?? logger;
 	let running = true;
 	let inflight: Promise<void> | null = null;
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -1093,7 +1102,7 @@ export function startWorker(
 			const assessment = accessor.withReadDb((db) => assessSignificance(row.content, db, agentId, sigCfg));
 
 			if (!assessment.significant) {
-				logger.info("pipeline", "Session below significance threshold — skipping extraction", {
+				log.info("pipeline", "Session below significance threshold — skipping extraction", {
 					jobId: job.id,
 					memoryId: job.memory_id,
 					scores: assessment.scores,
@@ -1300,7 +1309,7 @@ export function startWorker(
 						}
 					} catch (e) {
 						const semMsg = e instanceof Error ? e.message : String(e);
-						logger.warn("pipeline", "Semantic contradiction check failed, proceeding with update", {
+						log.warn("pipeline", "Semantic contradiction check failed, proceeding with update", {
 							proposalIdx: i,
 							error: semMsg,
 						});
@@ -1374,11 +1383,11 @@ export function startWorker(
 				blockRate: Number(blockRate.toFixed(3)),
 			};
 			if (writeStats.writeGateConsidered < WRITE_GATE_ALERT_MIN_SAMPLES) {
-				logger.info("pipeline", "Adaptive write gate ratio sample too small", payload);
+				log.info("pipeline", "Adaptive write gate ratio sample too small", payload);
 			} else if (blockRate > 0.8 || blockRate < 0.2) {
-				logger.warn("pipeline", "Adaptive write gate ratio outside expected band", payload);
+				log.warn("pipeline", "Adaptive write gate ratio outside expected band", payload);
 			} else {
-				logger.info("pipeline", "Adaptive write gate ratio", payload);
+				log.info("pipeline", "Adaptive write gate ratio", payload);
 			}
 		}
 
@@ -1404,7 +1413,7 @@ export function startWorker(
 				// New entities/relations invalidate traversal table cache
 				invalidateTraversalCache();
 			} catch (e) {
-				logger.warn("pipeline", "Graph entity persistence failed (non-fatal)", {
+				log.warn("pipeline", "Graph entity persistence failed (non-fatal)", {
 					jobId: job.id,
 					error: e instanceof Error ? e.message : String(e),
 				});
@@ -1482,7 +1491,7 @@ export function startWorker(
 			try {
 				structuralStats = runStructuralPass1(accessor, structuralFacts, extraction.entities, agentId);
 			} catch (e) {
-				logger.warn("pipeline", "Structural pass 1 failed (non-fatal)", {
+				log.warn("pipeline", "Structural pass 1 failed (non-fatal)", {
 					jobId: job.id,
 					error: e instanceof Error ? e.message : String(e),
 				});
@@ -1501,14 +1510,14 @@ export function startWorker(
 					}
 				});
 			} catch (e) {
-				logger.warn("pipeline", "Hints job enqueueing failed (non-fatal)", {
+				log.warn("pipeline", "Hints job enqueueing failed (non-fatal)", {
 					jobId: job.id,
 					error: e instanceof Error ? e.message : String(e),
 				});
 			}
 		}
 
-		logger.info("pipeline", "Extraction job completed", {
+		log.info("pipeline", "Extraction job completed", {
 			jobId: job.id,
 			memoryId: job.memory_id,
 			facts: extraction.facts.length,
@@ -1556,7 +1565,7 @@ export function startWorker(
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
 				const nonRetryable = e instanceof RateLimitExceededError;
-				logger.warn("pipeline", "Job failed", {
+				log.warn("pipeline", "Job failed", {
 					jobId: job.id,
 					error: msg,
 					attempt: job.attempts,
@@ -1584,10 +1593,10 @@ export function startWorker(
 					durationMs: runtime.now() - jobStart,
 				});
 				if (nonRetryable) {
-				logger.error("pipeline", `Dead-lettering job ${job.id} — rate limit exhausted (permanent)`, undefined, {
-					error: msg,
-					memoryId: job.memory_id,
-				});
+					log.error("pipeline", `Dead-lettering job ${job.id} — rate limit exhausted (permanent)`, undefined, {
+						error: msg,
+						memoryId: job.memory_id,
+					});
 				}
 				accessor.withWriteTx((db) => {
 					if (nonRetryable) {
@@ -1603,7 +1612,7 @@ export function startWorker(
 				lastAttempt = runtime.now();
 			}
 		} catch (e) {
-			logger.error("pipeline", "Worker tick error", e instanceof Error ? e : new Error(String(e)));
+			log.error("pipeline", "Worker tick error", e instanceof Error ? e : new Error(String(e)));
 			consecutiveFailures++;
 			lastAttempt = runtime.now();
 		}
@@ -1638,7 +1647,7 @@ export function startWorker(
 		const delay = getBackoffDelay();
 		nextTickAtEpochMs = runtime.now() + delay;
 		if (consecutiveFailures > 2) {
-			logger.warn("pipeline", "Worker backing off", {
+			log.warn("pipeline", "Worker backing off", {
 				failures: consecutiveFailures,
 				delayMs: Math.round(delay),
 			});
@@ -1657,14 +1666,14 @@ export function startWorker(
 		try {
 			const reaped = reapStaleLeases(accessor, pipelineCfg.worker.leaseTimeoutMs);
 			if (reaped.total > 0) {
-				logger.info("pipeline", "Reaped stale leases", {
+				log.info("pipeline", "Reaped stale leases", {
 					count: reaped.total,
 					pending: reaped.pending,
 					dead: reaped.dead,
 				});
 			}
 		} catch (e) {
-			logger.warn("pipeline", "Lease reaper error", {
+			log.warn("pipeline", "Lease reaper error", {
 				error: e instanceof Error ? e.message : String(e),
 			});
 		}
@@ -1696,7 +1705,7 @@ export function startWorker(
 		}
 		if (pending === 0) return;
 
-		logger.warn("pipeline", "Worker stall detected, resetting backoff", {
+		log.warn("pipeline", "Worker stall detected, resetting backoff", {
 			pending,
 			failures: consecutiveFailures,
 			stalledMs: runtime.now() - lastSuccess,
@@ -1721,16 +1730,16 @@ export function startWorker(
 	// stall detector to fire every interval without this cleanup step.
 	try {
 		const { updated } = recoverMemoryJobs(accessor, pipelineCfg.worker.maxRetries);
-		if (updated > 0) logger.info("pipeline", `Startup recovery: marked ${updated} exhausted pending job(s) as dead`);
+		if (updated > 0) log.info("pipeline", `Startup recovery: marked ${updated} exhausted pending job(s) as dead`);
 	} catch (e) {
-		logger.warn("pipeline", "Startup recovery failed (non-fatal)", {
+		log.warn("pipeline", "Startup recovery failed (non-fatal)", {
 			error: e instanceof Error ? e.message : String(e),
 		});
 	}
 
 	// Start the tick loop
 	scheduleTick();
-	logger.info("pipeline", "Worker started", {
+	log.info("pipeline", "Worker started", {
 		pollMs: pipelineCfg.worker.pollMs,
 		maxRetries: pipelineCfg.worker.maxRetries,
 		model: pipelineCfg.extraction.model,
@@ -1795,7 +1804,7 @@ export function startWorker(
 			if (reapTimer) clearInterval(reapTimer);
 			if (watchdog) clearInterval(watchdog);
 			if (inflight) await inflight;
-			logger.info("pipeline", "Worker stopped");
+			log.info("pipeline", "Worker stopped");
 		},
 	};
 }

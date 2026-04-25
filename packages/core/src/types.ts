@@ -237,6 +237,8 @@ export interface PipelineWorkerConfig {
 	readonly leaseTimeoutMs: number;
 	readonly maxLoadPerCpu: number;
 	readonly overloadBackoffMs: number;
+	/** Run extraction pipeline in a dedicated worker thread (default: false). */
+	readonly threadedExtraction: boolean;
 }
 
 export interface PipelineGraphConfig {
