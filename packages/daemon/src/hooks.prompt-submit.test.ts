@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { handleUserPromptSubmit } from "./hooks";
 import { SIGNET_SECRETS_PLUGIN_ID, getDefaultPluginHost, resetDefaultPluginHostForTests } from "./plugins/index";
 
-type PromptDeps = NonNullable<Parameters<typeof handleUserPromptSubmit>[1]>;
+type PromptDeps = Required<NonNullable<Parameters<typeof handleUserPromptSubmit>[1]>>;
 
 const originalSignetPath = process.env.SIGNET_PATH;
 const agentsDir = mkdtempSync(join(tmpdir(), "signet-hooks-prompt-submit-"));
@@ -21,7 +21,12 @@ const warnMock = mock((..._args: unknown[]) => {});
 const errorMock = mock((..._args: unknown[]) => {});
 const emptyHybridResults: Array<{ id: string; score: number; content: string; created_at: string; pinned?: boolean }> =
 	[];
-const hybridRecallMock = mock(async () => ({ results: emptyHybridResults }));
+const hybridRecallMock = mock(async (..._args: Parameters<PromptDeps["hybridRecall"]>) => ({
+	results: emptyHybridResults,
+}));
+const fetchEmbeddingMock = mock(
+	async (..._args: Parameters<PromptDeps["fetchEmbedding"]>): Promise<number[] | null> => null,
+);
 const emptyTemporalHits: Array<{
 	id: string;
 	latestAt: string;
@@ -42,6 +47,17 @@ function ensureMemoryDbExists(): void {
 	if (!existsSync(memoryDbPath)) {
 		writeFileSync(memoryDbPath, "");
 	}
+}
+
+function makePendingEmbedding(): {
+	readonly promise: Promise<number[] | null>;
+	readonly resolve: (value: number[] | null) => void;
+} {
+	let resolveEmbedding: (value: number[] | null) => void = () => {};
+	const promise = new Promise<number[] | null>((resolve) => {
+		resolveEmbedding = resolve;
+	});
+	return { promise, resolve: resolveEmbedding };
 }
 
 function makeDeps(): PromptDeps {
@@ -79,7 +95,7 @@ function makeDeps(): PromptDeps {
 			policyGroup: null,
 		}),
 		hybridRecall: hybridRecallMock,
-		fetchEmbedding: async () => null,
+		fetchEmbedding: fetchEmbeddingMock,
 		searchTemporalFallback: searchTemporalFallbackMock,
 		searchTranscriptFallback: searchTranscriptFallbackMock,
 		upsertSessionTranscript() {},
@@ -109,8 +125,12 @@ describe("handleUserPromptSubmit observability", () => {
 		warnMock.mockClear();
 		errorMock.mockClear();
 		hybridRecallMock.mockClear();
+		hybridRecallMock.mockImplementation(async () => ({ results: emptyHybridResults }));
+		fetchEmbeddingMock.mockClear();
 		searchTemporalFallbackMock.mockClear();
+		searchTemporalFallbackMock.mockImplementation(() => emptyTemporalHits);
 		searchTranscriptFallbackMock.mockClear();
+		searchTranscriptFallbackMock.mockImplementation(() => emptyTranscriptHits);
 		ensureMemoryDbExists();
 		resetDefaultPluginHostForTests();
 		getDefaultPluginHost().setEnabled(SIGNET_SECRETS_PLUGIN_ID, true);
@@ -273,6 +293,251 @@ describe("handleUserPromptSubmit observability", () => {
 		expect(result.inject).toContain("Use the memories below as starting context before acting");
 		expect(result.inject).toContain("run 1-3 targeted recalls with /recall or memory_search");
 		expect(result.inject).not.toContain("[signet:recall");
+	});
+
+	it("uses prompt-submit embeddings when they return within the hook budget", async () => {
+		fetchEmbeddingMock.mockResolvedValueOnce([0.1, 0.2, 0.3]);
+		hybridRecallMock.mockImplementationOnce(async (_params, _cfg, embed) => {
+			const vector = await embed("prompt submit timeout trace", {
+				provider: "ollama",
+				model: "nomic-embed-text",
+				dimensions: 768,
+				base_url: "http://localhost:11434",
+			});
+			return {
+				results: vector
+					? [
+							{
+								id: "mem-vector",
+								score: 0.95,
+								content: "prompt submit timeout trace uses fast vector context",
+								created_at: "2026-03-26T20:10:00.000Z",
+							},
+						]
+					: [],
+			};
+		});
+
+		const result = await handleUserPromptSubmit(
+			{
+				harness: "vscode-custom-agent",
+				userMessage: "prompt submit timeout trace",
+				sessionKey: "session-fast-embedding",
+			},
+			makeDeps(),
+		);
+
+		expect(fetchEmbeddingMock).toHaveBeenCalledTimes(1);
+		expect(result.memoryCount).toBe(1);
+		expect(result.inject).toContain("prompt submit timeout trace uses fast vector context");
+	});
+
+	it("preserves vector prompt-submit recall for concurrent fast embeddings", async () => {
+		const firstEmbedding = makePendingEmbedding();
+		const secondEmbedding = makePendingEmbedding();
+		fetchEmbeddingMock
+			.mockImplementationOnce(async () => firstEmbedding.promise)
+			.mockImplementationOnce(async () => secondEmbedding.promise);
+		hybridRecallMock.mockImplementation(async (_params, _cfg, embed) => {
+			const vector = await embed("prompt submit concurrent vector trace", {
+				provider: "ollama",
+				model: "nomic-embed-text",
+				dimensions: 768,
+				base_url: "http://localhost:11434",
+			});
+			return {
+				results: vector
+					? [
+							{
+								id: `mem-concurrent-${vector[0]}`,
+								score: 0.95,
+								content: `prompt submit concurrent vector recall ${vector[0]}`,
+								created_at: "2026-03-26T20:10:00.000Z",
+							},
+						]
+					: [],
+			};
+		});
+
+		const first = handleUserPromptSubmit(
+			{
+				harness: "vscode-custom-agent",
+				userMessage: "prompt submit concurrent vector trace",
+				sessionKey: "session-concurrent-fast-embedding-one",
+			},
+			makeDeps(),
+		);
+		const second = handleUserPromptSubmit(
+			{
+				harness: "vscode-custom-agent",
+				userMessage: "prompt submit concurrent vector trace",
+				sessionKey: "session-concurrent-fast-embedding-two",
+			},
+			makeDeps(),
+		);
+
+		firstEmbedding.resolve([0.1, 0.2, 0.3]);
+		secondEmbedding.resolve([0.4, 0.5, 0.6]);
+		const [firstResult, secondResult] = await Promise.all([first, second]);
+
+		expect(fetchEmbeddingMock).toHaveBeenCalledTimes(2);
+		expect(firstResult.memoryCount).toBe(1);
+		expect(firstResult.inject).toContain("prompt submit concurrent vector recall 0.1");
+		expect(secondResult.memoryCount).toBe(1);
+		expect(secondResult.inject).toContain("prompt submit concurrent vector recall 0.4");
+		expect(warnMock).not.toHaveBeenCalledWith(
+			"hooks",
+			"User prompt submit embedding already in flight, skipping vector recall",
+			expect.anything(),
+		);
+	});
+
+	it("bypasses prompt-submit embeddings when they exceed the hook budget", async () => {
+		const pending = makePendingEmbedding();
+		let signal: AbortSignal | undefined;
+		fetchEmbeddingMock.mockImplementationOnce(async (_text, _cfg, opts) => {
+			signal = opts?.signal;
+			return pending.promise;
+		});
+		hybridRecallMock.mockImplementationOnce(async (_params, _cfg, embed) => {
+			const vector = await embed("prompt submit timeout trace", {
+				provider: "ollama",
+				model: "nomic-embed-text",
+				dimensions: 768,
+				base_url: "http://localhost:11434",
+			});
+			return {
+				results: vector
+					? [
+							{
+								id: "mem-vector",
+								score: 0.95,
+								content: "prompt submit timeout trace should not wait forever",
+								created_at: "2026-03-26T20:10:00.000Z",
+							},
+						]
+					: [],
+			};
+		});
+
+		const start = Date.now();
+		const result = await handleUserPromptSubmit(
+			{
+				harness: "vscode-custom-agent",
+				userMessage: "prompt submit timeout trace",
+				sessionKey: "session-slow-embedding",
+			},
+			makeDeps(),
+		);
+
+		expect(Date.now() - start).toBeLessThan(1500);
+		expect(fetchEmbeddingMock).toHaveBeenCalledTimes(1);
+		expect(result.memoryCount).toBe(0);
+		expect(result.inject).toContain("No strong automatic memory match was injected");
+		expect(warnMock).toHaveBeenCalledWith(
+			"hooks",
+			"User prompt submit embedding timed out",
+			expect.objectContaining({ timeoutMs: 1000 }),
+		);
+		expect(signal?.aborted).toBe(true);
+		pending.resolve(null);
+		await Promise.resolve();
+	});
+
+	it("preserves non-vector prompt-submit recall when embeddings exceed the hook budget", async () => {
+		const pending = makePendingEmbedding();
+		fetchEmbeddingMock.mockImplementationOnce(async () => pending.promise);
+		hybridRecallMock.mockImplementationOnce(async (_params, _cfg, embed) => {
+			const vector = await embed("prompt submit timeout lexical fallback", {
+				provider: "ollama",
+				model: "nomic-embed-text",
+				dimensions: 768,
+				base_url: "http://localhost:11434",
+			});
+			return {
+				results: vector
+					? []
+					: [
+							{
+								id: "mem-keyword",
+								score: 0.91,
+								content: "prompt submit timeout lexical fallback still injects keyword recall",
+								created_at: "2026-03-26T20:10:00.000Z",
+							},
+						],
+			};
+		});
+
+		const result = await handleUserPromptSubmit(
+			{
+				harness: "vscode-custom-agent",
+				userMessage: "prompt submit timeout lexical fallback",
+				sessionKey: "session-slow-embedding-keyword-fallback",
+			},
+			makeDeps(),
+		);
+
+		expect(fetchEmbeddingMock).toHaveBeenCalledTimes(1);
+		expect(result.memoryCount).toBe(1);
+		expect(result.inject).toContain("prompt submit timeout lexical fallback still injects keyword recall");
+		pending.resolve(null);
+		await Promise.resolve();
+	});
+
+	it("aborts timed-out prompt-submit embeddings and recovers vector recall on the next request", async () => {
+		const pending = makePendingEmbedding();
+		let signal: AbortSignal | undefined;
+		fetchEmbeddingMock.mockImplementationOnce(async (_text, _cfg, opts) => {
+			signal = opts?.signal;
+			return pending.promise;
+		});
+		fetchEmbeddingMock.mockResolvedValueOnce([0.4, 0.5, 0.6]);
+		hybridRecallMock.mockImplementation(async (_params, _cfg, embed) => {
+			const vector = await embed("prompt submit timeout trace", {
+				provider: "ollama",
+				model: "nomic-embed-text",
+				dimensions: 768,
+				base_url: "http://localhost:11434",
+			});
+			return {
+				results: vector
+					? [
+							{
+								id: "mem-recovered-vector",
+								score: 0.95,
+								content: "prompt submit vector recall recovers after timed-out embedding abort",
+								created_at: "2026-03-26T20:10:00.000Z",
+							},
+						]
+					: [],
+			};
+		});
+
+		const first = await handleUserPromptSubmit(
+			{
+				harness: "vscode-custom-agent",
+				userMessage: "prompt submit timeout trace",
+				sessionKey: "session-first-slow-embedding",
+			},
+			makeDeps(),
+		);
+
+		const second = await handleUserPromptSubmit(
+			{
+				harness: "vscode-custom-agent",
+				userMessage: "prompt submit timeout trace",
+				sessionKey: "session-second-slow-embedding",
+			},
+			makeDeps(),
+		);
+
+		expect(signal?.aborted).toBe(true);
+		expect(fetchEmbeddingMock).toHaveBeenCalledTimes(2);
+		expect(first.memoryCount).toBe(0);
+		expect(second.memoryCount).toBe(1);
+		expect(second.inject).toContain("prompt submit vector recall recovers after timed-out embedding abort");
+		pending.resolve(null);
+		await Promise.resolve();
 	});
 
 	it("rescues a later relevant memory when earlier compact candidates are irrelevant", async () => {

@@ -2466,6 +2466,31 @@ type UserPromptSubmitDeps = {
 	readonly trackFtsHits: typeof trackFtsHits;
 };
 
+const PROMPT_SUBMIT_EMBEDDING_TIMEOUT_MS = 1000;
+
+async function fetchPromptSubmitEmbedding(
+	deps: Pick<UserPromptSubmitDeps, "fetchEmbedding" | "logger">,
+	text: string,
+	cfg: Parameters<typeof fetchEmbedding>[1],
+): Promise<number[] | null> {
+	const controller = new AbortController();
+	let timer: ReturnType<typeof setTimeout> | null = null;
+	const request = deps.fetchEmbedding(text, cfg, { signal: controller.signal });
+	try {
+		return await Promise.race([
+			request,
+			new Promise<null>((resolve) => {
+				timer = setTimeout(() => {
+					controller.abort();
+					resolve(null);
+				}, PROMPT_SUBMIT_EMBEDDING_TIMEOUT_MS);
+			}),
+		]);
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+}
+
 const DEFAULT_USER_PROMPT_SUBMIT_DEPS: UserPromptSubmitDeps = {
 	logger,
 	loadMemoryConfig,
@@ -2655,6 +2680,8 @@ export async function handleUserPromptSubmit(
 		const injectBudget = submitCfg.maxInjectChars ?? cfg.pipelineV2.guardrails.contextBudgetChars;
 		const minScore = resolveUserPromptMinScore(submitCfg.minScore);
 		const queryTerms = vectorQuery.slice(0, 80);
+		const recallStart = Date.now();
+		let embeddingTimedOut = false;
 		const recall = await deps.hybridRecall(
 			{
 				query: vectorQuery,
@@ -2667,8 +2694,34 @@ export async function handleUserPromptSubmit(
 				project: req.project,
 			},
 			cfg,
-			deps.fetchEmbedding,
+			async (text, embeddingCfg) => {
+				const startEmbedding = Date.now();
+				const embedding = await fetchPromptSubmitEmbedding(deps, text, embeddingCfg);
+				const embeddingDuration = Date.now() - startEmbedding;
+				if (!embedding && embeddingDuration >= PROMPT_SUBMIT_EMBEDDING_TIMEOUT_MS) {
+					embeddingTimedOut = true;
+					deps.logger.warn("hooks", "User prompt submit embedding timed out", {
+						harness: req.harness,
+						project: req.project,
+						sessionKey: req.sessionKey,
+						durationMs: embeddingDuration,
+						timeoutMs: PROMPT_SUBMIT_EMBEDDING_TIMEOUT_MS,
+					});
+				}
+				return embedding;
+			},
 		);
+		const recallDuration = Date.now() - recallStart;
+		if (recallDuration > 1000) {
+			deps.logger.warn("hooks", "User prompt submit recall was slow", {
+				harness: req.harness,
+				project: req.project,
+				sessionKey: req.sessionKey,
+				durationMs: recallDuration,
+				resultCount: recall.results.length,
+				embeddingTimedOut,
+			});
+		}
 
 		const topRaw = recall.results[0]?.score;
 		const topScore = typeof topRaw === "number" ? clampScore01(topRaw) : undefined;

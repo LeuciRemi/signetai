@@ -26,6 +26,8 @@ let configPath: string;
 let hooksPath: string;
 let previousSessionStartTimeout: string | undefined;
 let previousFetchTimeout: string | undefined;
+let previousPromptSubmitTimeout: string | undefined;
+let previousDaemonUrl: string | undefined;
 
 function restoreEnv(name: string, value: string | undefined): void {
 	if (value === undefined) {
@@ -38,8 +40,12 @@ function restoreEnv(name: string, value: string | undefined): void {
 beforeEach(() => {
 	previousSessionStartTimeout = process.env.SIGNET_SESSION_START_TIMEOUT;
 	previousFetchTimeout = process.env.SIGNET_FETCH_TIMEOUT;
+	previousPromptSubmitTimeout = process.env.SIGNET_PROMPT_SUBMIT_TIMEOUT;
+	previousDaemonUrl = process.env.SIGNET_DAEMON_URL;
 	Reflect.deleteProperty(process.env, "SIGNET_SESSION_START_TIMEOUT");
 	Reflect.deleteProperty(process.env, "SIGNET_FETCH_TIMEOUT");
+	Reflect.deleteProperty(process.env, "SIGNET_PROMPT_SUBMIT_TIMEOUT");
+	Reflect.deleteProperty(process.env, "SIGNET_DAEMON_URL");
 	tempHome = join(tmpdir(), `signet-codex-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 	codexDir = join(tempHome, ".codex");
 	configPath = join(codexDir, "config.toml");
@@ -50,6 +56,8 @@ beforeEach(() => {
 afterEach(() => {
 	restoreEnv("SIGNET_SESSION_START_TIMEOUT", previousSessionStartTimeout);
 	restoreEnv("SIGNET_FETCH_TIMEOUT", previousFetchTimeout);
+	restoreEnv("SIGNET_PROMPT_SUBMIT_TIMEOUT", previousPromptSubmitTimeout);
+	restoreEnv("SIGNET_DAEMON_URL", previousDaemonUrl);
 	rmSync(tempHome, { recursive: true, force: true });
 });
 
@@ -149,6 +157,50 @@ describe("CodexConnector.install — config.toml MCP registration", () => {
 		const content = readFileSync(configPath, "utf-8");
 		expect(content.match(/\[mcp_servers\.signet\]/g)?.length).toBe(1);
 	});
+
+	test("uses remote HTTP MCP URL when SIGNET_DAEMON_URL is configured", async () => {
+		process.env.SIGNET_DAEMON_URL = "http://192.168.0.60:3850";
+
+		await connector().install(tempHome);
+
+		const content = readFileSync(configPath, "utf-8");
+		expect(content).toContain("[mcp_servers.signet]");
+		expect(content).toContain("url = 'http://192.168.0.60:3850/mcp'");
+		expect(content).toContain("startup_timeout_sec = 10");
+		expect(content).toContain("tool_timeout_sec = 30");
+		expect(content).toContain("disabled_tools = ['memory_search'");
+		expect(content).not.toContain("command = 'signet-mcp'");
+	});
+
+	test("still writes Codex lifecycle hooks when remote HTTP MCP is configured", async () => {
+		process.env.SIGNET_DAEMON_URL = "http://192.168.0.60:3850/";
+
+		await connector().install(tempHome);
+
+		const json = readHooksJson();
+		const hooks = json.hooks as Record<string, Record<string, unknown>[]>;
+		const startHandler = ((hooks.SessionStart[0] as Record<string, unknown>).hooks as Record<string, unknown>[])[0];
+		const promptHandler = (
+			(hooks.UserPromptSubmit[0] as Record<string, unknown>).hooks as Record<string, unknown>[]
+		)[0];
+		const stopHandler = ((hooks.Stop[0] as Record<string, unknown>).hooks as Record<string, unknown>[])[0];
+
+		expect(startHandler.command).toBe(
+			"SIGNET_DAEMON_URL='http://192.168.0.60:3850' signet hook session-start -H codex --codex-json",
+		);
+		expect(promptHandler.command).toBe(
+			"SIGNET_DAEMON_URL='http://192.168.0.60:3850' signet hook user-prompt-submit -H codex --codex-json",
+		);
+		expect(stopHandler.command).toBe("SIGNET_DAEMON_URL='http://192.168.0.60:3850' signet hook session-end -H codex");
+	});
+
+	test("rejects unsafe remote daemon URLs before writing Codex config", async () => {
+		process.env.SIGNET_DAEMON_URL = 'http://192.168.0.60:3850/" && calc';
+
+		await expect(connector().install(tempHome)).rejects.toThrow("SIGNET_DAEMON_URL must point at the daemon origin");
+
+		expect(existsSync(configPath)).toBe(false);
+	});
 });
 
 describe("CodexConnector.uninstall — config.toml cleanup", () => {
@@ -219,6 +271,17 @@ describe("buildMcpBlock — TOML quoting", () => {
 		expect(block).not.toContain("command = [");
 	});
 
+	test("preserves disabled tool parity for remote HTTP MCP", () => {
+		const block = buildMcpBlock({
+			url: "https://signet.example.com:3850/mcp",
+			startupTimeoutSec: 10,
+			toolTimeoutSec: 30,
+		});
+
+		expect(block).toContain("url = 'https://signet.example.com:3850/mcp'");
+		expect(block).toContain("disabled_tools = ['memory_search'");
+	});
+
 	test("Windows paths with backslashes are quoted correctly", () => {
 		const block = buildMcpBlock({
 			command: "C:\\Program Files\\node.exe",
@@ -285,6 +348,7 @@ describe("CodexConnector.install — hooks.json schema", () => {
 		expect(typeof handler.command).toBe("string");
 		expect(handler.command as string).toContain("hook session-start");
 		expect(handler.command as string).toContain("-H codex");
+		expect(handler.command as string).toContain("--codex-json");
 		expect(handler.timeout).toBe(20);
 	});
 
@@ -299,7 +363,7 @@ describe("CodexConnector.install — hooks.json schema", () => {
 		const promptHandler = (
 			(hooks.UserPromptSubmit[0] as Record<string, unknown>).hooks as Record<string, unknown>[]
 		)[0];
-		expect(promptHandler.timeout).toBe(5);
+		expect(promptHandler.timeout).toBe(7);
 
 		const stopHandler = ((hooks.Stop[0] as Record<string, unknown>).hooks as Record<string, unknown>[])[0];
 		expect(stopHandler.timeout).toBe(30);
@@ -314,6 +378,19 @@ describe("CodexConnector.install — hooks.json schema", () => {
 		const startHandler = ((hooks.SessionStart[0] as Record<string, unknown>).hooks as Record<string, unknown>[])[0];
 
 		expect(startHandler.timeout).toBe(23);
+	});
+
+	test("sets Codex prompt-submit timeout to Signet timeout plus grace", async () => {
+		process.env.SIGNET_PROMPT_SUBMIT_TIMEOUT = "9000";
+
+		await connector().install(tempHome);
+		const json = readHooksJson();
+		const hooks = json.hooks as Record<string, Record<string, unknown>[]>;
+		const promptHandler = (
+			(hooks.UserPromptSubmit[0] as Record<string, unknown>).hooks as Record<string, unknown>[]
+		)[0];
+
+		expect(promptHandler.timeout).toBe(11);
 	});
 
 	test("refreshes existing Signet-owned hooks to current timeouts", async () => {
@@ -435,7 +512,7 @@ describe("CodexConnector.install — hooks.json schema", () => {
 		);
 
 		expect(commands).toContain("python ./scripts/custom-reviewer.py --note ' hook session-start '");
-		expect(commands.some((command) => command === "signet hook session-start -H codex")).toBe(true);
+		expect(commands.some((command) => command === "signet hook session-start -H codex --codex-json")).toBe(true);
 	});
 
 	test("does not use array-form command (regression: issue #481)", async () => {

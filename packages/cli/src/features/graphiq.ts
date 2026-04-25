@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { constants, accessSync, existsSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
 	SIGNET_GRAPHIQ_PLUGIN_ID,
 	disableGraphiqState,
@@ -31,8 +33,24 @@ export interface GraphiqUninstallOptions {
 	readonly purgeIndexes?: boolean;
 }
 
-type GraphiqInstallSource = "homebrew" | "source" | "existing";
-const GRAPHIQ_SOURCE_REV = "156f31daf366e9b68d75bdaa4069058666ecc518";
+type GraphiqInstallSource = "script" | "homebrew" | "source" | "existing";
+
+const DEFAULT_INSTALL_DIR = join(homedir(), ".local", "bin");
+
+function getInstallScriptPath(): string {
+	const thisDir = dirname(fileURLToPath(import.meta.url));
+	return resolve(thisDir, "../../../../scripts/install-graphiq.sh");
+}
+
+function resolveGraphiqBinary(): string | null {
+	if (hasCommand("graphiq")) return "graphiq";
+	const direct = join(DEFAULT_INSTALL_DIR, "graphiq");
+	return isExecutable(direct) ? direct : null;
+}
+
+function hasGraphiqBinary(): boolean {
+	return resolveGraphiqBinary() !== null;
+}
 
 export function hasCommand(command: string): boolean {
 	const path = process.env.PATH ?? "";
@@ -66,47 +84,28 @@ function isExecutable(path: string): boolean {
 export async function ensureGraphiqInstalled(options: {
 	installIfMissing: boolean;
 }): Promise<GraphiqInstallSource | null> {
-	if (hasCommand("graphiq")) return "existing";
+	if (hasGraphiqBinary()) return "existing";
 	if (!options.installIfMissing) return null;
 
-	if (hasCommand("brew")) {
-		const spinner = ora("Installing GraphIQ with Homebrew...").start();
-		const tap = await runCommand("brew", ["tap", "aaf2tbz/graphiq"]);
-		if (tap.code === 0 || tap.stderr.includes("already tapped")) {
-			const install = await runCommand("brew", ["install", "graphiq"]);
-			if (install.code === 0 && hasCommand("graphiq")) {
-				spinner.succeed("GraphIQ installed");
-				return "homebrew";
-			}
-			spinner.warn("Homebrew install failed; trying source fallback");
-		} else {
-			spinner.warn("Homebrew tap failed; trying source fallback");
-		}
-	} else {
-		console.log(chalk.yellow("  Homebrew not found; trying source fallback."));
-	}
-
-	if (!hasCommand("cargo")) {
-		console.log(chalk.red("  GraphIQ install failed: cargo is required for source fallback."));
+	const script = getInstallScriptPath();
+	if (!existsSync(script)) {
+		console.log(chalk.red("  GraphIQ install script not found."));
 		return null;
 	}
 
-	const spinner = ora("Installing GraphIQ from source...").start();
-	const sourceArgs = ["install", "--git", "https://github.com/aaf2tbz/graphiq", "--rev", GRAPHIQ_SOURCE_REV];
-	const cli = await runCommand("cargo", [...sourceArgs, "graphiq-cli"]);
-	if (cli.code !== 0) {
-		spinner.fail("GraphIQ source install failed");
-		if (cli.stderr.trim()) console.error(chalk.dim(cli.stderr.trim()));
+	const spinner = ora("Installing GraphIQ...").start();
+	const result = await runCommand("bash", [script, "install"], { env: { GRAPHIQ_ALLOW_LATEST: "1" } });
+	if (result.code !== 0) {
+		spinner.fail("GraphIQ install failed");
+		if (result.stderr.trim()) console.error(chalk.dim(result.stderr.trim()));
 		return null;
 	}
-	const mcp = await runCommand("cargo", [...sourceArgs, "graphiq-mcp"]);
-	if (mcp.code !== 0) {
-		spinner.warn("GraphIQ CLI installed, but graphiq-mcp source install failed");
-		if (mcp.stderr.trim()) console.error(chalk.dim(mcp.stderr.trim()));
-	} else {
-		spinner.succeed("GraphIQ installed from source");
+	if (hasGraphiqBinary()) {
+		spinner.succeed("GraphIQ installed");
+		return "script";
 	}
-	return hasCommand("graphiq") ? "source" : null;
+	spinner.fail("GraphIQ install completed but binary not found");
+	return null;
 }
 
 export async function installGraphiqPlugin(deps: GraphiqDeps): Promise<boolean> {
@@ -130,7 +129,7 @@ export async function indexWithGraphiq(
 	const installSource = await ensureGraphiqInstalled({ installIfMissing: options.install !== false });
 	if (!installSource) {
 		console.error(chalk.red("GraphIQ is not installed."));
-		console.error(chalk.dim("Run `brew tap aaf2tbz/graphiq && brew install graphiq`, or rerun without --no-install."));
+		console.error(chalk.dim("Run `signet index <path>` to install and index, or rerun without --no-install."));
 		return;
 	}
 
@@ -140,8 +139,14 @@ export async function indexWithGraphiq(
 		return;
 	}
 
+	const binary = resolveGraphiqBinary();
+	if (!binary) {
+		console.error(chalk.red("GraphIQ binary not found after install"));
+		return;
+	}
+
 	const spinner = ora(`Indexing ${resolved} with GraphIQ...`).start();
-	const result = await runCommand("graphiq", ["index", resolved]);
+	const result = await runCommand(binary, ["index", resolved]);
 	if (result.code !== 0) {
 		spinner.fail("GraphIQ indexing failed");
 		if (result.stderr.trim()) console.error(result.stderr.trim());
@@ -177,6 +182,34 @@ export async function runGraphiqDoctor(deps: GraphiqDeps): Promise<void> {
 
 export async function upgradeGraphiqIndex(deps: GraphiqDeps): Promise<void> {
 	await runGraphiqForActiveProject("upgrade-index", deps);
+}
+
+export async function runGraphiqDeadCode(deps: GraphiqDeps): Promise<void> {
+	const state = readGraphiqState(deps.agentsDir);
+	if (!state.enabled || !state.activeProject) {
+		console.log(chalk.yellow("GraphIQ plugin is not active. Run `signet index <path>` first."));
+		return;
+	}
+	const binary = resolveGraphiqBinary();
+	if (!binary) {
+		console.error(chalk.red("GraphIQ binary not found. Reinstall with `signet graphiq install`."));
+		return;
+	}
+	const dbPath = state.indexedProjects.find((entry) => entry.path === state.activeProject)?.dbPath;
+	if (!dbPath) {
+		console.error(chalk.red(`GraphIQ index metadata is missing for active project: ${state.activeProject}`));
+		return;
+	}
+	if (!existsSync(dbPath)) {
+		console.error(chalk.red(`GraphIQ database not found for active project: ${dbPath}`));
+		return;
+	}
+	const result = await runCommand(binary, ["dead-code", "--db", dbPath]);
+	if (result.stdout.trim()) console.log(result.stdout.trim());
+	if (result.stderr.trim()) console.error(result.stderr.trim());
+	if (result.code !== 0) {
+		console.error(chalk.red(`graphiq dead-code exited with code ${result.code}`));
+	}
 }
 
 export async function uninstallGraphiqPlugin(options: GraphiqUninstallOptions, deps: GraphiqDeps): Promise<void> {
@@ -224,8 +257,9 @@ async function runGraphiqForActiveProject(
 		console.log(chalk.yellow("GraphIQ plugin is not active. Run `signet index <path>` first."));
 		return;
 	}
-	if (!hasCommand("graphiq")) {
-		console.error(chalk.red("GraphIQ is not installed or not on PATH."));
+	const binary = resolveGraphiqBinary();
+	if (!binary) {
+		console.error(chalk.red("GraphIQ binary not found. Reinstall with `signet graphiq install`."));
 		return;
 	}
 	const dbPath = state.indexedProjects.find((entry) => entry.path === state.activeProject)?.dbPath;
@@ -240,7 +274,7 @@ async function runGraphiqForActiveProject(
 		return;
 	}
 	const args = [command, "--db", dbPath];
-	const result = await runCommand("graphiq", args);
+	const result = await runCommand(binary, args);
 	if (result.stdout.trim()) console.log(result.stdout.trim());
 	if (result.stderr.trim()) console.error(result.stderr.trim());
 	if (result.code !== 0) {
@@ -258,9 +292,14 @@ function parseIndexStats(output: string): { files?: number; symbols?: number; ed
 	};
 }
 
-function runCommand(command: string, args: readonly string[]): Promise<CommandResult> {
+function runCommand(
+	command: string,
+	args: readonly string[],
+	options?: { env?: Record<string, string> },
+): Promise<CommandResult> {
 	return new Promise((resolveResult) => {
-		const proc = spawn(command, [...args], { stdio: "pipe", windowsHide: true });
+		const env = options?.env ? { ...process.env, ...options.env } : process.env;
+		const proc = spawn(command, [...args], { stdio: "pipe", windowsHide: true, env });
 		let stdout = "";
 		let stderr = "";
 		proc.stdout.on("data", (chunk) => {

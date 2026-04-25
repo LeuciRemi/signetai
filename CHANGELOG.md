@@ -6,6 +6,13 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-04-25
+- Bug fixes: pair remote Signet MCP with lifecycle hooks.
+
+### 2026-04-24
+- Bug fixes: bundle install-graphiq.sh so graphiq install/update works; bound prompt-submit embedding latency; detect default install path; emit structured hook JSON.
+- Refactoring: replace brew/cargo install with shell script; add session auto-connect.
+
 ### 2026-04-23
 - Features: add GraphIQ plugin management UI and daemon API; index native harness memories; unify LLM provider plumbing.
 
@@ -24,17 +31,61 @@ Surface summary of the most recent release dates. See the release ledger below f
 ### 2026-04-19
 - Bug fixes: resolve all typescript strict-mode errors in daemon package.
 
-### 2026-04-18
-- Features: add plugin registry panel.
-- Bug fixes: scope Signet memory to named agents; align desktop release build prerequisites.
-
-### 2026-04-17
-- Features: replace Tauri shell with Electron app; add plugin SDK core v1 secrets registry.
-- Bug fixes: pass AGENTS_DIR directly in runSyncTemplates instead of accepting a parameter; wire enableOllamaFallback config and add native embedding init cooldown; prevent session-start hook timeouts.
-- Performance: paginate entity IDs before counting to avoid full GROUP BY.
-- Docs: add recall confidence gate record; define plugin sdk core v1.
-
 ## Release Ledger
+
+## [0.108.7] - 2026-04-25
+
+Release summary: 1 bug fix.
+Tag range: `v0.108.6..v0.108.7`.
+
+### Bug Fixes
+
+- **codex**: pair remote Signet MCP with lifecycle hooks (#564)
+
+## [0.108.6] - 2026-04-24
+
+Release summary: 1 bug fix.
+Tag range: `v0.108.5..v0.108.6`.
+
+### Bug Fixes
+
+- **daemon**: bundle install-graphiq.sh so graphiq install/update works (#562)
+
+## [0.108.5] - 2026-04-24
+
+Release summary: 1 bug fix.
+Tag range: `v0.108.4..v0.108.5`.
+
+### Bug Fixes
+
+- **daemon**: bound prompt-submit embedding latency (#559)
+
+## [0.108.4] - 2026-04-24
+
+Release summary: 1 refactor.
+Tag range: `v0.108.3..v0.108.4`.
+
+### Refactoring
+
+- **graphiq**: replace brew/cargo install with shell script; add session auto-connect (#560)
+
+## [0.108.3] - 2026-04-24
+
+Release summary: 1 bug fix.
+Tag range: `v0.108.2..v0.108.3`.
+
+### Bug Fixes
+
+- **hermes**: detect default install path (#561)
+
+## [0.108.2] - 2026-04-24
+
+Release summary: 1 bug fix.
+Tag range: `v0.108.1..v0.108.2`.
+
+### Bug Fixes
+
+- **codex**: emit structured hook JSON (#558)
 
 ## [0.108.1] - 2026-04-23
 

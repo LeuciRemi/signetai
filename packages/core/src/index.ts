@@ -105,6 +105,8 @@ export {
 	resolveNetworkBinding,
 } from "./network";
 export type { NetworkMode } from "./network";
+export { resolveSignetDaemonUrl } from "./daemon-url";
+export type { SignetDaemonUrlOptions } from "./daemon-url";
 export {
 	search,
 	vectorSearch,
@@ -174,6 +176,7 @@ export {
 	getGraphiqProjectDbPath,
 	getGraphiqStatePath,
 	readGraphiqState,
+	setGraphiqActiveProject,
 	updateGraphiqActiveProject,
 	writeGraphiqState,
 } from "./graphiq";
@@ -241,6 +244,7 @@ export {
 	STATIC_IDENTITY_SESSION_START_TIMEOUT_STATUS,
 	resolveSignetForgeManagedPath,
 	resolveAgentBasePath,
+	resolveHermesHomePath,
 	resolveHermesRepoPath,
 	resolveHermesRepoPluginPath,
 	hermesAgentCandidateDirs,

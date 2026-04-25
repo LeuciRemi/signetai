@@ -1,8 +1,7 @@
+import { resolveSignetDaemonUrl } from "@signet/core";
 import chalk from "chalk";
 
-export interface DaemonFetch {
-	<T>(path: string, opts?: RequestInit & { timeout?: number }): Promise<T | null>;
-}
+export type DaemonFetch = <T>(path: string, opts?: RequestInit & { timeout?: number }) => Promise<T | null>;
 
 export type DaemonFetchFailure = "offline" | "timeout" | "http" | "invalid-json";
 
@@ -14,14 +13,12 @@ export type DaemonFetchResult<T> =
 			readonly status?: number;
 	  };
 
-export interface DaemonApiCall {
-	(
-		method: string,
-		path: string,
-		body?: unknown,
-		timeoutMs?: number,
-	): Promise<{ readonly ok: boolean; readonly data: unknown }>;
-}
+export type DaemonApiCall = (
+	method: string,
+	path: string,
+	body?: unknown,
+	timeoutMs?: number,
+) => Promise<{ readonly ok: boolean; readonly data: unknown }>;
 
 function errorName(err: unknown): string {
 	if (typeof err !== "object" || err === null) return "";
@@ -45,7 +42,7 @@ export function createDaemonClient(port: number): {
 	) => Promise<DaemonFetchResult<T>>;
 	readonly secretApiCall: DaemonApiCall;
 } {
-	const url = `http://localhost:${port}`;
+	const url = resolveDaemonClientUrl(port);
 
 	const fetchDaemonResult = async <T>(
 		path: string,
@@ -118,6 +115,10 @@ export function createDaemonClient(port: number): {
 		fetchDaemonResult,
 		secretApiCall,
 	};
+}
+
+function resolveDaemonClientUrl(port: number): string {
+	return resolveSignetDaemonUrl({ defaultHost: "localhost", defaultPort: port });
 }
 
 export async function ensureDaemonRunning(

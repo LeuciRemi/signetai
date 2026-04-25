@@ -27,6 +27,21 @@ MCP complements Signet's existing hook-based integration:
 Both systems can be active simultaneously — they serve different purposes and
 don't conflict.
 
+Remote MCP endpoints expose tools only. If a harness also needs automatic
+identity, session-start context, prompt-time recall, or session-end
+extraction, install that harness's Signet hooks as well. For Codex, run the
+connector with `SIGNET_DAEMON_URL` set to the remote daemon URL so the
+generated hooks and `[mcp_servers.signet]` block target the same instance:
+
+```bash
+SIGNET_DAEMON_URL=http://192.168.0.60:3850 signet setup --harness codex
+```
+
+`SIGNET_DAEMON_URL` must point at the daemon origin only. Signet rejects
+paths, query strings, fragments, credentials, and non-HTTP protocols so a
+remote MCP registration cannot silently fall back to localhost or bake
+unsafe shell syntax into generated lifecycle hooks.
+
 
 When to Use MCP vs Hooks
 ------------------------
