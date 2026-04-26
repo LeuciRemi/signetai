@@ -37,9 +37,12 @@ type GraphiqInstallSource = "script" | "homebrew" | "source" | "existing";
 
 const DEFAULT_INSTALL_DIR = join(homedir(), ".local", "bin");
 
-function getInstallScriptPath(): string {
-	const thisDir = dirname(fileURLToPath(import.meta.url));
-	return resolve(thisDir, "../../../../scripts/install-graphiq.sh");
+export function resolveInstallScriptPath(thisDir = dirname(fileURLToPath(import.meta.url))): string | null {
+	const candidates = [
+		resolve(thisDir, "../scripts/install-graphiq.sh"),
+		resolve(thisDir, "../../../../scripts/install-graphiq.sh"),
+	];
+	return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
 function resolveGraphiqBinary(): string | null {
@@ -87,8 +90,8 @@ export async function ensureGraphiqInstalled(options: {
 	if (hasGraphiqBinary()) return "existing";
 	if (!options.installIfMissing) return null;
 
-	const script = getInstallScriptPath();
-	if (!existsSync(script)) {
+	const script = resolveInstallScriptPath();
+	if (!script) {
 		console.log(chalk.red("  GraphIQ install script not found."));
 		return null;
 	}

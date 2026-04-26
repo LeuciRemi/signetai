@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
 	SIGNET_GRAPHIQ_PLUGIN_ID,
 	getGraphiqProjectDbPath,
@@ -9,7 +9,13 @@ import {
 	updateGraphiqActiveProject,
 	writeGraphiqState,
 } from "@signet/core";
-import { ensureGraphiqInstalled, installGraphiqPlugin, runGraphiqDoctor, uninstallGraphiqPlugin } from "./graphiq.js";
+import {
+	ensureGraphiqInstalled,
+	installGraphiqPlugin,
+	resolveInstallScriptPath,
+	runGraphiqDoctor,
+	uninstallGraphiqPlugin,
+} from "./graphiq.js";
 import { readSetupCorePluginEnabled } from "./setup-plugins.js";
 
 let tempRoot = "";
@@ -25,6 +31,30 @@ afterEach(() => {
 });
 
 describe("GraphIQ plugin install", () => {
+	test("resolves bundled install script beside packaged CLI dist", () => {
+		const basePath = makeRoot();
+		const distDir = join(basePath, "node_modules", "signetai", "dist");
+		const scriptsDir = join(basePath, "node_modules", "signetai", "scripts");
+		const scriptPath = join(scriptsDir, "install-graphiq.sh");
+		mkdirSync(scriptsDir, { recursive: true });
+		mkdirSync(distDir, { recursive: true });
+		writeFileSync(scriptPath, "#!/bin/sh\n");
+
+		expect(resolveInstallScriptPath(distDir)).toBe(resolve(scriptPath));
+	});
+
+	test("falls back to source-tree install script during local development", () => {
+		const basePath = makeRoot();
+		const featureDir = join(basePath, "surfaces", "cli", "src", "features");
+		const scriptsDir = join(basePath, "scripts");
+		const scriptPath = join(scriptsDir, "install-graphiq.sh");
+		mkdirSync(featureDir, { recursive: true });
+		mkdirSync(scriptsDir, { recursive: true });
+		writeFileSync(scriptPath, "#!/bin/sh\n");
+
+		expect(resolveInstallScriptPath(featureDir)).toBe(resolve(scriptPath));
+	});
+
 	test("disables persisted GraphIQ runtime state when install fails", async () => {
 		const basePath = makeRoot();
 		const projectPath = join(basePath, "project");
