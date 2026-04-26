@@ -1759,7 +1759,7 @@ describe("handleSessionEnd", () => {
 		{ timeout: 60000 },
 	);
 
-	test.serial("writes canonical transcript and manifest artifacts on session end", async () => {
+	test.serial("writes canonical JSONL transcript and manifest artifacts on session end", async () => {
 		createMemoryDb([]);
 		const transcriptPath = join(TEST_DIR, "transcript.txt");
 		writeFileSync(
@@ -1780,19 +1780,17 @@ describe("handleSessionEnd", () => {
 		expect(result.queued).toBe(true);
 
 		const files = readdirSync(join(TEST_DIR, "memory")).sort();
-		const transcriptFile = files.find((name) => name.endsWith("--transcript.md"));
 		const manifestFile = files.find((name) => name.endsWith("--manifest.md"));
-		expect(transcriptFile).toBeDefined();
 		expect(manifestFile).toBeDefined();
 
-		const transcript = readFileSync(join(TEST_DIR, "memory", transcriptFile ?? ""), "utf-8");
+		const transcript = readFileSync(join(TEST_DIR, "memory", "test", "transcripts", "transcript.jsonl"), "utf-8");
 		const manifest = readFileSync(join(TEST_DIR, "memory", manifestFile ?? ""), "utf-8");
 
-		expect(transcript).toContain('kind: "transcript"');
-		expect(transcript).toContain('manifest_path: "memory/');
-		expect(transcript).toContain('memory_sentence: "Session signetai captured durable transcript context');
+		expect(transcript).toContain('"schema":"signet.transcript.v1"');
+		expect(transcript).toContain('"role":"user"');
+		expect(transcript).toContain("please update packages/daemon/src/hooks.ts");
 		expect(manifest).toContain('summary_path: "memory/');
-		expect(manifest).toContain('transcript_path: "memory/');
+		expect(manifest).toContain('transcript_path: "memory/test/transcripts/transcript.jsonl"');
 	});
 
 	test.serial("falls back to the stored live transcript when session-end input is missing", async () => {
@@ -1829,12 +1827,30 @@ describe("handleSessionEnd", () => {
 
 		expect(result.queued).toBe(true);
 
-		const files = readdirSync(join(TEST_DIR, "memory")).sort();
-		const transcriptFile = files.find((name) => name.endsWith("--transcript.md"));
-		expect(transcriptFile).toBeDefined();
-		const transcript = readFileSync(join(TEST_DIR, "memory", transcriptFile ?? ""), "utf-8");
+		const transcript = readFileSync(join(TEST_DIR, "memory", "test", "transcripts", "transcript.jsonl"), "utf-8");
 		expect(transcript).toContain("keep the live transcript if session-end falls over");
 		expect(transcript).toContain("using the stored live transcript avoids losing the session");
+	});
+
+	test.serial("appends prompt-submit turns to canonical JSONL before session end", async () => {
+		createMemoryDb([]);
+
+		await handleUserPromptSubmit({
+			harness: "hermes-agent",
+			sessionKey: "sess-live-jsonl",
+			project: "/home/user/signetai",
+			userMessage: "please keep this active session visible immediately",
+			lastAssistantMessage: "the previous answer is already part of the live transcript",
+		});
+
+		const transcript = readFileSync(
+			join(TEST_DIR, "memory", "hermes-agent", "transcripts", "transcript.jsonl"),
+			"utf-8",
+		);
+		expect(transcript).toContain('"schema":"signet.transcript.v1"');
+		expect(transcript).toContain("active session visible immediately");
+		expect(transcript).toContain("previous answer is already part of the live transcript");
+		expect(transcript).toContain('"source_format":"live"');
 	});
 
 	test.serial("writes raw audit logs while keeping the canonical transcript conversation-only", async () => {
@@ -1863,12 +1879,9 @@ describe("handleSessionEnd", () => {
 
 		expect(result.queued).toBe(true);
 
-		const memoryFiles = readdirSync(join(TEST_DIR, "memory")).sort();
-		const transcriptFile = memoryFiles.find((name) => name.endsWith("--transcript.md"));
-		expect(transcriptFile).toBeDefined();
-		const transcript = readFileSync(join(TEST_DIR, "memory", transcriptFile ?? ""), "utf-8");
-		expect(transcript).toContain("User: Run diagnostics");
-		expect(transcript).toContain("Assistant: Diagnostics complete");
+		const transcript = readFileSync(join(TEST_DIR, "memory", "codex", "transcripts", "transcript.jsonl"), "utf-8");
+		expect(transcript).toContain("Run diagnostics");
+		expect(transcript).toContain("Diagnostics complete");
 		expect(transcript).not.toContain("function_call");
 		expect(transcript).not.toContain("README.md");
 
@@ -1955,8 +1968,10 @@ describe("handleSessionEnd", () => {
 			expect(second.queued).toBe(true);
 
 			const files = readdirSync(join(TEST_DIR, "memory")).sort();
-			expect(files.filter((name) => name.endsWith("--transcript.md"))).toHaveLength(2);
 			expect(files.filter((name) => name.endsWith("--manifest.md"))).toHaveLength(2);
+			const transcript = readFileSync(join(TEST_DIR, "memory", "test", "transcripts", "transcript.jsonl"), "utf-8");
+			expect(transcript).toContain("periodic heartbeat summary");
+			expect(transcript).toContain("second heartbeat session");
 
 			const db = openTestDb();
 			try {
@@ -2765,9 +2780,9 @@ describe("writeMemoryMd", () => {
 			expect(result).toEqual({ ok: true });
 
 			const row = getDbAccessor().withReadDb((db) => {
-				return db.prepare("SELECT agent_id, content, revision FROM memory_md_heads WHERE agent_id = ?").get("agent-b") as
-					| { agent_id: string; content: string; revision: number }
-					| undefined;
+				return db
+					.prepare("SELECT agent_id, content, revision FROM memory_md_heads WHERE agent_id = ?")
+					.get("agent-b") as { agent_id: string; content: string; revision: number } | undefined;
 			});
 			expect(row).toEqual({
 				agent_id: "agent-b",

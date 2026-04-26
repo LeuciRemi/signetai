@@ -2325,16 +2325,16 @@ Releases the session's runtime path claim.
 capture. Signet stores a cleaned conversation-only transcript in memory
 surfaces and may retain raw auditable traces separately in daemon logs.
 
-When transcript text is available, the daemon first writes canonical
-workspace-root-relative markdown lineage files under
-`$SIGNET_WORKSPACE/memory/`:
+When transcript text is available, the daemon first writes the canonical
+conversation transcript as JSONL at
+`$SIGNET_WORKSPACE/memory/{harness}/transcripts/transcript.jsonl` and records
+lineage through the session manifest. Existing markdown transcript artifacts
+remain readable for backward compatibility and are backfilled into the JSONL
+history.
 
-- `{captured_at}--{session_token}--transcript.md`
-- `{captured_at}--{session_token}--manifest.md`
-
-The manifest is mutable and may later gain a `compaction_path`; transcript
-artifacts are immutable once written. The async summary worker later writes the
-matching immutable `--summary.md` artifact for normal `session-end` jobs.
+The manifest is mutable and may later gain a `compaction_path`; the JSONL
+transcript is the forward source of truth. The async summary worker later writes
+the matching immutable `--summary.md` artifact for normal `session-end` jobs.
 
 ### POST /api/hooks/remember
 

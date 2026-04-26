@@ -188,14 +188,14 @@ Gated on `hints.enabled` in pipeline config.
 writes complete. A failure here is non-fatal — it logs a warning and
 does not revert the extracted memories.
 
-**Lossless transcripts**: Signet stores a cleaned conversation-only
-transcript in `session_transcripts` (migration 040) alongside the
-extracted memories. Tool calls, tool outputs, and thinking traces are
-kept out of this memory surface so retrieval and summarization operate
-on the human/agent exchange. Raw auditable traces may still be written
-to daemon logs outside the memory lineage. The recall endpoint's
-`expand: true` flag joins transcript content back into search results
-via `source_id`.
+**Lossless transcripts**: Signet stores the cleaned conversation transcript as
+JSONL under `$SIGNET_WORKSPACE/memory/{harness}/transcripts/transcript.jsonl`
+and keeps `session_transcripts` (migration 040) as a compatibility/indexing
+surface alongside extracted memories. Tool calls, tool outputs, and thinking
+traces are kept out of this memory surface so retrieval and summarization
+operate on the human/agent exchange. Raw auditable traces may still be written
+to daemon logs outside the memory lineage. The recall endpoint's `expand: true`
+flag joins transcript content back into search results via `source_id`.
 
 **Shadow mode**: when `shadowMode = true`, all proposals are logged
 to `memory_history` under the `pipeline-shadow` actor but no

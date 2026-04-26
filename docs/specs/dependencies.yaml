@@ -75,6 +75,24 @@ specs:
       - "Session-end and compaction paths both feed the same temporal head model without splitting memory state across incompatible branches"
     decision: null
 
+  - id: jsonl-transcript-source-of-truth
+    status: approved
+    path: docs/specs/approved/jsonl-transcript-source-of-truth.md
+    hard_depends_on:
+      - session-continuity-protocol
+      - lossless-working-memory-runtime
+    soft_depends_on: []
+    blocks: []
+    informed_by:
+      - docs/research/technical/RESEARCH-LCM-ACP.md
+      - docs/specs/approved/lossless-working-memory-runtime.md
+    success_criteria:
+      - "Every supported harness writes or backfills into `$SIGNET_WORKSPACE/memory/{harness}/transcripts/transcript.jsonl`"
+      - "Prompt-submit writes live JSONL turns when the harness does not provide a native transcript snapshot"
+      - "Session-end and transcript snapshot hooks replace the session slice in canonical JSONL so final transcripts become the durable source of truth"
+      - "Existing markdown transcript artifacts and `session_transcripts` rows backfill canonical JSONL history without losing backward compatibility"
+    decision: null
+
   - id: lossless-working-memory-closure
     status: approved
     path: docs/specs/approved/lossless-working-memory-closure.md

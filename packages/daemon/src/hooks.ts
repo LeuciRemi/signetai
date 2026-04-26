@@ -39,9 +39,10 @@ import { writeMemoryHead } from "./memory-head";
 import {
 	NOISE_PURGE_REASON,
 	appendSynthesisIndexBlock as appendRenderedIndexBlock,
+	ensureCanonicalManifest,
+	indexCanonicalTranscriptJsonl,
 	purgeCanonicalNoiseSessionsOnce,
 	renderMemoryProjection,
-	writeTranscriptArtifact,
 } from "./memory-lineage";
 import { buildAgentScopeClause, hybridRecall } from "./memory-search";
 import {
@@ -88,11 +89,22 @@ import {
 import { parseFeedback, recordAgentFeedback, recordSessionCandidates, trackFtsHits } from "./session-memories";
 import { isNoiseSession } from "./session-noise";
 import { getExpiryWarning } from "./session-tracker";
-import { getSessionTranscriptContent, searchTranscriptFallback, upsertSessionTranscript } from "./session-transcripts";
+import {
+	ensureCanonicalTranscriptHistory,
+	getSessionTranscriptContent,
+	searchTranscriptFallback,
+	upsertSessionTranscript,
+} from "./session-transcripts";
 import { type StructuralFeatures, buildCandidateFeatures, getStructuralFeatures } from "./structural-features";
 import { isObject, isRenderError, isRenderResult } from "./synthesis-worker-protocol";
 import { searchTemporalFallback } from "./temporal-fallback";
 import { writeTranscriptAudit } from "./transcript-audit";
+import {
+	appendCanonicalTranscriptTurns,
+	canonicalTranscriptRelativePath,
+	inferTranscriptSourceFormat,
+	writeCanonicalTranscriptSnapshot,
+} from "./transcript-jsonl";
 import { getUpdateSummary } from "./update-system";
 
 // ---------------------------------------------------------------------------
@@ -115,6 +127,55 @@ function getAgentsDir(): string {
 
 function getMemoryDbPath(): string {
 	return join(getAgentsDir(), "memory", "memories.db");
+}
+
+function writeCanonicalTranscriptFromSnapshot(params: {
+	readonly agentId: string;
+	readonly harness: string;
+	readonly sessionKey: string | null;
+	readonly sessionId?: string | null;
+	readonly project?: string | null;
+	readonly rawTranscript: string;
+	readonly transcript: string;
+	readonly capturedAt?: string;
+	readonly transcriptPath?: string;
+}): void {
+	ensureCanonicalTranscriptHistory(getAgentsDir(), params.agentId);
+	writeCanonicalTranscriptSnapshot({
+		basePath: getAgentsDir(),
+		agentId: params.agentId,
+		harness: params.harness,
+		sessionKey: params.sessionKey,
+		sessionId: params.sessionId,
+		project: params.project ?? null,
+		capturedAt: params.capturedAt,
+		sourceFormat: params.rawTranscript ? inferTranscriptSourceFormat(params.rawTranscript) : "normalized",
+		sourcePath: params.transcriptPath,
+		transcript: params.transcript,
+	});
+}
+
+function appendCanonicalLiveTranscriptTurns(params: {
+	readonly agentId: string;
+	readonly harness: string;
+	readonly sessionKey: string;
+	readonly project?: string | null;
+	readonly userMessage: string;
+	readonly lastAssistantMessage?: string;
+}): void {
+	ensureCanonicalTranscriptHistory(getAgentsDir(), params.agentId);
+	appendCanonicalTranscriptTurns({
+		basePath: getAgentsDir(),
+		agentId: params.agentId,
+		harness: params.harness,
+		sessionKey: params.sessionKey,
+		project: params.project ?? null,
+		sourceFormat: "live",
+		turns: [
+			...(params.lastAssistantMessage ? [{ role: "assistant" as const, content: params.lastAssistantMessage }] : []),
+			{ role: "user" as const, content: params.userMessage },
+		],
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -2578,9 +2639,34 @@ export async function handleUserPromptSubmit(
 				if (!prev || transcript.length >= prev.length) {
 					deps.upsertSessionTranscript(req.sessionKey, transcript, req.harness, req.project ?? null, agentId);
 				}
+				writeCanonicalTranscriptFromSnapshot({
+					agentId,
+					harness: req.harness,
+					sessionKey: req.sessionKey,
+					project: req.project ?? null,
+					rawTranscript,
+					transcript,
+					transcriptPath: req.transcriptPath,
+				});
 			} catch (error) {
 				deps.logger.warn("hooks", "Prompt transcript write failed", {
 					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+		} else if (userMessage.trim().length > 0) {
+			try {
+				appendCanonicalLiveTranscriptTurns({
+					agentId,
+					harness: req.harness,
+					sessionKey: req.sessionKey,
+					project: req.project ?? null,
+					userMessage,
+					lastAssistantMessage: req.lastAssistantMessage,
+				});
+			} catch (error) {
+				deps.logger.warn("hooks", "Prompt JSONL transcript append failed", {
+					error: error instanceof Error ? error.message : String(error),
+					sessionKey: req.sessionKey,
 				});
 			}
 		}
@@ -2958,12 +3044,7 @@ export function handleSessionEnd(req: SessionEndRequest): SessionEndResponse {
 	}
 	clearContinuity(sessionKey);
 
-	// Respect the pipeline master switch
 	const memoryCfg = loadMemoryConfig(getAgentsDir());
-	if (!memoryCfg.pipelineV2.enabled && !memoryCfg.pipelineV2.shadowMode) {
-		logger.info("hooks", "Session end skipped — pipeline disabled");
-		return { memoriesSaved: 0 };
-	}
 
 	// Read transcript: prefer file path, fall back to inline body
 	let rawTranscript = "";
@@ -3035,6 +3116,17 @@ export function handleSessionEnd(req: SessionEndRequest): SessionEndResponse {
 	if (transcript && sessionKey) {
 		try {
 			upsertSessionTranscript(sessionKey, transcript, req.harness, req.cwd ?? null, agentId);
+			writeCanonicalTranscriptFromSnapshot({
+				agentId,
+				harness: req.harness,
+				sessionKey,
+				sessionId,
+				project: req.cwd ?? null,
+				rawTranscript,
+				transcript,
+				capturedAt: endedAt,
+				transcriptPath: req.transcriptPath,
+			});
 		} catch (e) {
 			logger.warn("hooks", "Transcript write failed (non-fatal)", {
 				error: e instanceof Error ? e.message : String(e),
@@ -3052,7 +3144,17 @@ export function handleSessionEnd(req: SessionEndRequest): SessionEndResponse {
 					harness: req.harness,
 				})
 			) {
-				writeTranscriptArtifact({
+				const manifest = ensureCanonicalManifest({
+					agentId,
+					sessionId,
+					sessionKey: sessionKey ?? null,
+					project: req.cwd ?? null,
+					harness: req.harness,
+					capturedAt: endedAt,
+					startedAt: null,
+					endedAt,
+				});
+				indexCanonicalTranscriptJsonl({
 					agentId,
 					sessionId,
 					sessionKey: sessionKey ?? null,
@@ -3062,6 +3164,13 @@ export function handleSessionEnd(req: SessionEndRequest): SessionEndResponse {
 					startedAt: null,
 					endedAt,
 					transcript,
+					manifestPath: manifest.path.replace(`${getAgentsDir()}/`, "").replace(/\\/g, "/"),
+				});
+				logger.debug("hooks", "Session transcript JSONL snapshot written", {
+					harness: req.harness,
+					project: req.cwd,
+					sessionKey,
+					path: canonicalTranscriptRelativePath(req.harness),
 				});
 			}
 		} catch (e) {
@@ -3070,6 +3179,11 @@ export function handleSessionEnd(req: SessionEndRequest): SessionEndResponse {
 				sessionKey,
 			});
 		}
+	}
+
+	if (!memoryCfg.pipelineV2.enabled && !memoryCfg.pipelineV2.shadowMode) {
+		logger.info("hooks", "Session end extraction skipped — pipeline disabled");
+		return { memoriesSaved: 0 };
 	}
 
 	let feedbackAspectsUpdated = 0;

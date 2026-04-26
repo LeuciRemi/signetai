@@ -927,13 +927,13 @@ are re-sorted by adjusted score descending.
 Lossless Session Transcripts
 ---
 
-After the summary worker extracts facts from a session, Signet also
-stores a cleaned conversation-only transcript in the
-`session_transcripts` table (migration 040). Tool calls, tool outputs,
-and thinking traces are removed from this memory surface so retrieval
-and summarization stay focused on the actual conversation. Raw
-auditable traces may still be written to daemon logs outside the memory
-lineage.
+As hooks run, Signet stores the canonical cleaned conversation transcript as
+JSONL at `$SIGNET_WORKSPACE/memory/{harness}/transcripts/transcript.jsonl`.
+The `session_transcripts` table (migration 040) remains a compatibility and
+indexing surface. Tool calls, tool outputs, and thinking traces are removed from
+these memory surfaces so retrieval and summarization stay focused on the actual
+conversation. Raw auditable traces may still be written to daemon logs outside
+the memory lineage.
 
 The table schema (`session_key TEXT PRIMARY KEY, content TEXT NOT NULL,
 harness TEXT, project TEXT, agent_id TEXT, created_at TEXT`) is indexed
