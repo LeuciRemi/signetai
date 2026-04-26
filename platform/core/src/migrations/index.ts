@@ -67,6 +67,7 @@ import { up as knowledgeGraphIndices } from "./058-knowledge-graph-indices";
 import { up as entityAttributeClaimKey } from "./059-entity-attribute-claim-key";
 import { up as entityAttributeGroupKey } from "./060-entity-attribute-group-key";
 import { up as memoryArtifactSourceMtime } from "./061-memory-artifact-source-mtime";
+import { up as memoryArtifactSoftDelete } from "./062-memory-artifact-soft-delete";
 
 // -- Public interface consumed by Database.init() --
 
@@ -577,6 +578,17 @@ export const MIGRATIONS: readonly Migration[] = [
 		up: memoryArtifactSourceMtime,
 		artifacts: {
 			columns: [{ table: "memory_artifacts", column: "source_mtime_ms" }],
+		},
+	},
+	{
+		version: 62,
+		name: "memory-artifact-soft-delete",
+		up: memoryArtifactSoftDelete,
+		artifacts: {
+			columns: [
+				{ table: "memory_artifacts", column: "is_deleted" },
+				{ table: "memory_artifacts", column: "deleted_at" },
+			],
 		},
 	},
 ];

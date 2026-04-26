@@ -166,6 +166,40 @@ describe("hybridRecall", () => {
 		expect(materialized.count).toBe(0);
 	});
 
+	it("excludes soft-deleted native harness artifacts from recall", async () => {
+		const codexMemoryPath = join(dir, "codex", "automations", "smoke", "memory.md");
+		mkdirSync(join(dir, "codex", "automations", "smoke"), { recursive: true });
+		writeFileSync(codexMemoryPath, "# Codex Memory\n\nsoft deleted native bridge marker should not recall.\n");
+		indexExternalMemoryArtifact({
+			agentId: "default",
+			sourcePath: codexMemoryPath,
+			sourceKind: "native_automation_memory",
+			harness: "codex",
+			content: readFileSync(codexMemoryPath, "utf-8"),
+			sourceMtimeMs: Date.now(),
+		});
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare("UPDATE memory_artifacts SET is_deleted = 1, deleted_at = ? WHERE source_path = ?").run(
+				new Date().toISOString(),
+				codexMemoryPath,
+			);
+		});
+
+		const result = await hybridRecall(
+			{
+				query: "soft deleted native bridge marker",
+				keywordQuery: "soft deleted native bridge marker",
+				limit: 5,
+				agentId: "default",
+				readPolicy: "isolated",
+			},
+			loadMemoryConfig(dir),
+			async () => null,
+		);
+
+		expect(result.results.some((row) => row.source === "native_memory")).toBe(false);
+	});
+
 	it("does not classify native-looking artifacts without the bridge-owned provenance marker", async () => {
 		const codexMemoryPath = join(dir, "codex", "memories", "MEMORY.md");
 		mkdirSync(join(dir, "codex", "memories"), { recursive: true });

@@ -731,6 +731,7 @@ function buildNativeArtifactRecallHits(
 				"WHERE memory_artifacts_fts MATCH ?",
 				"AND ma.agent_id = ?",
 				"AND ma.source_kind LIKE 'native_%'",
+				"AND COALESCE(ma.is_deleted, 0) = 0",
 				"AND ma.source_node_id = ?",
 				"AND ma.harness IS NOT NULL",
 			];

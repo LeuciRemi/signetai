@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-04-26
-- Bug fixes: keep web manifests out of version sync; stabilize repo-layout test suite; harden layout test checks.
+- Bug fixes: soft-delete native memory artifacts; keep web manifests out of version sync; stabilize repo-layout test suite; harden layout test checks.
 - Refactoring: reorganize monorepo layout.
 
 ### 2026-04-25
@@ -34,6 +34,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Refactoring: align recall and remember surfaces.
 
 ## Release Ledger
+
+## [0.108.11] - 2026-04-26
+
+Release summary: 1 bug fix.
+Tag range: `v0.108.10..v0.108.11`.
+
+### Bug Fixes
+
+- **daemon**: soft-delete native memory artifacts
 
 ## [0.108.10] - 2026-04-26
 

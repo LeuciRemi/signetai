@@ -598,6 +598,19 @@ describe("migration framework", () => {
 		expect(colNames).toContain("source_mtime_ms");
 	});
 
+	test("migration 062 adds soft-delete columns to memory_artifacts", () => {
+		db = createFreshDb();
+		runMigrations(db);
+
+		const cols = db.query("PRAGMA table_info(memory_artifacts)").all() as Array<{ name: string }>;
+		const colNames = cols.map((col) => col.name);
+		expect(colNames).toContain("is_deleted");
+		expect(colNames).toContain("deleted_at");
+
+		const indexes = db.query("PRAGMA index_list(memory_artifacts)").all() as Array<{ name: string }>;
+		expect(indexes.map((row) => row.name)).toContain("idx_memory_artifacts_agent_deleted");
+	});
+
 	test("entities table has pinning columns after migration 022", () => {
 		db = createFreshDb();
 		runMigrations(db);
