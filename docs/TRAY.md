@@ -22,6 +22,13 @@ resources and marks that daemon as desktop-owned.
 The daemon remains a separate local process. The desktop app is a
 distribution and control layer, not a replacement for the daemon.
 
+When `signet update install` or daemon auto-update installs a new Signet
+version, the update system checks for a managed Linux desktop install at
+`~/.local/bin/signet-desktop` / `~/.local/share/signet/desktop/Signet.AppImage`.
+If present, it refreshes the Electron AppImage from the synced Signet source
+checkout as part of the same update. Unmanaged desktop launchers are left
+untouched and reported as skipped.
+
 ## User-facing behavior
 
 The Electron desktop app provides:

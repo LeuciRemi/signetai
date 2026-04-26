@@ -43,11 +43,12 @@ describe("Bug 7: /api/update/run accepts targetVersion in body", () => {
 	});
 });
 
-describe("Bug 1: CLI passes 120s timeout to update/run", () => {
-	it("fetchFromDaemon for /api/update/run has 120s timeout", () => {
+describe("Bug 1: CLI gives update/run enough time for desktop refresh", () => {
+	it("fetchFromDaemon for /api/update/run uses the shared install timeout", () => {
 		// Find the update install section — look for the POST to update/run
 		const callSite = mustMatch(CLI_SRC, /fetchFromDaemon[\s\S]*?\/api\/update\/run[\s\S]*?\);/);
-		expect(callSite).toContain("120_000");
+		expect(CLI_SRC).toContain("const UPDATE_INSTALL_TIMEOUT_MS = 15 * 60_000");
+		expect(callSite).toContain("UPDATE_INSTALL_TIMEOUT_MS");
 		expect(callSite).toContain('method: "POST"');
 	});
 
@@ -57,5 +58,10 @@ describe("Bug 1: CLI passes 120s timeout to update/run", () => {
 		expect(callSite).toContain("targetVersion");
 		expect(callSite).toContain("JSON.stringify");
 		expect(callSite).toContain("Content-Type");
+	});
+
+	it("CLI reports skipped desktop refresh reasons", () => {
+		expect(CLI_SRC).toContain('data.desktopUpdate?.status === "skipped"');
+		expect(CLI_SRC).toContain("Desktop: ${data.desktopUpdate.message}");
 	});
 });
