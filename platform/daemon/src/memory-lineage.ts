@@ -12,6 +12,7 @@ import { MEMORY_HEAD_MAX_TOKENS } from "./memory-head";
 import { buildAgentScopeClause } from "./memory-search";
 import { NATIVE_MEMORY_BRIDGE_SOURCE_NODE_ID } from "./native-memory-constants";
 import { isNoiseSession, isTempProject } from "./session-noise";
+import { canonicalTranscriptRelativePath } from "./transcript-jsonl";
 
 function getAgentsDir(): string {
 	return process.env.SIGNET_PATH || join(homedir(), ".agents");
@@ -614,6 +615,51 @@ export function indexExternalMemoryArtifact(input: {
 	);
 }
 
+export function indexCanonicalTranscriptJsonl(input: {
+	readonly agentId: string;
+	readonly sessionId: string;
+	readonly sessionKey: string | null;
+	readonly project: string | null;
+	readonly harness: string;
+	readonly capturedAt: string;
+	readonly startedAt: string | null;
+	readonly endedAt: string | null;
+	readonly transcript: string;
+	readonly manifestPath: string;
+}): void {
+	const transcriptPath = canonicalTranscriptRelativePath(input.harness);
+	const sessionToken = deriveSessionToken(input.agentId, input.sessionId);
+	const content = normalizeMarkdownBody(input.transcript);
+	const path = join(getAgentsDir(), transcriptPath);
+	upsertArtifactRow(
+		path,
+		{
+			agent_id: input.agentId,
+			source_path: `${transcriptPath}#${sessionToken}`,
+			kind: "transcript",
+			session_id: input.sessionId,
+			session_key: input.sessionKey,
+			session_token: sessionToken,
+			project: input.project,
+			harness: input.harness,
+			captured_at: input.capturedAt,
+			started_at: input.startedAt,
+			ended_at: input.endedAt,
+			manifest_path: input.manifestPath,
+			updated_at: new Date().toISOString(),
+			source_node_id: null,
+			content_sha256: hashNormalizedBody(content),
+			hash_scope: HASH_SCOPE,
+			sanitizer_version: SANITIZER_VERSION,
+			memory_sentence: fallbackSentence(content, input.project, input.harness, "transcript"),
+			memory_sentence_quality: "fallback",
+		},
+		content,
+		existsSync(path) ? statSync(path).mtimeMs : Date.now(),
+		{ trustSourcePath: true },
+	);
+}
+
 function listCanonicalFiles(): string[] {
 	const dir = getMemoryDir();
 	if (!existsSync(dir)) return [];
@@ -768,6 +814,7 @@ export function reindexMemoryArtifacts(agentId?: string): void {
 
 	for (const path of cache.keys()) {
 		if (fileSet.has(path)) continue;
+		if (path.includes(".jsonl#")) continue;
 		deleteArtifactRowsForPath(path, scope);
 		cache.delete(path);
 		changedPaths.add(path);
@@ -823,7 +870,9 @@ function ensureManifestRecord(seed: {
 }): ManifestState {
 	const path = artifactPath(seed.capturedAt, seed.sessionToken, "manifest");
 	const summaryPath = relativeArtifactPath(seed.capturedAt, seed.sessionToken, "summary");
-	const transcriptPath = relativeArtifactPath(seed.capturedAt, seed.sessionToken, "transcript");
+	const transcriptPath = seed.harness
+		? canonicalTranscriptRelativePath(seed.harness)
+		: relativeArtifactPath(seed.capturedAt, seed.sessionToken, "transcript");
 	const existing = loadManifest(path);
 	if (existing) return existing;
 

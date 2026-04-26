@@ -390,7 +390,7 @@ function registerSessionEnd(app: Hono): void {
 			}
 
 			try {
-				const result = handleSessionEnd(body);
+				const result = await handleSessionEnd(body);
 				if (sessionKey) {
 					markSessionEnded(sessionKey, runtimePath);
 					removeAgentPresence(sessionKey);
