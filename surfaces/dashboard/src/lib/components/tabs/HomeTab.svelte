@@ -1,4 +1,6 @@
 <script lang="ts">
+import type { AgentPresence } from "$lib/agent-presence";
+import { getOwnAgentPresence } from "$lib/agent-presence";
 import type {
 	ContinuityEntry,
 	DaemonStatus,
@@ -10,7 +12,7 @@ import type {
 	MemoryStats,
 	PipelineStatus,
 } from "$lib/api";
-import { getConnectors, getContinuityLatest, getDiagnostics, getPipelineStatus } from "$lib/api";
+import { API_BASE, getConnectors, getContinuityLatest, getDiagnostics, getPipelineStatus } from "$lib/api";
 import AgentHeader from "$lib/components/home/AgentHeader.svelte";
 import MarketplaceSpotlights from "$lib/components/home/MarketplaceSpotlights.svelte";
 import PinnedEntityCluster from "$lib/components/home/PinnedEntityCluster.svelte";
@@ -24,12 +26,14 @@ interface Props {
 	memoryStats: MemoryStats | null;
 	harnesses: Harness[];
 	daemonStatus: DaemonStatus | null;
+	agentId: string;
 }
 
-let { identity, memories, memoryStats, harnesses, daemonStatus }: Props = $props();
+const { identity, memories, memoryStats, harnesses, daemonStatus, agentId }: Props = $props();
 
 let diagnostics = $state<DiagnosticsReport | null>(null);
 let continuity = $state<ContinuityEntry[]>([]);
+let presence = $state<AgentPresence[]>([]);
 let pipelineStatus = $state<PipelineStatus | null>(null);
 let connectors = $state<DocumentConnector[]>([]);
 let loaded = $state(false);
@@ -38,14 +42,16 @@ onMount(async () => {
 	const results = await Promise.allSettled([
 		getDiagnostics(),
 		getContinuityLatest(),
+		getOwnAgentPresence(API_BASE, 10, agentId),
 		getPipelineStatus(),
 		getConnectors(),
 	]);
 
 	if (results[0].status === "fulfilled" && results[0].value) diagnostics = results[0].value;
 	if (results[1].status === "fulfilled") continuity = results[1].value;
-	if (results[2].status === "fulfilled") pipelineStatus = results[2].value;
-	if (results[3].status === "fulfilled") connectors = results[3].value;
+	if (results[2].status === "fulfilled") presence = results[2].value;
+	if (results[3].status === "fulfilled") pipelineStatus = results[3].value;
+	if (results[4].status === "fulfilled") connectors = results[4].value;
 	loaded = true;
 });
 </script>
@@ -58,6 +64,8 @@ onMount(async () => {
 			{daemonStatus}
 			connectorCount={connectors.length}
 			{continuity}
+			{presence}
+			{agentId}
 			memoryCount={memoryStats?.total ?? 0}
 			{diagnostics}
 			{pipelineStatus}

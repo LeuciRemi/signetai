@@ -1,4 +1,5 @@
 <script lang="ts">
+import { type AgentPresence, selectLatestOwnPresence } from "$lib/agent-presence";
 import type { ContinuityEntry, DaemonStatus, DiagnosticsReport, Identity, MemoryStats, PipelineStatus } from "$lib/api";
 
 interface Props {
@@ -6,17 +7,21 @@ interface Props {
 	daemonStatus: DaemonStatus | null;
 	connectorCount: number;
 	continuity: ContinuityEntry[];
+	presence: AgentPresence[];
+	agentId: string;
 	memoryCount: number;
 	diagnostics?: DiagnosticsReport | null;
 	pipelineStatus?: PipelineStatus | null;
 	memoryStats?: MemoryStats | null;
 }
 
-let {
+const {
 	identity,
 	daemonStatus,
 	connectorCount,
 	continuity,
+	presence,
+	agentId,
 	memoryCount,
 	diagnostics = null,
 	pipelineStatus = null,
@@ -41,9 +46,13 @@ const ageLabel = $derived.by(() => {
 const activeSessions = $derived(daemonStatus?.activeSessions ?? 0);
 const version = $derived(daemonStatus?.version ?? "--");
 
+const latestPresence = $derived(selectLatestOwnPresence(presence, agentId));
+
 const latestProject = $derived.by(() => {
 	if (continuity.length === 0) return null;
-	const sorted = [...continuity].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+	const withCreated = continuity.filter((item) => !Number.isNaN(new Date(item.created_at).getTime()));
+	if (withCreated.length === 0) return null;
+	const sorted = [...withCreated].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 	return sorted[0];
 });
 
@@ -58,9 +67,12 @@ function formatRecency(dateStr: string): string {
 	return `${days}D AGO`;
 }
 
-const projectName = $derived(latestProject?.project?.replace(/\/$/, "").split("/").pop() ?? "--");
+const activeProject = $derived(latestPresence?.project ?? latestProject?.project ?? null);
+const activeSeenAt = $derived(latestPresence?.lastSeenAt ?? latestProject?.created_at ?? null);
 
-const recency = $derived(latestProject ? formatRecency(latestProject.created_at) : "--");
+const projectName = $derived(activeProject?.replace(/\/$/, "").split("/").pop() ?? "--");
+
+const recency = $derived(activeSeenAt ? formatRecency(activeSeenAt) : "--");
 
 /* use name from identity; daemon /api/identity sometimes returns empty
 	   strings even when agent.yaml has a name configured — fall back gracefully */

@@ -17,7 +17,7 @@ interface Props {
 	ontimelinegeneratedforchange: (value: string) => void;
 }
 
-let {
+const {
 	activeTab,
 	identity,
 	configFiles,
@@ -88,6 +88,7 @@ let {
 			{memoryStats}
 			{harnesses}
 			{daemonStatus}
+			{agentId}
 		/>
 	{:catch error}
 		{@render skeletonError(error)}
