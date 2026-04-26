@@ -20,7 +20,6 @@ import {
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { Worker } from "node:worker_threads";
-import { createAdaptorServer } from "@hono/node-server";
 import {
 	type AgentDefinition,
 	type PipelineSynthesisConfig,
@@ -42,6 +41,7 @@ import { fetchEmbedding } from "./embedding-fetch";
 import { type EmbeddingTrackerHandle, startEmbeddingTracker } from "./embedding-tracker";
 import { initFeatureFlags } from "./feature-flags";
 import { writeFileIfChangedAsync } from "./file-sync";
+import { createSignetHttpServer } from "./http-server";
 import { syncAgentWorkspaces } from "./identity-sync";
 import { getOrCreateInferenceRouter } from "./inference-router.js";
 import { closeInferenceProviderResolver, getInferenceProvider, initInferenceProviderResolver } from "./llm";
@@ -1565,7 +1565,7 @@ async function main() {
 		maxDelayMs: BIND_MAX_DELAY_MS,
 		baseDelayMs: BIND_RETRY_BASE_MS,
 		createServer: () =>
-			createAdaptorServer({
+			createSignetHttpServer({
 				fetch: app.fetch,
 				hostname: BIND_HOST,
 				// Type assertion needed: arrow functions cannot satisfy overloaded
