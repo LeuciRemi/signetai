@@ -6,7 +6,7 @@ import { watch } from "chokidar";
 import { resolveDaemonAgentId } from "./agent-id";
 import { getDbAccessor } from "./db-accessor";
 import { logger } from "./logger";
-import { deleteArtifactRowsForPath, indexExternalMemoryArtifact } from "./memory-lineage";
+import { indexExternalMemoryArtifact, softDeleteArtifactRowsForPath } from "./memory-lineage";
 
 export interface NativeMemorySource {
 	readonly harness: string;
@@ -136,7 +136,9 @@ function nativeArtifactRowExists(filePath: string, agentId: string): boolean {
 	try {
 		return getDbAccessor().withReadDb((db) => {
 			const row = db
-				.prepare("SELECT 1 FROM memory_artifacts WHERE agent_id = ? AND source_path = ? LIMIT 1")
+				.prepare(
+					"SELECT 1 FROM memory_artifacts WHERE agent_id = ? AND source_path = ? AND COALESCE(is_deleted, 0) = 0 LIMIT 1",
+				)
 				.get(agentId, sourcePath);
 			return !!row;
 		});
@@ -209,7 +211,7 @@ export function removeNativeMemoryFile(
 	agentId = resolveDaemonAgentId(),
 ): void {
 	indexed.delete(fingerprintKey(source, filePath, agentId));
-	deleteArtifactRowsForPath(filePath, agentId);
+	softDeleteArtifactRowsForPath(filePath, agentId);
 }
 
 export function startNativeMemoryBridge(

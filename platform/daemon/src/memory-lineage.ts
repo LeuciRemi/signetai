@@ -549,7 +549,9 @@ function upsertArtifactRow(
 				memory_sentence_quality = excluded.memory_sentence_quality,
 				content = excluded.content,
 				updated_at = excluded.updated_at,
-				source_mtime_ms = excluded.source_mtime_ms`,
+				source_mtime_ms = excluded.source_mtime_ms,
+				is_deleted = 0,
+				deleted_at = NULL`,
 		).run(
 			agentId,
 			sourcePath,
@@ -621,6 +623,34 @@ function listCanonicalFiles(): string[] {
 		.sort();
 }
 
+export function softDeleteArtifactRowsForPath(
+	path: string,
+	agentId: string | null,
+	deletedAt = new Date().toISOString(),
+): void {
+	const sourcePath = relativePath(path);
+	const absolutePath = path.replace(/\\/g, "/");
+	getDbAccessor().withWriteTx((db) => {
+		const markDeleted = db.prepare(
+			`UPDATE memory_artifacts
+			 SET is_deleted = 1, deleted_at = ?, updated_at = ?
+			 WHERE source_path = ? AND COALESCE(is_deleted, 0) = 0`,
+		);
+		const markDeletedForAgent = db.prepare(
+			`UPDATE memory_artifacts
+			 SET is_deleted = 1, deleted_at = ?, updated_at = ?
+			 WHERE source_path = ? AND agent_id = ? AND COALESCE(is_deleted, 0) = 0`,
+		);
+		if (agentId) {
+			markDeletedForAgent.run(deletedAt, deletedAt, sourcePath, agentId);
+			markDeletedForAgent.run(deletedAt, deletedAt, absolutePath, agentId);
+			return;
+		}
+		markDeleted.run(deletedAt, deletedAt, sourcePath);
+		markDeleted.run(deletedAt, deletedAt, absolutePath);
+	});
+}
+
 export function deleteArtifactRowsForPath(path: string, agentId: string | null): void {
 	const sourcePath = relativePath(path);
 	const absolutePath = path.replace(/\\/g, "/");
@@ -640,7 +670,7 @@ export function reindexMemoryArtifacts(agentId?: string): void {
 	const files = listCanonicalFiles();
 	const stopTimer = logger.time("resources", "reindexMemoryArtifacts");
 	const cacheKey = scope ?? "*";
-	const cache = artifactIndexCache.get(cacheKey) ?? new Map<string, number>();
+	const cache = artifactIndexCache.get(cacheKey) ?? new Map<string, string>();
 	const changedPaths = new Set<string>();
 	lastChangedManifestsByAgent.delete(cacheKey);
 

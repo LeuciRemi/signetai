@@ -191,7 +191,8 @@ entrypoint indexes and memory files under `~/.claude/projects/*/memory/`,
 session memory under `~/.claude/session-memory/`, and agent-scoped memory
 under `~/.claude/agent-memory/` and `~/.claude/agent-memory-local/`. Matching
 content is exposed through Signet recall as `native_memory` results with
-Claude Code provenance.
+Claude Code provenance. Removed native files are soft-deleted from active
+recall while preserving their artifact rows for lineage.
 
 This replaces the older daemon-local Claude watcher that only read
 `~/.claude/projects/*/memory/MEMORY.md` and pushed chunks back through
@@ -258,7 +259,9 @@ Signet indexes Codex-owned memory artifacts without rewriting them or turning
 them into Signet-authored memory rows. The daemon watches
 `~/.codex/memories/` and automation-local `~/.codex/automations/*/memory.md`
 files, then exposes matching content through Signet recall as
-`native_memory` results with Codex provenance.
+`native_memory` results with Codex provenance. Removed native files are
+soft-deleted from active recall while preserving their artifact rows for
+lineage.
 
 ### How it works
 

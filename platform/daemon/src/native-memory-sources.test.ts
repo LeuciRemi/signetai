@@ -171,6 +171,53 @@ describe("native memory sources", () => {
 		expect(count).toBe(1);
 	});
 
+	it("soft-deletes native memory artifacts when their source file is removed", async () => {
+		const root = join(dir, ".codex");
+		mkdirSync(join(root, "automations", "smoke"), { recursive: true });
+		const source = codexNativeMemorySource(root);
+		const file = join(root, "automations", "smoke", "memory.md");
+		writeFileSync(file, "# Smoke\n\nCodex remembered a soft deleted native artifact.\n");
+
+		expect(await indexNativeMemoryFile(source, file, "agent-native")).toBe(true);
+		removeNativeMemoryFile(source, file, "agent-native");
+
+		const row = getDbAccessor().withReadDb(
+			(db) =>
+				db
+					.prepare("SELECT is_deleted, deleted_at FROM memory_artifacts WHERE agent_id = ? AND source_path = ?")
+					.get("agent-native", file) as {
+					is_deleted: number;
+					deleted_at: string | null;
+				},
+		);
+		expect(row.is_deleted).toBe(1);
+		expect(row.deleted_at).toBeTruthy();
+	});
+
+	it("restores soft-deleted native artifacts when the source file returns", async () => {
+		const root = join(dir, ".codex");
+		mkdirSync(join(root, "automations", "smoke"), { recursive: true });
+		const source = codexNativeMemorySource(root);
+		const file = join(root, "automations", "smoke", "memory.md");
+		writeFileSync(file, "# Smoke\n\nCodex remembered a restored native artifact.\n");
+
+		expect(await indexNativeMemoryFile(source, file, "agent-native")).toBe(true);
+		removeNativeMemoryFile(source, file, "agent-native");
+		expect(await indexNativeMemoryFile(source, file, "agent-native")).toBe(true);
+
+		const row = getDbAccessor().withReadDb(
+			(db) =>
+				db
+					.prepare("SELECT is_deleted, deleted_at FROM memory_artifacts WHERE agent_id = ? AND source_path = ?")
+					.get("agent-native", file) as {
+					is_deleted: number;
+					deleted_at: string | null;
+				},
+		);
+		expect(row.is_deleted).toBe(0);
+		expect(row.deleted_at).toBeNull();
+	});
+
 	it("does not cache a fingerprint when persistence fails", async () => {
 		const root = join(dir, ".codex");
 		mkdirSync(join(root, "memories"), { recursive: true });
