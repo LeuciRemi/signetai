@@ -22,7 +22,7 @@
 **97.6% LongMemEval answer accuracy**<br />
 Readable record · inspectable recall · harnesses are replaceable
 
-[Website](https://signetai.sh) · [Docs](https://signetai.sh/docs) · [Benchmarks](./docs/BENCHMARKING.md) · [Vision](VISION.md) · [Discussions](https://github.com/Signet-AI/signetai/discussions) · [Discord](https://discord.gg/pHa5scah9C) · [Contributing](docs/CONTRIBUTING.md) · [AI Policy](AI_POLICY.md)
+[Website](https://signetai.sh) · [Docs](https://signetai.sh/docs) · [Benchmarks](./docs/BENCHMARKING.md) · [Vision](VISION.md) · [Discussions](https://github.com/Signet-AI/signetai/discussions) · [Discord](https://discord.gg/Psdeg7sQm7) · [Contributing](docs/CONTRIBUTING.md) · [AI Policy](AI_POLICY.md)
 
 </div>
 
