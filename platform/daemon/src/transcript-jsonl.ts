@@ -1,5 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	closeSync,
+	existsSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	readSync,
+	renameSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { resolveDefaultBasePath } from "@signet/core";
 
@@ -42,6 +54,8 @@ interface TranscriptIdentity {
 
 const LOCK_DEAD_OWNER_STALE_MS = 30_000;
 const LOCK_POLL_MS = 10;
+const TAIL_SCAN_BYTES = 256 * 1024;
+const sessionSeqCache = new Map<string, number>();
 
 function resolveBasePath(basePath?: string): string {
 	return basePath ?? process.env.SIGNET_PATH ?? resolveDefaultBasePath();
@@ -144,12 +158,59 @@ function readRecords(path: string): CanonicalTranscriptRecord[] {
 	return records;
 }
 
+function parseRecords(text: string): CanonicalTranscriptRecord[] {
+	const records: CanonicalTranscriptRecord[] = [];
+	for (const line of text.split(/\r?\n/)) {
+		const trimmed = line.trim();
+		if (trimmed.length === 0) continue;
+		try {
+			const parsed = JSON.parse(trimmed) as Partial<CanonicalTranscriptRecord>;
+			if (parsed.schema === "signet.transcript.v1" && typeof parsed.content === "string") {
+				records.push(parsed as CanonicalTranscriptRecord);
+			}
+		} catch {
+			// Ignore malformed historical lines rather than blocking capture.
+		}
+	}
+	return records;
+}
+
+function readTailRecords(path: string): CanonicalTranscriptRecord[] {
+	if (!existsSync(path)) return [];
+	const size = statSync(path).size;
+	const start = Math.max(0, size - TAIL_SCAN_BYTES);
+	const length = size - start;
+	if (length <= 0) return [];
+	const fd = openSync(path, "r");
+	try {
+		const buffer = Buffer.alloc(length);
+		readSync(fd, buffer, 0, length, start);
+		const text = buffer.toString("utf8");
+		return parseRecords(start === 0 ? text : text.slice(Math.max(0, text.indexOf("\n") + 1)));
+	} finally {
+		closeSync(fd);
+	}
+}
+
 function writeRecords(path: string, records: readonly CanonicalTranscriptRecord[]): void {
 	mkdirSync(dirname(path), { recursive: true });
 	const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
 	const body = records.map((record) => JSON.stringify(record)).join("\n");
 	writeFileSync(tmp, body.length > 0 ? `${body}\n` : "", "utf8");
 	renameSync(tmp, path);
+}
+
+function appendRecords(path: string, records: readonly CanonicalTranscriptRecord[]): void {
+	if (records.length === 0) return;
+	mkdirSync(dirname(path), { recursive: true });
+	appendFileSync(
+		path,
+		records
+			.map((record) => JSON.stringify(record))
+			.join("\n")
+			.concat("\n"),
+		"utf8",
+	);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -250,6 +311,28 @@ function sameSession(record: CanonicalTranscriptRecord, input: TranscriptIdentit
 	);
 }
 
+function sessionSeqCacheKey(input: TranscriptIdentity): string {
+	return [
+		input.agentId.trim() || "default",
+		sanitizeHarnessPath(input.harness),
+		input.sessionId?.trim() || input.sessionKey?.trim() || "",
+		input.sessionKey?.trim() || "",
+	].join("\0");
+}
+
+function hasTrailingTurns(
+	records: readonly CanonicalTranscriptRecord[],
+	input: TranscriptIdentity,
+	turns: readonly TranscriptTurn[],
+): boolean {
+	const relevant = records.filter((record) => sameSession(record, input));
+	if (relevant.length < turns.length) return false;
+	const tail = relevant.slice(-turns.length);
+	return turns.every(
+		(turn, index) => tail[index]?.role === turn.role && tail[index]?.content === cleanTurnContent(turn.content),
+	);
+}
+
 export function writeCanonicalTranscriptSnapshot(
 	input: TranscriptIdentity & { readonly transcript: string },
 ): Promise<string | null> {
@@ -263,6 +346,10 @@ export function writeCanonicalTranscriptSnapshot(
 			.filter((record): record is CanonicalTranscriptRecord => record !== null);
 		if (next.length === 0) return null;
 		writeRecords(path, [...existing, ...next]);
+		sessionSeqCache.set(
+			sessionSeqCacheKey(input),
+			next.reduce((max, record) => Math.max(max, record.seq), 0),
+		);
 		return path;
 	});
 }
@@ -274,14 +361,20 @@ export function appendCanonicalTranscriptTurns(
 	if (turns.length === 0) return Promise.resolve(null);
 	const path = canonicalTranscriptPath(input.basePath, input.harness);
 	return withTranscriptFileLock(path, () => {
-		const existing = readRecords(path);
-		const relevant = existing.filter((record) => sameSession(record, input));
-		let seq = relevant.reduce((max, record) => Math.max(max, record.seq), 0);
+		const recent = readTailRecords(path);
+		if (hasTrailingTurns(recent, input, turns)) return path;
+		const key = sessionSeqCacheKey(input);
+		const relevant = recent.filter((record) => sameSession(record, input));
+		let seq = Math.max(
+			sessionSeqCache.get(key) ?? 0,
+			relevant.reduce((max, record) => Math.max(max, record.seq), 0),
+		);
 		const next = turns
 			.map((turn) => makeRecord(input, turn, ++seq))
 			.filter((record): record is CanonicalTranscriptRecord => record !== null);
 		if (next.length === 0) return null;
-		writeRecords(path, [...existing, ...next]);
+		appendRecords(path, next);
+		sessionSeqCache.set(key, seq);
 		return path;
 	});
 }

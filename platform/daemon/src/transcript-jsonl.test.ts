@@ -118,4 +118,26 @@ await appendCanonicalTranscriptTurns({
 			expect(transcript).toContain(`concurrent turn ${index}`);
 		}
 	});
+
+	test("deduplicates retried live appends for the same trailing turns", async () => {
+		const root = makeRoot("dedupe");
+		const input = {
+			basePath: root,
+			agentId: "default",
+			harness: "codex",
+			sessionKey: "retry-live-session",
+			sourceFormat: "live" as const,
+			turns: [
+				{ role: "assistant" as const, content: "same assistant context" },
+				{ role: "user" as const, content: "same retried prompt" },
+			],
+		};
+
+		await appendCanonicalTranscriptTurns(input);
+		await appendCanonicalTranscriptTurns(input);
+
+		const transcript = readFileSync(join(root, "memory", "codex", "transcripts", "transcript.jsonl"), "utf8");
+		expect(transcript.match(/same assistant context/g)?.length).toBe(1);
+		expect(transcript.match(/same retried prompt/g)?.length).toBe(1);
+	});
 });
