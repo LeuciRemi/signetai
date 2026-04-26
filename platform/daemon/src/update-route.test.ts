@@ -59,4 +59,9 @@ describe("Bug 1: CLI gives update/run enough time for desktop refresh", () => {
 		expect(callSite).toContain("JSON.stringify");
 		expect(callSite).toContain("Content-Type");
 	});
+
+	it("CLI reports skipped desktop refresh reasons", () => {
+		expect(CLI_SRC).toContain('data.desktopUpdate?.status === "skipped"');
+		expect(CLI_SRC).toContain("Desktop: ${data.desktopUpdate.message}");
+	});
 });

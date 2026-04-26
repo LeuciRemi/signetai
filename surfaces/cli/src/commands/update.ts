@@ -138,6 +138,8 @@ export function registerUpdateCommands(program: Command, deps: UpdateDeps): void
 				console.log(chalk.green(`  ✓ ${data.desktopUpdate.message}`));
 			} else if (data.desktopUpdate?.status === "error") {
 				console.log(chalk.yellow(`  ⚠ ${data.desktopUpdate.message}`));
+			} else if (data.desktopUpdate?.status === "skipped") {
+				console.log(chalk.dim(`  Desktop: ${data.desktopUpdate.message}`));
 			}
 			try {
 				const skillResult = deps.syncBuiltinSkills(deps.getSkillsSourceDir(), deps.AGENTS_DIR);
