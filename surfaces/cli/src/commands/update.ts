@@ -22,6 +22,8 @@ interface UpdateDeps {
 	) => { installed: string[]; updated: string[]; skipped: string[] };
 }
 
+const UPDATE_INSTALL_TIMEOUT_MS = 15 * 60_000;
+
 export function registerUpdateCommands(program: Command, deps: UpdateDeps): void {
 	const updateCmd = program.command("update").description("Check, install, and manage auto-updates");
 
@@ -115,9 +117,10 @@ export function registerUpdateCommands(program: Command, deps: UpdateDeps): void
 				message?: string;
 				output?: string;
 				restartRequired?: boolean;
+				desktopUpdate?: { status?: string; message?: string };
 			}>("/api/update/run", {
 				method: "POST",
-				timeout: 120_000,
+				timeout: UPDATE_INSTALL_TIMEOUT_MS,
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ targetVersion: check.latestVersion }),
 			});
@@ -131,6 +134,11 @@ export function registerUpdateCommands(program: Command, deps: UpdateDeps): void
 			}
 
 			spinner.succeed(data.message || "Update installed");
+			if (data.desktopUpdate?.status === "updated") {
+				console.log(chalk.green(`  ✓ ${data.desktopUpdate.message}`));
+			} else if (data.desktopUpdate?.status === "error") {
+				console.log(chalk.yellow(`  ⚠ ${data.desktopUpdate.message}`));
+			}
 			try {
 				const skillResult = deps.syncBuiltinSkills(deps.getSkillsSourceDir(), deps.AGENTS_DIR);
 				const totalSynced = skillResult.installed.length + skillResult.updated.length;

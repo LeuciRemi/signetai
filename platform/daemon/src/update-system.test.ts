@@ -12,7 +12,9 @@ import { join } from "node:path";
 import {
 	MAX_UPDATE_INTERVAL_SECONDS,
 	MIN_UPDATE_INTERVAL_SECONDS,
+	canUpdateDesktopFromSourceSync,
 	categorizeUpdateError,
+	detectDesktopInstall,
 	finalizeSuccessfulUpdateInstall,
 	getUpdateState,
 	initUpdateSystem,
@@ -20,6 +22,7 @@ import {
 	parseBooleanFlag,
 	parseInstalledPackageVersion,
 	parseUpdateInterval,
+	updateDesktopInstallAfterUpdate,
 	verifyInstalledVersion,
 } from "./update-system";
 
@@ -74,6 +77,10 @@ describe("Issue 322: verify installed version after update install", () => {
 					defaultBranch: "main",
 				};
 			},
+			updateDesktopInstallAfterUpdate: async () => ({
+				status: "skipped",
+				message: "Signet desktop app is not installed",
+			}),
 		});
 
 		expect(calls).toEqual([workspaceDir]);
@@ -83,8 +90,150 @@ describe("Issue 322: verify installed version after update install", () => {
 			output: "installed ok",
 			installedVersion: "0.78.1",
 			restartRequired: true,
+			desktopUpdate: {
+				status: "skipped",
+				message: "Signet desktop app is not installed",
+			},
 		});
 		expect(getUpdateState().pendingRestartVersion).toBe("0.78.1");
+	});
+
+	it("attempts managed desktop update after source checkout sync", async () => {
+		const workspaceDir = join(tmpdir(), `signet-update-desktop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		const calls: string[] = [];
+		initUpdateSystem("0.78.0", workspaceDir);
+
+		const result = await finalizeSuccessfulUpdateInstall("0.78.1", "installed ok", {
+			syncWorkspaceSourceRepoAsync: async (dir) => ({
+				status: "pulled",
+				path: join(dir, "signetai"),
+				message: "fast-forwarded Signet source checkout",
+				branch: "main",
+				defaultBranch: "main",
+			}),
+			updateDesktopInstallAfterUpdate: async (repoSync, version) => {
+				calls.push(`${version}@${repoSync.path}`);
+				return {
+					status: "updated",
+					message: `Signet desktop app updated to v${version}.`,
+				};
+			},
+		});
+
+		expect(calls).toEqual([`0.78.1@${join(workspaceDir, "signetai")}`]);
+		expect(result.desktopUpdate).toEqual({
+			status: "updated",
+			message: "Signet desktop app updated to v0.78.1.",
+		});
+	});
+});
+
+describe("desktop update integration", () => {
+	it("detects absent, managed, and unmanaged Linux desktop installs", () => {
+		const home = "/home/tester";
+		const launcher = join(home, ".local", "bin", "signet-desktop");
+
+		expect(
+			detectDesktopInstall(home, {
+				existsSync: () => false,
+				readFileSync: () => "",
+			}),
+		).toMatchObject({ installed: false, managed: false });
+
+		expect(
+			detectDesktopInstall(home, {
+				existsSync: (path) => path === launcher,
+				readFileSync: () => "# signet-desktop managed launcher\n",
+			}),
+		).toMatchObject({ installed: true, managed: true });
+
+		expect(
+			detectDesktopInstall(home, {
+				existsSync: (path) => path === launcher,
+				readFileSync: () => "#!/usr/bin/env sh\nexec /custom/Signet.AppImage\n",
+			}),
+		).toMatchObject({ installed: true, managed: false });
+	});
+
+	it("only updates desktop from a current or fast-forwarded source checkout", () => {
+		expect(canUpdateDesktopFromSourceSync("cloned")).toBe(true);
+		expect(canUpdateDesktopFromSourceSync("pulled")).toBe(true);
+		expect(canUpdateDesktopFromSourceSync("current")).toBe(true);
+		expect(canUpdateDesktopFromSourceSync("fetched")).toBe(false);
+		expect(canUpdateDesktopFromSourceSync("skipped")).toBe(false);
+		expect(canUpdateDesktopFromSourceSync("error")).toBe(false);
+	});
+
+	it("runs the installed Signet CLI desktop installer for managed installs", async () => {
+		const home = "/home/tester";
+		const repo = "/workspace/signetai";
+		const launcher = join(home, ".local", "bin", "signet-desktop");
+		const signetBin = "/pkg/bin/signet.js";
+		const calls: string[] = [];
+		initUpdateSystem("0.78.0", "/workspace");
+
+		const result = await updateDesktopInstallAfterUpdate(
+			{
+				status: "pulled",
+				path: repo,
+				message: "fast-forwarded Signet source checkout",
+				branch: "main",
+				defaultBranch: "main",
+			},
+			"0.78.1",
+			{
+				home,
+				env: {},
+				execPath: "/usr/bin/node",
+				existsSync: (path) => path === launcher || path === signetBin,
+				readFileSync: () => "# signet-desktop managed launcher\n",
+				resolvePrimaryPackageManager: () => ({
+					family: "bun",
+					source: "fallback",
+					reason: "test",
+					available: { bun: true, npm: false, pnpm: false, yarn: false },
+				}),
+				resolveGlobalPackagePath: () => "/pkg",
+				runCommand: async (command, args, options) => {
+					calls.push(`${command} ${args.join(" ")} @ ${options.cwd}`);
+					return { exitCode: 0, stdout: "desktop installed", stderr: "", timedOut: false };
+				},
+			},
+		);
+
+		expect(result).toEqual({
+			status: "updated",
+			message: "Signet desktop app updated to v0.78.1.",
+			output: "desktop installed",
+		});
+		expect(calls).toEqual([`/usr/bin/node ${signetBin} desktop install --repo ${repo} @ ${repo}`]);
+	});
+
+	it("skips desktop update when the source checkout was not fast-forwarded", async () => {
+		const calls: string[] = [];
+		const result = await updateDesktopInstallAfterUpdate(
+			{
+				status: "fetched",
+				path: "/workspace/signetai",
+				message: "skipped pull because the working tree has local changes",
+				branch: "main",
+				defaultBranch: "main",
+			},
+			"0.78.1",
+			{
+				home: "/home/tester",
+				existsSync: () => true,
+				readFileSync: () => "# signet-desktop managed launcher\n",
+				runCommand: async () => {
+					calls.push("ran");
+					return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+				},
+			},
+		);
+
+		expect(result.status).toBe("skipped");
+		expect(result.message).toContain("source checkout sync status was 'fetched'");
+		expect(calls).toEqual([]);
 	});
 });
 

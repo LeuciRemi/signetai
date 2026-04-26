@@ -7,6 +7,7 @@
 
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import {
 	type PackageManagerFamily,
@@ -43,6 +44,7 @@ export interface UpdateRunResult {
 	output?: string;
 	installedVersion?: string;
 	restartRequired?: boolean;
+	desktopUpdate?: DesktopUpdateResult;
 }
 
 export interface UpdateConfig {
@@ -71,6 +73,22 @@ interface GitHubReleaseResponse {
 	published_at?: string;
 }
 
+export type DesktopUpdateStatus = "updated" | "skipped" | "error";
+
+export interface DesktopUpdateResult {
+	readonly status: DesktopUpdateStatus;
+	readonly message: string;
+	readonly output?: string;
+}
+
+export interface DesktopInstallDetection {
+	readonly installed: boolean;
+	readonly managed: boolean;
+	readonly launcherPath: string;
+	readonly appImagePath: string;
+	readonly reason?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -78,9 +96,11 @@ interface GitHubReleaseResponse {
 const GITHUB_REPO = "Signet-AI/signetai";
 const NPM_PACKAGE = "signetai";
 const EXACT_SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const MANAGED_DESKTOP_LAUNCHER_MARKER = "# signet-desktop managed launcher";
 
 export const MIN_UPDATE_INTERVAL_SECONDS = 300;
 export const MAX_UPDATE_INTERVAL_SECONDS = 604800;
+export const DESKTOP_UPDATE_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_UPDATE_INTERVAL_SECONDS = 21600;
 
 // ---------------------------------------------------------------------------
@@ -179,18 +199,12 @@ export function getUpdateSummary(): string | null {
 	}
 
 	if (pendingRestartVersion) {
-		return (
-			`Signet v${pendingRestartVersion} is installed but needs ` +
-			"a daemon restart. Run:\n" +
-			"  signet daemon restart\n" +
-			"  signet sync\n\n" +
-			"These are the ONLY supported post-update commands."
-		);
+		return `Signet v${pendingRestartVersion} is installed but needs a daemon restart. Run:\n  signet daemon restart\n  signet sync\n\nThese are the ONLY supported post-update commands.`;
 	}
 
 	if (lastAutoUpdateError && updateConfig.autoInstall) {
 		const categorized = categorizeUpdateError(lastAutoUpdateError);
-		return `Auto-updates are enabled but failing: ${categorized} ` + "Run `signet update status` for details.";
+		return `Auto-updates are enabled but failing: ${categorized} Run \`signet update status\` for details.`;
 	}
 
 	const latest = lastUpdateCheck?.latestVersion;
@@ -199,12 +213,7 @@ export function getUpdateSummary(): string | null {
 
 		if (updateConfig.autoInstall) {
 			const autoInfo = lastAutoUpdateAt ? ` Last auto-update: ${lastAutoUpdateAt.toISOString()}.` : "";
-			return (
-				`Signet v${latest} is available (current: v${currentVersion}). ` +
-				"Auto-update will install it on the next check cycle." +
-				autoInfo +
-				notes
-			);
+			return `Signet v${latest} is available (current: v${currentVersion}). Auto-update will install it on the next check cycle.${autoInfo}${notes}`;
 		}
 
 		const packageManager = resolvePrimaryPackageManager({
@@ -214,16 +223,7 @@ export function getUpdateSummary(): string | null {
 		const installCmd = getGlobalInstallCommand(packageManager.family, NPM_PACKAGE);
 		const fullInstallCmd = `${installCmd.command} ${installCmd.args.join(" ")}`;
 
-		return (
-			`Signet v${latest} is available (current: v${currentVersion}).\n\n` +
-			"To update Signet:\n" +
-			`  ${fullInstallCmd}\n` +
-			"  signet daemon restart\n" +
-			"  signet sync\n\n" +
-			"These are the ONLY supported update commands. " +
-			"Do not use npx, bunx, or signet update install." +
-			notes
-		);
+		return `Signet v${latest} is available (current: v${currentVersion}).\n\nTo update Signet:\n  ${fullInstallCmd}\n  signet daemon restart\n  signet sync\n\nThese are the ONLY supported update commands. Do not use npx, bunx, or signet update install.${notes}`;
 	}
 
 	if (lastAutoUpdateAt && updateConfig.autoInstall) {
@@ -304,12 +304,7 @@ function loadUpdateConfig(): UpdateConfig {
 }
 
 function formatUpdatesSection(config: UpdateConfig): string {
-	return (
-		`updates:\n` +
-		`  auto_install: ${config.autoInstall}\n` +
-		`  check_interval: ${config.checkInterval}\n` +
-		`  channel: ${config.channel}\n`
-	);
+	return `updates:\n  auto_install: ${config.autoInstall}\n  check_interval: ${config.checkInterval}\n  channel: ${config.channel}\n`;
 }
 
 export function persistUpdateConfig(config: UpdateConfig): boolean {
@@ -492,6 +487,10 @@ interface UpdateVerificationDeps {
 
 interface FinalizeSuccessfulUpdateDeps {
 	syncWorkspaceSourceRepoAsync: (workspaceDir: string) => Promise<WorkspaceSourceRepoSyncResult>;
+	updateDesktopInstallAfterUpdate?: (
+		repoSync: WorkspaceSourceRepoSyncResult,
+		installedVersion: string,
+	) => Promise<DesktopUpdateResult>;
 }
 
 export function verifyInstalledVersion(
@@ -550,11 +549,249 @@ export function verifyInstalledVersion(
 	}
 }
 
+interface DesktopInstallDetectionDeps {
+	readonly existsSync: (path: string) => boolean;
+	readonly readFileSync: (path: string, encoding: BufferEncoding) => string;
+}
+
+interface DesktopCommandResult {
+	readonly exitCode: number | null;
+	readonly stdout: string;
+	readonly stderr: string;
+	readonly errorMessage?: string;
+	readonly timedOut: boolean;
+}
+
+interface DesktopCommandOptions {
+	readonly cwd: string;
+	readonly env: NodeJS.ProcessEnv;
+	readonly timeoutMs: number;
+}
+
+interface DesktopUpdateDeps {
+	readonly home?: string;
+	readonly env?: NodeJS.ProcessEnv;
+	readonly execPath?: string;
+	readonly timeoutMs?: number;
+	readonly existsSync?: (path: string) => boolean;
+	readonly readFileSync?: (path: string, encoding: BufferEncoding) => string;
+	readonly resolveGlobalPackagePath?: (family: PackageManagerFamily, packageName: string) => string | undefined;
+	readonly resolvePrimaryPackageManager?: typeof resolvePrimaryPackageManager;
+	readonly runCommand?: (
+		command: string,
+		args: readonly string[],
+		options: DesktopCommandOptions,
+	) => Promise<DesktopCommandResult>;
+}
+
+export function detectDesktopInstall(
+	home = homedir(),
+	deps: DesktopInstallDetectionDeps = {
+		existsSync: (path) => existsSync(path),
+		readFileSync: (path, encoding) => readFileSync(path, { encoding }),
+	},
+): DesktopInstallDetection {
+	const launcherPath = join(home, ".local", "bin", "signet-desktop");
+	const appImagePath = join(home, ".local", "share", "signet", "desktop", "Signet.AppImage");
+	const launcherExists = deps.existsSync(launcherPath);
+	const appImageExists = deps.existsSync(appImagePath);
+
+	if (!launcherExists && !appImageExists) {
+		return {
+			installed: false,
+			managed: false,
+			launcherPath,
+			appImagePath,
+			reason: "Signet desktop app is not installed",
+		};
+	}
+
+	if (!launcherExists) {
+		return {
+			installed: true,
+			managed: true,
+			launcherPath,
+			appImagePath,
+			reason: "managed Signet desktop AppImage exists without a launcher",
+		};
+	}
+
+	try {
+		const launcher = deps.readFileSync(launcherPath, "utf-8");
+		return {
+			installed: true,
+			managed: launcher.includes(MANAGED_DESKTOP_LAUNCHER_MARKER),
+			launcherPath,
+			appImagePath,
+			reason: launcher.includes(MANAGED_DESKTOP_LAUNCHER_MARKER)
+				? "managed Signet desktop launcher found"
+				: "existing signet-desktop launcher is not managed by Signet",
+		};
+	} catch (error) {
+		return {
+			installed: true,
+			managed: false,
+			launcherPath,
+			appImagePath,
+			reason: `could not read Signet desktop launcher: ${error instanceof Error ? error.message : String(error)}`,
+		};
+	}
+}
+
+export function canUpdateDesktopFromSourceSync(status: WorkspaceSourceRepoSyncResult["status"]): boolean {
+	return status === "cloned" || status === "pulled" || status === "current";
+}
+
+function clipUpdateOutput(output: string): string | undefined {
+	const trimmed = output.trim();
+	if (!trimmed) return undefined;
+	return trimmed.length <= 6000 ? trimmed : trimmed.slice(-6000);
+}
+
+async function runDesktopCommand(
+	command: string,
+	args: readonly string[],
+	options: DesktopCommandOptions,
+): Promise<DesktopCommandResult> {
+	return await new Promise((resolve) => {
+		const proc = spawn(command, [...args], {
+			cwd: options.cwd,
+			env: options.env,
+			stdio: ["ignore", "pipe", "pipe"],
+			windowsHide: true,
+		});
+		let stdout = "";
+		let stderr = "";
+		let settled = false;
+		let timer: ReturnType<typeof setTimeout> | null = null;
+
+		const settle = (result: DesktopCommandResult): void => {
+			if (settled) return;
+			settled = true;
+			if (timer) clearTimeout(timer);
+			resolve(result);
+		};
+
+		timer = setTimeout(() => {
+			proc.kill("SIGKILL");
+			settle({
+				exitCode: null,
+				stdout,
+				stderr,
+				errorMessage: `desktop update exceeded ${options.timeoutMs}ms`,
+				timedOut: true,
+			});
+		}, options.timeoutMs);
+
+		proc.stdout?.on("data", (chunk: Buffer | string) => {
+			stdout += chunk.toString();
+		});
+		proc.stderr?.on("data", (chunk: Buffer | string) => {
+			stderr += chunk.toString();
+		});
+		proc.on("error", (error) => {
+			settle({
+				exitCode: null,
+				stdout,
+				stderr,
+				errorMessage: error.message,
+				timedOut: false,
+			});
+		});
+		proc.on("close", (code) => {
+			settle({
+				exitCode: code,
+				stdout,
+				stderr,
+				timedOut: false,
+			});
+		});
+	});
+}
+
+export async function updateDesktopInstallAfterUpdate(
+	repoSync: WorkspaceSourceRepoSyncResult,
+	installedVersion: string,
+	deps: DesktopUpdateDeps = {},
+): Promise<DesktopUpdateResult> {
+	const fsDeps = {
+		existsSync: deps.existsSync ?? ((path: string) => existsSync(path)),
+		readFileSync: deps.readFileSync ?? ((path: string, encoding: BufferEncoding) => readFileSync(path, { encoding })),
+	};
+	const desktop = detectDesktopInstall(deps.home ?? homedir(), fsDeps);
+	if (!desktop.installed) {
+		return { status: "skipped", message: desktop.reason ?? "Signet desktop app is not installed" };
+	}
+	if (!desktop.managed) {
+		return {
+			status: "skipped",
+			message: `${desktop.reason ?? "Signet desktop install is not managed"}. Skipping automatic desktop update.`,
+		};
+	}
+	if (!canUpdateDesktopFromSourceSync(repoSync.status)) {
+		return {
+			status: "skipped",
+			message: `Signet desktop update skipped because source checkout sync status was '${repoSync.status}': ${repoSync.message}`,
+		};
+	}
+
+	const env = deps.env ?? process.env;
+	const packageManager = (deps.resolvePrimaryPackageManager ?? resolvePrimaryPackageManager)({
+		agentsDir,
+		env,
+	});
+	const packagePath = (deps.resolveGlobalPackagePath ?? resolveGlobalPackagePath)(packageManager.family, NPM_PACKAGE);
+	if (!packagePath) {
+		return {
+			status: "error",
+			message: "Could not locate the installed signetai package to run desktop update",
+		};
+	}
+
+	const signetBin = join(packagePath, "bin", "signet.js");
+	if (!fsDeps.existsSync(signetBin)) {
+		return {
+			status: "error",
+			message: `Installed signetai package is missing CLI entrypoint at ${signetBin}`,
+		};
+	}
+
+	const command = deps.execPath ?? process.execPath;
+	const args = [signetBin, "desktop", "install", "--repo", repoSync.path];
+	const result = await (deps.runCommand ?? runDesktopCommand)(command, args, {
+		cwd: repoSync.path,
+		env: {
+			...env,
+			SIGNET_SOURCE_DIR: repoSync.path,
+		},
+		timeoutMs: deps.timeoutMs ?? DESKTOP_UPDATE_TIMEOUT_MS,
+	});
+	const output = clipUpdateOutput(`${result.stdout}\n${result.stderr}`);
+
+	if (result.exitCode !== 0) {
+		const cause = result.timedOut
+			? result.errorMessage
+			: (result.errorMessage ?? `exit ${result.exitCode ?? "unknown"}`);
+		return {
+			status: "error",
+			message: `Signet desktop update failed after installing v${installedVersion}: ${cause}`,
+			output,
+		};
+	}
+
+	return {
+		status: "updated",
+		message: `Signet desktop app updated to v${installedVersion}.`,
+		output,
+	};
+}
+
 export async function finalizeSuccessfulUpdateInstall(
 	installedVersion: string,
 	stdout: string,
 	deps: FinalizeSuccessfulUpdateDeps = {
 		syncWorkspaceSourceRepoAsync: (workspaceDir) => syncWorkspaceSourceRepoAsync(workspaceDir),
+		updateDesktopInstallAfterUpdate: (repoSync, version) => updateDesktopInstallAfterUpdate(repoSync, version),
 	},
 ): Promise<UpdateRunResult> {
 	pendingRestartVersion = installedVersion;
@@ -575,6 +812,18 @@ export async function finalizeSuccessfulUpdateInstall(
 		});
 	}
 
+	const desktopUpdate = await (deps.updateDesktopInstallAfterUpdate ?? updateDesktopInstallAfterUpdate)(
+		repoSync,
+		installedVersion,
+	);
+	if (desktopUpdate.status === "updated") {
+		logger.info("update", desktopUpdate.message);
+	} else if (desktopUpdate.status === "error") {
+		logger.warn("update", desktopUpdate.message);
+	} else {
+		logger.info("update", desktopUpdate.message);
+	}
+
 	logger.info("system", "Update installed successfully");
 	return {
 		success: true,
@@ -582,6 +831,7 @@ export async function finalizeSuccessfulUpdateInstall(
 		output: stdout,
 		installedVersion,
 		restartRequired: true,
+		desktopUpdate,
 	};
 }
 
