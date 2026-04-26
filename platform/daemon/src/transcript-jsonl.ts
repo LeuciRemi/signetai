@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { resolveDefaultBasePath } from "@signet/core";
 
@@ -39,6 +39,9 @@ interface TranscriptIdentity {
 	readonly sourceFormat: TranscriptSourceFormat;
 	readonly sourcePath?: string;
 }
+
+const LOCK_DEAD_OWNER_STALE_MS = 30_000;
+const LOCK_POLL_MS = 10;
 
 function resolveBasePath(basePath?: string): string {
 	return basePath ?? process.env.SIGNET_PATH ?? resolveDefaultBasePath();
@@ -149,6 +152,85 @@ function writeRecords(path: string, records: readonly CanonicalTranscriptRecord[
 	renameSync(tmp, path);
 }
 
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function lockOwnerPid(path: string): number | null {
+	try {
+		const parsed = JSON.parse(readFileSync(join(path, "owner.json"), "utf8")) as { readonly pid?: unknown };
+		return typeof parsed.pid === "number" && Number.isInteger(parsed.pid) ? parsed.pid : null;
+	} catch {
+		return null;
+	}
+}
+
+function processIsRunning(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function lockCanBeReaped(path: string, now: number): boolean {
+	try {
+		if (now - statSync(path).mtimeMs <= LOCK_DEAD_OWNER_STALE_MS) return false;
+		const pid = lockOwnerPid(path);
+		return pid === null || !processIsRunning(pid);
+	} catch {
+		return false;
+	}
+}
+
+async function acquireTranscriptFileLock(path: string): Promise<{ readonly lockPath: string; readonly token: string }> {
+	const lockPath = `${path}.lock`;
+	while (true) {
+		const token = randomUUID();
+		try {
+			mkdirSync(lockPath);
+			writeFileSync(
+				join(lockPath, "owner.json"),
+				JSON.stringify({ pid: process.pid, token, created_at: new Date().toISOString() }),
+				"utf8",
+			);
+			return { lockPath, token };
+		} catch (error) {
+			const code = error instanceof Error && "code" in error ? error.code : null;
+			if (code !== "EEXIST") throw error;
+
+			const now = Date.now();
+			if (lockCanBeReaped(lockPath, now)) {
+				rmSync(lockPath, { recursive: true, force: true });
+				continue;
+			}
+			await sleep(LOCK_POLL_MS);
+		}
+	}
+}
+
+function releaseTranscriptFileLock(lockPath: string, token: string): void {
+	try {
+		const parsed = JSON.parse(readFileSync(join(lockPath, "owner.json"), "utf8")) as { readonly token?: unknown };
+		if (parsed.token !== token) return;
+	} catch {
+		return;
+	}
+	rmSync(lockPath, { recursive: true, force: true });
+}
+
+async function withTranscriptFileLock<T>(path: string, write: () => T): Promise<T> {
+	mkdirSync(dirname(path), { recursive: true });
+	const lock = await acquireTranscriptFileLock(path);
+
+	try {
+		return write();
+	} finally {
+		releaseTranscriptFileLock(lock.lockPath, lock.token);
+	}
+}
+
 function sameSession(record: CanonicalTranscriptRecord, input: TranscriptIdentity): boolean {
 	const sessionKey = input.sessionKey?.trim() || null;
 	const sessionId = input.sessionId?.trim() || null;
@@ -170,34 +252,38 @@ function sameSession(record: CanonicalTranscriptRecord, input: TranscriptIdentit
 
 export function writeCanonicalTranscriptSnapshot(
 	input: TranscriptIdentity & { readonly transcript: string },
-): string | null {
+): Promise<string | null> {
 	const turns = transcriptTextToTurns(input.transcript);
-	if (turns.length === 0) return null;
+	if (turns.length === 0) return Promise.resolve(null);
 	const path = canonicalTranscriptPath(input.basePath, input.harness);
-	const existing = readRecords(path).filter((record) => !sameSession(record, input));
-	const next = turns
-		.map((turn, index) => makeRecord(input, turn, index + 1))
-		.filter((record): record is CanonicalTranscriptRecord => record !== null);
-	if (next.length === 0) return null;
-	writeRecords(path, [...existing, ...next]);
-	return path;
+	return withTranscriptFileLock(path, () => {
+		const existing = readRecords(path).filter((record) => !sameSession(record, input));
+		const next = turns
+			.map((turn, index) => makeRecord(input, turn, index + 1))
+			.filter((record): record is CanonicalTranscriptRecord => record !== null);
+		if (next.length === 0) return null;
+		writeRecords(path, [...existing, ...next]);
+		return path;
+	});
 }
 
 export function appendCanonicalTranscriptTurns(
 	input: TranscriptIdentity & { readonly turns: readonly TranscriptTurn[] },
-): string | null {
+): Promise<string | null> {
 	const turns = input.turns.filter((turn) => cleanTurnContent(turn.content).length > 0);
-	if (turns.length === 0) return null;
+	if (turns.length === 0) return Promise.resolve(null);
 	const path = canonicalTranscriptPath(input.basePath, input.harness);
-	const existing = readRecords(path);
-	const relevant = existing.filter((record) => sameSession(record, input));
-	let seq = relevant.reduce((max, record) => Math.max(max, record.seq), 0);
-	const next = turns
-		.map((turn) => makeRecord(input, turn, ++seq))
-		.filter((record): record is CanonicalTranscriptRecord => record !== null);
-	if (next.length === 0) return null;
-	writeRecords(path, [...existing, ...next]);
-	return path;
+	return withTranscriptFileLock(path, () => {
+		const existing = readRecords(path);
+		const relevant = existing.filter((record) => sameSession(record, input));
+		let seq = relevant.reduce((max, record) => Math.max(max, record.seq), 0);
+		const next = turns
+			.map((turn) => makeRecord(input, turn, ++seq))
+			.filter((record): record is CanonicalTranscriptRecord => record !== null);
+		if (next.length === 0) return null;
+		writeRecords(path, [...existing, ...next]);
+		return path;
+	});
 }
 
 export function inferTranscriptSourceFormat(raw: string): TranscriptSourceFormat {

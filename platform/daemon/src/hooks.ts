@@ -129,7 +129,7 @@ function getMemoryDbPath(): string {
 	return join(getAgentsDir(), "memory", "memories.db");
 }
 
-function writeCanonicalTranscriptFromSnapshot(params: {
+async function writeCanonicalTranscriptFromSnapshot(params: {
 	readonly agentId: string;
 	readonly harness: string;
 	readonly sessionKey: string | null;
@@ -139,9 +139,9 @@ function writeCanonicalTranscriptFromSnapshot(params: {
 	readonly transcript: string;
 	readonly capturedAt?: string;
 	readonly transcriptPath?: string;
-}): void {
-	ensureCanonicalTranscriptHistory(getAgentsDir(), params.agentId);
-	writeCanonicalTranscriptSnapshot({
+}): Promise<void> {
+	await ensureCanonicalTranscriptHistory(getAgentsDir(), params.agentId);
+	await writeCanonicalTranscriptSnapshot({
 		basePath: getAgentsDir(),
 		agentId: params.agentId,
 		harness: params.harness,
@@ -155,16 +155,16 @@ function writeCanonicalTranscriptFromSnapshot(params: {
 	});
 }
 
-function appendCanonicalLiveTranscriptTurns(params: {
+async function appendCanonicalLiveTranscriptTurns(params: {
 	readonly agentId: string;
 	readonly harness: string;
 	readonly sessionKey: string;
 	readonly project?: string | null;
 	readonly userMessage: string;
 	readonly lastAssistantMessage?: string;
-}): void {
-	ensureCanonicalTranscriptHistory(getAgentsDir(), params.agentId);
-	appendCanonicalTranscriptTurns({
+}): Promise<void> {
+	await ensureCanonicalTranscriptHistory(getAgentsDir(), params.agentId);
+	await appendCanonicalTranscriptTurns({
 		basePath: getAgentsDir(),
 		agentId: params.agentId,
 		harness: params.harness,
@@ -2664,7 +2664,7 @@ export async function handleUserPromptSubmit(
 				if (!prev || transcript.length >= prev.length) {
 					deps.upsertSessionTranscript(req.sessionKey, transcript, req.harness, req.project ?? null, agentId);
 				}
-				writeCanonicalTranscriptFromSnapshot({
+				await writeCanonicalTranscriptFromSnapshot({
 					agentId,
 					harness: req.harness,
 					sessionKey: req.sessionKey,
@@ -2680,7 +2680,7 @@ export async function handleUserPromptSubmit(
 			}
 		} else if (userMessage.trim().length > 0) {
 			try {
-				appendCanonicalLiveTranscriptTurns({
+				await appendCanonicalLiveTranscriptTurns({
 					agentId,
 					harness: req.harness,
 					sessionKey: req.sessionKey,
@@ -3036,7 +3036,7 @@ export function deriveSessionEndFallbackId(
 	return `session-end:${scopedKey}:${randomUUID()}`;
 }
 
-export function handleSessionEnd(req: SessionEndRequest): SessionEndResponse {
+export async function handleSessionEnd(req: SessionEndRequest): Promise<SessionEndResponse> {
 	const sessionKey = req.sessionKey || req.sessionId;
 	const agentId = resolveAgentId({ agentId: req.agentId, sessionKey: req.sessionKey || req.sessionId });
 	const endedAt = new Date().toISOString();
@@ -3169,7 +3169,7 @@ export function handleSessionEnd(req: SessionEndRequest): SessionEndResponse {
 	if (transcript && sessionKey) {
 		try {
 			upsertSessionTranscript(sessionKey, transcript, req.harness, req.cwd ?? null, agentId);
-			writeCanonicalTranscriptFromSnapshot({
+			await writeCanonicalTranscriptFromSnapshot({
 				agentId,
 				harness: req.harness,
 				sessionKey,

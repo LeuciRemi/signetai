@@ -73,9 +73,10 @@ function parseArtifactFrontmatter(content: string): { frontmatter: Record<string
 	return { frontmatter, body: text.slice(end + 5) };
 }
 
-function backfillMarkdownTranscriptArtifacts(basePath: string, agentId?: string): void {
+async function backfillMarkdownTranscriptArtifacts(basePath: string, agentId?: string): Promise<number> {
 	const memoryDir = join(basePath, "memory");
-	if (!existsSync(memoryDir)) return;
+	if (!existsSync(memoryDir)) return 0;
+	let failures = 0;
 	for (const name of readdirSync(memoryDir)) {
 		if (!name.endsWith("--transcript.md")) continue;
 		const path = join(memoryDir, name);
@@ -84,7 +85,7 @@ function backfillMarkdownTranscriptArtifacts(basePath: string, agentId?: string)
 			if (!parsed || parsed.frontmatter.kind !== "transcript") continue;
 			const rowAgentId = parsed.frontmatter.agent_id || "default";
 			if (agentId && rowAgentId !== agentId) continue;
-			writeCanonicalTranscriptSnapshot({
+			await writeCanonicalTranscriptSnapshot({
 				basePath,
 				agentId: rowAgentId,
 				harness: parsed.frontmatter.harness || "unknown",
@@ -97,16 +98,18 @@ function backfillMarkdownTranscriptArtifacts(basePath: string, agentId?: string)
 				transcript: parsed.body,
 			});
 		} catch (error) {
+			failures++;
 			logger.warn("transcripts", "Markdown transcript backfill failed", {
 				error: error instanceof Error ? error.message : String(error),
 				path,
 			});
 		}
 	}
+	return failures;
 }
 
-function backfillDatabaseTranscripts(basePath: string, agentId?: string): void {
-	if (!tableExists("session_transcripts")) return;
+async function backfillDatabaseTranscripts(basePath: string, agentId?: string): Promise<boolean> {
+	if (!tableExists("session_transcripts")) return true;
 	try {
 		const rows = getDbAccessor().withReadDb((db) => {
 			const cols = db.prepare("PRAGMA table_info(session_transcripts)").all() as ReadonlyArray<Record<string, unknown>>;
@@ -119,7 +122,7 @@ function backfillDatabaseTranscripts(basePath: string, agentId?: string): void {
 		for (const row of rows) {
 			const rowAgentId = row.agent_id?.trim() || "default";
 			if (agentId && rowAgentId !== agentId) continue;
-			writeCanonicalTranscriptSnapshot({
+			await writeCanonicalTranscriptSnapshot({
 				basePath,
 				agentId: rowAgentId,
 				harness: row.harness?.trim() || "unknown",
@@ -134,15 +137,26 @@ function backfillDatabaseTranscripts(basePath: string, agentId?: string): void {
 		logger.warn("transcripts", "Database transcript backfill failed", {
 			error: error instanceof Error ? error.message : String(error),
 		});
+		return false;
 	}
+	return true;
 }
 
-export function ensureCanonicalTranscriptHistory(basePath: string, agentId?: string): void {
+export async function ensureCanonicalTranscriptHistory(basePath: string, agentId?: string): Promise<void> {
 	const key = `${basePath}:${agentId ?? "*"}`;
 	if (canonicalBackfills.has(key)) return;
+	const failures = await backfillMarkdownTranscriptArtifacts(basePath, agentId);
+	const databaseOk = await backfillDatabaseTranscripts(basePath, agentId);
+	if (failures > 0 || !databaseOk) {
+		logger.warn("transcripts", "Canonical transcript backfill incomplete; will retry on next write", {
+			agentId: agentId ?? "*",
+			basePath,
+			markdownFailures: failures,
+			databaseOk,
+		});
+		return;
+	}
 	canonicalBackfills.add(key);
-	backfillMarkdownTranscriptArtifacts(basePath, agentId);
-	backfillDatabaseTranscripts(basePath, agentId);
 }
 
 function hasUpdatedAt(): boolean {
