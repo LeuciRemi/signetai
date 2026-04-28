@@ -379,6 +379,14 @@ export function appendCanonicalTranscriptTurns(
 	});
 }
 
+export function appendCanonicalTranscriptSnapshot(
+	input: TranscriptIdentity & { readonly transcript: string },
+): Promise<string | null> {
+	const turns = transcriptTextToTurns(input.transcript);
+	if (turns.length === 0) return Promise.resolve(null);
+	return appendCanonicalTranscriptTurns({ ...input, turns });
+}
+
 export function inferTranscriptSourceFormat(raw: string): TranscriptSourceFormat {
 	const lines = raw
 		.split(/\r?\n/)
