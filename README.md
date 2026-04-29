@@ -532,6 +532,11 @@ contributing significant features. Read the
         <img src="https://avatars.githubusercontent.com/u/271398594?v=4&s=48" width="48" height="48" alt="gpzack" title="gpzack" />
       </a>
     </td>
+    <td align="center" width="54">
+      <a href="https://github.com/LeuciRemi">
+        <img src="https://avatars.githubusercontent.com/u/44776125?v=4&s=48" width="48" height="48" alt="LeuciRemi" title="LeuciRemi" />
+      </a>
+    </td>
   </tr>
 </table>
 
