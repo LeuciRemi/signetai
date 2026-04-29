@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ensureCanonicalTranscriptHistory } from "./session-transcripts";
-import { appendCanonicalTranscriptTurns, canonicalTranscriptPath } from "./transcript-jsonl";
+import {
+	appendCanonicalTranscriptSnapshotIfMissing,
+	appendCanonicalTranscriptTurns,
+	canonicalTranscriptPath,
+	writeCanonicalTranscriptSnapshot,
+} from "./transcript-jsonl";
 
 const roots: string[] = [];
 
@@ -139,5 +144,180 @@ await appendCanonicalTranscriptTurns({
 		const transcript = readFileSync(join(root, "memory", "codex", "transcripts", "transcript.jsonl"), "utf8");
 		expect(transcript.match(/same assistant context/g)?.length).toBe(1);
 		expect(transcript.match(/same retried prompt/g)?.length).toBe(1);
+	});
+});
+
+describe("backfill OOM regression (#587)", () => {
+	test("skips backfill when persistent marker exists", async () => {
+		const root = makeRoot("marker-skip");
+		const memDir = join(root, "memory");
+		mkdirSync(memDir, { recursive: true });
+
+		// Create a markdown transcript artifact that would be backfilled
+		const artifact = join(memDir, "2026-04-28T00-00-00Z--markertest000000--transcript.md");
+		writeFileSync(
+			artifact,
+			[
+				"---",
+				'kind: "transcript"',
+				'agent_id: "default"',
+				'harness: "codex"',
+				'session_key: "marker-skip-session"',
+				'session_id: "marker-skip-session"',
+				'captured_at: "2026-04-28T00:00:00.000Z"',
+				'project: "/tmp/project"',
+				"---",
+				"User: should not appear if marker works",
+				"Assistant: marker test reply",
+				"",
+			].join("\n"),
+			"utf8",
+		);
+
+		// Write the persistent marker before calling ensureCanonicalTranscriptHistory
+		const markerPath = join(memDir, ".canonical-transcript-backfill-v1.default");
+		writeFileSync(markerPath, JSON.stringify({ completed_at: new Date().toISOString(), agent_id: "default" }), "utf8");
+
+		// Backfill should be skipped entirely — no JSONL file created
+		await ensureCanonicalTranscriptHistory(root, "default");
+		const jsonlPath = join(memDir, "codex", "transcripts", "transcript.jsonl");
+		expect(existsSync(jsonlPath)).toBe(false);
+	});
+
+	test("backfills missing sessions even when an existing JSONL is large", async () => {
+		const root = makeRoot("populated-continue");
+		const memDir = join(root, "memory");
+		const transcriptsDir = join(memDir, "codex", "transcripts");
+		mkdirSync(transcriptsDir, { recursive: true });
+
+		// Simulate a large JSONL from a previous lifecycle
+		const jsonlPath = join(transcriptsDir, "transcript.jsonl");
+		const fakeRecord = JSON.stringify({
+			session_key: "old-session",
+			harness: "codex",
+			turns: [{ role: "user", content: "x".repeat(500) }],
+		});
+		// Write >1MB of data
+		const lines = Array.from({ length: 2500 }, () => fakeRecord).join("\n");
+		writeFileSync(jsonlPath, lines, "utf8");
+		expect(statSync(jsonlPath).size).toBeGreaterThan(1024 * 1024);
+
+		// Create a markdown artifact that would be backfilled
+		const artifact = join(memDir, "2026-04-28T00-00-00Z--populatedtest00--transcript.md");
+		writeFileSync(
+			artifact,
+			[
+				"---",
+				'kind: "transcript"',
+				'agent_id: "default"',
+				'harness: "codex"',
+				'session_key: "populated-skip-session"',
+				'session_id: "populated-skip-session"',
+				'captured_at: "2026-04-28T00:00:00.000Z"',
+				'project: "/tmp/project"',
+				"---",
+				"User: should be appended despite existing JSONL",
+				"",
+			].join("\n"),
+			"utf8",
+		);
+
+		const sizeBefore = statSync(jsonlPath).size;
+		await ensureCanonicalTranscriptHistory(root, "default");
+
+		expect(statSync(jsonlPath).size).toBeGreaterThan(sizeBefore);
+		expect(readFileSync(jsonlPath, "utf8")).toContain("should be appended despite existing JSONL");
+
+		expect(existsSync(join(memDir, ".canonical-transcript-backfill-v1.default"))).toBe(true);
+	});
+
+	test("scopes persistent markers by agent", async () => {
+		const root = makeRoot("marker-agent-scope");
+		const memDir = join(root, "memory");
+		mkdirSync(memDir, { recursive: true });
+		writeFileSync(
+			join(memDir, ".canonical-transcript-backfill-v1.default"),
+			JSON.stringify({ completed_at: new Date().toISOString(), agent_id: "default" }),
+			"utf8",
+		);
+		writeFileSync(
+			join(memDir, "2026-04-28T00-00-00Z--agenttwotest00--transcript.md"),
+			[
+				"---",
+				'kind: "transcript"',
+				'agent_id: "agent-two"',
+				'harness: "codex"',
+				'session_key: "agent-two-session"',
+				'session_id: "agent-two-session"',
+				'captured_at: "2026-04-28T00:00:00.000Z"',
+				"---",
+				"User: scoped marker should not suppress this",
+				"",
+			].join("\n"),
+			"utf8",
+		);
+
+		await ensureCanonicalTranscriptHistory(root, "agent-two");
+
+		const transcript = readFileSync(join(memDir, "codex", "transcripts", "transcript.jsonl"), "utf8");
+		expect(transcript).toContain("scoped marker should not suppress this");
+		expect(existsSync(join(memDir, ".canonical-transcript-backfill-v1.agent-two"))).toBe(true);
+	});
+
+	test("appendCanonicalTranscriptSnapshotIfMissing does not duplicate retried backfill sessions", async () => {
+		const root = makeRoot("append-snapshot-missing");
+		const jsonlPath = canonicalTranscriptPath(root, "codex");
+
+		const input = {
+			basePath: root,
+			agentId: "default",
+			harness: "codex",
+			sessionKey: "session-1",
+			sourceFormat: "db" as const,
+			transcript: "User: first session\nAssistant: first reply",
+		};
+
+		await appendCanonicalTranscriptSnapshotIfMissing(input);
+		await appendCanonicalTranscriptSnapshotIfMissing(input);
+
+		const content = readFileSync(jsonlPath, "utf8");
+		expect(content.match(/first session/g)?.length).toBe(1);
+		expect(content.match(/first reply/g)?.length).toBe(1);
+	});
+
+	test("writeCanonicalTranscriptSnapshot replaces live partial turns for a session", async () => {
+		const root = makeRoot("replace-snapshot");
+		const jsonlPath = canonicalTranscriptPath(root, "codex");
+
+		await appendCanonicalTranscriptTurns({
+			basePath: root,
+			agentId: "default",
+			harness: "codex",
+			sessionKey: "session-1",
+			sourceFormat: "live",
+			turns: [{ role: "user", content: "partial prompt" }],
+		});
+		await writeCanonicalTranscriptSnapshot({
+			basePath: root,
+			agentId: "default",
+			harness: "codex",
+			sessionKey: "session-1",
+			sourceFormat: "normalized",
+			transcript: "User: final prompt\nAssistant: final reply",
+		});
+		await writeCanonicalTranscriptSnapshot({
+			basePath: root,
+			agentId: "default",
+			harness: "codex",
+			sessionKey: "session-2",
+			sourceFormat: "db",
+			transcript: "User: second session\nAssistant: second reply",
+		});
+
+		const content = readFileSync(jsonlPath, "utf8");
+		expect(content).not.toContain("partial prompt");
+		expect(content).toContain("final prompt");
+		expect(content).toContain("final reply");
+		expect(content).toContain("second session");
 	});
 });

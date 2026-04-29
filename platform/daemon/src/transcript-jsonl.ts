@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
 	appendFileSync,
 	closeSync,
+	createReadStream,
 	existsSync,
 	mkdirSync,
 	openSync,
@@ -13,6 +14,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { createInterface } from "node:readline";
 import { resolveDefaultBasePath } from "@signet/core";
 
 export type TranscriptRole = "user" | "assistant" | "unknown";
@@ -281,12 +283,12 @@ function releaseTranscriptFileLock(lockPath: string, token: string): void {
 	rmSync(lockPath, { recursive: true, force: true });
 }
 
-async function withTranscriptFileLock<T>(path: string, write: () => T): Promise<T> {
+async function withTranscriptFileLock<T>(path: string, write: () => T | Promise<T>): Promise<T> {
 	mkdirSync(dirname(path), { recursive: true });
 	const lock = await acquireTranscriptFileLock(path);
 
 	try {
-		return write();
+		return await write();
 	} finally {
 		releaseTranscriptFileLock(lock.lockPath, lock.token);
 	}
@@ -320,6 +322,15 @@ function sessionSeqCacheKey(input: TranscriptIdentity): string {
 	].join("\0");
 }
 
+function recordSeqCacheKey(record: CanonicalTranscriptRecord): string {
+	return [
+		record.agent_id.trim() || "default",
+		sanitizeHarnessPath(record.harness),
+		record.session_id?.trim() || record.session_key?.trim() || "",
+		record.session_key?.trim() || "",
+	].join("\0");
+}
+
 function hasTrailingTurns(
 	records: readonly CanonicalTranscriptRecord[],
 	input: TranscriptIdentity,
@@ -331,6 +342,68 @@ function hasTrailingTurns(
 	return turns.every(
 		(turn, index) => tail[index]?.role === turn.role && tail[index]?.content === cleanTurnContent(turn.content),
 	);
+}
+
+export async function readCanonicalTranscriptSessionKeys(input: {
+	readonly basePath?: string;
+	readonly harness: string;
+	readonly agentId?: string;
+}): Promise<Set<string>> {
+	const path = canonicalTranscriptPath(input.basePath, input.harness);
+	const keys = new Set<string>();
+	if (!existsSync(path)) return keys;
+	const agentId = input.agentId?.trim() || null;
+	const lines = createInterface({
+		input: createReadStream(path, { encoding: "utf8" }),
+		crlfDelay: Number.POSITIVE_INFINITY,
+	});
+	try {
+		for await (const line of lines) {
+			const trimmed = line.trim();
+			if (trimmed.length === 0) continue;
+			try {
+				const parsed = JSON.parse(trimmed) as Partial<CanonicalTranscriptRecord>;
+				if (parsed.schema !== "signet.transcript.v1" || typeof parsed.content !== "string") continue;
+				const record = parsed as CanonicalTranscriptRecord;
+				if (agentId !== null && record.agent_id !== agentId) continue;
+				keys.add(recordSeqCacheKey(record));
+			} catch {
+				// Ignore malformed historical lines rather than blocking capture.
+			}
+		}
+	} finally {
+		lines.close();
+	}
+	return keys;
+}
+
+async function hasSessionRecord(path: string, input: TranscriptIdentity): Promise<boolean> {
+	if (!existsSync(path)) return false;
+	const lines = createInterface({
+		input: createReadStream(path, { encoding: "utf8" }),
+		crlfDelay: Number.POSITIVE_INFINITY,
+	});
+	try {
+		for await (const line of lines) {
+			const trimmed = line.trim();
+			if (trimmed.length === 0) continue;
+			try {
+				const parsed = JSON.parse(trimmed) as Partial<CanonicalTranscriptRecord>;
+				if (
+					parsed.schema === "signet.transcript.v1" &&
+					typeof parsed.content === "string" &&
+					sameSession(parsed as CanonicalTranscriptRecord, input)
+				) {
+					return true;
+				}
+			} catch {
+				// Ignore malformed historical lines rather than blocking capture.
+			}
+		}
+	} finally {
+		lines.close();
+	}
+	return false;
 }
 
 export function writeCanonicalTranscriptSnapshot(
@@ -375,6 +448,31 @@ export function appendCanonicalTranscriptTurns(
 		if (next.length === 0) return null;
 		appendRecords(path, next);
 		sessionSeqCache.set(key, seq);
+		return path;
+	});
+}
+
+export function appendCanonicalTranscriptSnapshotIfMissing(
+	input: TranscriptIdentity & { readonly transcript: string },
+	knownSessionKeys?: Set<string>,
+): Promise<string | null> {
+	const turns = transcriptTextToTurns(input.transcript);
+	if (turns.length === 0) return Promise.resolve(null);
+	const path = canonicalTranscriptPath(input.basePath, input.harness);
+	const key = sessionSeqCacheKey(input);
+	if (knownSessionKeys?.has(key)) return Promise.resolve(path);
+	return withTranscriptFileLock(path, async () => {
+		if (knownSessionKeys === undefined && (await hasSessionRecord(path, input))) return path;
+		const next = turns
+			.map((turn, index) => makeRecord(input, turn, index + 1))
+			.filter((record): record is CanonicalTranscriptRecord => record !== null);
+		if (next.length === 0) return null;
+		appendRecords(path, next);
+		sessionSeqCache.set(
+			sessionSeqCacheKey(input),
+			next.reduce((max, record) => Math.max(max, record.seq), 0),
+		);
+		knownSessionKeys?.add(key);
 		return path;
 	});
 }
