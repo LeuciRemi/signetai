@@ -444,6 +444,57 @@ describe("handleUserPromptSubmit observability", () => {
 		await Promise.resolve();
 	});
 
+	it("uses configured prompt-submit embedding timeout", async () => {
+		const pending = makePendingEmbedding();
+		let signal: AbortSignal | undefined;
+		fetchEmbeddingMock.mockImplementationOnce(async (_text, _cfg, opts) => {
+			signal = opts?.signal;
+			return pending.promise;
+		});
+		hybridRecallMock.mockImplementationOnce(async (_params, _cfg, embed) => {
+			const vector = await embed("prompt submit configured timeout", {
+				provider: "ollama",
+				model: "mxbai-embed-large",
+				dimensions: 1024,
+				base_url: "http://localhost:11434",
+			});
+			return {
+				results: vector
+					? [{ id: "mem-vector", score: 0.95, content: "vector", created_at: "2026-03-26T20:10:00.000Z" }]
+					: [],
+			};
+		});
+		writeFileSync(
+			join(agentsDir, "agent.yaml"),
+			"embedding:\n  provider: ollama\n  model: mxbai-embed-large\n  dimensions: 1024\n  promptSubmitTimeoutMs: 1200\n",
+		);
+
+		try {
+			const start = Date.now();
+			const result = await handleUserPromptSubmit(
+				{
+					harness: "vscode-custom-agent",
+					userMessage: "prompt submit configured timeout",
+					sessionKey: "session-configured-embedding-timeout",
+				},
+				makeDeps(),
+			);
+
+			expect(Date.now() - start).toBeLessThan(1700);
+			expect(result.memoryCount).toBe(0);
+			expect(warnMock).toHaveBeenCalledWith(
+				"hooks",
+				"User prompt submit embedding timed out",
+				expect.objectContaining({ timeoutMs: 1200 }),
+			);
+			expect(signal?.aborted).toBe(true);
+		} finally {
+			pending.resolve(null);
+			writeFileSync(join(agentsDir, "agent.yaml"), "");
+			await Promise.resolve();
+		}
+	});
+
 	it("preserves non-vector prompt-submit recall when embeddings exceed the hook budget", async () => {
 		const pending = makePendingEmbedding();
 		fetchEmbeddingMock.mockImplementationOnce(async () => pending.promise);

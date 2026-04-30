@@ -90,6 +90,7 @@ embedding:
   model: nomic-embed-text
   dimensions: 768
   base_url: http://localhost:11434
+  promptSubmitTimeoutMs: 1000
 
 search:
   alpha: 0.7
@@ -189,6 +190,11 @@ Vector embedding configuration for semantic memory search.
 | `dimensions` | number | `768` | Output vector dimensions |
 | `base_url` | string | `"http://localhost:11434"` | Ollama API base URL |
 | `api_key` | string | — | API key or `$secret:NAME` reference |
+| `promptSubmitTimeoutMs` | number | `1000` | Prompt-submit recall embedding timeout, range 1000-300000 ms |
+
+Increase `promptSubmitTimeoutMs` when local embedding models are slow to
+cold-load. For example, Ollama with `mxbai-embed-large` may need `10000` ms
+to avoid aborted prompt-submit recall embeddings.
 
 Recommended Ollama models:
 
