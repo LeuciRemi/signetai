@@ -34,7 +34,7 @@ import { getDbAccessor, hasDbAccessor } from "./db-accessor";
 import { fetchEmbedding } from "./embedding-fetch";
 import { propagateMemoryStatus } from "./knowledge-graph";
 import { logger } from "./logger";
-import { loadMemoryConfig } from "./memory-config";
+import { DEFAULT_PROMPT_SUBMIT_EMBEDDING_TIMEOUT_MS, loadMemoryConfig } from "./memory-config";
 import { writeMemoryHead } from "./memory-head";
 import {
 	NOISE_PURGE_REASON,
@@ -2527,16 +2527,15 @@ type UserPromptSubmitDeps = {
 	readonly trackFtsHits: typeof trackFtsHits;
 };
 
-const PROMPT_SUBMIT_EMBEDDING_TIMEOUT_MS = 1000;
-
 async function fetchPromptSubmitEmbedding(
 	deps: Pick<UserPromptSubmitDeps, "fetchEmbedding" | "logger">,
 	text: string,
 	cfg: Parameters<typeof fetchEmbedding>[1],
+	timeoutMs: number,
 ): Promise<number[] | null> {
 	const controller = new AbortController();
 	let timer: ReturnType<typeof setTimeout> | null = null;
-	const request = deps.fetchEmbedding(text, cfg, { signal: controller.signal });
+	const request = deps.fetchEmbedding(text, cfg, { signal: controller.signal, timeoutMs });
 	try {
 		return await Promise.race([
 			request,
@@ -2544,7 +2543,7 @@ async function fetchPromptSubmitEmbedding(
 				timer = setTimeout(() => {
 					controller.abort();
 					resolve(null);
-				}, PROMPT_SUBMIT_EMBEDDING_TIMEOUT_MS);
+				}, timeoutMs);
 			}),
 		]);
 	} finally {
@@ -2765,6 +2764,7 @@ export async function handleUserPromptSubmit(
 		// Falls back to pipelineV2.guardrails.contextBudgetChars when not set in agent.yaml.
 		const injectBudget = submitCfg.maxInjectChars ?? cfg.pipelineV2.guardrails.contextBudgetChars;
 		const minScore = resolveUserPromptMinScore(submitCfg.minScore);
+		const embeddingTimeoutMs = cfg.embedding.promptSubmitTimeoutMs ?? DEFAULT_PROMPT_SUBMIT_EMBEDDING_TIMEOUT_MS;
 		const queryTerms = vectorQuery.slice(0, 80);
 		const recallStart = Date.now();
 		let embeddingTimedOut = false;
@@ -2782,16 +2782,16 @@ export async function handleUserPromptSubmit(
 			cfg,
 			async (text, embeddingCfg) => {
 				const startEmbedding = Date.now();
-				const embedding = await fetchPromptSubmitEmbedding(deps, text, embeddingCfg);
+				const embedding = await fetchPromptSubmitEmbedding(deps, text, embeddingCfg, embeddingTimeoutMs);
 				const embeddingDuration = Date.now() - startEmbedding;
-				if (!embedding && embeddingDuration >= PROMPT_SUBMIT_EMBEDDING_TIMEOUT_MS) {
+				if (!embedding && embeddingDuration >= embeddingTimeoutMs) {
 					embeddingTimedOut = true;
 					deps.logger.warn("hooks", "User prompt submit embedding timed out", {
 						harness: req.harness,
 						project: req.project,
 						sessionKey: req.sessionKey,
 						durationMs: embeddingDuration,
-						timeoutMs: PROMPT_SUBMIT_EMBEDDING_TIMEOUT_MS,
+						timeoutMs: embeddingTimeoutMs,
 					});
 				}
 				return embedding;

@@ -14,6 +14,7 @@ const selectItemClass = "font-[family-name:var(--font-mono)] text-[11px] rounded
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
 const DEFAULT_LLAMACPP_BASE_URL = "http://localhost:8080";
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_PROMPT_SUBMIT_TIMEOUT_MS = 1000;
 
 const EMBEDDING_PROVIDER_OPTIONS = [
 	{ value: "native", label: "native (built-in)" },
@@ -62,6 +63,10 @@ function embeddingModelSelectValue(): string {
 	const model = st.sStr([...embPath(), "model"]);
 	if (!model) return "";
 	return embeddingModelPresets().some((preset) => preset.value === model) ? model : "__custom__";
+}
+
+function promptSubmitTimeoutMs(): number | string {
+	return st.sNum([...embPath(), "promptSubmitTimeoutMs"]) || DEFAULT_PROMPT_SUBMIT_TIMEOUT_MS;
 }
 
 function isKnownPreset(model: string): boolean {
@@ -177,6 +182,17 @@ function handleModelPresetChange(v: string | undefined): void {
 					/>
 				</FormField>
 			{/if}
+
+			<FormField label="Prompt-submit timeout (ms)" description="Deadline for the embedding request used by automatic memory recall before prompt injection. Increase this for slower local models that need time to cold-load.">
+				<Input
+					type="number"
+					min="1000"
+					max="300000"
+					step="1000"
+					value={promptSubmitTimeoutMs()}
+					oninput={(e) => st.sSetNum([...embPath(), "promptSubmitTimeoutMs"], e.currentTarget.value)}
+				/>
+			</FormField>
 
 			{#if embeddingProvider() === "openai"}
 				<FormField label="API Key" description="Required for OpenAI. Use $secret:OPENAI_API_KEY to reference a stored secret instead of plaintext.">
