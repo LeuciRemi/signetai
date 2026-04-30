@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-04-30
-- Bug fixes: apply is_deleted filter to BM25 FTS path.
+- Bug fixes: make prompt-submit embedding timeout configurable; apply is_deleted filter to BM25 FTS path.
 
 ### 2026-04-29
 - Bug fixes: stop native memory fd leak; validate embedding model availability during install and daemon startup; prevent false install failure from cleanup trap; resolve event-loop starvation from synchronous I/O on large memory directories; streaming rewrite for live-only transcript sessions during backfill; repair Codex provider and test timeouts; preserve prompt content in provider requests; harden desktop release builds; make transcript backfill idempotent; prevent OOM crash-loop in transcript backfill.
@@ -35,6 +35,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: expose preload bridge reliably; proxy dashboard API to daemon; stage desktop AppImage replacement; bind install to configured workspace; write named-agent memory heads locally.
 
 ## Release Ledger
+
+## [0.109.16] - 2026-04-30
+
+Release summary: 1 bug fix.
+Tag range: `v0.109.15..v0.109.16`.
+
+### Bug Fixes
+
+- **daemon**: make prompt-submit embedding timeout configurable (#607)
 
 ## [0.109.15] - 2026-04-30
 
