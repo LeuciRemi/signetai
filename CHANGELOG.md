@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-04-30
+- Bug fixes: apply is_deleted filter to BM25 FTS path.
+
 ### 2026-04-29
 - Bug fixes: stop native memory fd leak; validate embedding model availability during install and daemon startup; prevent false install failure from cleanup trap; resolve event-loop starvation from synchronous I/O on large memory directories; streaming rewrite for live-only transcript sessions during backfill; repair Codex provider and test timeouts; preserve prompt content in provider requests; harden desktop release builds; make transcript backfill idempotent; prevent OOM crash-loop in transcript backfill.
 - Docs: force horizontal contributor avatars; render contributors inline; clean up contributors rendering; add LeuciRemi to contributors; correct stale documentation claims; fix documentation drift.
@@ -31,11 +34,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Features: add desktop source install command; add GraphIQ plugin integration.
 - Bug fixes: expose preload bridge reliably; proxy dashboard API to daemon; stage desktop AppImage replacement; bind install to configured workspace; write named-agent memory heads locally.
 
-### 2026-04-21
-- Features: add Gemini CLI harness connector.
-- Bug fixes: dedupe summary fact hash collisions; suppress OpenCode notifications for extraction sessions; skip unchanged artifact reindex on cold start; make writeImmutableArtifact idempotent for job retries.
-
 ## Release Ledger
+
+## [0.109.15] - 2026-04-30
+
+Release summary: 1 bug fix.
+Tag range: `v0.109.14..v0.109.15`.
+
+### Bug Fixes
+
+- **daemon**: apply is_deleted filter to BM25 FTS path (#605)
 
 ## [0.109.14] - 2026-04-29
 
