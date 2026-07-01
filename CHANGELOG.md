@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-07-01
+- Bug fixes: recall source-backed ontology claims.
+
 ### 2026-06-30
 - Bug fixes: prevent recursive aggregate recall evidence.
 
@@ -25,11 +28,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 ### 2026-06-21
 - Bug fixes: scope document chunk routes.
 
-### 2026-06-20
-- Features: add context traces to logs; add ForgeCode integration.
-- Bug fixes: harden session transcript capture; accept session summary agent_id; restore native vector runtime.
-
 ## Release Ledger
+
+## [0.145.9] - 2026-07-01
+
+Release summary: 1 bug fix.
+Tag range: `v0.145.8..v0.145.9`.
+
+### Bug Fixes
+
+- **memory**: recall source-backed ontology claims (#879)
 
 ## [0.145.8] - 2026-06-30
 
