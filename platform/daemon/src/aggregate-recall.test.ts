@@ -497,6 +497,81 @@ memory:
 		expect(count.n).toBe(0);
 	});
 
+	it("saves ontology claim evidence links without memory-only provenance links", async () => {
+		const ontologyRow: RecallResult = {
+			id: "ontology-claim:attr-artbat-invoice",
+			content:
+				"[Ontology claim: ARTBAT / Arbat ForComp › billing_context]\nCurrent ARTBAT invoice is €1,000 and the outstanding 2025 balance is €2,000.",
+			content_length: 134,
+			truncated: false,
+			score: 1,
+			source: "ontology_claim",
+			source_id: "attr-artbat-invoice",
+			source_path: "/home/nicholai/.agents/dreaming/2026-06-29-cron-2230/dreaming-log.md:32",
+			type: "ontology_claim",
+			tags: "ontology,claim,source-backed",
+			pinned: false,
+			importance: 0.82,
+			who: "signet",
+			project: null,
+			created_at: "2026-06-29T22:30:00.000Z",
+		};
+		const router = new StaticRouter(
+			"ARTBAT / Arbat ForComp invoices for Maksym Getman are €1,000 current and €2,000 outstanding from 2025.",
+		);
+		const result = await aggregateRecall(
+			{
+				query: "how much were the Artbat invoices for Maksym Getman?",
+				aggregate: true,
+				agentId: "agent-a",
+				readPolicy: "isolated",
+			},
+			loadMemoryConfig(dir),
+			{
+				router,
+				embedFn: async () => null,
+				hybridRecall: async (input: RecallParams) => response(input.query, [ontologyRow]),
+			},
+		);
+
+		expect(router.prompts.at(-1)).toContain("ontology-claim:attr-artbat-invoice");
+		expect(router.prompts.at(-1)).toContain("€1,000");
+		expect(result.results[0]?.content).toContain("€1,000");
+		expect(result.aggregate).toMatchObject({
+			saved: true,
+			sourceMemoryIds: [],
+			stoppedReason: "complete",
+		});
+		expect(result.aggregate?.savedMemoryId).toBeTruthy();
+		const links = getDbAccessor().withReadDb((db) => {
+			const saved = db.prepare("SELECT visibility FROM memories WHERE id = ?").get(result.aggregate?.savedMemoryId) as {
+				visibility: string;
+			};
+			const evidence = db
+				.prepare(
+					"SELECT source_kind, source_id, source_path FROM aggregate_evidence_sources WHERE aggregate_memory_id = ?",
+				)
+				.all(result.aggregate?.savedMemoryId) as Array<{
+				source_kind: string;
+				source_id: string;
+				source_path: string | null;
+			}>;
+			const memory = db
+				.prepare("SELECT COUNT(*) AS n FROM aggregate_memory_sources WHERE aggregate_memory_id = ?")
+				.get(result.aggregate?.savedMemoryId) as { n: number };
+			return { evidence, memory, saved };
+		});
+		expect(links.saved.visibility).toBe("private");
+		expect(links.evidence).toEqual([
+			{
+				source_kind: "ontology_claim",
+				source_id: "attr-artbat-invoice",
+				source_path: "/home/nicholai/.agents/dreaming/2026-06-29-cron-2230/dreaming-log.md:32",
+			},
+		]);
+		expect(links.memory.n).toBe(0);
+	});
+
 	it("returns but does not save insufficient-evidence aggregate answers", async () => {
 		const result = await aggregateRecall(
 			{
