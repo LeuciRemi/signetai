@@ -8,6 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-07-06
 - Features: capture harness skill usage (claude-code scan + opencode post).
+- Bug fixes: queue rendered Codex transcripts.
 
 ### 2026-07-01
 - Bug fixes: exclude aggregate memories from aggregate recall; recall source-backed ontology claims.
@@ -29,6 +30,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: harden workspace backup commits.
 
 ## Release Ledger
+
+## [0.146.1] - 2026-07-06
+
+Release summary: 1 bug fix.
+Tag range: `v0.146.0..v0.146.1`.
+
+### Bug Fixes
+
+- **hooks**: queue rendered Codex transcripts (#884)
 
 ## [0.146.0] - 2026-07-06
 
