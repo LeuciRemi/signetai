@@ -70,3 +70,61 @@ fn repairs_partial_summary_jobs_columns_when_migration_is_already_stamped() {
     )
     .expect("leased summary job update should succeed after repair");
 }
+
+#[test]
+fn adds_harness_columns_and_dedupe_index_to_skill_invocations() {
+    let conn = Connection::open_in_memory().expect("open in-memory db");
+    signet_core::migrations::run(&conn).expect("migrations run");
+
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(skill_invocations)")
+        .expect("prepare table_info");
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .expect("query table_info")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect table_info");
+    for column in [
+        "harness",
+        "session_id",
+        "tool_use_id",
+        "cwd",
+        "origin",
+        "args",
+    ] {
+        assert!(
+            columns.iter().any(|name| name == column),
+            "skill_invocations missing {column}"
+        );
+    }
+
+    let index_exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_skill_inv_dedupe')",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|n| n != 0)
+        .expect("query dedupe index");
+    assert!(index_exists, "idx_skill_inv_dedupe should exist");
+
+    // Partial-unique dedupe: the same (agent_id, harness, session_id, tool_use_id) inserts once.
+    let insert = "INSERT OR IGNORE INTO skill_invocations
+        (id, skill_name, agent_id, source, latency_ms, success, created_at, harness, session_id, tool_use_id)
+        VALUES (?1, 'caveman', ?2, 'agent', 0, 1, '2026-06-01T00:00:00Z', 'claude-code', 's1', 't1')";
+    conn.execute(insert, ("row-a", "agent-a"))
+        .expect("first insert");
+    conn.execute(insert, ("row-b", "agent-a"))
+        .expect("second insert ignored");
+    conn.execute(insert, ("row-c", "agent-b"))
+        .expect("second agent insert succeeds");
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM skill_invocations", [], |row| {
+            row.get(0)
+        })
+        .expect("count rows");
+    assert_eq!(
+        count, 2,
+        "dedupe should drop repeated harness invocations per agent"
+    );
+}
