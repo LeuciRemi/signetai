@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-07-06
+- Features: capture harness skill usage (claude-code scan + opencode post).
+
 ### 2026-07-01
 - Bug fixes: exclude aggregate memories from aggregate recall; recall source-backed ontology claims.
 
@@ -25,10 +28,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Features: Rust daemon full parity effort.
 - Bug fixes: harden workspace backup commits.
 
-### 2026-06-21
-- Bug fixes: scope document chunk routes.
-
 ## Release Ledger
+
+## [0.146.0] - 2026-07-06
+
+Release summary: 1 feature.
+Tag range: `v0.145.10..v0.146.0`.
+
+### Features
+
+- **skills**: capture harness skill usage (claude-code scan + opencode post) (#878)
 
 ## [0.145.10] - 2026-07-01
 
