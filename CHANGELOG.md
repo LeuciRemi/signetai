@@ -7,9 +7,9 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-07-09
-- Features: support Codex CLI in Docker; add observed feedback loop.
-- Bug fixes: add integrity check and rebuild-derived-indexes repair actions; backfill extracted relations into entity_dependencies for graph traversal; persist startup import reconciliation state; repair memory lifecycle lineage; force exit after hook actions to prevent orphaned processes; support pi-mono session lifecycle events.
-- Docs: add noamsiegel and quannon to contributors list.
+- Memory graph integrity: backfilled relations into entity_dependencies (#892), observed feedback loop with USED/IGNORED/CONTRADICTED verdicts (#885), PRAGMA integrity_check endpoint and rebuild-indexes repair action (#893), zero-edge graph diagnostics degradation detection (#885).
+- Harness integration: fixed signet hook process leak — orphaned processes no longer accumulate under Claude Code (#891); support Codex CLI in Docker (#889); support Pi-Mono session lifecycle events (#888).
+- Infrastructure: startup import reconciliation (#871), memory lifecycle lineage repair (#886).
 
 ### 2026-07-06
 - Features: capture harness skill usage (claude-code scan + opencode post).
