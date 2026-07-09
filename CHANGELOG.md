@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-07-09
-- Bug fixes: support pi-mono session lifecycle events.
+- Bug fixes: force exit after hook actions to prevent orphaned processes; support pi-mono session lifecycle events.
 
 ### 2026-07-06
 - Features: capture harness skill usage (claude-code scan + opencode post).
@@ -29,6 +29,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: surface Signet health diagnostics.
 
 ## Release Ledger
+
+## [0.146.4] - 2026-07-09
+
+Release summary: 1 bug fix.
+Tag range: `v0.146.3..v0.146.4`.
+
+### Bug Fixes
+
+- **cli**: force exit after hook actions to prevent orphaned processes (#891)
 
 ## [0.146.3] - 2026-07-09
 
