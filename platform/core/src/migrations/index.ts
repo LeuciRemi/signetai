@@ -91,6 +91,7 @@ import { up as skillInvocationsHarness } from "./082-skill-invocations-harness";
 import { up as memoryLifecycleRepair } from "./083-memory-lifecycle-repair";
 import { up as legacyMarkdownImportState } from "./084-legacy-markdown-import-state";
 import { up as backfillRelationsToDependencies } from "./085-backfill-relations-to-dependencies";
+import { up as summaryJobsContentHash } from "./086-summary-jobs-content-hash";
 
 // -- Public interface consumed by Database.init() --
 
@@ -818,6 +819,14 @@ export const MIGRATIONS: readonly Migration[] = [
 		up: backfillRelationsToDependencies,
 		artifacts: {
 			tables: ["entity_dependencies"],
+		},
+	},
+	{
+		version: 86,
+		name: "summary-jobs-content-hash",
+		up: summaryJobsContentHash,
+		artifacts: {
+			columns: [{ table: "summary_jobs", column: "content_hash" }],
 		},
 	},
 ];
