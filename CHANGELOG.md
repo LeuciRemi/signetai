@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-07-09
 - Features: support Codex CLI in Docker; add observed feedback loop.
-- Bug fixes: backfill extracted relations into entity_dependencies for graph traversal; persist startup import reconciliation state; repair memory lifecycle lineage; force exit after hook actions to prevent orphaned processes; support pi-mono session lifecycle events.
+- Bug fixes: add integrity check and rebuild-derived-indexes repair actions; backfill extracted relations into entity_dependencies for graph traversal; persist startup import reconciliation state; repair memory lifecycle lineage; force exit after hook actions to prevent orphaned processes; support pi-mono session lifecycle events.
 - Docs: add noamsiegel and quannon to contributors list.
 
 ### 2026-07-06
@@ -31,6 +31,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: surface Signet health diagnostics.
 
 ## Release Ledger
+
+## [0.147.1] - 2026-07-09
+
+Release summary: 1 bug fix.
+Tag range: `v0.147.0..v0.147.1`.
+
+### Bug Fixes
+
+- **daemon**: add integrity check and rebuild-derived-indexes repair actions (#893)
 
 ## [0.147.0] - 2026-07-09
 
