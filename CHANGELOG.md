@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-07-11
-- Bug fixes: reject transient operational content with a durability gate.
+- Bug fixes: isolate native embedding in a worker so it cannot block /health; reject transient operational content with a durability gate.
 
 ### 2026-07-10
 - Bug fixes: reject markdown-polluted entity labels; gate summary jobs on runnable synthesis; cancel extraction for forgotten memories; embed connector assets in native releases; initialize ONNX WASM embeddings in compiled binary.
@@ -32,6 +32,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: align daily brief typography.
 
 ## Release Ledger
+
+## [0.147.8] - 2026-07-11
+
+Release summary: 1 bug fix.
+Tag range: `v0.147.7..v0.147.8`.
+
+### Bug Fixes
+
+- **daemon**: isolate native embedding in a worker so it cannot block /health (#916)
 
 ## [0.147.7] - 2026-07-11
 
