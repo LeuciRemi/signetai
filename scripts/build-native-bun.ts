@@ -138,10 +138,12 @@ const templateAssets = fileAssetsFor(templatesDir);
 const skillAssets = fileAssetsFor(skillsDir);
 const connectorAssets = fileAssetsFor(hermesPluginDir, "hermes-agent/hermes-plugin");
 
-const workerAssets = workerEntries.map(([name]) => ({
-	name,
-	contentBase64: readFileSync(join(workerDir, `${name}.mjs`)).toString("base64"),
-}));
+const workerAssets: { name: string; contentBase64: string }[] = [
+	...workerEntries.map(([name]) => ({
+		name,
+		contentBase64: readFileSync(join(workerDir, `${name}.mjs`)).toString("base64"),
+	})),
+];
 const transformersPackageJson = daemonRequire.resolve("@huggingface/transformers/package.json");
 const transformersDir = dirname(transformersPackageJson);
 const transformersRequire = createRequire(transformersPackageJson);
@@ -193,6 +195,33 @@ const wasmAssets = ["ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"]
 	name,
 	contentBase64: readFileSync(join(onnxRuntimeWebDir, "dist", name)).toString("base64"),
 }));
+
+// The embedding worker has an isolated globalThis (worker_threads), so the
+// main thread's globalThis[Symbol.for("onnxruntime")] registration does NOT
+// propagate. We generate a standalone runtime that the worker can import to
+// register the WASM ONNX runtime on its own globalThis before transformers
+// loads. This must be bun-bundled separately so onnxruntime-web and the
+// patched transformers.web.js are inlined (the materialized .mjs is imported
+// at runtime and cannot resolve node_modules paths in a compiled binary).
+writeFileSync(
+	join(buildDir, "embedding-worker-transformers-runtime.ts"),
+	`import * as onnxRuntime from ${JSON.stringify(onnxRuntimeWebWasmPath)};\n` +
+		`globalThis[Symbol.for("onnxruntime")] = onnxRuntime.default ?? onnxRuntime;\n` +
+		`const transformers = await import(${JSON.stringify(patchedTransformersWebRuntimePath)});\n` +
+		`export const { env, pipeline } = transformers;\n`,
+);
+runBunBuild([
+	"--target=bun",
+	"--format=esm",
+	"--outfile",
+	join(workerDir, "embedding-worker-transformers-runtime.mjs"),
+	...nativeExternalArgs,
+	join(buildDir, "embedding-worker-transformers-runtime.ts"),
+]);
+workerAssets.push({
+	name: "embedding-worker-transformers-runtime",
+	contentBase64: readFileSync(join(workerDir, "embedding-worker-transformers-runtime.mjs")).toString("base64"),
+});
 
 writeFileSync(
 	join(buildDir, "native-assets.ts"),

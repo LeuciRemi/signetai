@@ -122,10 +122,17 @@ export async function createEmbeddingWorkerHandle(opts: EmbeddingHandleOptions =
 	// globalThis and cannot read them itself). Null in source mode, where
 	// onnxruntime-wasm resolves its .wasm from node_modules.
 	const wasmDir = materializeEmbeddedWasmAssets();
+	// Resolve the worker-specific WASM transformers runtime. The worker has
+	// an isolated globalThis, so the main thread's
+	// globalThis[Symbol.for("onnxruntime")] registration does NOT propagate.
+	// This .mjs file registers WASM onnxruntime on the worker's own globalThis
+	// before transformers loads. Null in source mode.
+	const transformersRuntimePath = resolveEmbeddedWorkerPath("embedding-worker-transformers-runtime");
 
 	const init: EmbeddingWorkerInit = {
 		cacheDir,
 		wasmDir,
+		transformersRuntimePath,
 		modelId,
 		expectedDimensions: dimensions,
 		...(opts.remoteHostOverride ? { remoteHostOverride: opts.remoteHostOverride } : {}),

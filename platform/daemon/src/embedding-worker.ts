@@ -105,6 +105,24 @@ async function loadTransformers(): Promise<TransformersBindings> {
 	// so load via the bundled runtime entry. In source mode this resolves
 	// @huggingface/transformers from node_modules; in the compiled binary
 	// the worker .mjs has transformers inlined by the bun build.
+	//
+	// In the compiled binary, transformers resolves to the Node entry which
+	// tries to load native onnxruntime .node bindings that don't exist in a
+	// Bun-compiled executable. The main thread registers a WASM runtime via
+	// globalThis[Symbol.for("onnxruntime")], but the worker has an isolated
+	// globalThis so that registration does NOT propagate.
+	//
+	// Fix: when transformersRuntimePath is set (compiled binary mode), import
+	// the materialized WASM runtime first — it registers onnxruntime-web on
+	// the worker's own globalThis and exports env/pipeline from the patched
+	// web entry. Fall back to the standard import in source mode.
+	if (init.transformersRuntimePath) {
+		const mod = (await import(init.transformersRuntimePath)) as {
+			env: TransformersEnv;
+			pipeline: TransformersBindings["pipeline"];
+		};
+		return { env: mod.env, pipeline: mod.pipeline };
+	}
 	const mod = (await import("./transformers-runtime")) as {
 		env: TransformersEnv;
 		pipeline: TransformersBindings["pipeline"];

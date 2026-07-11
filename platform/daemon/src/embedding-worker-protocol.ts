@@ -34,6 +34,14 @@ export interface EmbeddingWorkerInit {
 	 * Main thread obtains this via materializeEmbeddedWasmAssets().
 	 */
 	readonly wasmDir: string | null;
+	/**
+	 * Path to a materialized WASM transformers runtime .mjs for the worker to
+	 * import before loading transformers. The worker has an isolated globalThis,
+	 * so the main thread's onnxruntime-web registration does NOT propagate. This
+	 * file registers WASM onnxruntime on the worker's own globalThis. Null in
+	 * source mode where the standard @huggingface/transformers import works.
+	 */
+	readonly transformersRuntimePath: string | null;
 	readonly modelId: string;
 	readonly expectedDimensions: number;
 	/**
