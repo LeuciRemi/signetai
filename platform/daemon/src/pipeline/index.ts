@@ -18,6 +18,7 @@ import type { ExtractionThreadOpts } from "./extraction-thread-handle";
 import type { WorkerInit } from "./extraction-thread-protocol";
 import { type MaintenanceHandle, startMaintenanceWorker } from "./maintenance-worker";
 import { type HintsWorkerHandle, startHintsWorker } from "./prospective-index";
+import { configureLlmConcurrency, getClaudeCodeCircuitStatus, getLlmConcurrencyStatus } from "./provider";
 import type { ReflectionWorkerHandle } from "./reflection-worker";
 import {
 	DEFAULT_RETENTION,
@@ -156,9 +157,57 @@ let dreamingWorkerHandle: DreamingWorkerHandle | null = null;
 let reflectionWorkerHandle: ReflectionWorkerHandle | null = null;
 let pendingStartup: Promise<void> | null = null;
 
+type WorkerStatusEntry = {
+	readonly running: boolean;
+	readonly stats?: WorkerStats;
+};
+
+type LlmConcurrencyStatus = ReturnType<typeof getLlmConcurrencyStatus>;
+type ClaudeCodeCircuitStatus = ReturnType<typeof getClaudeCodeCircuitStatus>;
+
+export type PipelineWorkerStatus = {
+	readonly llmConcurrency: {
+		readonly running: boolean;
+		readonly concurrency: LlmConcurrencyStatus;
+		/** Backward-compatible alias for callers that read provider status from stats. */
+		readonly stats: LlmConcurrencyStatus;
+	};
+	readonly claudeCode: {
+		/** Claude Code has no daemon worker; circuit-open cooldown is reported under circuit. */
+		readonly running: false;
+		readonly circuit: ClaudeCodeCircuitStatus;
+		/** Backward-compatible alias for callers that read provider status from stats. */
+		readonly stats: ClaudeCodeCircuitStatus;
+	};
+	readonly extraction: WorkerStatusEntry;
+	readonly summary: WorkerStatusEntry;
+	readonly document: WorkerStatusEntry;
+	readonly retention: WorkerStatusEntry;
+	readonly maintenance: WorkerStatusEntry;
+	readonly synthesis: WorkerStatusEntry;
+	readonly structuralClassify: WorkerStatusEntry;
+	readonly structuralDependency: WorkerStatusEntry;
+	readonly dependencySynthesis: WorkerStatusEntry;
+	readonly hints: WorkerStatusEntry;
+	readonly dreaming: WorkerStatusEntry;
+	readonly reflections: WorkerStatusEntry;
+};
+
 /** Snapshot of running state for each worker — used by /api/pipeline/status */
-export function getPipelineWorkerStatus(): Record<string, { running: boolean; stats?: WorkerStats }> {
+export function getPipelineWorkerStatus(): PipelineWorkerStatus {
+	const llmConcurrency = getLlmConcurrencyStatus();
+	const claudeCodeCircuit = getClaudeCodeCircuitStatus();
 	return {
+		llmConcurrency: {
+			running: llmConcurrency.running > 0,
+			concurrency: llmConcurrency,
+			stats: llmConcurrency,
+		},
+		claudeCode: {
+			running: false,
+			circuit: claudeCodeCircuit,
+			stats: claudeCodeCircuit,
+		},
 		extraction: {
 			running: workerHandle !== null,
 			stats: workerHandle?.stats,
@@ -225,6 +274,7 @@ export function startPipeline(
 		logger.info("pipeline", "Pipeline paused; worker start skipped");
 		return;
 	}
+	configureLlmConcurrency(pipelineCfg.worker.maxLlmConcurrency);
 
 	if (pipelineCfg.extraction.provider === "command") {
 		ensureRetentionWorker(accessor, DEFAULT_RETENTION);
@@ -255,7 +305,7 @@ export function startPipeline(
 	};
 
 	if (pipelineCfg.worker.threadedExtraction && workerInit) {
-		pendingStartup = startExtractionThread({ init: workerInit, analytics, telemetry })
+		pendingStartup = startExtractionThread({ init: workerInit, provider, analytics, telemetry })
 			.then((handle) => {
 				workerHandle = handle;
 				logger.info("pipeline", "Extraction worker thread started");
@@ -391,7 +441,7 @@ export async function stopPipeline(): Promise<void> {
 		structuralClassifyHandle = null;
 	}
 	if (summaryWorkerHandle) {
-		summaryWorkerHandle.stop();
+		await summaryWorkerHandle.stop();
 		summaryWorkerHandle = null;
 	}
 	if (summaryRecoveryStop) {

@@ -36,7 +36,12 @@ import { upsertSessionTranscript } from "../session-transcripts";
 import { upsertThreadHead } from "../thread-heads";
 import { addDreamingTokens } from "./dreaming";
 import { enqueueExtractionJobInTx } from "./extraction-queue";
-import { RateLimitExceededError } from "./provider";
+import {
+	ClaudeCodeCircuitOpenError,
+	RateLimitExceededError,
+	SemaphoreTimeoutError,
+	awaitSubprocessWithDeadline,
+} from "./provider";
 import { type SignificanceConfig, assessSignificance } from "./significance-gate";
 import { countTokens } from "./tokenizer";
 
@@ -45,7 +50,7 @@ import { countTokens } from "./tokenizer";
 // ---------------------------------------------------------------------------
 
 export interface SummaryWorkerHandle {
-	stop(): void;
+	stop(): Promise<void>;
 	readonly running: boolean;
 }
 
@@ -393,7 +398,35 @@ function substituteCommandTokens(input: string, replacements: Record<string, str
 	return output;
 }
 
-export async function runSummaryCommandProvider(job: SummaryJobRow, cfg: ResolvedMemoryConfig): Promise<void> {
+const emptyByteStream = (): ReadableStream<Uint8Array> =>
+	new ReadableStream<Uint8Array>({
+		start(controller) {
+			controller.close();
+		},
+	});
+
+function terminateSummaryCommand(child: ReturnType<typeof nodeSpawn>, signal: NodeJS.Signals): void {
+	const pid = child.pid;
+	if (process.platform !== "win32" && typeof pid === "number") {
+		try {
+			process.kill(-pid, signal);
+			return;
+		} catch {
+			// Fall through to direct child signaling when the group is already gone.
+		}
+	}
+	try {
+		child.kill(signal);
+	} catch {
+		// Child is already gone.
+	}
+}
+
+export async function runSummaryCommandProvider(
+	job: SummaryJobRow,
+	cfg: ResolvedMemoryConfig,
+	signal?: AbortSignal,
+): Promise<void> {
 	const command = cfg.pipelineV2.extraction.command;
 	if (!command) {
 		throw new Error("pipelineV2.extraction.command is required when extraction.provider is 'command'");
@@ -430,70 +463,49 @@ export async function runSummaryCommandProvider(job: SummaryJobRow, cfg: Resolve
 	}
 
 	try {
-		await new Promise<void>((resolve, reject) => {
-			const child = nodeSpawn(bin, args, {
-				cwd: cwd && cwd.length > 0 ? cwd : undefined,
-				env: {
-					...process.env,
-					...envFromConfig,
-					SIGNET_PATH: AGENTS_DIR,
-				},
-				stdio: ["ignore", "ignore", "ignore"],
-				windowsHide: true,
-			});
-
-			let settled = false;
-			let timedOut = false;
-			let killTimer: ReturnType<typeof setTimeout> | null = null;
-			const clearKillTimer = (): void => {
-				if (killTimer) {
-					clearTimeout(killTimer);
-					killTimer = null;
-				}
-			};
-			const timeoutError = new Error(`summary command timed out after ${timeoutMs}ms`);
-			const timeout = setTimeout(() => {
-				if (settled) return;
-				timedOut = true;
-				child.kill("SIGTERM");
-				killTimer = setTimeout(() => {
-					try {
-						child.kill("SIGKILL");
-					} catch {
-						// Child is already gone.
-					}
-				}, 2000);
-			}, timeoutMs);
-
-			child.on("error", (err) => {
-				clearKillTimer();
-				if (settled) return;
-				settled = true;
-				clearTimeout(timeout);
-				if (timedOut) {
-					reject(timeoutError);
-					return;
-				}
-				reject(err);
-			});
-
-			child.on("close", (code) => {
-				clearKillTimer();
-				if (settled) return;
-				settled = true;
-				clearTimeout(timeout);
-				if (timedOut) {
-					reject(timeoutError);
-					return;
-				}
-				const exitCode = code ?? 1;
-				if (exitCode !== 0) {
-					reject(new Error(`summary command exited with code ${exitCode}`));
-					return;
-				}
-				resolve();
-			});
+		const child = nodeSpawn(bin, args, {
+			cwd: cwd && cwd.length > 0 ? cwd : undefined,
+			env: {
+				...process.env,
+				...envFromConfig,
+				SIGNET_PATH: AGENTS_DIR,
+			},
+			stdio: ["ignore", "ignore", "ignore"],
+			windowsHide: true,
+			detached: process.platform !== "win32",
 		});
+		const exited = new Promise<number>((resolve, reject) => {
+			child.on("error", reject);
+			child.on("close", (code) => resolve(code ?? 1));
+		});
+		try {
+			await awaitSubprocessWithDeadline(
+				{
+					stdout: emptyByteStream(),
+					stderr: emptyByteStream(),
+					exited,
+					processGroupId: process.platform !== "win32" ? child.pid : undefined,
+					kill(signalName?: string) {
+						terminateSummaryCommand(child, signalName === "SIGKILL" ? "SIGKILL" : "SIGTERM");
+					},
+				},
+				timeoutMs,
+				"summary command",
+				timeoutMs,
+				async (proc) => {
+					const exitCode = await proc.exited;
+					if (exitCode !== 0) {
+						throw new Error(`summary command exited with code ${exitCode}`);
+					}
+				},
+				signal,
+			);
+		} catch (error) {
+			if (error instanceof SemaphoreTimeoutError) {
+				throw new Error(`summary command timed out after ${timeoutMs}ms`);
+			}
+			throw error;
+		}
 	} finally {
 		rmSync(tempDir, { recursive: true, force: true });
 	}
@@ -602,6 +614,7 @@ async function processJob(
 	provider: LlmProvider | null,
 	job: SummaryJobRow,
 	memoryCfg: ResolvedMemoryConfig,
+	signal?: AbortSignal,
 ): Promise<void> {
 	const commandMode = memoryCfg.pipelineV2.enabled && memoryCfg.pipelineV2.extraction.provider === "command";
 	const commandStageStatus: CommandStageStatus = commandMode ? getCommandStageStatus(accessor, job.id) : "none";
@@ -618,7 +631,7 @@ async function processJob(
 		if (commandStageStatus === "none") {
 			markCommandStageRunning(accessor, job.id);
 			try {
-				await runSummaryCommandProvider(job, memoryCfg);
+				await runSummaryCommandProvider(job, memoryCfg, signal);
 			} catch (error) {
 				clearCommandStageRunning(accessor, job.id);
 				throw error;
@@ -658,6 +671,7 @@ async function processJob(
 	const genOpts = {
 		timeoutMs: memoryCfg.pipelineV2.synthesis.timeout,
 		maxTokens: memoryCfg.pipelineV2.synthesis.maxTokens,
+		signal,
 		refresh: true,
 	};
 	const result =
@@ -731,7 +745,7 @@ async function processJob(
 	}
 
 	try {
-		await scoreContinuity(accessor, provider, job, result.summary, memoryCfg);
+		await scoreContinuity(accessor, provider, job, result.summary, memoryCfg, signal);
 	} catch (e) {
 		logger.warn("summary-worker", "Continuity scoring failed (non-fatal)", {
 			error: e instanceof Error ? e.message : String(e),
@@ -771,6 +785,7 @@ async function processJob(
 interface GenerateOpts {
 	readonly timeoutMs: number;
 	readonly maxTokens: number;
+	readonly signal?: AbortSignal;
 }
 
 async function processSingle(
@@ -1034,12 +1049,13 @@ interface ContinuityResult {
 	}>;
 }
 
-async function scoreContinuity(
+export async function scoreContinuity(
 	accessor: DbAccessor,
 	provider: LlmProvider,
 	job: SummaryJobRow,
 	summary: string,
 	memoryCfg: ResolvedMemoryConfig,
+	signal?: AbortSignal,
 ): Promise<void> {
 	// Load injected memories for this session (empty array for old sessions)
 	const injectedMemories = loadInjectedMemories(accessor, job.session_key, job.agent_id);
@@ -1049,6 +1065,7 @@ async function scoreContinuity(
 	const raw = await provider.generate(prompt, {
 		timeoutMs: memoryCfg.pipelineV2.synthesis.timeout,
 		maxTokens: memoryCfg.pipelineV2.synthesis.maxTokens,
+		signal,
 	});
 
 	let jsonStr = raw.trim();
@@ -1551,6 +1568,8 @@ export function startSummaryRecovery(accessor: DbAccessor): () => void {
 export function startSummaryWorker(accessor: DbAccessor, options: SummaryWorkerOptions = {}): SummaryWorkerHandle {
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let stopped = false;
+	let activeTick: Promise<void> | null = null;
+	let activeAbort: AbortController | null = null;
 	const stopRecovery = startSummaryRecovery(accessor);
 
 	let cachedProvider: LlmProvider | null = null;
@@ -1566,6 +1585,7 @@ export function startSummaryWorker(accessor: DbAccessor, options: SummaryWorkerO
 		}
 
 		let jobId: string | null = null;
+		let leasedJob: SummaryJobRow | null = null;
 
 		try {
 			const isSynthesisAvailable = options.isSynthesisAvailable ?? (async () => false);
@@ -1585,6 +1605,8 @@ export function startSummaryWorker(accessor: DbAccessor, options: SummaryWorkerO
 			}
 
 			jobId = job.id;
+			leasedJob = job;
+			activeAbort = new AbortController();
 			const memoryCfg = loadMemoryConfig(AGENTS_DIR);
 			const commandMode = memoryCfg.pipelineV2.enabled && memoryCfg.pipelineV2.extraction.provider === "command";
 			let synthesisAvailable = false;
@@ -1616,7 +1638,7 @@ export function startSummaryWorker(accessor: DbAccessor, options: SummaryWorkerO
 					if (!commandMode) throw error;
 				}
 			}
-			await processJob(accessor, synthesisAvailable ? cachedProvider : null, job, memoryCfg);
+			await processJob(accessor, synthesisAvailable ? cachedProvider : null, job, memoryCfg, activeAbort.signal);
 
 			// Mark complete
 			accessor.withWriteTx((db) => {
@@ -1634,6 +1656,13 @@ export function startSummaryWorker(accessor: DbAccessor, options: SummaryWorkerO
 		} catch (e) {
 			const terminal = isTerminalSummaryJobError(e instanceof Error ? e : String(e));
 			const errorMessage = e instanceof Error ? e.message : String(e);
+			if (
+				leasedJob &&
+				(e instanceof ClaudeCodeCircuitOpenError || (stopped && /aborted|cancelled|canceled/i.test(errorMessage)))
+			) {
+				restoreUnprocessedSummaryLease(accessor, leasedJob);
+				return;
+			}
 			logger.error("summary-worker", "Job failed", e instanceof Error ? e : undefined, { error: errorMessage });
 
 			// Try to mark the job as failed/pending for retry.
@@ -1666,17 +1695,23 @@ export function startSummaryWorker(accessor: DbAccessor, options: SummaryWorkerO
 			}
 
 			scheduleTick(terminal ? 500 : POLL_INTERVAL_MS * 3);
+		} finally {
+			activeAbort = null;
 		}
 	}
 
 	function scheduleTick(delay: number): void {
 		if (stopped) return;
 		timer = setTimeout(() => {
-			tick().catch((err) => {
-				logger.error("summary-worker", "Unhandled tick error", err instanceof Error ? err : undefined, {
-					error: err instanceof Error ? err.message : String(err),
+			activeTick = tick()
+				.catch((err) => {
+					logger.error("summary-worker", "Unhandled tick error", err instanceof Error ? err : undefined, {
+						error: err instanceof Error ? err.message : String(err),
+					});
+				})
+				.finally(() => {
+					activeTick = null;
 				});
-			});
 		}, delay);
 	}
 
@@ -1684,10 +1719,12 @@ export function startSummaryWorker(accessor: DbAccessor, options: SummaryWorkerO
 	scheduleTick(POLL_INTERVAL_MS);
 
 	return {
-		stop() {
+		async stop() {
 			stopped = true;
+			activeAbort?.abort();
 			if (timer) clearTimeout(timer);
 			stopRecovery();
+			if (activeTick) await activeTick;
 		},
 		get running() {
 			return !stopped;
