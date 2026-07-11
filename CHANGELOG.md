@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-07-11
-- Bug fixes: await in-flight init before first embed to prevent warm-up race (#920); register WASM onnxruntime in embedding worker's isolated globalThis; bound and cancel LLM inference; isolate native embedding in a worker so it cannot block /health; reject transient operational content with a durability gate.
+- Bug fixes: thread native asset paths into extraction worker; await in-flight init before first embed to prevent warm-up race (#920); register WASM onnxruntime in embedding worker's isolated globalThis; bound and cancel LLM inference; isolate native embedding in a worker so it cannot block /health; reject transient operational content with a durability gate.
 - Docs: update changelog highlights for v0.147.10 stable promotion; update changelog highlights for v0.147.9 stable promotion.
 
 ### 2026-07-10
@@ -33,6 +33,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: align daily brief typography.
 
 ## Release Ledger
+
+## [0.147.12] - 2026-07-11
+
+Release summary: 1 bug fix.
+Tag range: `v0.147.11..v0.147.12`.
+
+### Bug Fixes
+
+- **embedding**: thread native asset paths into extraction worker (#922)
 
 ## [0.147.11] - 2026-07-11
 
