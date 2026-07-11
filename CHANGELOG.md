@@ -6,8 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
-### 2026-07-11 (stable v0.147.10)
-- Bug fixes: bound and cancel pipeline LLM inference (#918); isolate native embedding in a worker so it cannot block /health (#916); reject transient operational content with a durability gate (#917); reject markdown-polluted entity labels (#914); gate summary jobs on runnable synthesis (#912); cancel extraction for forgotten memories (#910); embed Hermes connector assets in native releases (#909); initialize ONNX WASM embeddings in compiled binary (#911); register WASM onnxruntime in embedding worker's isolated globalThis (#919).
+### 2026-07-11
+- Bug fixes: await in-flight init before first embed to prevent warm-up race (#920); register WASM onnxruntime in embedding worker's isolated globalThis; bound and cancel LLM inference; isolate native embedding in a worker so it cannot block /health; reject transient operational content with a durability gate.
+- Docs: update changelog highlights for v0.147.10 stable promotion; update changelog highlights for v0.147.9 stable promotion.
 
 ### 2026-07-10
 - Bug fixes: reject markdown-polluted entity labels; gate summary jobs on runnable synthesis; cancel extraction for forgotten memories; embed connector assets in native releases; initialize ONNX WASM embeddings in compiled binary.
@@ -32,6 +33,19 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: align daily brief typography.
 
 ## Release Ledger
+
+## [0.147.11] - 2026-07-11
+
+Release summary: 1 bug fix and 1 docs update.
+Tag range: `v0.147.10..v0.147.11`.
+
+### Bug Fixes
+
+- **embedding**: await in-flight init before first embed to prevent warm-up race (#920) (#923)
+
+### Docs
+
+- update changelog highlights for v0.147.10 stable promotion
 
 ## [0.147.10] - 2026-07-11
 
