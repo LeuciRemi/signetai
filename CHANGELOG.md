@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-07-12
-- Bug fixes: add boundary reason semantics to session synthesis.
+- Bug fixes: tolerate immutable-artifact conflict on summary retry; add boundary reason semantics to session synthesis.
 
 ### 2026-07-11
 - Bug fixes: thread native asset paths into extraction worker; await in-flight init before first embed to prevent warm-up race (#920); register WASM onnxruntime in embedding worker's isolated globalThis; bound and cancel LLM inference; isolate native embedding in a worker so it cannot block /health; reject transient operational content with a durability gate.
@@ -33,6 +33,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: prevent recursive aggregate recall evidence.
 
 ## Release Ledger
+
+## [0.147.14] - 2026-07-12
+
+Release summary: 1 bug fix.
+Tag range: `v0.147.13..v0.147.14`.
+
+### Bug Fixes
+
+- **pipeline**: tolerate immutable-artifact conflict on summary retry (#900)
 
 ## [0.147.13] - 2026-07-12
 
