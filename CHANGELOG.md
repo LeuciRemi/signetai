@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-07-15
+- Bug fixes: centralize canonical recall requests.
+
 ### 2026-07-12
 - Bug fixes: tolerate immutable-artifact conflict on summary retry; add boundary reason semantics to session synthesis.
 
@@ -29,10 +32,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 ### 2026-07-01
 - Bug fixes: exclude aggregate memories from aggregate recall; recall source-backed ontology claims.
 
-### 2026-06-30
-- Bug fixes: prevent recursive aggregate recall evidence.
-
 ## Release Ledger
+
+## [0.147.15] - 2026-07-15
+
+Release summary: 1 bug fix.
+Tag range: `v0.147.14..v0.147.15`.
+
+### Bug Fixes
+
+- **recall**: centralize canonical recall requests
 
 ## [0.147.14] - 2026-07-12
 
