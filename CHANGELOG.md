@@ -6,6 +6,10 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-07-19
+- Bug fixes: correct lease anomaly staleness column and document readDb adapter; add missing repair routes for rust daemon parity; mirror /health/live and /health/ready probes; label daemon liveness separately from readiness; add /health/live and /health/ready probes.
+- Docs: document /health/live and /health/ready probes.
+
 ### 2026-07-15
 - Bug fixes: centralize canonical recall requests.
 
@@ -29,10 +33,24 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Features: capture harness skill usage (claude-code scan + opencode post).
 - Bug fixes: chunk and embed Obsidian source content after sync; queue rendered Codex transcripts.
 
-### 2026-07-01
-- Bug fixes: exclude aggregate memories from aggregate recall; recall source-backed ontology claims.
-
 ## Release Ledger
+
+## [0.147.16] - 2026-07-19
+
+Release summary: 5 bug fixes and 1 docs update.
+Tag range: `v0.147.15..v0.147.16`.
+
+### Bug Fixes
+
+- **daemon**: correct lease anomaly staleness column and document readDb adapter
+- **daemon-rs**: add missing repair routes for rust daemon parity
+- **daemon-rs**: mirror /health/live and /health/ready probes (#905)
+- **cli**: label daemon liveness separately from readiness (#905)
+- **daemon**: add /health/live and /health/ready probes (#905)
+
+### Docs
+
+- **daemon**: document /health/live and /health/ready probes (#905)
 
 ## [0.147.15] - 2026-07-15
 
