@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-07-19
 - Bug fixes: add missing repair routes for rust daemon parity; correct lease anomaly staleness column and document readDb adapter; mirror /health/live and /health/ready probes; label daemon liveness separately from readiness; add /health/live and /health/ready probes.
-- Refactoring: tighten recall scope typing.
+- Refactoring: extract shared tableExists and add cross-daemon constant parity test; tighten recall scope typing.
 - Docs: document /health/live and /health/ready probes.
 
 ### 2026-07-15
@@ -35,6 +35,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: chunk and embed Obsidian source content after sync; queue rendered Codex transcripts.
 
 ## Release Ledger
+
+## [0.147.19] - 2026-07-19
+
+Release summary: 1 refactor.
+Tag range: `v0.147.18..v0.147.19`.
+
+### Refactoring
+
+- **db**: extract shared tableExists and add cross-daemon constant parity test
 
 ## [0.147.18] - 2026-07-19
 
