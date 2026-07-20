@@ -487,6 +487,62 @@ describe("status report openclaw runtime", () => {
 	});
 });
 
+describe("doctor concurrent Signet installations", () => {
+	it("includes a structured warning and manual npm remediation in JSON mode", async () => {
+		const root = mkdtempSync(join(tmpdir(), "health-installations-"));
+		const workspace = join(root, "agents");
+		const lines: string[] = [];
+		const oldLog = console.log;
+		try {
+			mkdirSync(workspace, { recursive: true });
+			console.log = (...args: unknown[]) => {
+				lines.push(args.join(" "));
+			};
+
+			await showDoctor(
+				{ json: true },
+				{
+					...depsFor(workspace),
+					detectInstallations: () => ({
+						target: {
+							kind: "native",
+							executablePath: join(root, ".local", "bin", "signet"),
+						},
+						installations: [],
+						inactive: [
+							{
+								method: "npm",
+								executablePath: join(root, ".npm-global", "bin", "signet"),
+								packagePath: join(root, ".npm-global", "lib", "node_modules", "signetai"),
+								active: false,
+								removalCommand: "npm uninstall -g signetai",
+							},
+						],
+					}),
+				},
+			);
+
+			const output = JSON.parse(lines.join("\n")) as {
+				installations?: { target?: { kind?: string } };
+				findings?: Array<{
+					code?: string;
+					fix?: string;
+				}>;
+			};
+			expect(output.installations?.target?.kind).toBe("native");
+			expect(output.findings).toContainEqual(
+				expect.objectContaining({
+					code: "duplicate_signet_installation",
+					fix: expect.stringContaining("npm uninstall -g signetai"),
+				}),
+			);
+		} finally {
+			console.log = oldLog;
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
+
 describe("getExtractionStatusNotice", () => {
 	it("returns a warning for degraded extraction", () => {
 		const notice = getExtractionStatusNotice({
