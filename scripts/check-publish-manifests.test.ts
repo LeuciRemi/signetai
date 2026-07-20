@@ -635,7 +635,7 @@ describe("check-publish-manifests", () => {
 		expect(rootPackage.scripts?.["build:deps"]).toStartWith("bun run --filter '@signet/sdk' build && ");
 		expect(adapter.dependencies?.["@signet/sdk"]).toBeUndefined();
 		expect(adapter.devDependencies?.["@signet/sdk"]).toBeDefined();
-		expect(adapter.peerDependencies?.openclaw).toBe(">=2026.5.22");
+		expect(adapter.peerDependencies?.openclaw).toBe(">=2026.7.1");
 		expect(adapter.peerDependenciesMeta?.openclaw?.optional).toBe(true);
 
 		const workspacePackages = collectWorkspacePackages([adapterFile, sdkFile, coreFile]);
