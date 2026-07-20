@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-07-20
+- Bug fixes: restore plugin discovery and lifecycle hooks.
+
 ### 2026-07-19
 - Bug fixes: add missing repair routes for rust daemon parity; correct lease anomaly staleness column and document readDb adapter; mirror /health/live and /health/ready probes; label daemon liveness separately from readiness; add /health/live and /health/ready probes.
 - Refactoring: extract shared tableExists and add cross-daemon constant parity test; tighten recall scope typing.
@@ -30,11 +33,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: add integrity check and rebuild-derived-indexes repair actions; backfill extracted relations into entity_dependencies for graph traversal; persist startup import reconciliation state; repair memory lifecycle lineage; force exit after hook actions to prevent orphaned processes; support pi-mono session lifecycle events.
 - Docs: add noamsiegel and quannon to contributors list.
 
-### 2026-07-06
-- Features: capture harness skill usage (claude-code scan + opencode post).
-- Bug fixes: chunk and embed Obsidian source content after sync; queue rendered Codex transcripts.
-
 ## Release Ledger
+
+## [0.147.20] - 2026-07-20
+
+Release summary: 1 bug fix.
+Tag range: `v0.147.19..v0.147.20`.
+
+### Bug Fixes
+
+- **openclaw**: restore plugin discovery and lifecycle hooks
 
 ## [0.147.19] - 2026-07-19
 
