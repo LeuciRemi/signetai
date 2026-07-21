@@ -8,6 +8,7 @@ import type { ProviderTracker } from "../diagnostics";
 import { getLlmProvider } from "../llm";
 import { logger } from "../logger";
 import type { EmbeddingRole } from "../embedding-profile";
+import { resolveDefaultBasePath } from "@signet/core";
 import type { EmbeddingConfig, MemorySearchConfig, PipelineV2Config } from "../memory-config";
 import type { TelemetryCollector } from "../telemetry";
 import type { DecisionConfig } from "./decision";
@@ -19,6 +20,8 @@ import type { ExtractionThreadOpts } from "./extraction-thread-handle";
 import type { WorkerInit } from "./extraction-thread-protocol";
 import { type MaintenanceHandle, startMaintenanceWorker } from "./maintenance-worker";
 import { type HintsWorkerHandle, startHintsWorker } from "./prospective-index";
+import { type IngestWorkerHandle, startIngestWorker } from "./ingest/runner";
+import "./ingest/normalizers"; // register edge normalizers (markdown/html/json) as a side effect
 import { configureLlmConcurrency, getLlmConcurrencyStatus } from "./provider";
 import type { ReflectionWorkerHandle } from "./reflection-worker";
 import {
@@ -128,6 +131,8 @@ export function ensureSummaryRecovery(
 // Singleton state
 // ---------------------------------------------------------------------------
 
+const AGENTS_DIR = resolveDefaultBasePath();
+
 let workerHandle: WorkerHandle | null = null;
 let retentionHandle: RetentionHandle | null = null;
 let maintenanceHandle: MaintenanceHandle | null = null;
@@ -156,6 +161,7 @@ let dependencySynthesisHandle: DependencySynthesisHandle | null = null;
 let hintsWorkerHandle: HintsWorkerHandle | null = null;
 let dreamingWorkerHandle: DreamingWorkerHandle | null = null;
 let reflectionWorkerHandle: ReflectionWorkerHandle | null = null;
+let ingestWorkerHandle: IngestWorkerHandle | null = null;
 let pendingStartup: Promise<void> | null = null;
 
 type WorkerStatusEntry = {
@@ -184,6 +190,7 @@ export type PipelineWorkerStatus = {
 	readonly hints: WorkerStatusEntry;
 	readonly dreaming: WorkerStatusEntry;
 	readonly reflections: WorkerStatusEntry;
+	readonly ingest: WorkerStatusEntry;
 };
 
 /** Snapshot of running state for each worker — used by /api/pipeline/status */
@@ -210,6 +217,7 @@ export function getPipelineWorkerStatus(): PipelineWorkerStatus {
 		hints: { running: hintsWorkerHandle !== null },
 		dreaming: { running: dreamingWorkerHandle !== null },
 		reflections: { running: reflectionWorkerHandle !== null },
+		ingest: { running: ingestWorkerHandle !== null },
 	};
 }
 
@@ -385,6 +393,36 @@ export function startPipeline(
 	// background schedule here; /api/reflections/generate creates fresh,
 	// de-duplicated insights when the dashboard opens.
 
+	// Unified ingest / Dreaming runner (#913). Opt-in via pipelineV2.ingest.enabled
+	// until the cutover. The legacy extraction worker still runs alongside on the
+	// branch; the cutover PR removes it so only one path ships to main.
+	if (pipelineCfg.ingest?.enabled && !pipelineCfg.mutationsFrozen && !ingestWorkerHandle) {
+		ingestWorkerHandle = startIngestWorker({
+			accessor,
+			provider,
+			embedder: { embed: (text) => fetchEmbedding(text, embeddingCfg) },
+			agentsDir: AGENTS_DIR,
+			agentId,
+			enabled: true,
+			applyConfig: {
+				actor: "ingest-runner",
+				minImportanceForWrite: 0.3,
+				writeGate: pipelineCfg.writeGate
+					? { enabled: pipelineCfg.writeGate.enabled, threshold: pipelineCfg.writeGate.threshold, continuityDiscount: pipelineCfg.writeGate.continuityDiscount ?? 0 }
+					: { enabled: false, threshold: 0.4, continuityDiscount: 0.15 },
+				durability: pipelineCfg.durability
+					? { enabled: pipelineCfg.durability.enabled }
+					: { enabled: true },
+				sourceType: "ingest",
+				extractionModel: pipelineCfg.extraction.model ?? null,
+				embeddingModel: embeddingCfg.model ?? null,
+			},
+			leaseTimeoutMs: pipelineCfg.worker.leaseTimeoutMs,
+			tickIntervalMs: pipelineCfg.ingest.tickIntervalMs,
+			contextBudgetPct: pipelineCfg.ingest.contextBudgetPct,
+		});
+	}
+
 	logger.info("pipeline", "Pipeline started", {
 		mode:
 			pipelineCfg.enabled && !pipelineCfg.shadowMode && !pipelineCfg.mutationsFrozen ? "controlled-write" : "shadow",
@@ -444,6 +482,10 @@ export async function stopPipeline(): Promise<void> {
 	if (retentionHandle) {
 		retentionHandle.stop();
 		retentionHandle = null;
+	}
+	if (ingestWorkerHandle) {
+		await ingestWorkerHandle.stop();
+		ingestWorkerHandle = null;
 	}
 	if (!workerHandle) return;
 	await workerHandle.stop();
