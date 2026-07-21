@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-07-21
+- Bug fixes: update and verify active install.
+
 ### 2026-07-20
 - Bug fixes: restore plugin discovery and lifecycle hooks.
 
@@ -28,12 +31,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: reject markdown-polluted entity labels; gate summary jobs on runnable synthesis; cancel extraction for forgotten memories; embed connector assets in native releases; initialize ONNX WASM embeddings in compiled binary.
 - Docs: update changelog highlights for v0.147.1 stable promotion.
 
-### 2026-07-09
-- Features: support Codex CLI in Docker; add observed feedback loop.
-- Bug fixes: add integrity check and rebuild-derived-indexes repair actions; backfill extracted relations into entity_dependencies for graph traversal; persist startup import reconciliation state; repair memory lifecycle lineage; force exit after hook actions to prevent orphaned processes; support pi-mono session lifecycle events.
-- Docs: add noamsiegel and quannon to contributors list.
-
 ## Release Ledger
+
+## [0.147.21] - 2026-07-21
+
+Release summary: 1 bug fix.
+Tag range: `v0.147.20..v0.147.21`.
+
+### Bug Fixes
+
+- **update**: update and verify active install
 
 ## [0.147.20] - 2026-07-20
 
