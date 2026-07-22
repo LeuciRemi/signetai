@@ -19,6 +19,7 @@
  */
 
 import type { Context, Hono } from "hono";
+import { requirePermission } from "../auth";
 import { applyIngestPlan, type IngestApplyConfig, type IngestEmbedder } from "../pipeline/ingest/apply";
 import { buildIngestContext } from "../pipeline/ingest/context";
 import { parseIngestPlan, type IngestPlan } from "../pipeline/ingest/ingest-plan";
@@ -28,6 +29,7 @@ import {
 	leaseForPlanning,
 } from "../pipeline/ingest/lease";
 import type { DbAccessor } from "../db-accessor";
+import { authConfig } from "./state";
 
 export interface IngestRouteContext {
 	readonly accessor: DbAccessor;
@@ -62,13 +64,23 @@ function resolveAgentId(c: Context, body?: Readonly<Record<string, unknown>>): s
 	return fromBody ?? fromHeader ?? "default";
 }
 
+function isAgentAllowed(c: Context, agentId: string): boolean {
+	const scopedAgent = c.get("auth")?.claims?.scope.agent;
+	return scopedAgent === undefined || scopedAgent === agentId;
+}
+
 export function registerIngestRoutes(app: Hono, buildCtx: () => IngestRouteContext): void {
+	// Ingest can disclose source context and deterministically mutate memory,
+	// graph, and agent files. Treat every endpoint as a mutation surface; the
+	// token's agent scope is enforced again after parsing the target agent.
+	app.use("/api/ingest/*", async (c, next) => requirePermission("modify", authConfig)(c, next));
 	app.post("/api/ingest/lease", async (c) => {
 		const ctx = buildCtx();
 		const raw: unknown = await c.req.json().catch(() => null);
 		if (raw === null) return c.json({ error: "Malformed JSON body" }, 400);
 		const body = asRecord(raw);
 		const agentId = resolveAgentId(c, body);
+		if (!isAgentAllowed(c, agentId)) return c.json({ error: "Agent scope does not permit this request" }, 403);
 		// The agentic path may declare its effective window (it knows its real
 		// budget; the daemon may not). Treat the declared budget as the window
 		// for this lease so the bundle never silently overflows the harness.
@@ -129,6 +141,7 @@ export function registerIngestRoutes(app: Hono, buildCtx: () => IngestRouteConte
 			return c.json({ error: "Invalid IngestPlan", details: parsed.errors }, 400);
 		}
 		const plan: IngestPlan = parsed.plan;
+		if (!isAgentAllowed(c, plan.agentId)) return c.json({ error: "Agent scope does not permit this plan" }, 403);
 
 		try {
 			const result = await applyIngestPlan(
@@ -148,6 +161,7 @@ export function registerIngestRoutes(app: Hono, buildCtx: () => IngestRouteConte
 	app.get("/api/ingest/status", (c) => {
 		const ctx = buildCtx();
 		const agentId = resolveAgentId(c);
+		if (!isAgentAllowed(c, agentId)) return c.json({ error: "Agent scope does not permit this request" }, 403);
 		const depth = ctx.accessor.withReadDb((db) => {
 			const row = db
 				.prepare(
