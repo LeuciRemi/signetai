@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-07-22
-- Bug fixes: support remote-only connector installs.
+- Bug fixes: retain memory across turn transforms; support remote-only connector installs.
 
 ### 2026-07-21
 - Bug fixes: update and verify active install.
@@ -31,6 +31,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: update changelog highlights for v0.147.10 stable promotion; update changelog highlights for v0.147.9 stable promotion.
 
 ## Release Ledger
+
+## [0.147.23] - 2026-07-22
+
+Release summary: 1 bug fix.
+Tag range: `v0.147.22..v0.147.23`.
+
+### Bug Fixes
+
+- **opencode**: retain memory across turn transforms (#951)
 
 ## [0.147.22] - 2026-07-22
 
