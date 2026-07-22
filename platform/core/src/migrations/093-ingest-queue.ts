@@ -71,11 +71,8 @@ export function up(db: MigrationDb): void {
 		WHERE status IN ('leased','planning','applying')
 	`);
 
-	// --- Retire the legacy daemon dreaming worker's tables (cutover) ---
-	// Only dreaming-worker.ts / dreaming.ts / the constellation summary reference
-	// these; all three are deleted in the same PR. IF EXISTS keeps the migration
-	// idempotent and safe on DBs that never had a dreaming pass.
-	db.exec(`DROP INDEX IF EXISTS idx_dreaming_passes_agent`);
-	db.exec(`DROP TABLE IF EXISTS dreaming_passes`);
-	db.exec(`DROP TABLE IF EXISTS dreaming_state`);
+	// Legacy dreaming state remains until the daemon cutover removes every
+	// legacy worker and consumer. Dropping it in this migration would make
+	// upgrades fail for installations where memory.dreaming.enabled is still
+	// true, and would discard their pass history before a migration exists.
 }

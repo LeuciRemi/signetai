@@ -134,6 +134,30 @@ describe("applyIngestPlan", () => {
 		expect(jobStatus(wdb, "job1")).toBe("completed");
 	});
 
+	test("a lease cannot apply a plan for another agent", async () => {
+		const wdb = db as unknown as WriteDb;
+		enqueue(wdb, "job1", "agent-a");
+		const lease = acquireIngestLease(wdb, { agentId: "agent-a", owner: "daemon", leaseTimeoutMs: 60_000 });
+		expect(lease.ok).toBe(true);
+		if (!lease.ok) return;
+
+		const result = await applyIngestPlan(
+			accessor,
+			buildPlan("job1", "agent-b"),
+			lease.leaseToken,
+			{
+				actor: "daemon", minImportanceForWrite: 0.3, writeGate: WRITE_GATE, durability: DURABILITY,
+				sourceType: "ingest", sourceId: "job1", extractionModel: null, embeddingModel: null,
+			},
+			NULL_EMBEDDER,
+		);
+
+		expect(result.completed).toBe(false);
+		expect(result.graph.errors).toContain("plan agent does not own this lease");
+		expect(memoryCount(wdb, "agent-b")).toBe(0);
+		expect(jobStatus(wdb, "job1")).toBe("leased");
+	});
+
 	test("a stale lease token writes nothing and does not complete (fencing)", async () => {
 		const wdb = db as unknown as WriteDb;
 		enqueue(wdb, "job1", "default");

@@ -153,9 +153,10 @@ export function verifyIngestLease(db: WriteDb, jobId: string, leaseToken: string
 			        attempts, max_attempts, priority, agent_id
 			 FROM memory_jobs
 			 WHERE id = ? AND lease_token = ?
+			   AND lease_expires_at > ?
 			   AND status IN ('leased', 'planning', 'applying')`,
 		)
-		.get(jobId, leaseToken) as IngestJobRow | undefined;
+		.get(jobId, leaseToken, isoNow()) as IngestJobRow | undefined;
 	return row ?? null;
 }
 

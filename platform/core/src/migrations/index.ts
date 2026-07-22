@@ -894,7 +894,6 @@ export const MIGRATIONS: readonly Migration[] = [
 		name: "ingest-queue",
 		up: ingestQueue,
 		artifacts: {
-			dropped_tables: ["dreaming_state", "dreaming_passes"],
 			columns: [
 				{ table: "memory_jobs", column: "agent_id" },
 				{ table: "memory_jobs", column: "lease_owner" },

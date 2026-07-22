@@ -246,12 +246,16 @@ export async function applyIngestPlan(
 
 	// Fence: verify the lease before any write. A reclaimed/expired lease stops here.
 	const verified = accessor.withWriteTx((db) => verifyIngestLease(db, plan.jobId, leaseToken));
-	if (!verified) {
+	if (!verified || verified.agent_id !== plan.agentId) {
 		return {
 			jobId: plan.jobId,
 			completed: false,
 			memories: [],
-			graph: { applied: 0, failed: 0, errors: ["lease not verified — stale or unknown token"] },
+			graph: {
+				applied: 0,
+				failed: 0,
+				errors: [!verified ? "lease not verified — stale or unknown token" : "plan agent does not own this lease"],
+			},
 			filePatches: [],
 			planHash,
 		};
