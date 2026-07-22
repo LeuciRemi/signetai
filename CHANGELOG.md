@@ -8,6 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-07-22
 - Bug fixes: retain memory across turn transforms; support remote-only connector installs.
+- Refactoring: align runtime request contracts.
 
 ### 2026-07-21
 - Bug fixes: update and verify active install.
@@ -31,6 +32,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: update changelog highlights for v0.147.10 stable promotion; update changelog highlights for v0.147.9 stable promotion.
 
 ## Release Ledger
+
+## [0.147.24] - 2026-07-22
+
+Release summary: 1 refactor.
+Tag range: `v0.147.23..v0.147.24`.
+
+### Refactoring
+
+- **recall**: align runtime request contracts (#950)
 
 ## [0.147.23] - 2026-07-22
 
