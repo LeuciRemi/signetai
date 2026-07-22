@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-07-22
 - Features: replace inference provisioning with pi-ai (#947).
-- Bug fixes: restore provider-status contract after #949 (#960); add temporal intent / freshness prior to hybrid recall; forward per-call reasoning ThinkingLevel to pi-ai (#959); unblock main after #949 (build:core tsc error + retire rust-daemon-parity); retain memory across turn transforms; support remote-only connector installs.
+- Bug fixes: stop session-start injection from advancing access tracking; restore provider-status contract after #949 (#960); add temporal intent / freshness prior to hybrid recall; forward per-call reasoning ThinkingLevel to pi-ai (#959); unblock main after #949 (build:core tsc error + retire rust-daemon-parity); retain memory across turn transforms; support remote-only connector installs.
 - Refactoring: align runtime request contracts.
 
 ### 2026-07-21
@@ -33,6 +33,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: update changelog highlights for v0.147.10 stable promotion; update changelog highlights for v0.147.9 stable promotion.
 
 ## Release Ledger
+
+## [0.148.4] - 2026-07-22
+
+Release summary: 1 bug fix.
+Tag range: `v0.148.3..v0.148.4`.
+
+### Bug Fixes
+
+- **memory**: stop session-start injection from advancing access tracking (#972)
 
 ## [0.148.3] - 2026-07-22
 
