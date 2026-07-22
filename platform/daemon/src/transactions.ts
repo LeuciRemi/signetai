@@ -16,7 +16,7 @@ import {
 } from "./db-helpers";
 import { isActiveEmbeddingConfig, resolveActiveEmbeddingConfig } from "./embedding-index-state";
 import type { EmbeddingConfig } from "./memory-config";
-import { cancelExtractionJobsForForgottenMemory } from "./pipeline/extraction-queue";
+import { cancelJobsForForgottenMemory } from "./pipeline/extraction-queue";
 
 // ---------------------------------------------------------------------------
 // Types
