@@ -160,6 +160,21 @@ export function verifyIngestLease(db: WriteDb, jobId: string, leaseToken: string
 	return row ?? null;
 }
 
+export function beginIngestApply(db: WriteDb, jobId: string, leaseToken: string, agentId: string): IngestJobRow | null {
+	const now = isoNow();
+	const claimed = db
+		.prepare(
+			`UPDATE memory_jobs
+			 SET status = 'applying', updated_at = ?
+			 WHERE id = ? AND lease_token = ? AND agent_id = ?
+			   AND lease_expires_at > ?
+			   AND status IN ('leased', 'planning')`,
+		)
+		.run(now, jobId, leaseToken, agentId, now);
+	if (countChanges(claimed) !== 1) return null;
+	return verifyIngestLease(db, jobId, leaseToken);
+}
+
 /**
  * Complete a leased job. CAS on lease_token — a stale token is a no-op
  * (countChanges 0). Idempotent: the same token completing twice is a no-op the

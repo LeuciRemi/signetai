@@ -36,7 +36,7 @@ import { txIngestEnvelope } from "../../transactions";
 import { type DurabilityConfig, assessDurability } from "../durability-gate";
 import { type WriteGateConfig, assessWriteGate } from "../write-gate";
 import type { IngestPlan, MemoryOp } from "./ingest-plan";
-import { completeIngestJob, verifyIngestLease } from "./lease";
+import { beginIngestApply, completeIngestJob } from "./lease";
 import { applyFilePatch } from "./file-patch";
 
 /** Produces an embedding vector for text, or null if unavailable. */
@@ -244,9 +244,11 @@ export async function applyIngestPlan(
 ): Promise<IngestApplyResult> {
 	const planHash = computePlanHash(plan);
 
-	// Fence: verify the lease before any write. A reclaimed/expired lease stops here.
-	const verified = accessor.withWriteTx((db) => verifyIngestLease(db, plan.jobId, leaseToken));
-	if (!verified || verified.agent_id !== plan.agentId) {
+	// Atomically move the leased/planning job into applying before any side
+	// effect. The stale-planning reaper can no longer reclaim this token midway
+	// through an embedding or graph write.
+	const verified = accessor.withWriteTx((db) => beginIngestApply(db, plan.jobId, leaseToken, plan.agentId));
+	if (!verified) {
 		return {
 			jobId: plan.jobId,
 			completed: false,
@@ -254,7 +256,7 @@ export async function applyIngestPlan(
 			graph: {
 				applied: 0,
 				failed: 0,
-				errors: [!verified ? "lease not verified — stale or unknown token" : "plan agent does not own this lease"],
+				errors: ["lease not verified — stale, expired, or not owned by this agent"],
 			},
 			filePatches: [],
 			planHash,

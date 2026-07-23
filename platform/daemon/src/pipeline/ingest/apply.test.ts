@@ -153,7 +153,7 @@ describe("applyIngestPlan", () => {
 		);
 
 		expect(result.completed).toBe(false);
-		expect(result.graph.errors).toContain("plan agent does not own this lease");
+		expect(result.graph.errors).toContain("lease not verified — stale, expired, or not owned by this agent");
 		expect(memoryCount(wdb, "agent-b")).toBe(0);
 		expect(jobStatus(wdb, "job1")).toBe("leased");
 	});
