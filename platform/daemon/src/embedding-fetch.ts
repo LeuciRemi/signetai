@@ -43,15 +43,25 @@ export async function findLlamaCppEmbeddingModel(
 }
 
 let cachedNativeEmbed: ((text: string) => Promise<number[]>) | null = null;
-let nativeFallbackProvider: "llama-cpp" | "ollama" | null = null;
-let nativeFallbackModel: LlamaCppEmbeddingModel | null = null;
+type NativeFallbackProvider = "llama-cpp" | "ollama";
+type NativeFallbackState = NativeFallbackProvider | "unavailable" | null;
+type NativeFallbackProbeResult = {
+	readonly provider: NativeFallbackProvider | "unavailable";
+	readonly model: LlamaCppEmbeddingModel | null;
+	readonly embedding: number[] | null;
+};
+type NativeFallbackProbe = {
+	readonly promise: Promise<NativeFallbackProbeResult>;
+};
 
-export function setNativeFallbackProvider(
-	provider: "llama-cpp" | "ollama" | null,
-	model?: LlamaCppEmbeddingModel | null,
-): void {
+let nativeFallbackProvider: NativeFallbackState = null;
+let nativeFallbackModel: LlamaCppEmbeddingModel | null = null;
+let nativeFallbackProbe: NativeFallbackProbe | null = null;
+
+export function setNativeFallbackProvider(provider: NativeFallbackState, model?: LlamaCppEmbeddingModel | null): void {
 	nativeFallbackProvider = provider;
 	nativeFallbackModel = model ?? null;
+	nativeFallbackProbe = null;
 }
 
 export function setNativeEmbeddingProviderForTest(provider: ((text: string) => Promise<number[]>) | null): void {
@@ -175,6 +185,103 @@ async function fetchLlamaCppEmbedding(
 	return data.data?.[0]?.embedding ?? null;
 }
 
+async function fetchNativeFallback(
+	provider: NativeFallbackProvider,
+	text: string,
+	cfg: EmbeddingConfig,
+	opts: EmbeddingFetchOptions,
+	model: LlamaCppEmbeddingModel | null = nativeFallbackModel,
+): Promise<number[] | null> {
+	if (provider === "ollama") {
+		return fetchOllamaEmbedding(text, resolveOllamaUrl(), "nomic-embed-text", opts);
+	}
+	return fetchLlamaCppEmbedding(
+		text,
+		DEFAULT_LLAMACPP_BASE_URL,
+		model ?? "nomic-embed-text",
+		opts,
+		5000,
+		cfg.llamaCppMaxInputTokens,
+	);
+}
+
+async function probeNativeFallback(
+	text: string,
+	cfg: EmbeddingConfig,
+	opts: EmbeddingFetchOptions,
+): Promise<NativeFallbackProbeResult> {
+	const discoveredModel = await findLlamaCppEmbeddingModel();
+	if (discoveredModel) {
+		const embedding = await fetchLlamaCppEmbedding(
+			text,
+			DEFAULT_LLAMACPP_BASE_URL,
+			discoveredModel,
+			opts,
+			5000,
+			cfg.llamaCppMaxInputTokens,
+		);
+		if (embedding) {
+			return { provider: "llama-cpp", model: discoveredModel, embedding };
+		}
+	}
+
+	try {
+		const embedding = await fetchOllamaEmbedding(text, resolveOllamaUrl(), "nomic-embed-text", opts);
+		if (embedding) {
+			return { provider: "ollama", model: null, embedding };
+		}
+	} catch {
+		// The aggregate warning below is the single actionable diagnostic.
+	}
+
+	return { provider: "unavailable", model: null, embedding: null };
+}
+
+async function resolveNativeFallback(
+	text: string,
+	cfg: EmbeddingConfig,
+	opts: EmbeddingFetchOptions,
+	nativeError: string,
+): Promise<number[] | null> {
+	if (nativeFallbackProvider === "unavailable") return null;
+	if (nativeFallbackProvider) return fetchNativeFallback(nativeFallbackProvider, text, cfg, opts);
+
+	if (nativeFallbackProbe) {
+		const result = await nativeFallbackProbe.promise;
+		return result.provider !== "unavailable"
+			? fetchNativeFallback(result.provider, text, cfg, opts, result.model)
+			: null;
+	}
+
+	logger.warn("embedding", `Native embedding failed, probing local fallbacks: ${nativeError}`);
+	const probe: NativeFallbackProbe = {
+		promise: probeNativeFallback(text, cfg, opts),
+	};
+	nativeFallbackProbe = probe;
+	try {
+		const result = await probe.promise;
+		if (nativeFallbackProbe === probe) {
+			nativeFallbackProvider = result.provider;
+			nativeFallbackModel = result.model;
+			if (result.provider === "llama-cpp") {
+				logger.info(
+					"embedding",
+					`llama.cpp fallback succeeded (model: ${result.model}) — will use llama.cpp for remaining embeddings this session`,
+				);
+			} else if (result.provider === "ollama") {
+				logger.info("embedding", "Ollama fallback succeeded — will use ollama for remaining embeddings this session");
+			} else {
+				logger.warn("embedding", "Native embedding disabled for this daemon session; no local fallback is ready", {
+					error: nativeError,
+				});
+			}
+		}
+		return result.embedding;
+	} finally {
+		if (nativeFallbackProbe === probe) nativeFallbackProbe = null;
+	}
+}
+
 export function resolveEmbeddingBaseUrl(cfg: EmbeddingConfig): string {
 	if (cfg.provider === "openai") {
 		return cfg.base_url.trim() || DEFAULT_OPENAI_BASE_URL;
@@ -214,20 +321,8 @@ export async function fetchEmbedding(
 	if (cfg.provider === "none") return null;
 	try {
 		if (cfg.provider === "native") {
-			if (nativeFallbackProvider === "ollama") {
-				return await fetchOllamaEmbedding(text, resolveOllamaUrl(), "nomic-embed-text", opts);
-			}
-			if (nativeFallbackProvider === "llama-cpp") {
-				const fallbackModel = nativeFallbackModel ?? "nomic-embed-text";
-				return fetchLlamaCppEmbedding(
-					text,
-					DEFAULT_LLAMACPP_BASE_URL,
-					fallbackModel,
-					opts,
-					5000,
-					cfg.llamaCppMaxInputTokens,
-				);
-			}
+			if (nativeFallbackProvider === "unavailable") return null;
+			if (nativeFallbackProvider) return fetchNativeFallback(nativeFallbackProvider, text, cfg, opts);
 			try {
 				if (!cachedNativeEmbed) {
 					const mod = await import("./native-embedding");
@@ -235,53 +330,12 @@ export async function fetchEmbedding(
 				}
 				return await cachedNativeEmbed(text);
 			} catch (nativeErr) {
-				logger.warn(
-					"embedding",
-					`Native embedding failed, attempting local fallback: ${
-						nativeErr instanceof Error ? nativeErr.message : String(nativeErr)
-					}`,
+				return resolveNativeFallback(
+					text,
+					cfg,
+					opts,
+					nativeErr instanceof Error ? nativeErr.message : String(nativeErr),
 				);
-				try {
-					const discoveredModel = await findLlamaCppEmbeddingModel();
-					if (!discoveredModel) {
-						logger.warn("embedding", "llama.cpp server reachable but no supported embedding model loaded");
-					} else {
-						const embedding = await fetchLlamaCppEmbedding(
-							text,
-							DEFAULT_LLAMACPP_BASE_URL,
-							discoveredModel,
-							opts,
-							5000,
-							cfg.llamaCppMaxInputTokens,
-						);
-						if (embedding) {
-							nativeFallbackProvider = "llama-cpp";
-							nativeFallbackModel = discoveredModel;
-							logger.info(
-								"embedding",
-								`llama.cpp fallback succeeded (model: ${discoveredModel}) — will use llama.cpp for remaining embeddings this session`,
-							);
-							return embedding;
-						}
-					}
-				} catch {
-					logger.warn("embedding", "llama.cpp fallback not reachable");
-				}
-				try {
-					const result = await fetchOllamaEmbedding(text, resolveOllamaUrl(), "nomic-embed-text", opts);
-					if (result !== null) {
-						nativeFallbackProvider = "ollama";
-						logger.info(
-							"embedding",
-							"Ollama fallback succeeded — will use ollama for remaining embeddings this session",
-						);
-						return result;
-					}
-					logger.warn("embedding", "Ollama fallback also failed");
-				} catch {
-					logger.warn("embedding", "Ollama fallback not reachable");
-				}
-				return null;
 			}
 		}
 		if (cfg.provider === "ollama") {
