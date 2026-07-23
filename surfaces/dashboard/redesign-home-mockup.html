@@ -583,7 +583,11 @@
       .psearch input::placeholder { color: var(--muted-foreground); }
 
       /* provider matrix grid */
-      .pgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-height: 280px; overflow-y: auto; padding-right: 2px; }
+      .pgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-height: 280px; overflow-y: auto; padding: 0 2px 18px 0;
+        /* ambient fade — cards dissolve into the surface at the bottom edge */
+        -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent 100%);
+                mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent 100%);
+      }
       .pgrid::-webkit-scrollbar { width: 6px; }
       .pgrid::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 20%, transparent); border-radius: 3px; }
       .pcard {
@@ -593,11 +597,23 @@
       }
       .pcard[hidden] { display: none; }
       .pcard:hover { border-color: oklch(1 0 0 / 0.14); background: color-mix(in oklch, var(--foreground) 5%, transparent); }
-      .pcard__dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: oklch(0.45 0 0); }
-      .pcard.is-on .pcard__dot { background: var(--success); box-shadow: 0 0 6px color-mix(in oklch, var(--success) 50%, transparent); }
-      .pcard__txt { min-width: 0; flex: 1; }
-      .pcard__name { font-size: 12px; font-weight: 500; line-height: 1.2; }
-      .pcard__auth { font-family: var(--font-mono); font-size: 9px; color: var(--muted-foreground); margin-top: 1px; }
+      /* disconnected — passive flat zinc circle */
+      .pcard__dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: oklch(0.38 0 0); }
+      /* connected — live emerald telemetry with ambient glow + soft pulse */
+      .pcard.is-on .pcard__dot {
+        background: var(--success);
+        box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 16%, transparent), 0 0 8px color-mix(in oklch, var(--success) 60%, transparent);
+        animation: dot-pulse 2.6s ease-in-out infinite;
+      }
+      @keyframes dot-pulse {
+        0%, 100% { box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 16%, transparent), 0 0 8px color-mix(in oklch, var(--success) 60%, transparent); }
+        50% { box-shadow: 0 0 0 5px color-mix(in oklch, var(--success) 8%, transparent), 0 0 12px color-mix(in oklch, var(--success) 80%, transparent); }
+      }
+      @media (prefers-reduced-motion: reduce) { .pcard.is-on .pcard__dot { animation: none; } }
+      /* center text block — two-row flex column, never mashes inline */
+      .pcard__txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; overflow: hidden; }
+      .pcard__name { font-size: 12px; font-weight: 500; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .pcard__auth { font-family: var(--font-mono); font-size: 9px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .pact {
         display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 500;
         padding: 3px 8px; border-radius: var(--radius); cursor: pointer; white-space: nowrap; flex-shrink: 0;
@@ -608,6 +624,49 @@
       [data-theme="light"] .pact:hover { border-color: oklch(0 0 0 / 0.26); }
       .pcard.is-on .pact { background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--muted-foreground); }
       .pact--oauth:hover { border-color: color-mix(in oklch, var(--success) 40%, transparent); color: oklch(0.82 0.16 150); }
+
+      /* ════ LOGS section (replaces Audit tab) ════ */
+      .log-toolbar { display: flex; align-items: center; gap: 6px; padding: 0 2px 10px; }
+      .log-filter { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+        padding: 4px 9px; border-radius: var(--radius); cursor: pointer; white-space: nowrap; border: 1px solid oklch(1 0 0 / 0.1); color: var(--muted-foreground); transition: all .15s; }
+      [data-theme="light"] .log-filter { border-color: oklch(0 0 0 / 0.1); }
+      .log-filter:hover { color: var(--foreground); border-color: oklch(1 0 0 / 0.2); }
+      .log-filter.is-on { color: var(--foreground); border-color: oklch(1 0 0 / 0.22); background: color-mix(in oklch, var(--foreground) 6%, transparent); }
+      .log-filter__dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+      .log-spacer { flex: 1; }
+      .log-search { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.1); background: color-mix(in oklch, var(--foreground) 3%, transparent); }
+      [data-theme="light"] .log-search { border-color: oklch(0 0 0 / 0.1); }
+      .log-search svg { width: 13px; height: 13px; color: var(--muted-foreground); flex-shrink: 0; }
+      .log-search input { border: none; background: none; outline: none; color: var(--foreground); font: inherit; font-size: 11.5px; width: 150px; }
+      .log-search input::placeholder { color: var(--muted-foreground); }
+      /* terminal stream */
+      .log-stream { font-family: var(--font-mono); font-size: 11px; line-height: 1.65; max-height: 360px; overflow-y: auto;
+        padding: 12px 14px; border-radius: var(--radius); background: oklch(0.16 0 0); border: 1px solid oklch(1 0 0 / 0.06); }
+      [data-theme="light"] .log-stream { background: oklch(0.97 0 0); border-color: oklch(0 0 0 / 0.08); }
+      .log-stream::-webkit-scrollbar { width: 6px; }
+      .log-stream::-webkit-scrollbar-thumb { background: oklch(0.4 0 0); border-radius: 3px; }
+      .log-line { display: flex; gap: 10px; padding: 1px 0; white-space: nowrap; }
+      .log-line[hidden] { display: none; }
+      .log-line__time { color: oklch(0.5 0 0); flex-shrink: 0; }
+      [data-theme="light"] .log-line__time { color: oklch(0.55 0 0); }
+      .log-line__lvl { flex-shrink: 0; width: 38px; font-weight: 600; }
+      .log-line__lvl--info { color: oklch(0.7 0.1 220); }
+      .log-line__lvl--warn { color: oklch(0.78 0.15 85); }
+      .log-line__lvl--error { color: oklch(0.72 0.19 25); }
+      .log-line__lvl--debug { color: oklch(0.55 0 0); }
+      [data-theme="light"] .log-line__lvl--debug { color: oklch(0.5 0 0); }
+      .log-line__msg { color: oklch(0.82 0 0); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      [data-theme="light"] .log-line__msg { color: oklch(0.25 0 0); }
+      .log-line__msg b { color: oklch(0.95 0 0); font-weight: 600; }
+      [data-theme="light"] .log-line__msg b { color: oklch(0.1 0 0); }
+      .log-line__msg .path { color: oklch(0.6 0 0); }
+      [data-theme="light"] .log-line__msg .path { color: oklch(0.45 0 0); }
+      .log-foot { display: flex; align-items: center; justify-content: space-between; padding: 8px 4px 0; }
+      .log-foot__txt { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
+      .log-tail { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 9.5px; cursor: pointer; color: var(--muted-foreground); transition: color .15s; }
+      .log-tail:hover { color: var(--foreground); }
+      .log-tail.is-on { color: oklch(0.72 0.15 150); }
+      .log-tail .live { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; }
 
       /* setting rows */
       .mrow { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 10px; border-radius: var(--radius); }
@@ -649,6 +708,390 @@
       .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: oklch(0.7 0 0); box-shadow: 0 1px 3px oklch(0 0 0 / 0.5); transition: transform .2s cubic-bezier(0.34, 1.4, 0.64, 1), background .2s; }
       .toggle.is-on { background: color-mix(in oklch, var(--success) 45%, transparent); border-color: color-mix(in oklch, var(--success) 55%, transparent); box-shadow: inset 0 1px 2px oklch(0 0 0 / 0.2), 0 0 8px color-mix(in oklch, var(--success) 30%, transparent); }
       .toggle.is-on::after { transform: translateX(16px); background: oklch(0.95 0.06 150); box-shadow: 0 0 6px color-mix(in oklch, var(--success) 60%, transparent), 0 1px 2px oklch(0 0 0 / 0.3); }
+
+      /* ════════════════════════════════════════════════════════
+         Memory view — calm cortex feed, progressive disclosure
+         ════════════════════════════════════════════════════════ */
+      .view { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 14px; }
+      .view[hidden] { display: none; }
+
+      /* ultra-thin telemetry hero */
+      .mhero { position: relative; display: flex; align-items: center; gap: 0; height: 40px; padding: 0 16px;
+        background: var(--card); border: 1px solid oklch(1 0 0 / 0.05); border-radius: var(--radius);
+        box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.05), 0 1px 0 0 oklch(0 0 0 / 0.2); flex-shrink: 0; }
+      [data-theme="light"] .mhero { border-color: oklch(0 0 0 / 0.06); }
+      .mhero::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; background: linear-gradient(180deg, oklch(1 0 0 / 0.22), oklch(1 0 0 / 0.05)); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
+      .mhero__stat { display: flex; align-items: baseline; gap: 6px; padding: 0 16px; border-right: 1px solid oklch(1 0 0 / 0.07); height: 100%; align-items: center; }
+      [data-theme="light"] .mhero__stat { border-right-color: oklch(0 0 0 / 0.06); }
+      .mhero__stat:last-of-type { border-right: none; }
+      .mhero__val { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--foreground); letter-spacing: -0.01em; }
+      .mhero__label { font-size: 11px; color: var(--muted-foreground); }
+      .mhero__status { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted-foreground); }
+      .mhero__status .live { width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 6px color-mix(in oklch, var(--success) 60%, transparent); }
+      .mhero__spacer { flex: 1; }
+      .ingest { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 13px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.16); background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--foreground); font-size: 12px; font-weight: 500; cursor: pointer; transition: all .15s; }
+      [data-theme="light"] .ingest { border-color: oklch(0 0 0 / 0.14); }
+      .ingest:hover { border-color: oklch(1 0 0 / 0.3); background: color-mix(in oklch, var(--foreground) 10%, transparent); }
+      .ingest svg { color: var(--muted-foreground); }
+
+      /* centered search */
+      .msearchbar { position: relative; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 14px;
+        border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.14); background: color-mix(in oklch, var(--foreground) 4%, transparent); flex-shrink: 0; }
+      [data-theme="light"] .msearchbar { border-color: oklch(0 0 0 / 0.12); }
+      .msearchbar:focus-within { border-color: color-mix(in oklch, var(--foreground) 35%, transparent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--foreground) 8%, transparent); }
+      .msearchbar svg { color: var(--muted-foreground); flex-shrink: 0; }
+      .msearchbar input { border: none; background: none; outline: none; color: var(--foreground); font: inherit; font-size: 13px; flex: 1; }
+      .msearchbar input::placeholder { color: var(--muted-foreground); }
+      .msearchbar .relevance { font-family: var(--font-mono); font-size: 10px; color: var(--success); opacity: 0; transition: opacity .15s; white-space: nowrap; }
+      .msearchbar.is-active .relevance { opacity: 1; }
+      .msearchbar__kbd { font-family: var(--font-mono); font-size: 10px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted-foreground); }
+
+      /* feed + right sidebar */
+      .mem-layout { display: grid; grid-template-columns: 1fr 240px; gap: 16px; flex: 1; min-height: 0; }
+      .mem-feed { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+      .mem-feed-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+      .mem-feed-scroll::-webkit-scrollbar { width: 6px; }
+      .mem-feed-scroll::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 20%, transparent); border-radius: 3px; }
+
+      /* chronological group */
+      .mgroup { margin-bottom: 18px; }
+      .mgroup__head { display: flex; align-items: baseline; gap: 10px; padding: 0 2px 8px; }
+      .mgroup__title { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.58 0 0); }
+      [data-theme="light"] .mgroup__title { color: oklch(0.42 0 0); }
+      .mgroup__count { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+      .mgroup__rule { flex: 1; height: 1px; background: oklch(1 0 0 / 0.06); }
+      [data-theme="light"] .mgroup__rule { background: oklch(0 0 0 / 0.06); }
+
+      /* feed item — translucent dark container */
+      .mfeed-item { position: relative; display: flex; gap: 12px; padding: 12px 14px 14px; margin-bottom: 8px;
+        background: color-mix(in oklch, var(--foreground) 3.5%, transparent); border: 1px solid oklch(1 0 0 / 0.05);
+        border-radius: 8px; transition: border-color .15s, background .15s; box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.03); overflow: hidden; }
+      [data-theme="light"] .mfeed-item { background: color-mix(in oklch, var(--foreground) 2%, transparent); border-color: oklch(0 0 0 / 0.05); }
+      .mfeed-item:hover { border-color: oklch(1 0 0 / 0.14); background: color-mix(in oklch, var(--foreground) 5.5%, transparent); }
+      .mfeed-item::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; background: linear-gradient(180deg, oklch(1 0 0 / 0.18), transparent 40%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
+      [data-theme="light"] .mfeed-item::before { background: linear-gradient(180deg, oklch(0 0 0 / 0.14), transparent 40%); }
+      .mfeed-item__badge { flex-shrink: 0; width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; background: color-mix(in oklch, var(--foreground) 8%, transparent); border: 1px solid oklch(1 0 0 / 0.06); color: var(--foreground); }
+      .mfeed-item__badge svg { width: 15px; height: 15px; }
+      .mfeed-item__main { flex: 1; min-width: 0; }
+      .mfeed-item__src { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+      .mfeed-item__src-name { font-size: 11.5px; font-weight: 600; color: var(--foreground); }
+      .mfeed-item__src-via { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
+      .mfeed-item__type { font-family: var(--font-mono); font-size: 9px; padding: 1px 6px; border-radius: 4px; background: color-mix(in oklch, var(--foreground) 8%, transparent); color: var(--muted-foreground); border: 1px solid oklch(1 0 0 / 0.06); }
+      .mfeed-item__type.t-decision { color: oklch(0.82 0.16 150); }
+      .mfeed-item__type.t-issue { color: oklch(0.78 0.18 25); }
+      .mfeed-item__type.t-learning { color: oklch(0.82 0.14 200); }
+      .mfeed-item__content { font-size: 12.5px; line-height: 1.55; color: var(--foreground); margin: 0; }
+      .mfeed-item__foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+      .mfeed-item__tag { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
+      .mfeed-item__time { margin-left: auto; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
+      .mfeed-item__score { font-family: var(--font-mono); font-size: 9.5px; color: var(--success); display: none; }
+      .mem-feed-searching .mfeed-item__score { display: inline; }
+      /* hover-reveal micro actions */
+      .mfeed-item__actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity .15s; align-self: center; }
+      .mfeed-item:hover .mfeed-item__actions { opacity: 1; }
+      .mact { width: 26px; height: 26px; display: grid; place-items: center; border-radius: var(--radius); color: var(--muted-foreground); cursor: pointer; border: 1px solid transparent; }
+      .mact:hover { background: color-mix(in oklch, var(--foreground) 8%, transparent); color: var(--foreground); border-color: oklch(1 0 0 / 0.1); }
+      .mact--danger:hover { color: oklch(0.78 0.18 25); }
+      .mfeed-item__pin { color: var(--muted-foreground); }
+      .mfeed-item__pin.is-pinned { color: oklch(0.85 0.14 75); }
+
+      /* right quiet sidebar */
+      .mside { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; padding-right: 2px; }
+      .mside::-webkit-scrollbar { width: 6px; }
+      .mside::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 20%, transparent); border-radius: 3px; }
+      .mside__group { display: flex; flex-direction: column; gap: 6px; }
+      .mside__label { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.58 0 0); padding: 0 2px; }
+      [data-theme="light"] .mside__label { color: oklch(0.42 0 0); }
+      .mside__chip { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.06); background: transparent; color: var(--muted-foreground); font-size: 12px; cursor: pointer; transition: all .15s; }
+      [data-theme="light"] .mside__chip { border-color: oklch(0 0 0 / 0.06); }
+      .mside__chip:hover { background: color-mix(in oklch, var(--foreground) 4%, transparent); color: var(--foreground); }
+      .mside__chip.is-on { background: color-mix(in oklch, var(--foreground) 9%, transparent); color: var(--foreground); border-color: oklch(1 0 0 / 0.12); }
+      .mside__chip svg { flex-shrink: 0; color: var(--muted-foreground); }
+      .mside__chip.is-on svg { color: var(--foreground); }
+      .mside__chip-count { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+      .mside__topics { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px; background: color-mix(in oklch, var(--foreground) 4%, transparent); border: 1px solid oklch(1 0 0 / 0.06); border-radius: var(--radius); }
+      [data-theme="light"] .mside__topics { border-color: oklch(0 0 0 / 0.06); }
+      .mside__topic { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; border: 1px solid oklch(1 0 0 / 0.08); background: color-mix(in oklch, var(--foreground) 5%, transparent); color: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; line-height: 1.3; cursor: pointer; transition: all .15s; }
+      .mside__topic:hover { border-color: oklch(1 0 0 / 0.24); color: var(--foreground); }
+      .mside__topic.is-on { background: color-mix(in oklch, var(--foreground) 10%, transparent); color: var(--foreground); border-color: oklch(1 0 0 / 0.18); }
+
+      /* ════════════════════════════════════════════════════════
+         Graph view — memory graph explorer + ask-signet chat
+         ════════════════════════════════════════════════════════ */
+      .graph-view { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 0; position: relative; }
+      /* floating HUD telemetry overlay — CAD/Figma style viewport anchor */
+      .graph-hud { position: absolute; top: 12px; left: 16px; z-index: 4; display: flex; align-items: center; gap: 10px;
+        font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); pointer-events: none; }
+      .graph-hud b { color: var(--foreground); font-weight: 600; }
+      .graph-hud__sep { color: oklch(0.4 0 0); }
+      [data-theme="light"] .graph-hud__sep { color: oklch(0.6 0 0); }
+      /* floating legend popover via gear icon */
+      .graph-legend-btn { position: absolute; top: 12px; right: 16px; z-index: 4; width: 30px; height: 30px; border-radius: 8px;
+        display: grid; place-items: center; color: var(--muted-foreground); cursor: pointer;
+        background: color-mix(in oklch, var(--background) 60%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        border: 1px solid oklch(1 0 0 / 0.08); box-shadow: 0 2px 8px oklch(0 0 0 / 0.2); transition: color .15s; }
+      [data-theme="light"] .graph-legend-btn { border-color: oklch(0 0 0 / 0.08); }
+      .graph-legend-btn:hover { color: var(--foreground); }
+      .graph-legend-pop { position: absolute; top: 48px; right: 16px; z-index: 4; display: none; flex-direction: column; gap: 7px;
+        padding: 12px 14px; border-radius: 10px; background: color-mix(in oklch, var(--background) 80%, transparent);
+        backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid oklch(1 0 0 / 0.1);
+        box-shadow: 0 8px 24px oklch(0 0 0 / 0.4); }
+      [data-theme="light"] .graph-legend-pop { border-color: oklch(0 0 0 / 0.1); }
+      .graph-legend-pop.show { display: flex; }
+      .lg-item { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+      .lg-item b { color: var(--foreground); font-weight: 500; }
+      .lg-dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 6px currentColor; }
+
+      /* seamless canvas floor — no border, no container */
+      .graph-stage-wrap { position: relative; flex: 1; min-height: 0; overflow: hidden; background: transparent; border: none; box-shadow: none; border-radius: 0; }
+      .graph-stage { width: 100%; height: 100%; position: absolute; inset: 0;
+        background-image: radial-gradient(oklch(1 0 0 / 0.06) 1px, transparent 1px); background-size: 28px 28px; }
+      [data-theme="light"] .graph-stage { background-image: radial-gradient(oklch(0 0 0 / 0.06) 1px, transparent 1px); }
+      .graph-canvas { width: 100%; height: 100%; display: block; cursor: grab; transition: opacity .25s; }
+      .graph-canvas:active { cursor: grabbing; }
+      .graph-canvas.zooming { opacity: 0.6; }
+      .gnode { transition: opacity .25s, filter .25s; }
+      .gnode.dim { opacity: 0.18; }
+      .gnode.hl circle.node-fill { filter: drop-shadow(0 0 8px currentColor); }
+      .gnode.hl circle.node-halo { opacity: 1; }
+      .gnode circle.node-halo { opacity: 0; transition: opacity .25s; }
+      .gnode circle.node-fill { filter: drop-shadow(0 0 4px currentColor); }
+      .glabel { font-family: var(--font-mono); font-size: 11px; fill: var(--foreground); pointer-events: none; transition: opacity .25s; font-weight: 500; vector-effect: non-scaling-stroke; }
+      .glabel.dim { opacity: 0.2; }
+      /* edges — glowing stroke with pulse flow */
+      .gedge { stroke: oklch(1 0 0 / 0.1); stroke-width: 1; fill: none; transition: stroke .25s, stroke-width .25s, opacity .25s; }
+      [data-theme="light"] .gedge { stroke: oklch(0 0 0 / 0.08); }
+      .gedge.dim { opacity: 0.06; }
+      .gedge.hl { stroke: oklch(0.85 0 0 / 0.85); stroke-width: 1.8; opacity: 1; filter: drop-shadow(0 0 3px oklch(0.85 0 0 / 0.6)); }
+      .gedge.hl-flow { stroke-dasharray: 5 3; animation: flow-pulse 1.4s ease-in-out infinite; }
+      @keyframes flow-pulse { 0% { stroke-dashoffset: 0; opacity: 1; } 50% { stroke-dashoffset: -8; opacity: 0.6; } 100% { stroke-dashoffset: -16; opacity: 1; } }
+
+      /* floating glass inspector (top-right, matches dock aesthetic) */
+      .graph-inspector { position: absolute; top: 12px; right: 12px; width: 220px; z-index: 5;
+        background: color-mix(in oklch, var(--background) 72%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        border: 1px solid oklch(1 0 0 / 0.1); border-radius: 10px; padding: 12px 14px;
+        box-shadow: 0 8px 32px oklch(0 0 0 / 0.5), inset 0 1px 0 oklch(1 0 0 / 0.12); }
+      .graph-inspector[hidden] { display: none; }
+      .gi-kind { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 4px; margin-bottom: 7px; }
+      .gi-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+      .gi-meta { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); margin-bottom: 8px; }
+      .gi-mentions { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted-foreground); }
+      .gi-mentions b { color: var(--foreground); font-family: var(--font-mono); }
+
+      /* floating prompt chips — embedded in dock expand state when focused */
+      .graph-prompts { display: none; }
+      .dock-prompts { display: none; flex-direction: column; gap: 6px; padding: 8px 14px 10px; }
+      .dock-prompts.show { display: flex; }
+      .dp-row { display: flex; gap: 6px; flex-wrap: wrap; }
+      .dp-chip { font-family: var(--font-sans); font-size: 11px; padding: 4px 10px; border-radius: 999px; white-space: nowrap; cursor: pointer;
+        background: color-mix(in oklch, var(--foreground) 5%, transparent); border: 1px solid oklch(1 0 0 / 0.1); color: var(--muted-foreground); transition: all .15s; }
+      [data-theme="light"] .dp-chip { border-color: oklch(0 0 0 / 0.1); }
+      .dp-chip:hover { border-color: oklch(1 0 0 / 0.22); color: var(--foreground); background: color-mix(in oklch, var(--foreground) 8%, transparent); }
+
+      /* authoritative glass command dock — wider, taller, high-craft */
+      .graph-dock { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 6;
+        display: flex; flex-direction: column; width: 600px; max-width: calc(100% - 48px); padding: 0;
+        background: color-mix(in oklch, var(--background) 78%, transparent); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+        border: 1px solid oklch(1 0 0 / 0.1); border-radius: 16px;
+        box-shadow: 0 16px 48px oklch(0 0 0 / 0.55), 0 4px 16px oklch(0 0 0 / 0.3), inset 0 1px 0 oklch(1 0 0 / 0.16);
+        transition: transform .4s cubic-bezier(0.4, 0, 0.2, 1), width .4s cubic-bezier(0.4, 0, 0.2, 1); }
+      [data-theme="light"] .graph-dock { border-color: oklch(0 0 0 / 0.1); }
+      .graph-dock::before { content: ""; position: absolute; top: 0; left: 8%; right: 8%; height: 1px;
+        background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.35), transparent); border-radius: 1px; pointer-events: none; }
+      /* when responded, dock fades out entirely — conversation moves into the drawer */
+      .graph-dock.responded { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(16px); }
+      .dock-row { display: flex; align-items: center; gap: 0; padding: 0 8px 0 16px; height: 52px; }
+      .gd-icon { width: 26px; height: 26px; display: grid; place-items: center; flex-shrink: 0; color: var(--foreground); margin-right: 12px; }
+      .gd-input { flex: 1; border: none; background: none; outline: none; color: var(--foreground); font: inherit; font-size: 14px; height: 100%; }
+      .gd-input::placeholder { color: var(--muted-foreground); }
+      .gd-kbd { font-family: var(--font-mono); font-size: 10px; padding: 2px 6px; border: 1px solid oklch(1 0 0 / 0.12); border-radius: 4px; color: var(--muted-foreground); margin-right: 8px; flex-shrink: 0; }
+      .gd-send { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; border: none; cursor: pointer; flex-shrink: 0;
+        background: color-mix(in oklch, var(--success) 22%, transparent); border: 1px solid color-mix(in oklch, var(--success) 35%, transparent); color: oklch(0.85 0.16 150);
+        box-shadow: 0 0 14px color-mix(in oklch, var(--success) 28%, transparent), inset 0 1px 0 oklch(1 0 0 / 0.1); transition: all .2s; }
+      .gd-send:hover { background: color-mix(in oklch, var(--success) 35%, transparent); box-shadow: 0 0 22px color-mix(in oklch, var(--success) 50%, transparent); }
+      .gd-send:disabled { opacity: 0.3; cursor: default; box-shadow: none; }
+
+      /* floating glass HUD — rounded sheet suspended inside the canvas */
+      .graph-response { position: absolute; top: 16px; right: 16px; bottom: 16px; width: 360px; max-width: calc(45% - 16px); z-index: 5;
+        background: color-mix(in oklch, var(--background) 94%, transparent); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+        border: 1px solid oklch(1 0 0 / 0.1); border-radius: 16px;
+        box-shadow: 0 24px 64px oklch(0 0 0 / 0.6), 0 8px 24px oklch(0 0 0 / 0.3), inset 0 1px 0 oklch(1 0 0 / 0.14);
+        display: flex; flex-direction: column; overflow: hidden;
+        opacity: 0; transform: translateX(40px) scale(0.96); pointer-events: none;
+        transition: opacity .35s ease, transform .35s cubic-bezier(0.34, 1.3, 0.64, 1); }
+      [data-theme="light"] .graph-response { border-color: oklch(0 0 0 / 0.1); }
+      /* top-lit bevel */
+      .graph-response::before { content: ""; position: absolute; top: 0; left: 12%; right: 12%; height: 1px;
+        background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.4), transparent); pointer-events: none; z-index: 1; }
+      .graph-response.show { opacity: 1; transform: translateX(0) scale(1); pointer-events: auto; }
+      /* header — quiet node title row */
+      .gr-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 12px; flex-shrink: 0; }
+      .gr-avatar { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--foreground); flex-shrink: 0;
+        background: color-mix(in oklch, var(--foreground) 6%, transparent); border: 1px solid oklch(1 0 0 / 0.08); }
+      .gr-head-txt { flex: 1; min-width: 0; }
+      .gr-label { font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground); }
+      .gr-title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; color: var(--foreground); margin-top: 1px; }
+      .gr-close { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--muted-foreground); cursor: pointer; flex-shrink: 0; transition: all .15s; }
+      .gr-close:hover { color: var(--foreground); background: oklch(1 0 0 / 0.08); }
+      .gr-close svg { width: 15px; height: 15px; }
+      /* body — clean typography */
+      .gr-body { flex: 1; overflow-y: auto; padding: 0 16px 14px; display: flex; flex-direction: column; gap: 14px; }
+      .gr-body::-webkit-scrollbar { width: 5px; }
+      .gr-body::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 18%, transparent); border-radius: 3px; }
+      .gr-section-label { font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.55 0 0); }
+      [data-theme="light"] .gr-section-label { color: oklch(0.45 0 0); }
+      .gr-answer { font-size: 13.5px; line-height: 1.6; color: var(--foreground); }
+      .gr-answer b { font-weight: 600; }
+      .gr-answer .mono { font-family: var(--font-mono); font-size: 11.5px; color: oklch(0.8 0 0); }
+      [data-theme="light"] .gr-answer .mono { color: oklch(0.4 0 0); }
+      .gr-prov { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; font-family: var(--font-mono); font-size: 9.5px; color: var(--success); }
+      .gr-prov .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--success); }
+      /* clickable citation micro cards */
+      .gr-cite { display: flex; align-items: flex-start; gap: 9px; padding: 9px 11px; border-radius: 8px;
+        background: color-mix(in oklch, var(--foreground) 4%, transparent); border: 1px solid oklch(1 0 0 / 0.06);
+        cursor: pointer; transition: border-color .15s, background .15s; }
+      .gr-cite:hover { border-color: oklch(1 0 0 / 0.16); background: color-mix(in oklch, var(--foreground) 7%, transparent); }
+      .gr-cite__dot { width: 6px; height: 6px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+      .gr-cite__txt { font-size: 12px; line-height: 1.45; color: var(--foreground); }
+      .gr-cite__meta { font-family: var(--font-mono); font-size: 9px; color: var(--muted-foreground); margin-top: 3px; }
+      /* collapsible execution log accordion */
+      .gr-acc { border-top: 1px solid oklch(1 0 0 / 0.06); padding: 10px 0 0; }
+      .gr-acc-trigger { display: flex; align-items: center; gap: 6px; cursor: pointer; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.5 0 0); transition: color .15s; }
+      .gr-acc-trigger:hover { color: var(--foreground); }
+      .gr-acc-trigger svg { transition: transform .2s; }
+      .gr-acc.open .gr-acc-trigger svg { transform: rotate(90deg); }
+      .gr-acc-body { max-height: 0; overflow: hidden; transition: max-height .25s ease; font-family: var(--font-mono); font-size: 10px; line-height: 1.7; color: var(--muted-foreground); padding-top: 0; }
+      .gr-acc.open .gr-acc-body { max-height: 200px; padding-top: 8px; }
+      /* conversation dock at the bottom of the card */
+      .gr-dock { display: flex; align-items: center; gap: 8px; padding: 10px 14px 12px; flex-shrink: 0; }
+      .gr-dock-input { flex: 1; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px 0 12px;
+        background: color-mix(in oklch, var(--foreground) 6%, transparent); border: 1px solid oklch(1 0 0 / 0.1); border-radius: 10px; }
+      [data-theme="light"] .gr-dock-input { border-color: oklch(0 0 0 / 0.1); }
+      .gr-dock-input:focus-within { border-color: color-mix(in oklch, var(--foreground) 30%, transparent); }
+      .gr-dock-input input { flex: 1; border: none; background: none; outline: none; color: var(--foreground); font: inherit; font-size: 12.5px; }
+      .gr-dock-input input::placeholder { color: var(--muted-foreground); }
+      .gr-send-pill { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; border: 1px solid color-mix(in oklch, var(--success) 38%, transparent);
+        background: color-mix(in oklch, var(--success) 16%, transparent); color: oklch(0.82 0.16 150); cursor: pointer; flex-shrink: 0;
+        box-shadow: 0 0 12px color-mix(in oklch, var(--success) 22%, transparent), inset 0 1px 0 oklch(1 0 0 / 0.08); transition: all .2s; }
+      .gr-send-pill:hover { background: color-mix(in oklch, var(--success) 28%, transparent); box-shadow: 0 0 18px color-mix(in oklch, var(--success) 42%, transparent); }
+      .gr-send-pill:disabled { opacity: 0.3; cursor: default; box-shadow: none; }
+
+      /* ════════════════════════════════════════════════════════════════
+         SOURCES VIEW
+         Reflects SignetSourceEntry: kind, root, health, stats, indexJob
+      ════════════════════════════════════════════════════════════════ */
+      /* borderless floating telemetry line — no container, no borders */
+      .src-hero { display: flex; align-items: center; gap: 9px; padding: 2px 2px 14px; flex-shrink: 0; font-family: var(--font-mono); }
+      .src-hero__stat { display: inline-flex; align-items: baseline; gap: 5px; }
+      .src-hero__val { font-size: 12px; font-weight: 500; color: var(--foreground); letter-spacing: -0.01em; }
+      .src-hero__label { font-size: 10.5px; color: var(--muted-foreground); }
+      .src-hero__sep { color: oklch(0.35 0 0); user-select: none; }
+      [data-theme="light"] .src-hero__sep { color: oklch(0.65 0 0); }
+      .src-hero__spacer { flex: 1; }
+      /* two-column connector grid */
+      .src-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 12px 0; flex: 1; overflow-y: auto; align-content: start;
+        -webkit-mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 24px), transparent 100%); mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 24px), transparent 100%); }
+      .src-card { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: var(--radius);
+        background: var(--card); border: 1px solid oklch(1 0 0 / 0.05); box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.04), 0 1px 2px oklch(0 0 0 / 0.3);
+        transition: border-color .2s, box-shadow .2s; cursor: default; }
+      [data-theme="light"] .src-card { border-color: oklch(0 0 0 / 0.06); }
+      .src-card:hover { border-color: oklch(1 0 0 / 0.14); box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.04), 0 4px 16px oklch(0 0 0 / 0.4); }
+      [data-theme="light"] .src-card:hover { border-color: oklch(0 0 0 / 0.14); }
+      .src-card::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; background: linear-gradient(180deg, oklch(1 0 0 / 0.18), transparent 50%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
+      /* header row */
+      .src-card__top { display: flex; align-items: center; gap: 12px; }
+      .src-card__icon { width: 38px; height: 38px; border-radius: 9px; display: grid; place-items: center; color: var(--foreground); flex-shrink: 0;
+        background: color-mix(in oklch, var(--foreground) 5%, transparent); border: 1px solid oklch(1 0 0 / 0.06); }
+      .src-card__icon svg { width: 20px; height: 20px; }
+      .src-card__meta { flex: 1; min-width: 0; }
+      .src-card__name { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
+      .src-card__sub { display: flex; align-items: center; gap: 5px; margin-top: 2px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
+      .src-card__kind { text-transform: uppercase; letter-spacing: 0.06em; }
+      /* root path utility bar — leading icon + hover copy */
+      .src-card__root { display: flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; padding: 0 4px 0 8px; height: 28px; border-radius: 6px; background: color-mix(in oklch, var(--foreground) 3%, transparent); transition: background .15s; }
+      .src-card__root:hover { background: color-mix(in oklch, var(--foreground) 5%, transparent); }
+      .src-card__root-ic { width: 13px; height: 13px; flex-shrink: 0; color: oklch(0.55 0 0); }
+      [data-theme="light"] .src-card__root-ic { color: oklch(0.45 0 0); }
+      .src-card__root-path { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+      .src-card__root-copy { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 5px; color: var(--muted-foreground); cursor: pointer; opacity: 0; flex-shrink: 0; transition: opacity .15s, color .15s; }
+      .src-card__root:hover .src-card__root-copy { opacity: 0.7; }
+      .src-card__root-copy:hover { opacity: 1 !important; color: var(--foreground); background: oklch(1 0 0 / 0.08); }
+      .src-card__root-copy svg { width: 12px; height: 12px; }
+      /* health badge */
+      .src-health { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; flex-shrink: 0; }
+      .src-health__dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+      .src-health--healthy { color: oklch(0.72 0.15 150); } .src-health--healthy .src-health__dot { background: oklch(0.72 0.15 150); box-shadow: 0 0 6px oklch(0.72 0.15 150 / 0.5); }
+      .src-health--degraded { color: oklch(0.75 0.15 85); } .src-health--degraded .src-health__dot { background: oklch(0.75 0.15 85); box-shadow: 0 0 6px oklch(0.75 0.15 85 / 0.5); }
+      .src-health--unhealthy { color: oklch(0.7 0.18 25); } .src-health--unhealthy .src-health__dot { background: oklch(0.7 0.18 25); box-shadow: 0 0 6px oklch(0.7 0.18 25 / 0.5); }
+      .src-health--empty { color: var(--muted-foreground); } .src-health--empty .src-health__dot { background: var(--muted-foreground); }
+      /* stats — 3-col grid */
+      .src-card__stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .src-stat { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 7px; background: color-mix(in oklch, var(--foreground) 2.5%, transparent); }
+      .src-stat__val { font-family: var(--font-mono); font-size: 14px; font-weight: 500; color: var(--foreground); letter-spacing: -0.01em; }
+      .src-stat__label { font-size: 9px; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.05em; }
+      /* pipeline telemetry strip — always visible */
+      .src-card__pipe { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 7px; background: color-mix(in oklch, var(--foreground) 2.5%, transparent); }
+      .src-pipe__dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--success); box-shadow: 0 0 6px color-mix(in oklch, var(--success) 50%, transparent); }
+      .src-pipe__dot.is-amber { background: oklch(0.75 0.15 85); box-shadow: 0 0 6px oklch(0.75 0.15 85 / 0.5); }
+      .src-pipe__dot.is-red { background: oklch(0.7 0.18 25); box-shadow: none; }
+      .src-pipe__dot.is-idle { background: var(--muted-foreground); box-shadow: none; }
+      .src-pipe__bar { flex: 1; height: 3px; border-radius: 2px; background: color-mix(in oklch, var(--foreground) 8%, transparent); overflow: hidden; }
+      .src-pipe__fill { height: 100%; border-radius: 2px; background: var(--success); box-shadow: 0 0 6px color-mix(in oklch, var(--success) 50%, transparent); transition: width .4s ease; }
+      .src-pipe__fill.is-error { background: oklch(0.7 0.18 25); box-shadow: none; }
+      .src-pipe__fill.is-queued { background: oklch(0.75 0.15 85); }
+      .src-pipe__fill.is-degraded { background: oklch(0.75 0.15 85); box-shadow: 0 0 6px oklch(0.75 0.15 85 / 0.4); }
+      .src-pipe__fill.is-unhealthy { background: oklch(0.7 0.18 25); box-shadow: none; }
+      .src-pipe__txt { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); white-space: nowrap; flex-shrink: 0; }
+      /* footer */
+      .src-card__foot { display: flex; align-items: center; justify-content: space-between; padding-top: 8px; margin-top: 2px; border-top: 1px solid oklch(1 0 0 / 0.06); }
+      [data-theme="light"] .src-card__foot { border-top-color: oklch(0 0 0 / 0.06); }
+      .src-card__time { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
+      .src-actions-row { display: flex; gap: 2px; opacity: 0.5; transition: opacity .15s; }
+      .src-card:hover .src-actions-row { opacity: 1; }
+      .src-act { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: var(--muted-foreground); cursor: pointer; transition: all .15s; }
+      .src-act:hover { color: var(--foreground); background: oklch(1 0 0 / 0.08); }
+      .src-act svg { width: 13px; height: 13px; }
+      .src-act.is-danger:hover { color: oklch(0.7 0.18 25); }
+      /* inline add-source tile */
+      .src-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px 16px; border-radius: var(--radius);
+        border: 1.5px dashed oklch(1 0 0 / 0.12); background: color-mix(in oklch, var(--card) 86%, transparent); cursor: pointer; transition: all .2s; min-height: 180px; }
+      [data-theme="light"] .src-add { border-color: oklch(0 0 0 / 0.12); }
+      .src-add:hover { border-color: color-mix(in oklch, var(--success) 45%, transparent); background: color-mix(in oklch, var(--success) 5%, transparent); }
+      .src-add__ic { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--muted-foreground);
+        background: color-mix(in oklch, var(--foreground) 4%, transparent); border: 1px solid oklch(1 0 0 / 0.08); transition: all .2s; }
+      .src-add:hover .src-add__ic { color: oklch(0.82 0.16 150); border-color: color-mix(in oklch, var(--success) 40%, transparent); box-shadow: 0 0 12px color-mix(in oklch, var(--success) 20%, transparent); }
+      .src-add__ic svg { width: 18px; height: 18px; }
+      .src-add__label { font-size: 12.5px; font-weight: 500; color: var(--foreground); }
+      .src-add__hint { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
+      /* connect modal */
+      .src-modal-bg { position: fixed; inset: 0; z-index: 100; background: oklch(0 0 0 / 0.5); backdrop-filter: blur(8px); display: grid; place-items: center; opacity: 0; pointer-events: none; transition: opacity .25s; }
+      .src-modal-bg.show { opacity: 1; pointer-events: auto; }
+      .src-modal { width: 480px; max-width: 90vw; border-radius: 16px; background: var(--card); border: 1px solid oklch(1 0 0 / 0.1); box-shadow: 0 24px 64px oklch(0 0 0 / 0.6); transform: scale(0.96); transition: transform .25s cubic-bezier(0.34, 1.3, 0.64, 1); }
+      .src-modal-bg.show .src-modal { transform: scale(1); }
+      .src-modal__head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid oklch(1 0 0 / 0.06); }
+      .src-modal__title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+      .src-modal__close { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--muted-foreground); cursor: pointer; }
+      .src-modal__close:hover { color: var(--foreground); background: oklch(1 0 0 / 0.08); }
+      .src-modal__body { padding: 18px 20px; display: flex; flex-direction: column; gap: 16px; }
+      .src-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .src-pick { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 8px; border-radius: 10px; border: 1px solid oklch(1 0 0 / 0.08); cursor: pointer; transition: all .15s; }
+      [data-theme="light"] .src-pick { border-color: oklch(0 0 0 / 0.08); }
+      .src-pick:hover { border-color: oklch(1 0 0 / 0.2); background: oklch(1 0 0 / 0.03); }
+      .src-pick.is-on { border-color: color-mix(in oklch, var(--success) 50%, transparent); background: color-mix(in oklch, var(--success) 8%, transparent); }
+      .src-pick__ic { width: 32px; height: 32px; display: grid; place-items: center; color: var(--foreground); }
+      .src-pick__ic svg { width: 24px; height: 24px; }
+      .src-pick__label { font-size: 11px; font-weight: 500; }
+      .src-field { display: flex; flex-direction: column; gap: 5px; }
+      .src-field__label { font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground); }
+      .src-field__input { height: 34px; padding: 0 12px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.1); background: color-mix(in oklch, var(--foreground) 3%, transparent); color: var(--foreground); font: inherit; font-size: 12.5px; outline: none; transition: border-color .15s; }
+      [data-theme="light"] .src-field__input { border-color: oklch(0 0 0 / 0.1); }
+      .src-field__input:focus { border-color: color-mix(in oklch, var(--foreground) 30%, transparent); }
+      .src-field__hint { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
+      .src-modal__foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid oklch(1 0 0 / 0.06); }
+      .btn-ghost { height: 32px; padding: 0 14px; border-radius: var(--radius); font-size: 12px; color: var(--muted-foreground); cursor: pointer; transition: color .15s; }
+      .btn-ghost:hover { color: var(--foreground); }
+      .btn-primary { height: 32px; padding: 0 14px; border-radius: var(--radius); font-size: 12px; font-weight: 500; color: oklch(0.15 0 0); background: var(--foreground); cursor: pointer; transition: opacity .15s; }
+      .btn-primary:hover { opacity: 0.88; }
     </style>
   </head>
   <body>
@@ -717,7 +1160,7 @@
           <div class="nav__group">
             <div class="nav__group-label">System</div>
             <ul class="nav__list">
-              <li class="nav__item is-active">
+              <li class="nav__item is-active" data-view="home">
                 <span class="nav__icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg></span>
                 <span class="nav__label">Home</span>
                 <span class="nav__kbd">G H</span>
@@ -728,11 +1171,6 @@
                 <span class="nav__badge is-amber">4</span>
                 <span class="nav__kbd">G T</span>
               </li>
-              <li class="nav__item">
-                <span class="nav__icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
-                <span class="nav__label">Audit</span>
-                <span class="nav__kbd">G A</span>
-              </li>
             </ul>
           </div>
 
@@ -740,15 +1178,16 @@
           <div class="nav__group">
             <div class="nav__group-label">Focus</div>
             <ul class="nav__list">
-              <li class="nav__item">
+              <li class="nav__item" data-view="memory">
                 <span class="nav__icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><circle cx="5" cy="19" r="2"/><path d="m6.5 6.5 3 3M17.5 6.5l-3 3M17.5 17.5l-3-3M6.5 17.5l3-3"/></svg></span>
                 <span class="nav__label">Memory</span>
                 <span class="nav__badge is-green">8.1k</span>
                 <span class="nav__kbd">G M</span>
               </li>
-              <li class="nav__item">
+              <li class="nav__item" data-view="sources">
                 <span class="nav__icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6h6V2M5 2h14v20H5z"/><path d="M9 14h6M9 18h6"/></svg></span>
                 <span class="nav__label">Sources</span>
+                <span class="nav__badge is-green">4</span>
                 <span class="nav__kbd">G S</span>
               </li>
             </ul>
@@ -758,6 +1197,12 @@
           <div class="nav__group">
             <div class="nav__group-label">Knowledge engine</div>
             <ul class="nav__list">
+              <li class="nav__item" data-view="graph">
+                <span class="nav__icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M12 7.5v4M12 11.5 6.7 16M12 11.5 17.3 16"/></svg></span>
+                <span class="nav__label">Graph</span>
+                <span class="nav__badge is-green">2.4k</span>
+                <span class="nav__kbd">G G</span>
+              </li>
               <li class="nav__item">
                 <span class="nav__icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7c0 2.4 1.2 4 2.5 5 .8.6 1.5 1.4 1.5 2.5V18h6v-1.5c0-1.1.7-1.9 1.5-2.5C18.8 13 20 11.4 20 9a7 7 0 0 0-8-7z"/><path d="M9 21h6M10 18h4"/></svg></span>
                 <span class="nav__label">Dreaming</span>
@@ -808,7 +1253,7 @@
         <header class="topbar">
           <div class="topbar__crumb">
             <span class="muted">Nicholai /</span>
-            <span>Home</span>
+            <span id="crumb-view">Home</span>
           </div>
           <div class="topbar__spacer"></div>
           <div class="icon-btn" title="Notifications">
@@ -825,6 +1270,7 @@
         </header>
 
         <div class="content">
+        <div class="view view--home" id="view-home">
           <!-- Page head -->
           <div class="page-head">
             <h1>Home</h1>
@@ -1248,6 +1694,144 @@
             </div>
           </div>
           </div>
+          </div>
+
+          <!-- ════════ MEMORY VIEW ════════ -->
+          <div class="view view--memory" id="view-memory" hidden>
+            <!-- ultra-thin telemetry hero -->
+            <div class="mhero">
+              <div class="mhero__stat"><span class="mhero__val">8,142</span><span class="mhero__label">memories</span></div>
+              <div class="mhero__stat"><span class="mhero__val">1.2 GB</span><span class="mhero__label">stored</span></div>
+              <div class="mhero__stat"><span class="mhero__status"><span class="live"></span>index healthy</span></div>
+              <div class="mhero__spacer"></div>
+              <button class="ingest" id="ingest-btn">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                Ingest source
+              </button>
+            </div>
+
+            <!-- centered search -->
+            <div class="msearchbar" id="mem-searchbar">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+              <input id="mem-search" placeholder="Search memories, tags, queries…" />
+              <span class="relevance" id="mem-relevance"></span>
+              <span class="msearchbar__kbd">⌘K</span>
+            </div>
+
+            <!-- feed + right sidebar -->
+            <div class="mem-layout">
+              <div class="mem-feed">
+                <div class="mem-feed-scroll" id="mem-feed"></div>
+              </div>
+
+              <!-- quiet right sidebar -->
+              <div class="mside">
+                <div class="mside__group">
+                  <span class="mside__label">Memory type</span>
+                  <div class="mside__chip" data-side="workflow" data-value="episodic">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                    Episodic
+                    <span class="mside__chip-count">1.4k</span>
+                  </div>
+                  <div class="mside__chip is-on" data-side="workflow" data-value="semantic">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><circle cx="5" cy="19" r="2"/><path d="m6.5 6.5 3 3M17.5 6.5l-3 3M17.5 17.5l-3-3M6.5 17.5l3-3"/></svg>
+                    Semantic
+                    <span class="mside__chip-count">5.8k</span>
+                  </div>
+                  <div class="mside__chip" data-side="workflow" data-value="procedural">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                    Procedural
+                    <span class="mside__chip-count">942</span>
+                  </div>
+                </div>
+
+                <div class="mside__group">
+                  <span class="mside__label">Recurring topics</span>
+                  <div class="mside__topics" id="mem-topics"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ════════ GRAPH VIEW ════════ -->
+          <div class="view graph-view" id="view-graph" hidden>
+            <!-- floating HUD telemetry overlay (CAD-style viewport anchor) -->
+            <div class="graph-hud">
+              <span><b>2,418</b> nodes</span>
+              <span class="graph-hud__sep">/</span>
+              <span><b>5,904</b> edges</span>
+              <span class="graph-hud__sep">/</span>
+              <span><b>8</b> clusters</span>
+            </div>
+            <!-- floating legend gear -->
+            <div class="graph-legend-btn" id="legend-btn" title="Node categories">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+            </div>
+            <div class="graph-legend-pop" id="legend-pop">
+              <span class="lg-item" style="color:#22d3ee"><span class="lg-dot" style="background:#22d3ee"></span><b>memory</b></span>
+              <span class="lg-item" style="color:#a78bfa"><span class="lg-dot" style="background:#a78bfa"></span><b>attribute</b></span>
+              <span class="lg-item" style="color:#7dd3fc"><span class="lg-dot" style="background:#7dd3fc"></span><b>entity</b></span>
+              <span class="lg-item" style="color:#38bdf8"><span class="lg-dot" style="background:#38bdf8"></span><b>source</b></span>
+            </div>
+
+            <div class="graph-stage-wrap">
+              <div class="graph-stage">
+                <svg class="graph-canvas" id="graph-canvas" viewBox="0 0 800 500" preserveAspectRatio="xMidYMid meet">
+                  <g id="graph-content"><!-- nodes + edges injected by JS --></g>
+                </svg>
+              </div>
+
+              <!-- floating prompt chips (legacy, hidden) -->
+              <div class="graph-prompts" id="graph-prompts"></div>
+
+              <!-- right insight drawer (full-height glass, slides in on response) -->
+              <!-- floating glass HUD -->
+              <div class="graph-response" id="graph-response">
+                <div class="gr-head">
+                  <span class="gr-avatar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="8" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="12" cy="16" r="2.5"/><path d="M7.5 9.5 10.5 14M16.5 9.5 13.5 14"/></svg></span>
+                  <div class="gr-head-txt"><span class="gr-label">Signet</span><div class="gr-title" id="gr-title">Insight</div></div>
+                  <span class="gr-close" id="gr-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+                </div>
+                <div class="gr-body" id="gr-body"></div>
+                <div class="gr-dock">
+                  <div class="gr-dock-input">
+                    <input id="gr-followup" placeholder="Ask a follow-up…" />
+                  </div>
+                  <button class="gr-send-pill" id="gr-send" disabled><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+                </div>
+              </div>
+
+              <!-- authoritative glass command dock (centered, ~24px above bottom) -->
+              <div class="graph-dock" id="graph-dock">
+                <div class="dock-row">
+                  <span class="gd-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="8" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="12" cy="16" r="2.5"/><path d="M7.5 9.5 10.5 14M16.5 9.5 13.5 14"/></svg></span>
+                  <input class="gd-input" id="gc-input" placeholder="Ask Signet about your memories…" />
+                  <span class="gd-kbd">↵</span>
+                  <button class="gd-send" id="gc-send" disabled>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══════════════ SOURCES VIEW ═══════════════ -->
+          <div class="view" id="view-sources" hidden>
+            <!-- borderless floating telemetry line -->
+            <div class="src-hero">
+              <div class="src-hero__stat"><span class="src-hero__val" id="src-total-artifacts">6,847</span><span class="src-hero__label">artifacts</span></div>
+              <span class="src-hero__sep">/</span>
+              <div class="src-hero__stat"><span class="src-hero__val" id="src-total-chunks">18,412</span><span class="src-hero__label">chunks</span></div>
+              <span class="src-hero__sep">/</span>
+              <div class="src-hero__stat"><span class="src-hero__val" id="src-total-indexed">5,791</span><span class="src-hero__label">indexed</span></div>
+              <span class="src-hero__sep">/</span>
+              <div class="src-hero__stat"><span class="src-hero__label" style="display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 6px color-mix(in oklch, var(--success) 50%, transparent)"></span>4 sources connected</span></div>
+            </div>
+
+            <!-- source card grid (connect tile pinned top-left, populated by JS) -->
+            <div class="src-grid" id="src-grid"></div>
+          </div>
+
         </div>
       </main>
     </div>
@@ -1265,6 +1849,10 @@
         <div class="mnav" data-section="inference">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg>
           Inference
+        </div>
+        <div class="mnav" data-section="logs">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h7v16h-7M3 4h7v16H3M7 9h0M7 15h0"/><path d="M6 9h.01M6 15h.01"/></svg>
+          Logs
         </div>
       </aside>
 
@@ -1314,15 +1902,15 @@
               <div class="mgroup-label">Model assignment</div>
               <div class="assign-row">
                 <div class="assign-row__role"><span class="assign-row__role-label">Backend inference</span><span class="assign-row__role-tag">primary</span></div>
-                <span class="ctrl"><span class="ctrl__value">Anthropic · Claude Sonnet 4.5</span><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></span>
+                <span class="ctrl"><span class="ctrl__value">Claude Sonnet 4.5</span><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></span>
               </div>
               <div class="assign-row">
                 <div class="assign-row__role"><span class="assign-row__role-label">Aggregation</span><span class="assign-row__role-tag">fallback</span></div>
-                <span class="ctrl"><span class="ctrl__value">OpenAI · GPT-5</span><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></span>
+                <span class="ctrl"><span class="ctrl__value">GPT-5</span><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></span>
               </div>
               <div class="assign-row">
                 <div class="assign-row__role"><span class="assign-row__role-label">Embeddings</span><span class="assign-row__role-tag">vectors</span></div>
-                <span class="ctrl"><span class="ctrl__value">Voyage · Voyage-3</span><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></span>
+                <span class="ctrl"><span class="ctrl__value">Voyage-3</span><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></span>
               </div>
             </div>
 
@@ -1414,6 +2002,32 @@
                   <span class="pcard__txt"><span class="pcard__name">LocalAI</span><span class="pcard__auth">Self-hosted · endpoint</span></span>
                   <span class="pact">Connect</span>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Logs section (replaces Audit) -->
+          <div class="msection" data-section="logs">
+            <div class="mcard" style="padding:14px 16px">
+              <!-- filter toolbar -->
+              <div class="log-toolbar">
+                <span class="log-filter is-on" data-level="all"><span class="log-filter__dot" style="background:var(--muted-foreground)"></span>All</span>
+                <span class="log-filter" data-level="info"><span class="log-filter__dot" style="background:oklch(0.7 0.1 220)"></span>Info</span>
+                <span class="log-filter" data-level="warn"><span class="log-filter__dot" style="background:oklch(0.78 0.15 85)"></span>Warn</span>
+                <span class="log-filter" data-level="error"><span class="log-filter__dot" style="background:oklch(0.72 0.19 25)"></span>Error</span>
+                <span class="log-filter" data-level="debug"><span class="log-filter__dot" style="background:oklch(0.55 0 0)"></span>Debug</span>
+                <span class="log-spacer"></span>
+                <div class="log-search">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                  <input id="log-search-input" placeholder="Filter logs…" />
+                </div>
+              </div>
+              <!-- terminal stream -->
+              <div class="log-stream" id="log-stream"></div>
+              <!-- footer -->
+              <div class="log-foot">
+                <span class="log-foot__txt" id="log-count">— lines</span>
+                <span class="log-tail is-on" id="log-tail"><span class="live"></span> Tail live</span>
               </div>
             </div>
           </div>
@@ -1542,7 +2156,665 @@
             });
           });
         }
+
+        // ── Logs viewer ──
+        const LOGS = [
+          { t: "09:14:32.104", lvl: "info", msg: "<b>daemon</b> pipeline cycle complete · <span class=\"path\">extraction → decision → graph → retention</span> in 412ms" },
+          { t: "09:14:30.891", lvl: "info", msg: "<b>ontology</b> applied claim <span class=\"path\">entity_dependencies[signet:dashboard]</span> · provenance: source/github#948" },
+          { t: "09:14:28.340", lvl: "debug", msg: "<b>embedding</b> cosine fallback · 14 chunks · sqlite-vec not available" },
+          { t: "09:14:25.002", lvl: "warn", msg: "<b>source</b> discord:team partial fetch · 3 channels returned 403 · recorded failure artifacts" },
+          { t: "09:14:22.718", lvl: "info", msg: "<b>source</b> obsidian:nicholai-vault resync complete · 4,291 artifacts, 0 changed" },
+          { t: "09:14:18.503", lvl: "info", msg: "<b>source</b> github:Signet-AI/signetai index job running · <span class=\"path\">847/1204 · issues/open/#948</span>" },
+          { t: "09:14:15.220", lvl: "debug", msg: "<b>watcher</b> debounced auto-commit skipped · no workspace changes since last commit" },
+          { t: "09:14:10.994", lvl: "info", msg: "<b>session</b> claude-code session summarized · 142 turns → 8 memories extracted" },
+          { t: "09:14:08.331", lvl: "error", msg: "<b>connector</b> pi-extension health check failed · x-signet-runtime-path header missing on 2 hooks" },
+          { t: "09:14:05.107", lvl: "warn", msg: "<b>source</b> discord:team checkpoint stale · last successful backfill cursor 2h ago" },
+          { t: "09:14:02.844", lvl: "info", msg: "<b>graph</b> community detection complete · 8 communities, modularity 0.74" },
+          { t: "09:13:58.612", lvl: "debug", msg: "<b>retention</b> decay pass · 142 memories evaluated, 3 downweighted, 0 purged" },
+          { t: "09:13:55.330", lvl: "info", msg: "<b>daemon</b> GET /api/memory/search · 200 · 38ms · hybrid recall" },
+          { t: "09:13:52.091", lvl: "info", msg: "<b>memory</b> saved · <span class=\"path\">decision[dashboard-react-migration]</span> · importance 0.92" },
+          { t: "09:13:48.774", lvl: "warn", msg: "<b>auth</b> rate limit approaching · agent:hermes · 84/100 requests in window" },
+          { t: "09:13:45.502", lvl: "debug", msg: "<b>watcher</b> file change detected · <span class=\"path\">~/.agents/MEMORY.md</span> · coalescing resync" },
+          { t: "09:13:40.118", lvl: "info", msg: "<b>ontology</b> proposal created · merge-plan[entity:signet ↔ entity:dashboard] · pending review" },
+          { t: "09:13:35.890", lvl: "error", msg: "<b>source</b> discord:team gateway reconnect failed · code 4004 authentication failed" },
+          { t: "09:13:32.441", lvl: "info", msg: "<b>daemon</b> POST /api/sources/github · 201 · job queued · sourceId github:Signet-AI/signetai" },
+          { t: "09:13:28.107", lvl: "debug", msg: "<b>embedding</b> sqlite-vec mirror write · 14 vectors · dim 1024" },
+        ];
+        const logStream = document.getElementById("log-stream");
+        const logCount = document.getElementById("log-count");
+        const logSearch = document.getElementById("log-search-input");
+        const logTail = document.getElementById("log-tail");
+        let activeLevel = "all";
+        let searchQuery = "";
+        function renderLogs() {
+          if (!logStream) return;
+          const lines = LOGS.filter((l) => {
+            if (activeLevel !== "all" && l.lvl !== activeLevel) return false;
+            if (searchQuery && !l.msg.toLowerCase().includes(searchQuery) && !l.lvl.includes(searchQuery)) return false;
+            return true;
+          });
+          logStream.innerHTML = lines.map((l) =>
+            '<div class="log-line" data-level="' + l.lvl + '"><span class="log-line__time">' + l.t + '</span><span class="log-line__lvl log-line__lvl--' + l.lvl + '">' + l.lvl.toUpperCase() + '</span><span class="log-line__msg">' + l.msg + '</span></div>'
+          ).join("");
+          if (logCount) logCount.textContent = lines.length + " lines";
+          if (logTail && logTail.classList.contains("is-on")) logStream.scrollTop = logStream.scrollHeight;
+        }
+        renderLogs();
+        document.querySelectorAll(".log-filter").forEach((f) => {
+          f.addEventListener("click", () => {
+            document.querySelectorAll(".log-filter").forEach((x) => x.classList.remove("is-on"));
+            f.classList.add("is-on");
+            activeLevel = f.dataset.level;
+            renderLogs();
+          });
+        });
+        if (logSearch) logSearch.addEventListener("input", () => { searchQuery = logSearch.value.trim().toLowerCase(); renderLogs(); });
+        if (logTail) logTail.addEventListener("click", () => { logTail.classList.toggle("is-on"); renderLogs(); });
+
+      })();
+
+      // ── View switching (Home / Memory) ──
+      (function () {
+        const VIEWS = { home: "view-home", memory: "view-memory", graph: "view-graph", sources: "view-sources" };
+        function showView(name) {
+          Object.entries(VIEWS).forEach(([key, id]) => {
+            const el = document.getElementById(id);
+            if (el) el.hidden = key !== name;
+          });
+          document.querySelectorAll(".nav__item[data-view]").forEach((item) => {
+            item.classList.toggle("is-active", item.dataset.view === name);
+          });
+          const crumb = document.getElementById("crumb-view");
+          if (crumb) crumb.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+        }
+        document.querySelectorAll(".nav__item[data-view]").forEach((item) => {
+          item.addEventListener("click", () => showView(item.dataset.view));
+        });
+      })();
+
+      // ── Memory view: calm feed, chronological, cosine-scoring ──
+      (function () {
+        const SOURCE_ICONS = {
+          obsidian: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.36 18.54a69 69 0 0 0 1.86-2.95.81.81 0 0 0-.06-.9c-.52-.69-1.5-2.08-2.04-3.36-.55-1.32-.64-3.38-.64-4.38a1.7 1.7 0 0 0-.36-1.05l-3.2-4.06a3.7 3.7 0 0 1-.07.54c-.11.5-.31 1-.54 1.5-.13.29-.29.6-.45.91l-.31.63c-.52 1.07-1 2.23-1.13 3.59-.12 1.26.05 2.73.82 4.48l.38.04a6.4 6.4 0 0 1 3.33 1.51c.92.79 1.74 1.92 2.42 3.5zM8.2 22.57l.22.02c.78.02 2.1.09 3.16.29.87.16 2.6.64 4.01 1.06 1.08.31 2.2-.55 2.36-1.67.11-.81.33-1.73.72-2.58-.67-1.87-1.52-3.08-2.41-3.85a5.3 5.3 0 0 0-2.78-1.26c-1.54-.21-2.95.19-3.84.45.53 2.22.37 4.83-1.43 7.53zM5.53 9.94l-.1.29L2.82 16.06a1.6 1.6 0 0 0 .31 1.77l4.12 4.24c2.1-3.1 1.8-6.02.84-8.3-.73-1.73-1.84-3.08-2.56-3.83zM9.32 14.01c.62-.18 1.61-.46 2.75-.53-.68-1.73-.85-3.23-.72-4.58.16-1.55.7-2.85 1.24-3.95l.33-.66c.15-.3.29-.58.42-.86.22-.47.38-.88.46-1.27.08-.38.08-.72-.01-1.04-.1-.33-.3-.68-.68-1.06a1.6 1.6 0 0 0-1.48.36L7.18 4.33a1.6 1.6 0 0 0-.51.95l-.43 2.83c.67.59 2.33 2.32 3.34 4.71l.74.19z"/></svg>',
+          github: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57v-2c-3.34.72-4.04-1.6-4.04-1.6-.55-1.4-1.34-1.77-1.34-1.77-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.84 2.8 1.3 3.5 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.8 5.62-5.48 5.92.43.36.81 1.1.81 2.22v3.29c0 .31.21.7.83.58A12 12 0 0 0 12 .3"/></svg>',
+          notion: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.46 4.21c.75.6 1.03.56 2.43.47l13.21-.79c.28 0 .05-.28-.04-.33L17.86 1.97c-.42-.33-.98-.7-2.05-.6L3.01 2.3c-.47.05-.88.24-.88.66v16.2c0 .35.13.65.5.7l3.4.42V8.5c0-.6.27-.82.9-.82l15.27-.9c.62-.05.88.34.88.83v13.16c0 .49-.18.9-.66.97l-15.6.94c-.42.03-.78-.02-1.16-.5L1.94 19.5c-.4-.5-.56-.85-.56-1.3V4.9c0-.6.27-1.1.85-1.16l2.23-.15z"/></svg>',
+          agent: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>',
+          slack: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 15a2 2 0 1 1-2-2h2v2zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5zM9 5a2 2 0 1 1 2-2v2H9zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5zm10 4a2 2 0 1 1 2 2h-2v-2zm-1 0a2 2 0 0 1-4 0V5a2 2 0 1 1 4 0v5zm-4 10a2 2 0 1 1-2 2v-2h2zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5z"/></svg>',
+        };
+        const MEMORIES = [
+          { id: "mem-948-decision", who: "Nicholai", type: "decision", workflow: "semantic", importance: 0.92, pinned: true, source: "obsidian", srcLabel: "Obsidian", via: "Vault \u00b7 Nicholai", tags: ["dashboard", "#948", "react"], created: "2026-07-22T06:40:00Z", content: "Dashboard rewrite moves to Vite + React 19 + shadcn/ui. Svelte is out. Decided on the static-SPA app:// contract as the deciding factor for Electron compatibility." },
+          { id: "mem-948-tension", who: "Mira", type: "observation", workflow: "episodic", importance: 0.71, pinned: false, source: "agent", srcLabel: "Mira", via: "claude-code \u00b7 recall", tags: ["inference", "local-first"], created: "2026-07-22T03:12:00Z", content: "Flagged tension: keeps reaching for hosted inference while insisting on local-first ownership. Notes contradict on this 4 times this week." },
+          { id: "mem-positioning", who: "Nicholai", type: "learning", workflow: "semantic", importance: 0.68, pinned: false, source: "notion", srcLabel: "Notion", via: "Product workspace", tags: ["positioning", "marketing"], created: "2026-07-21T14:05:00Z", content: "Infrastructure-forward positioning is converging. Six sources point at headline territory: persistent identity for intelligent systems." },
+          { id: "mem-palette", who: "Ant", type: "preference", workflow: "procedural", importance: 0.55, pinned: false, source: "agent", srcLabel: "Ant", via: "pi \u00b7 session", tags: ["design", "oklch"], created: "2026-07-21T11:30:00Z", content: "Neutral monochrome oklch baseline for the dashboard. Radius 0.3rem, flat shadows. Geist / Geist Mono fonts. No retro-tech, no SaaS slop." },
+          { id: "mem-pipeline", who: "Kestrel", type: "fact", workflow: "procedural", importance: 0.62, pinned: false, source: "github", srcLabel: "GitHub", via: "Signet-AI/signetai", tags: ["pipeline", "daemon"], created: "2026-07-20T19:18:00Z", content: "Daemon pipeline stages: extraction, decision, optional knowledge graph, retention decay, document ingest, maintenance, session summary." },
+          { id: "mem-issue-422", who: "Ant", type: "issue", workflow: "episodic", importance: 0.84, pinned: true, source: "slack", srcLabel: "Slack", via: "#engineering", tags: ["bug", "scoping"], created: "2026-07-20T09:22:00Z", content: "Cross-agent memory reads must thread both agent_id and agentId. Hardcoding 'default' for scoped paths is a scoping leak." },
+          { id: "mem-sources-vault", who: "Nicholai", type: "fact", workflow: "semantic", importance: 0.49, pinned: false, source: "obsidian", srcLabel: "Obsidian", via: "Vault \u00b7 Nicholai", tags: ["obsidian", "sources"], created: "2026-07-19T20:44:00Z", content: "Obsidian vault connected as a source. 18 new notes imported in the last 24h, indexed into the cortex." },
+          { id: "mem-data-loc", who: "Kestrel", type: "learning", workflow: "semantic", importance: 0.77, pinned: false, source: "github", srcLabel: "GitHub", via: "AGENTS.md", tags: ["storage", "sqlite"], created: "2026-07-18T13:10:00Z", content: "User data lives in $SIGNET_WORKSPACE (default ~/.agents/). SQLite is the default storage; JSON sidecars only for genuine artifacts." },
+        ];
+        let query = "", workflow = "semantic", topics = new Set();
+        const feed = document.getElementById("mem-feed");
+        const searchbar = document.getElementById("mem-searchbar");
+        const search = document.getElementById("mem-search");
+        const rel = document.getElementById("mem-relevance");
+        const topicsEl = document.getElementById("mem-topics");
+
+        function fmtTime(s) {
+          const d = new Date(s), now = new Date("2026-07-22T08:00:00Z");
+          const diffH = (now - d) / 36e5;
+          if (diffH < 1) return "just now";
+          if (diffH < 24) return Math.round(diffH) + "h ago";
+          return Math.round(diffH / 24) + "d ago";
+        }
+        function groupOf(s) {
+          const d = new Date(s), now = new Date("2026-07-22T08:00:00Z");
+          const diffH = (now - d) / 36e5;
+          if (diffH < 24 && d.getDate() === now.getDate()) return "Today";
+          if (diffH < 48) return "Yesterday";
+          if (diffH < 24 * 7) return "Earlier this week";
+          return "Earlier";
+        }
+        function tokens(s) { return s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean); }
+        function score(m, q) {
+          if (!q) return null;
+          const hay = tokens(m.content + " " + m.tags.join(" ") + " " + m.who + " " + m.type);
+          const qtoks = tokens(q);
+          if (!qtoks.length) return null;
+          let hits = 0;
+          qtoks.forEach((t) => { if (hay.includes(t)) hits++; });
+          qtoks.forEach((t) => { if (!hay.includes(t) && hay.some((h) => h.includes(t) || t.includes(h))) hits += 0.4; });
+          return Math.max(0, Math.min(1, hits / qtoks.length));
+        }
+        function filtered() {
+          return MEMORIES
+            .map((m) => ({ m, s: query ? score(m, query) : null }))
+            .filter(({ m, s }) => {
+              if (query && (s === null || s < 0.2)) return false;
+              if (workflow && m.workflow !== workflow) return false;
+              if (topics.size && !m.tags.some((t) => topics.has(t))) return false;
+              return true;
+            })
+            .sort((a, b) => (query ? (b.s - a.s) : (new Date(b.m.created) - new Date(a.m.created))));
+        }
+        function itemHTML({ m, s }) {
+          const icon = SOURCE_ICONS[m.source] || SOURCE_ICONS.agent;
+          const typeClass = m.type ? " t-" + m.type : "";
+          const scoreTag = (s !== null && query) ? '<span class="mfeed-item__score">' + Math.round(s * 100) + "% match</span>" : "";
+          return [
+            '<div class="mfeed-item" data-id="' + m.id + '">',
+              '<div class="mfeed-item__badge">' + icon + "</div>",
+              '<div class="mfeed-item__main">',
+                '<div class="mfeed-item__src">',
+                  '<span class="mfeed-item__src-name">' + m.srcLabel + "</span>",
+                  '<span class="mfeed-item__src-via">via ' + m.via + "</span>",
+                  m.type ? '<span class="mfeed-item__type' + typeClass + '">' + m.type + "</span>" : "",
+                "</div>",
+                '<p class="mfeed-item__content">' + m.content + "</p>",
+                '<div class="mfeed-item__foot">',
+                  m.tags.slice(0, 4).map((t) => '<span class="mfeed-item__tag">#' + t + "</span>").join(""),
+                  scoreTag,
+                  '<span class="mfeed-item__time">' + fmtTime(m.created) + "</span>",
+                "</div>",
+              "</div>",
+              '<div class="mfeed-item__actions">',
+                '<span class="mact" title="Pin"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 3h6l-1 7 3 3v2H7v-2l3-3z"/></svg></span>',
+                '<span class="mact" title="Re-index"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg></span>',
+                '<span class="mact" title="Inspect chunks"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>',
+                '<span class="mact mact--danger" title="Delete"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></span>',
+              "</div>",
+            "</div>",
+          ].join("");
+        }
+        function render() {
+          if (!feed) return;
+          const items = filtered();
+          feed.parentElement.classList.toggle("mem-feed-searching", !!query);
+          if (query) {
+            feed.innerHTML = items.map(itemHTML).join("") || '<div style="padding:32px;text-align:center;color:var(--muted-foreground);font-size:12px">No memories match \u201c' + query.replace(/</g, "&lt;") + "\u201d</div>";
+            if (rel) rel.textContent = items.length + " ranked by similarity";
+          } else {
+            const groups = {};
+            items.forEach((it) => { const g = groupOf(it.m.created); (groups[g] = groups[g] || []).push(it); });
+            const order = ["Today", "Yesterday", "Earlier this week", "Earlier"];
+            feed.innerHTML = order.filter((g) => groups[g]).map((g) =>
+              '<div class="mgroup"><div class="mgroup__head"><span class="mgroup__title">' + g + '</span><span class="mgroup__count">' + groups[g].length + '</span><span class="mgroup__rule"></span></div>' +
+              groups[g].map(itemHTML).join("") + "</div>"
+            ).join("");
+            if (rel) rel.textContent = "";
+          }
+        }
+        if (search) search.addEventListener("input", () => {
+          query = search.value.trim();
+          if (searchbar) searchbar.classList.toggle("is-active", !!query);
+          render();
+        });
+        document.querySelectorAll('.mside__chip[data-side="workflow"]').forEach((chip) => {
+          chip.addEventListener("click", () => {
+            const v = chip.dataset.value;
+            workflow = workflow === v ? "" : v;
+            document.querySelectorAll('.mside__chip[data-side="workflow"]').forEach((c) => c.classList.toggle("is-on", c.dataset.value === workflow));
+            render();
+          });
+        });
+        const allTags = {};
+        MEMORIES.forEach((m) => m.tags.forEach((t) => { allTags[t] = (allTags[t] || 0) + 1; }));
+        if (topicsEl) {
+          topicsEl.innerHTML = Object.entries(allTags).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([t]) =>
+            '<span class="mside__topic" data-topic="' + t + '">#' + t + "</span>"
+          ).join("");
+          topicsEl.querySelectorAll(".mside__topic").forEach((tp) => {
+            tp.addEventListener("click", () => {
+              const t = tp.dataset.topic;
+              if (topics.has(t)) topics.delete(t); else topics.add(t);
+              tp.classList.toggle("is-on", topics.has(t));
+              render();
+            });
+          });
+        }
+        render();
+      })();
+
+      // ── Graph view: memory graph explorer + ask-signet ──
+      (function () {
+        const COLORS = { source: "#38bdf8", document: "#60a5fa", session: "#818cf8", entity: "#7dd3fc", aspect: "#60a5fa", attribute: "#a78bfa", memory: "#22d3ee", proposal: "#f59e0b" };
+        // realistic graph: entities, aspects, memories, sources clustered around topics
+        const NODES = [
+          // cluster: dashboard rewrite (#948)
+          { id: "e-dashboard", label: "dashboard rewrite", kind: "entity", x: 180, y: 150, r: 12, mentions: 41 },
+          { id: "a-react", label: "React + Vite", kind: "aspect", x: 110, y: 95, r: 8, mentions: 18 },
+          { id: "a-svelte-out", label: "Svelte (archived)", kind: "aspect", x: 95, y: 175, r: 7, mentions: 9 },
+          { id: "m-948", label: "#948 decision", kind: "memory", x: 160, y: 230, r: 9, mentions: 1 },
+          { id: "m-palette", label: "oklch palette", kind: "memory", x: 235, y: 95, r: 7, mentions: 1 },
+          // cluster: positioning
+          { id: "e-positioning", label: "infrastructure-forward", kind: "entity", x: 420, y: 110, r: 11, mentions: 28 },
+          { id: "a-headline", label: "persistent identity", kind: "aspect", x: 500, y: 70, r: 8, mentions: 14 },
+          { id: "m-pos", label: "positioning convergence", kind: "memory", x: 480, y: 165, r: 8, mentions: 1 },
+          // cluster: inference
+          { id: "e-inference", label: "inference routing", kind: "entity", x: 620, y: 200, r: 11, mentions: 22 },
+          { id: "a-hosted", label: "hosted vs local", kind: "aspect", x: 700, y: 160, r: 8, mentions: 11 },
+          { id: "m-tension", label: "Mira tension", kind: "memory", x: 660, y: 270, r: 8, mentions: 1 },
+          // cluster: storage
+          { id: "e-storage", label: "data location", kind: "entity", x: 320, y: 330, r: 10, mentions: 16 },
+          { id: "a-sqlite", label: "SQLite default", kind: "aspect", x: 255, y: 380, r: 7, mentions: 8 },
+          { id: "m-dataloc", label: "$SIGNET_WORKSPACE", kind: "memory", x: 385, y: 385, r: 7, mentions: 1 },
+          // cluster: scoping
+          { id: "e-scoping", label: "agent scoping", kind: "entity", x: 540, y: 360, r: 10, mentions: 13 },
+          { id: "m-issue422", label: "agent_id leak", kind: "memory", x: 610, y: 410, r: 7, mentions: 1 },
+          // sources
+          { id: "s-obsidian", label: "Obsidian", kind: "source", x: 60, y: 320, r: 9, mentions: 142 },
+          { id: "s-github", label: "GitHub", kind: "source", x: 720, y: 420, r: 9, mentions: 318 },
+          { id: "s-notion", label: "Notion", kind: "source", x: 430, y: 50, r: 7, mentions: 64 },
+        ];
+        const EDGES = [
+          ["e-dashboard", "a-react", "has_aspect"], ["e-dashboard", "a-svelte-out", "has_aspect"],
+          ["e-dashboard", "m-948", "mentions"], ["e-dashboard", "m-palette", "mentions"],
+          ["e-positioning", "a-headline", "has_aspect"], ["e-positioning", "m-pos", "mentions"],
+          ["e-inference", "a-hosted", "has_aspect"], ["e-inference", "m-tension", "mentions"],
+          ["e-storage", "a-sqlite", "has_aspect"], ["e-storage", "m-dataloc", "mentions"],
+          ["e-scoping", "m-issue422", "mentions"],
+          // cross-cluster semantic links
+          ["m-948", "m-palette", "extends"], ["m-pos", "e-positioning", "about"],
+          ["e-dashboard", "e-positioning", "supports"], ["e-inference", "e-scoping", "updates"],
+          // source provenance
+          ["s-obsidian", "m-948", "contains"], ["s-github", "m-dataloc", "contains"],
+          ["s-github", "m-issue422", "contains"], ["s-notion", "m-pos", "contains"],
+          ["s-obsidian", "e-dashboard", "mentions"],
+        ];
+        const byId = Object.fromEntries(NODES.map((n) => [n.id, n]));
+        const content = document.getElementById("graph-content");
+        const canvas = document.getElementById("graph-canvas");
+        if (!content || !canvas) return;
+
+        // render edges first (under nodes)
+        function edgePath(a, b) {
+          return "M" + a.x + " " + a.y + " L" + b.x + " " + b.y;
+        }
+        EDGES.forEach(([s, t], i) => {
+          const a = byId[s], b = byId[t];
+          if (!a || !b) return;
+          const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          p.setAttribute("d", edgePath(a, b));
+          p.setAttribute("class", "gedge");
+          p.setAttribute("data-edge", s + "|" + t);
+          content.appendChild(p);
+        });
+        // render nodes + labels
+        NODES.forEach((n) => {
+          const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          g.setAttribute("class", "gnode");
+          g.setAttribute("data-id", n.id);
+          g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
+          g.style.color = COLORS[n.kind];
+          const halo = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          halo.setAttribute("class", "node-halo"); halo.setAttribute("r", 6 + 6); halo.setAttribute("fill", COLORS[n.kind]); halo.setAttribute("opacity", "0.08");
+          const fill = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          fill.setAttribute("class", "node-fill"); fill.setAttribute("r", 6); fill.setAttribute("fill", COLORS[n.kind]);
+          g.appendChild(halo); g.appendChild(fill);
+          g.addEventListener("click", () => focusNode(n.id));
+          content.appendChild(g);
+          const lbl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          lbl.setAttribute("class", "glabel"); lbl.setAttribute("data-label", n.id);
+          lbl.setAttribute("x", n.x); lbl.setAttribute("y", n.y - 13);
+          lbl.setAttribute("text-anchor", "middle"); lbl.textContent = n.label;
+          content.appendChild(lbl);
+        });
+
+        // neighbors of a node
+        function neighbors(id) {
+          const set = new Set([id]);
+          EDGES.forEach(([s, t]) => { if (s === id) set.add(t); if (t === id) set.add(s); });
+          return set;
+        }
+        // apply counter-scale to labels so text stays fixed-size on zoom
+        function syncLabels(scale) {
+          const inv = 1 / scale;
+          content.querySelectorAll(".glabel").forEach((lbl) => {
+            const id = lbl.getAttribute("data-label");
+            const n = byId[id]; if (!n) return;
+            // position label at node, counter-scaled so the font stays 11px
+            const lx = n.x, ly = n.y - 13;
+            lbl.setAttribute("transform", "translate(" + lx + "," + ly + ") scale(" + inv + ")");
+            lbl.setAttribute("x", 0); lbl.setAttribute("y", 0);
+          });
+        }
+        // zoom + highlight a node cluster. When the drawer is open, offset the
+        // focal point left so the active cluster sits in the left 70% of the
+        // canvas, keeping the right 30% clear for the response drawer.
+        function focusNode(id, animateEdges, drawerOpen) {
+          const n = byId[id]; if (!n) return;
+          const targetScale = 1.8;
+          const vw = 800, vh = 500;
+          const focalX = drawerOpen ? vw * 0.35 : vw * 0.5;
+          const tx = focalX - n.x * targetScale, ty = vh / 2 - n.y * targetScale;
+          canvas.classList.add("zooming");
+          content.style.transition = "transform .6s cubic-bezier(0.4, 0, 0.2, 1)";
+          content.setAttribute("transform", "translate(" + tx + "," + ty + ") scale(" + targetScale + ")");
+          syncLabels(targetScale);
+          setTimeout(() => canvas.classList.remove("zooming"), 600);
+          // highlight the cluster
+          const cluster = neighbors(id);
+          NODES.forEach((nn) => {
+            const g = content.querySelector('.gnode[data-id="' + nn.id + '"]');
+            const lbl = content.querySelectorAll(".glabel")[NODES.indexOf(nn)];
+            if (!g) return;
+            const inCluster = cluster.has(nn.id);
+            g.classList.toggle("hl", inCluster); g.classList.toggle("dim", !inCluster);
+            if (lbl) lbl.classList.toggle("dim", !inCluster);
+          });
+          EDGES.forEach(([s, t], i) => {
+            const e = content.querySelectorAll(".gedge")[i];
+            if (!e) return;
+            const inCluster = cluster.has(s) && cluster.has(t);
+            e.classList.toggle("hl", inCluster); e.classList.toggle("dim", !inCluster);
+            if (animateEdges) e.classList.toggle("hl-flow", inCluster); else e.classList.remove("hl-flow");
+          });
+        }
+        function resetView() {
+          content.style.transition = "transform .6s cubic-bezier(0.4, 0, 0.2, 1)";
+          content.setAttribute("transform", "translate(0,0) scale(1)");
+          syncLabels(1);
+          NODES.forEach((nn) => {
+            const g = content.querySelector('.gnode[data-id="' + nn.id + '"]');
+            const lbl = content.querySelectorAll(".glabel")[NODES.indexOf(nn)];
+            if (g) { g.classList.remove("hl", "dim"); }
+            if (lbl) lbl.classList.remove("dim");
+          });
+          EDGES.forEach((_, i) => { const e = content.querySelectorAll(".gedge")[i]; if (e) e.classList.remove("hl", "dim", "hl-flow"); });
+        }
+
+        // chat: authoritative glass dock + right insight drawer
+        const input = document.getElementById("gc-input");
+        const send = document.getElementById("gc-send");
+        const dock = document.getElementById("graph-dock");
+        const respPanel = document.getElementById("graph-response");
+        const respBody = document.getElementById("gr-body");
+        const respTitle = document.getElementById("gr-title");
+        const closeBtn = document.getElementById("gr-close");
+        const QA = [
+          { q: ["dashboard", "react", "svelte", "#948", "rewrite"], focus: "e-dashboard", title: "Dashboard rewrite", a: "Your <b>dashboard rewrite</b> hardened into a firm decision: Svelte is out, <b>Vite + React + shadcn/ui</b> is in. The deciding factor was the Electron <span class=\"mono\">app://</span> static-SPA contract.", src: "3 memories · #948 cluster",
+            cites: [
+              { color: "#22d3ee", txt: "Dashboard rewrite moves to Vite + React 19 + shadcn/ui. Svelte is out.", meta: "mem-948-decision · 07:40 today · obsidian" },
+              { color: "#a78bfa", txt: "Neutral monochrome oklch baseline. Radius 0.3rem, flat shadows.", meta: "mem-palette · 11:30 yesterday · agent:Ant" },
+            ],
+            log: ["recall(hybrid, top=8) \u2192 3 matches", "cluster #948 resolved (5 nodes)", "graph zoom: 1.8x \u2192 dashboard rewrite", "edges animated: has_aspect \u00d7 2, mentions \u00d7 2"] },
+          { q: ["positioning", "headline", "marketing", "infrastructure"], focus: "e-positioning", title: "Positioning convergence", a: "Your <b>infrastructure-forward positioning</b> is converging across 6 sources toward the headline <i>persistent identity for intelligent systems</i>. Looks ready to commit.", src: "6 memories · positioning cluster",
+            cites: [
+              { color: "#22d3ee", txt: "Six sources point at persistent identity for intelligent systems.", meta: "mem-positioning · 14:05 yesterday · notion" },
+            ],
+            log: ["recall(hybrid, top=8) \u2192 6 matches", "cluster positioning resolved (4 nodes)", "graph zoom: 1.8x \u2192 infrastructure-forward"] },
+          { q: ["inference", "model", "hosted", "local", "tension", "mira"], focus: "e-inference", title: "Inference tension", a: "<b>Mira flagged a tension</b> twice this week: you keep reaching for hosted inference while insisting on local-first ownership. Your notes contradict on this 4 times \u2014 worth a deliberate call.", src: "2 memories · inference cluster",
+            cites: [
+              { color: "#22d3ee", txt: "Flagged tension: hosted inference vs local-first ownership.", meta: "mem-948-tension · 03:12 today · agent:Mira" },
+            ],
+            log: ["recall(vector, top=5) \u2192 2 matches", "cluster inference resolved (3 nodes)", "graph zoom: 1.8x \u2192 inference routing"] },
+          { q: ["storage", "data", "sqlite", "workspace", "location"], focus: "e-storage", title: "Data location", a: "User data lives in <b>$SIGNET_WORKSPACE</b> (default <span class=\"mono\">~/.agents/</span>). SQLite is the default storage; JSON sidecars only for genuine artifacts.", src: "3 memories · storage cluster",
+            cites: [
+              { color: "#22d3ee", txt: "SQLite is the default storage. JSON sidecars only for genuine artifacts.", meta: "mem-data-loc · 13:10 3d ago · github" },
+            ],
+            log: ["recall(hybrid, top=5) \u2192 3 matches", "cluster storage resolved (4 nodes)", "graph zoom: 1.8x \u2192 data location"] },
+          { q: ["scoping", "agent_id", "agentid", "leak", "multi-agent"], focus: "e-scoping", title: "Agent scoping", a: "Cross-agent reads must thread <b>both agent_id AND agentId</b>. Hardcoding <span class=\"mono\">default</span> for scoped paths when a real id is known is a scoping leak.", src: "1 memory · scoping cluster",
+            cites: [
+              { color: "#22d3ee", txt: "Cross-agent reads must thread both agent_id and agentId.", meta: "mem-issue-422 · 09:22 2d ago · slack" },
+            ],
+            log: ["recall(vector, top=3) \u2192 1 match", "cluster scoping resolved (2 nodes)", "graph zoom: 1.8x \u2192 agent scoping"] },
+        ];
+        function answer(q) {
+          const ql = q.toLowerCase();
+          let best = null, bestHits = 0;
+          QA.forEach((entry) => {
+            let h = 0; entry.q.forEach((kw) => { if (ql.includes(kw)) h++; });
+            if (h > bestHits) { bestHits = h; best = entry; }
+          });
+          return best;
+        }
+        function drawerHTML(r, q) {
+          if (!r) return '<div class="gr-answer">No cluster matched \u201c' + q.replace(/</g, "&lt;") + '\u201d. Try asking about the dashboard, positioning, inference, storage, or scoping.</div>';
+          const cites = r.cites.map((c) => '<div class="gr-cite"><span class="gr-cite__dot" style="background:' + c.color + '"></span><div><div class="gr-cite__txt">' + c.txt + '</div><div class="gr-cite__meta">' + c.meta + "</div></div></div>").join("");
+          const log = r.log.map((l) => "<div>" + l + "</div>").join("");
+          return [
+            '<div><div class="gr-answer">' + r.a + '<div class="gr-prov"><span class="dot"></span> ' + r.src + "</div></div></div>",
+            '<div><div class="gr-section-label" style="margin-bottom:8px">Citations</div>' + cites + "</div>",
+            '<div class="gr-acc"><div class="gr-acc-trigger"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg> Execution log</div><div class="gr-acc-body">' + log + "</div></div>",
+          ].join("");
+        }
+        function runQuery(q) {
+          const r = answer(q);
+          if (dock) dock.classList.add("responded");
+          if (respBody) {
+            respBody.innerHTML = drawerHTML(r, q);
+            // wire accordion + clickable citations
+            respBody.querySelectorAll(".gr-acc-trigger").forEach((t) => t.addEventListener("click", () => t.parentElement.classList.toggle("open")));
+            respBody.querySelectorAll(".gr-cite").forEach((c) => c.addEventListener("click", () => { c.style.borderColor = "oklch(0.85 0 0 / 0.4)"; }));
+          }
+          if (respTitle) respTitle.textContent = r ? r.title : "No match";
+          if (respPanel) respPanel.classList.add("show");
+          if (r) focusNode(r.focus, true, true); else resetView();
+        }
+        function closeResponse() {
+          if (respPanel) respPanel.classList.remove("show");
+          if (dock) dock.classList.remove("responded");
+          resetView();
+        }
+        if (send) send.addEventListener("click", () => { if (input.value.trim()) { runQuery(input.value.trim()); input.value = ""; } });
+        if (input) input.addEventListener("input", () => { if (send) send.disabled = !input.value.trim(); });
+        if (input) input.addEventListener("keydown", (e) => { if (e.key === "Enter" && input.value.trim()) { runQuery(input.value.trim()); input.value = ""; } });
+        if (closeBtn) closeBtn.addEventListener("click", closeResponse);
+        // follow-up input inside the drawer takes over the conversation thread
+        const followup = document.getElementById("gr-followup");
+        const followSend = document.getElementById("gr-send");
+        if (followup) {
+          followup.addEventListener("input", () => { if (followSend) followSend.disabled = !followup.value.trim(); });
+          followup.addEventListener("keydown", (e) => { if (e.key === "Enter" && followup.value.trim()) { runQuery(followup.value.trim()); followup.value = ""; } });
+        }
+        if (followSend) followSend.addEventListener("click", () => { if (followup && followup.value.trim()) { runQuery(followup.value.trim()); followup.value = ""; } });
+        // legend popover toggle
+        const legendBtn = document.getElementById("legend-btn");
+        const legendPop = document.getElementById("legend-pop");
+        if (legendBtn && legendPop) {
+          legendBtn.addEventListener("click", (e) => { e.stopPropagation(); legendPop.classList.toggle("show"); });
+          document.addEventListener("click", () => legendPop.classList.remove("show"));
+          legendPop.addEventListener("click", (e) => e.stopPropagation());
+        }
+      })();
+        </script>
+
+    <script>
+      // ── Sources view: cards, health, index jobs, connect modal ──
+      (function () {
+        const SOURCE_ICONS = {
+          obsidian: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.36 18.54a69 69 0 0 0 1.86-2.95.81.81 0 0 0-.06-.9c-.52-.69-1.5-2.08-2.04-3.36-.55-1.32-.64-3.38-.64-4.38a1.7 1.7 0 0 0-.36-1.05l-3.2-4.06a3.7 3.7 0 0 1-.07.54c-.11.5-.31 1-.54 1.5-.13.29-.29.6-.45.91l-.31.63c-.52 1.07-1 2.23-1.13 3.59-.12 1.26.05 2.73.82 4.48l.38.04a6.4 6.4 0 0 1 3.33 1.51c.92.79 1.74 1.92 2.42 3.5zM8.2 22.57l.22.02c.78.02 2.1.09 3.16.29.87.16 2.6.64 4.01 1.06 1.08.31 2.2-.55 2.36-1.67.11-.81.33-1.73.72-2.58-.67-1.87-1.52-3.08-2.41-3.85a5.3 5.3 0 0 0-2.78-1.26c-1.54-.21-2.95.19-3.84.45.53 2.22.37 4.83-1.43 7.53zM5.53 9.94l-.1.29L2.82 16.06a1.6 1.6 0 0 0 .31 1.77l4.12 4.24c2.1-3.1 1.8-6.02.84-8.3-.73-1.73-1.84-3.08-2.56-3.83zM9.32 14.01c.62-.18 1.61-.46 2.75-.53-.68-1.73-.85-3.23-.72-4.58.16-1.55.7-2.85 1.24-3.95l.33-.66c.15-.3.29-.58.42-.86.22-.47.38-.88.46-1.27.08-.38.08-.72-.01-1.04-.1-.33-.3-.68-.68-1.06a1.6 1.6 0 0 0-1.48.36L7.18 4.33a1.6 1.6 0 0 0-.51.95l-.43 2.83c.67.59 2.33 2.32 3.34 4.71l.74.19z"/></svg>',
+          github: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57v-2c-3.34.72-4.04-1.6-4.04-1.6-.55-1.4-1.34-1.77-1.34-1.77-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.84 2.8 1.3 3.5 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.8 5.62-5.48 5.92.43.36.81 1.1.81 2.22v3.29c0 .31.21.7.83.58A12 12 0 0 0 12 .3"/></svg>',
+          discord: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.32 4.37A19.79 19.79 0 0 0 15.37 2.8l-.25.42a18.27 18.27 0 0 1 4.59 1.48 17.53 17.53 0 0 0-15.42 0A18.27 18.27 0 0 1 8.88 3.22L8.63 2.8A19.79 19.79 0 0 0 3.68 4.37C.38 9.3-.5 14.12.15 18.87a19.93 19.93 0 0 0 6.05 3.06l.49-.66a13.24 13.24 0 0 1-2.04-.98l.5-.39a14.23 14.23 0 0 0 12.1 0l.5.39c-.64.38-1.33.71-2.04.98l.49.66a19.93 19.93 0 0 0 6.05-3.06c.77-5.52-1.31-10.3-4.44-14.5zM8.02 16.02c-1.18 0-2.15-1.09-2.15-2.42s.95-2.42 2.15-2.42c1.2 0 2.17 1.09 2.15 2.42 0 1.33-.95 2.42-2.15 2.42zm7.96 0c-1.18 0-2.15-1.09-2.15-2.42s.95-2.42 2.15-2.42c1.2 0 2.17 1.09 2.15 2.42 0 1.33-.95 2.42-2.15 2.42z"/></svg>',
+        };
+        const FIELD_CONFIG = {
+          obsidian: { label: "Vault path", placeholder: "/home/nicholai/Notes/Research", hint: "Absolute path to your Obsidian vault root" },
+          github: { label: "Repository", placeholder: "Signet-AI/signetai", hint: "owner/repo — use owner/* for org-wide glob" },
+          discord: { label: "Guild ID", placeholder: "123456789012345678", hint: "Requires DISCORD_BOT_TOKEN in Secrets (use --token-ref)" },
+        };
+        // real SignetSourceEntry-shaped data
+        const SOURCES = [
+          { id: "obsidian:nicholai-vault", kind: "obsidian", name: "Research Vault", root: "/home/nicholai/Notes/Research", enabled: true, health: "healthy",
+            stats: { artifacts: 4291, chunks: 12847, indexed: 4291 }, lastIndexedAt: "2026-07-22T06:40:00Z",
+            indexJob: { status: "complete", scanned: 4291, indexed: 4291, total: 4291 } },
+          { id: "github:Signet-AI/signetai", kind: "github", name: "Signet GitHub", root: "Signet-AI/signetai", enabled: true, health: "healthy",
+            stats: { artifacts: 1204, chunks: 3102, indexed: 1204 }, lastIndexedAt: "2026-07-22T08:12:00Z",
+            indexJob: { status: "running", scanned: 847, indexed: 847, total: 1204, currentPath: "issues/open/#948" } },
+          { id: "discord:team", kind: "discord", name: "Team Discord", root: "guild:428103…", enabled: true, health: "degraded",
+            stats: { artifacts: 892, chunks: 1451, indexed: 892 }, lastIndexedAt: "2026-07-21T22:05:00Z",
+            indexJob: { status: "complete", scanned: 892, indexed: 892, total: 892 }, failures: 3 },
+          { id: "obsidian:product", kind: "obsidian", name: "Product Notes", root: "/home/nicholai/Notes/Product", enabled: true, health: "empty",
+            stats: { artifacts: 0, chunks: 0, indexed: 0 }, lastIndexedAt: null,
+            indexJob: { status: "queued", scanned: 0, indexed: 0, total: 0 } },
+        ];
+        function relTime(iso) {
+          if (!iso) return "never";
+          const d = new Date(iso), now = new Date("2026-07-22T09:00:00Z"), diff = (now - d) / 1000;
+          if (diff < 60) return "just now";
+          if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+          if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+          return Math.floor(diff / 86400) + "d ago";
+        }
+        function fmt(n) { return n.toLocaleString(); }
+        const ROOT_ICONS = {
+          obsidian: '<svg class="src-card__root-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+          github: '<svg class="src-card__root-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 3-4 3.5-7 4"/></svg>',
+          discord: '<svg class="src-card__root-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7a5 5 0 0 0 0 10M12 7a5 5 0 0 1 0 10"/></svg>',
+        };
+        const COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+        function pipeHtml(job, health) {
+          // when health is degraded/unhealthy, override the dot+fill color to match the badge
+          const hClass = health === "degraded" ? "is-amber" : health === "unhealthy" ? "is-red" : "";
+          const fClass = health === "degraded" ? "is-degraded" : health === "unhealthy" ? "is-unhealthy" : "";
+          if (!job) return '<div class="src-card__pipe"><span class="src-pipe__dot ' + hClass + '"></span><div class="src-pipe__bar"><div class="src-pipe__fill ' + fClass + '" style="width:0"></div></div><span class="src-pipe__txt">no job</span></div>';
+          const pct = job.total > 0 ? Math.round((job.scanned / job.total) * 100) : 0;
+          const dotC = job.status === "error" ? "is-red" : job.status === "queued" ? "is-amber" : hClass;
+          const fillC = job.status === "error" ? "is-error" : job.status === "queued" ? "is-queued" : fClass;
+          if (job.status === "complete") return '<div class="src-card__pipe"><span class="src-pipe__dot ' + hClass + '"></span><div class="src-pipe__bar"><div class="src-pipe__fill ' + fClass + '" style="width:100%"></div></div><span class="src-pipe__txt">indexed ' + fmt(job.indexed) + '</span></div>';
+          if (job.status === "queued") return '<div class="src-card__pipe"><span class="src-pipe__dot is-amber"></span><div class="src-pipe__bar"><div class="src-pipe__fill is-queued" style="width:0"></div></div><span class="src-pipe__txt">queued…</span></div>';
+          if (job.status === "running") return '<div class="src-card__pipe"><span class="src-pipe__dot ' + hClass + '"></span><div class="src-pipe__bar"><div class="src-pipe__fill ' + fClass + '" style="width:' + pct + '%"></div></div><span class="src-pipe__txt">' + pct + '% · ' + (job.currentPath || "scanning") + '</span></div>';
+          return '<div class="src-card__pipe"><span class="src-pipe__dot is-red"></span><div class="src-pipe__bar"><div class="src-pipe__fill is-error" style="width:100%"></div></div><span class="src-pipe__txt">error</span></div>';
+        }
+        const ADD_TILE = '<div class="src-add" id="src-add-tile"><span class="src-add__ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><span class="src-add__label">Connect a source</span><span class="src-add__hint">Obsidian · GitHub · Discord</span></div>';
+        function cardHtml(s) {
+          const healthLabel = s.health.charAt(0).toUpperCase() + s.health.slice(1);
+          const failNote = s.failures ? ' · ' + s.failures + ' fail' : '';
+          return [
+            '<div class="src-card" data-id="' + s.id + '">',
+              '<div class="src-card__top">',
+                '<div class="src-card__icon">' + (SOURCE_ICONS[s.kind] || "") + '</div>',
+                '<div class="src-card__meta">',
+                  '<div class="src-card__name">' + s.name + '</div>',
+                  '<div class="src-card__sub"><span class="src-card__kind">' + s.kind + '</span> · read-only</div>',
+                '</div>',
+                '<span class="src-health src-health--' + s.health + '"><span class="src-health__dot"></span>' + healthLabel + failNote + '</span>',
+              '</div>',
+              '<div class="src-card__root">' + (ROOT_ICONS[s.kind] || "") + '<span class="src-card__root-path">' + s.root + '</span><span class="src-card__root-copy" data-act="copy" title="Copy path">' + COPY_SVG + '</span></div>',
+              '<div class="src-card__stats">',
+                '<div class="src-stat"><span class="src-stat__val">' + fmt(s.stats.artifacts) + '</span><span class="src-stat__label">artifacts</span></div>',
+                '<div class="src-stat"><span class="src-stat__val">' + fmt(s.stats.chunks) + '</span><span class="src-stat__label">chunks</span></div>',
+                '<div class="src-stat"><span class="src-stat__val">' + fmt(s.stats.indexed) + '</span><span class="src-stat__label">indexed</span></div>',
+              '</div>',
+              pipeHtml(s.indexJob, s.health),
+              '<div class="src-card__foot">',
+                '<span class="src-card__time">' + relTime(s.lastIndexedAt) + '</span>',
+                '<div class="src-actions-row">',
+                  '<span class="src-act" title="Re-index" data-act="reindex"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></span>',
+                  '<span class="src-act" title="Snapshot" data-act="snapshot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></span>',
+                  '<span class="src-act is-danger" title="Remove" data-act="remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></span>',
+                '</div>',
+              '</div>',
+            '</div>',
+          ].join("");
+        }
+        function render() {
+          const grid = document.getElementById("src-grid");
+          if (grid) grid.innerHTML = ADD_TILE + SOURCES.map(cardHtml).join("");
+          const ta = document.getElementById("src-total-artifacts"); const tc = document.getElementById("src-total-chunks"); const ti = document.getElementById("src-total-indexed");
+          if (ta) ta.textContent = fmt(SOURCES.reduce((a, s) => a + s.stats.artifacts, 0));
+          if (tc) tc.textContent = fmt(SOURCES.reduce((a, s) => a + s.stats.chunks, 0));
+          if (ti) ti.textContent = fmt(SOURCES.reduce((a, s) => a + s.stats.indexed, 0));
+          const addTile = document.getElementById("src-add-tile");
+          if (addTile) addTile.addEventListener("click", openModal);
+        }
+        render();
+        // connect modal
+        const modalBg = document.getElementById("src-modal-bg");
+        const connectBtn = document.getElementById("src-connect-btn");
+        const modalClose = document.getElementById("src-modal-close");
+        const modalCancel = document.getElementById("src-modal-cancel");
+        const modalConnect = document.getElementById("src-modal-connect");
+        let selectedKind = "obsidian";
+        function openModal() { if (modalBg) modalBg.classList.add("show"); }
+        function closeModal() { if (modalBg) modalBg.classList.remove("show"); }
+        if (connectBtn) connectBtn.addEventListener("click", openModal);
+        if (modalClose) modalClose.addEventListener("click", closeModal);
+        if (modalCancel) modalCancel.addEventListener("click", closeModal);
+        if (modalBg) modalBg.addEventListener("click", (e) => { if (e.target === modalBg) closeModal(); });
+        // picker switching
+        document.querySelectorAll(".src-pick").forEach((pick) => {
+          pick.addEventListener("click", () => {
+            document.querySelectorAll(".src-pick").forEach((p) => p.classList.remove("is-on"));
+            pick.classList.add("is-on");
+            selectedKind = pick.dataset.kind;
+            const cfg = FIELD_CONFIG[selectedKind];
+            const fl = document.getElementById("src-field-label"); const fi = document.getElementById("src-field-input"); const fh = document.getElementById("src-field-hint");
+            if (fl && cfg) fl.textContent = cfg.label;
+            if (fi && cfg) { fi.placeholder = cfg.placeholder; fi.value = ""; }
+            if (fh && cfg) fh.textContent = cfg.hint;
+          });
+        });
+        if (modalConnect) modalConnect.addEventListener("click", closeModal);
+        // card actions (delegated)
+        const grid = document.getElementById("src-grid");
+        if (grid) grid.addEventListener("click", (e) => {
+          // copy path button on root bar
+          const copyBtn = e.target.closest(".src-card__root-copy");
+          if (copyBtn) {
+            const card = copyBtn.closest(".src-card");
+            const pathEl = card && card.querySelector(".src-card__root-path");
+            if (pathEl) {
+              const txt = pathEl.textContent;
+              if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(() => {});
+              const svg = copyBtn.querySelector("svg");
+              if (svg) {
+                const orig = svg.innerHTML; const origSw = svg.getAttribute("stroke-width");
+                svg.innerHTML = '<path d="M20 6 9 17l-5-5"/>';
+                setTimeout(() => { svg.innerHTML = orig; }, 1000);
+              }
+            }
+            e.stopPropagation(); return;
+          }
+          const act = e.target.closest(".src-act"); if (!act) return;
+          const card = act.closest(".src-card"); if (!card) return;
+          const id = card.dataset.id;
+          const action = act.dataset.act;
+          if (action === "reindex") {
+            const s = SOURCES.find((x) => x.id === id); if (!s) return;
+            s.indexJob = { status: "running", scanned: 0, indexed: 0, total: s.stats.artifacts || 1, currentPath: "starting scan…" };
+            render();
+          } else if (action === "remove") {
+            const idx = SOURCES.findIndex((x) => x.id === id); if (idx === -1) return;
+            card.style.transition = "opacity .2s, transform .2s"; card.style.opacity = "0"; card.style.transform = "translateX(20px)";
+            setTimeout(() => { SOURCES.splice(idx, 1); render(); }, 200);
+          }
+        });
       })();
     </script>
+    <div class="src-modal-bg" id="src-modal-bg">
+      <div class="src-modal">
+        <div class="src-modal__head">
+          <span class="src-modal__title">Connect a source</span>
+          <span class="src-modal__close" id="src-modal-close"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+        </div>
+        <div class="src-modal__body">
+          <div class="src-picker">
+            <div class="src-pick is-on" data-kind="obsidian">
+              <span class="src-pick__ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.36 18.54a69 69 0 0 0 1.86-2.95.81.81 0 0 0-.06-.9c-.52-.69-1.5-2.08-2.04-3.36-.55-1.32-.64-3.38-.64-4.38a1.7 1.7 0 0 0-.36-1.05l-3.2-4.06a3.7 3.7 0 0 1-.07.54c-.11.5-.31 1-.54 1.5-.13.29-.29.6-.45.91l-.31.63c-.52 1.07-1 2.23-1.13 3.59-.12 1.26.05 2.73.82 4.48l.38.04a6.4 6.4 0 0 1 3.33 1.51c.92.79 1.74 1.92 2.42 3.5zM8.2 22.57l.22.02c.78.02 2.1.09 3.16.29.87.16 2.6.64 4.01 1.06 1.08.31 2.2-.55 2.36-1.67.11-.81.33-1.73.72-2.58-.67-1.87-1.52-3.08-2.41-3.85a5.3 5.3 0 0 0-2.78-1.26c-1.54-.21-2.95.19-3.84.45.53 2.22.37 4.83-1.43 7.53zM5.53 9.94l-.1.29L2.82 16.06a1.6 1.6 0 0 0 .31 1.77l4.12 4.24c2.1-3.1 1.8-6.02.84-8.3-.73-1.73-1.84-3.08-2.56-3.83zM9.32 14.01c.62-.18 1.61-.46 2.75-.53-.68-1.73-.85-3.23-.72-4.58.16-1.55.7-2.85 1.24-3.95l.33-.66c.15-.3.29-.58.42-.86.22-.47.38-.88.46-1.27.08-.38.08-.72-.01-1.04-.1-.33-.3-.68-.68-1.06a1.6 1.6 0 0 0-1.48.36L7.18 4.33a1.6 1.6 0 0 0-.51.95l-.43 2.83c.67.59 2.33 2.32 3.34 4.71l.74.19z"/></svg></span>
+              <span class="src-pick__label">Obsidian</span>
+            </div>
+            <div class="src-pick" data-kind="github">
+              <span class="src-pick__ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57v-2c-3.34.72-4.04-1.6-4.04-1.6-.55-1.4-1.34-1.77-1.34-1.77-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.84 2.8 1.3 3.5 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.8 5.62-5.48 5.92.43.36.81 1.1.81 2.22v3.29c0 .31.21.7.83.58A12 12 0 0 0 12 .3"/></svg></span>
+              <span class="src-pick__label">GitHub</span>
+            </div>
+            <div class="src-pick" data-kind="discord">
+              <span class="src-pick__ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.2.4c1.8.5 3.3 1.3 4.8 2.3a16.5 16.5 0 0 0-14-.6c-.5 0-1 .1-1.4.2-1.4-1-2.9-1.8-4.6-2.3L-.2 4.4A19.8 19.8 0 0 0-5 5.7C-7.6 9.5-8.3 13.2-8 17a19.9 19.9 0 0 0 6 3l.5-.8c-1-.4-1.9-.9-2.7-1.5l.7-.5a14.2 14.2 0 0 0 12 0l.7.5c-.8.6-1.7 1.1-2.7 1.5l.5.8a19.9 19.9 0 0 0 6-3c.4-4.5-.7-8.2-3-11.6zM7.7 14.7c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2zm8.6 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2z"/></svg></span>
+              <span class="src-pick__label">Discord</span>
+            </div>
+          </div>
+          <div class="src-field">
+            <span class="src-field__label" id="src-field-label">Vault path</span>
+            <input class="src-field__input" id="src-field-input" placeholder="/home/nicholai/Notes/Research" />
+            <span class="src-field__hint" id="src-field-hint">Absolute path to your Obsidian vault root</span>
+          </div>
+          <div class="src-field">
+            <span class="src-field__label">Name</span>
+            <input class="src-field__input" id="src-name-input" placeholder="Research Vault" value="" />
+          </div>
+        </div>
+        <div class="src-modal__foot">
+          <button class="btn-ghost" id="src-modal-cancel">Cancel</button>
+          <button class="btn-primary" id="src-modal-connect">Connect &amp; index</button>
+        </div>
+      </div>
+    </div>
   </body>
 </html>
