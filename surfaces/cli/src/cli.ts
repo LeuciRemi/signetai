@@ -66,7 +66,6 @@ import { registerConnectorCommands } from "./commands/connector.js";
 import { registerContextCommands } from "./commands/context.js";
 import { registerDaemonCommands } from "./commands/daemon.js";
 import { registerDesktopCommands } from "./commands/desktop.js";
-import { registerDreamCommands } from "./commands/dream.js";
 import { registerGitCommands } from "./commands/git.js";
 import { registerGraphiqCommands } from "./commands/graphiq.js";
 import { registerHookCommands } from "./commands/hook.js";
@@ -1180,14 +1179,6 @@ registerVectorCommands(program, {
 // ============================================================================
 
 registerSessionCommands(program, {
-	fetchFromDaemon,
-});
-
-// ============================================================================
-// signet dream - Dreaming memory consolidation
-// ============================================================================
-
-registerDreamCommands(program, {
 	fetchFromDaemon,
 });
 
