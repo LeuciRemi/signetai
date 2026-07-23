@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-07-23
 - Features: inference settings density + hierarchy refactor; select connected providers as backends + compact rows.
-- Bug fixes: harden sterile OpenCode inference; provider wall completeness, optional keys, OAuth window; support agent-managed models; parse JSON after model preambles; bound llama.cpp inputs; remove invalid hook ownership markers; stop native embedding smoke child within bun's afterEach budget; integrate pi-ai OAuth providers; make maintenance supersession sweep non-fatal without a provider; enable Astro ClientRouter for client-side navigation.
+- Bug fixes: quiesce background inference on pause; harden sterile OpenCode inference; provider wall completeness, optional keys, OAuth window; support agent-managed models; parse JSON after model preambles; bound llama.cpp inputs; remove invalid hook ownership markers; stop native embedding smoke child within bun's afterEach budget; integrate pi-ai OAuth providers; make maintenance supersession sweep non-fatal without a provider; enable Astro ClientRouter for client-side navigation.
 - Docs: update roadmap to reflect current priorities (dashboard, desktop, config UX).
 
 ### 2026-07-22
@@ -34,6 +34,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: tolerate immutable-artifact conflict on summary retry; add boundary reason semantics to session synthesis.
 
 ## Release Ledger
+
+## [0.150.4] - 2026-07-23
+
+Release summary: 1 bug fix.
+Tag range: `v0.150.3..v0.150.4`.
+
+### Bug Fixes
+
+- **pipeline**: quiesce background inference on pause (#992)
 
 ## [0.150.3] - 2026-07-23
 
