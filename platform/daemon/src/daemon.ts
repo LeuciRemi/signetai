@@ -69,11 +69,9 @@ import {
 	ensureRetentionWorker,
 	ensureSummaryRecovery,
 	ensureSummaryWorker,
-	setDreamingWorker,
 	startPipeline,
 	stopPipeline,
 } from "./pipeline";
-import { type DreamingWorkerHandle, startDreamingWorker } from "./pipeline/dreaming-worker";
 import type { WorkerInit } from "./pipeline/extraction-thread-protocol";
 import { invalidateTraversalCache } from "./pipeline/graph-traversal";
 import { stopModelRegistry } from "./pipeline/model-registry";
@@ -187,7 +185,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 let httpServer: import("node:net").Server | null = null;
-let dreamingWorkerHandle: DreamingWorkerHandle | null = null;
 let embeddingTrackerHandle: EmbeddingTrackerHandle | null = null;
 let embeddingIndexMigrationHandle: EmbeddingIndexMigrationHandle | null = null;
 let skillReconcilerHandle: ReturnType<typeof startReconciler> | null = null;
@@ -1191,16 +1188,6 @@ async function stopPipelineRuntime(): Promise<void> {
 		setEmbeddingTrackerHandle(null);
 	}
 
-	if (dreamingWorkerHandle) {
-		dreamingWorkerHandle.stop();
-		if (dreamingWorkerHandle.activePass) {
-			const timeout = new Promise<void>((resolve) => setTimeout(resolve, 30_000));
-			await Promise.race([dreamingWorkerHandle.activePass.catch(() => undefined), timeout]);
-		}
-		dreamingWorkerHandle = null;
-		setDreamingWorker(null);
-	}
-
 	if (schedulerHandle) {
 		try {
 			await schedulerHandle.stop();
@@ -1566,18 +1553,6 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 			},
 		});
 	}
-
-	if (memoryCfg.dreaming.enabled && !pipelinePaused && !memoryCfg.pipelineV2.mutationsFrozen) {
-		try {
-			dreamingWorkerHandle = startDreamingWorker(getDbAccessor(), memoryCfg.dreaming, AGENTS_DIR, defaultAgentId);
-			setDreamingWorker(dreamingWorkerHandle);
-		} catch (err) {
-			logger.warn("dreaming", "Failed to start dreaming worker (non-fatal)", {
-				error: err instanceof Error ? err.message : String(err),
-			});
-		}
-	}
-
 	if (memoryCfg.pipelineV2.graph.enabled && memoryCfg.pipelineV2.structural.enabled && !pipelinePaused) {
 		const backfillCtx: RepairContext = {
 			reason: "post-upgrade structural backfill",

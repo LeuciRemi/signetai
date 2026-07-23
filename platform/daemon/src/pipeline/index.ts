@@ -14,7 +14,6 @@ import type { TelemetryCollector } from "../telemetry";
 import type { DecisionConfig } from "./decision";
 import { type DependencySynthesisHandle, startDependencySynthesisWorker } from "./dependency-synthesis";
 import { type DocumentWorkerHandle, startDocumentWorker } from "./document-worker";
-import type { DreamingWorkerHandle } from "./dreaming-worker";
 import { startExtractionThread } from "./extraction-thread-handle";
 import type { ExtractionThreadOpts } from "./extraction-thread-handle";
 import type { WorkerInit } from "./extraction-thread-protocol";
@@ -58,22 +57,9 @@ export { startSummaryWorker, enqueueSummaryJob } from "./summary-worker";
 export type { SummaryWorkerHandle } from "./summary-worker";
 export { startSynthesisWorker, readLastSynthesisTime } from "./synthesis-worker";
 export type { SynthesisWorkerHandle } from "./synthesis-worker";
-export { addDreamingTokens, getDreamingState, getDreamingPasses, recordDreamingFailure } from "./dreaming";
-export type { DreamingWorkerHandle } from "./dreaming-worker";
 
-/** Get the active synthesis worker handle (for API routes). */
 export function getSynthesisWorker(): SynthesisWorkerHandle | null {
 	return synthesisWorkerHandle;
-}
-
-/** Get the active dreaming worker handle (for API routes). */
-export function getDreamingWorker(): DreamingWorkerHandle | null {
-	return dreamingWorkerHandle;
-}
-
-/** Set dreaming worker handle (managed by daemon.ts, not startPipeline). */
-export function setDreamingWorker(handle: DreamingWorkerHandle | null): void {
-	dreamingWorkerHandle = handle;
 }
 
 /** Start the summary worker if not already running (used when dreaming
@@ -159,7 +145,6 @@ let structuralClassifyHandle: StructuralClassifyHandle | null = null;
 let structuralDependencyHandle: StructuralDependencyHandle | null = null;
 let dependencySynthesisHandle: DependencySynthesisHandle | null = null;
 let hintsWorkerHandle: HintsWorkerHandle | null = null;
-let dreamingWorkerHandle: DreamingWorkerHandle | null = null;
 let reflectionWorkerHandle: ReflectionWorkerHandle | null = null;
 let ingestWorkerHandle: IngestWorkerHandle | null = null;
 let pendingStartup: Promise<void> | null = null;
@@ -188,7 +173,6 @@ export type PipelineWorkerStatus = {
 	readonly structuralDependency: WorkerStatusEntry;
 	readonly dependencySynthesis: WorkerStatusEntry;
 	readonly hints: WorkerStatusEntry;
-	readonly dreaming: WorkerStatusEntry;
 	readonly reflections: WorkerStatusEntry;
 	readonly ingest: WorkerStatusEntry;
 };
@@ -215,7 +199,6 @@ export function getPipelineWorkerStatus(): PipelineWorkerStatus {
 		structuralDependency: { running: structuralDependencyHandle !== null },
 		dependencySynthesis: { running: dependencySynthesisHandle !== null },
 		hints: { running: hintsWorkerHandle !== null },
-		dreaming: { running: dreamingWorkerHandle !== null },
 		reflections: { running: reflectionWorkerHandle !== null },
 		ingest: { running: ingestWorkerHandle !== null },
 	};
