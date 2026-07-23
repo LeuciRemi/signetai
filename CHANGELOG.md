@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-07-23
 - Features: surface and repair dead summary-job backlog (#901); recover missed native transcripts; inference settings density + hierarchy refactor; select connected providers as backends + compact rows.
-- Bug fixes: harden native WASM inference; quiesce background inference on pause; harden sterile OpenCode inference; provider wall completeness, optional keys, OAuth window; support agent-managed models; parse JSON after model preambles; bound llama.cpp inputs; remove invalid hook ownership markers; stop native embedding smoke child within bun's afterEach budget; integrate pi-ai OAuth providers; make maintenance supersession sweep non-fatal without a provider; enable Astro ClientRouter for client-side navigation.
+- Bug fixes: expose macOS physical memory; harden native WASM inference; quiesce background inference on pause; harden sterile OpenCode inference; provider wall completeness, optional keys, OAuth window; support agent-managed models; parse JSON after model preambles; bound llama.cpp inputs; remove invalid hook ownership markers; stop native embedding smoke child within bun's afterEach budget; integrate pi-ai OAuth providers; make maintenance supersession sweep non-fatal without a provider; enable Astro ClientRouter for client-side navigation.
 - Docs: update roadmap to reflect current priorities (dashboard, desktop, config UX).
 
 ### 2026-07-22
@@ -34,6 +34,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: tolerate immutable-artifact conflict on summary retry; add boundary reason semantics to session synthesis.
 
 ## Release Ledger
+
+## [0.152.1] - 2026-07-23
+
+Release summary: 1 bug fix.
+Tag range: `v0.152.0..v0.152.1`.
+
+### Bug Fixes
+
+- **daemon**: expose macOS physical memory (#1007)
 
 ## [0.152.0] - 2026-07-23
 
