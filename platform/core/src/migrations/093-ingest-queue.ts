@@ -71,8 +71,8 @@ export function up(db: MigrationDb): void {
 		WHERE status IN ('leased','planning','applying')
 	`);
 
-	// Legacy dreaming state remains until the daemon cutover removes every
-	// legacy worker and consumer. Dropping it in this migration would make
-	// upgrades fail for installations where memory.dreaming.enabled is still
-	// true, and would discard their pass history before a migration exists.
+	// All legacy workers and consumers are removed in the unified-ingest cutover.
+	// Delete the obsolete state only after that code is gone.
+	db.exec("DROP TABLE IF EXISTS dreaming_passes");
+	db.exec("DROP TABLE IF EXISTS dreaming_state");
 }
