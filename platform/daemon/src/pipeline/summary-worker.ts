@@ -35,7 +35,6 @@ import { isNoiseSession } from "../session-noise";
 import { upsertSessionTranscript } from "../session-transcripts";
 import { upsertThreadHead } from "../thread-heads";
 import { isDurableBoundary, normalizeBoundaryReason } from "./boundary-reason";
-import { addDreamingTokens } from "./dreaming";
 import { enqueueExtractionJobInTx } from "./extraction-queue";
 import {
 	RateLimitExceededError,
@@ -782,15 +781,6 @@ async function processJob(
 		writeSummaryToDAG(accessor, job, result, job.agent_id);
 	} catch (e) {
 		logger.warn("summary-worker", "Failed to write session summary to DAG (non-fatal)", {
-			error: e instanceof Error ? e.message : String(e),
-		});
-	}
-
-	try {
-		const tokens = countTokens(job.transcript);
-		addDreamingTokens(accessor, job.agent_id, tokens);
-	} catch (e) {
-		logger.warn("summary-worker", "Failed to accumulate dreaming tokens (non-fatal)", {
 			error: e instanceof Error ? e.message : String(e),
 		});
 	}
