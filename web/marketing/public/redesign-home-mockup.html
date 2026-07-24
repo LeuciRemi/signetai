@@ -4,6 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Signet — Home</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+        }
+      }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -873,8 +881,8 @@
       /* seamless canvas floor — no border, no container */
       .graph-stage-wrap { position: relative; flex: 1; min-height: 0; overflow: hidden; background: transparent; border: none; box-shadow: none; border-radius: 0; }
       .graph-stage { width: 100%; height: 100%; position: absolute; inset: 0;
-        background-image: radial-gradient(oklch(1 0 0 / 0.06) 1px, transparent 1px); background-size: 28px 28px; }
-      [data-theme="light"] .graph-stage { background-image: radial-gradient(oklch(0 0 0 / 0.06) 1px, transparent 1px); }
+        background-image: radial-gradient(oklch(1 0 0 / 0.03) 1px, transparent 1px); background-size: 28px 28px; }
+      [data-theme="light"] .graph-stage { background-image: radial-gradient(oklch(0 0 0 / 0.03) 1px, transparent 1px); }
       .graph-canvas { width: 100%; height: 100%; display: block; cursor: grab; transition: opacity .25s; }
       .graph-canvas:active { cursor: grabbing; }
       .graph-canvas.zooming { opacity: 0.6; }
@@ -1124,9 +1132,8 @@
       /* ════════════════════════════════════════════════════════════════
          AGENTS VIEW — identity + access config cards
       ════════════════════════════════════════════════════════════════ */
-      .ag-view { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 14px; overflow-y: auto; overflow-x: hidden; }
-      .ag-view::-webkit-scrollbar { width: 6px; }
-      .ag-view::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 15%, transparent); border-radius: 3px; }
+      .ag-view { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 12px; overflow: hidden; }
+      /* telemetry line */
       .ag-hero { display: flex; align-items: center; gap: 9px; padding: 2px 2px; flex-shrink: 0; font-family: var(--font-mono); }
       .ag-hero__stat { display: inline-flex; align-items: baseline; gap: 5px; }
       .ag-hero__val { font-size: 12px; font-weight: 500; color: var(--foreground); letter-spacing: -0.01em; }
@@ -1139,58 +1146,88 @@
       [data-theme="light"] .ag-new { border-color: oklch(0 0 0 / 0.1); }
       .ag-new:hover { color: oklch(0.82 0.16 150); border-color: color-mix(in oklch, var(--success) 40%, transparent); }
       .ag-new svg { width: 12px; height: 12px; }
-      .ag-section-label { font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(0.45 0 0); padding: 4px 2px 0; flex-shrink: 0; }
-      [data-theme="light"] .ag-section-label { color: oklch(0.55 0 0); }
-      .ag-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; align-content: start; flex: 1; }
-      .ag-card { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: var(--radius);
-        background: var(--card); border: 1px solid oklch(1 0 0 / 0.05); box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.04), 0 1px 2px oklch(0 0 0 / 0.3); transition: border-color .2s; }
-      [data-theme="light"] .ag-card { border-color: oklch(0 0 0 / 0.06); }
-      .ag-card:hover { border-color: oklch(1 0 0 / 0.14); }
-      [data-theme="light"] .ag-card:hover { border-color: oklch(0 0 0 / 0.14); }
-      /* header */
-      .ag-card__top { display: flex; align-items: center; gap: 11px; }
-      .ag-card__avatar { width: 38px; height: 38px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0;
-        color: #fff; font-size: 13px; font-weight: 600; }
-      .ag-card__meta { flex: 1; min-width: 0; }
-      .ag-card__name { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
-      .ag-card__desc { font-size: 11px; color: var(--muted-foreground); margin-top: 2px; line-height: 1.3; }
+      /* ── split-pane layout ── */
+      .ag-layout { display: flex; gap: 0; flex: 1; min-height: 0; border: 1px solid oklch(1 0 0 / 0.06); border-radius: var(--radius); overflow: hidden; }
+      [data-theme="light"] .ag-layout { border-color: oklch(0 0 0 / 0.06); }
+      /* left pane — compact agent list */
+      .ag-list { width: 220px; flex-shrink: 0; overflow-y: auto; border-right: 1px solid oklch(1 0 0 / 0.06); padding: 8px 0; }
+      [data-theme="light"] .ag-list { border-right-color: oklch(0 0 0 / 0.06); }
+      .ag-list::-webkit-scrollbar { width: 5px; }
+      .ag-list::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 15%, transparent); border-radius: 3px; }
+      .ag-item { display: flex; align-items: center; gap: 10px; padding: 8px 14px; cursor: pointer; transition: background .1s; border-left: 2px solid transparent; }
+      .ag-item:hover { background: color-mix(in oklch, var(--foreground) 2%, transparent); }
+      .ag-item.is-selected { border-left-color: var(--success); background: color-mix(in oklch, var(--success) 4%, transparent); }
+      .ag-item__avatar { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; flex-shrink: 0; color: #fff; font-size: 10px; font-weight: 600; opacity: 0.8; }
+      .ag-item__meta { flex: 1; min-width: 0; }
+      .ag-item__name { font-size: 12.5px; font-weight: 600; line-height: 1.2; }
+      .ag-item__sub { font-family: var(--font-mono); font-size: 9px; color: var(--muted-foreground); margin-top: 1px; }
+      .ag-item__dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+      .ag-item__dot--active { background: oklch(0.72 0.15 150); box-shadow: 0 0 6px oklch(0.72 0.15 150 / 0.5); }
+      .ag-item__dot--idle { background: oklch(0.55 0 0); }
+      /* right pane — detail workspace */
+      .ag-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+      .ag-detail__head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid oklch(1 0 0 / 0.06); flex-shrink: 0; }
+      [data-theme="light"] .ag-detail__head { border-bottom-color: oklch(0 0 0 / 0.06); }
+      .ag-detail__avatar { width: 44px; height: 44px; border-radius: 11px; display: grid; place-items: center; flex-shrink: 0; color: #fff; font-size: 15px; font-weight: 600; }
+      .ag-detail__meta { flex: 1; min-width: 0; }
+      .ag-detail__name { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
+      .ag-detail__desc { font-size: 12px; color: var(--muted-foreground); margin-top: 3px; line-height: 1.3; }
       .ag-conn { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; flex-shrink: 0; }
       .ag-conn .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
       .ag-conn--active { color: oklch(0.72 0.15 150); }
       .ag-conn--active .dot { background: oklch(0.72 0.15 150); box-shadow: 0 0 6px oklch(0.72 0.15 150 / 0.5); }
       .ag-conn--idle { color: var(--muted-foreground); }
       .ag-conn--idle .dot { background: oklch(0.55 0 0); }
-      /* connected harnesses block */
-      .ag-harness-label { font-family: var(--font-mono); font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(0.45 0 0); margin-bottom: 5px; }
-      [data-theme="light"] .ag-harness-label { color: oklch(0.55 0 0); }
-      .ag-harnesses { display: flex; flex-direction: column; gap: 5px; }
-      .ag-harness { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; background: color-mix(in oklch, var(--foreground) 2.5%, transparent); }
+      /* scrollable detail body */
+      .ag-detail__body { flex: 1; min-height: 0; overflow: hidden; padding: 16px 20px 0; display: flex; flex-direction: column; gap: 14px; }
+      /* section labels */
+      .ag-section { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+      .ag-section--grow { flex: 1; min-height: 0; overflow: hidden; }
+      .ag-section__label { font-family: var(--font-mono); font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(0.45 0 0); }
+      [data-theme="light"] .ag-section__label { color: oklch(0.55 0 0); }
+      /* connected harnesses — borderless text rows with hairlines */
+      .ag-harnesses { display: flex; flex-direction: column; gap: 0; }
+      .ag-harness { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid oklch(1 0 0 / 0.04); transition: background .1s; }
+      [data-theme="light"] .ag-harness { border-bottom-color: oklch(0 0 0 / 0.04); }
+      .ag-harness:last-child { border-bottom: none; }
+      .ag-harness:hover { background: color-mix(in oklch, var(--foreground) 2%, transparent); }
       .ag-harness__ic { width: 14px; height: 14px; flex-shrink: 0; color: oklch(0.72 0.15 150); }
-      .ag-harness__name { font-size: 11.5px; color: var(--foreground); font-weight: 500; flex: 1; min-width: 0; }
+      .ag-harness__name { font-size: 12px; color: var(--foreground); font-weight: 500; flex: 1; min-width: 0; }
       .ag-harness__via { font-family: var(--font-mono); font-size: 9px; color: var(--muted-foreground); }
       .ag-harness__sync { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); flex-shrink: 0; }
-      .ag-harness--idle { color: var(--muted-foreground); }
-      .ag-harness--idle .ag-harness__ic { color: oklch(0.45 0 0); }
-      .ag-harness--idle .ag-harness__name { color: var(--muted-foreground); }
-      .ag-no-harnesses { font-family: var(--font-mono); font-size: 10px; color: oklch(0.45 0 0); padding: 4px 0; }
-      /* identity stack section */
-      .ag-stack-label { font-family: var(--font-mono); font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(0.45 0 0); margin-bottom: 5px; }
-      [data-theme="light"] .ag-stack-label { color: oklch(0.55 0 0); }
-      .ag-tags { display: flex; flex-wrap: wrap; gap: 5px; }
-      .ag-tag { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 10px; font-weight: 500;
-        padding: 4px 9px; border-radius: var(--radius); cursor: pointer; transition: all .15s;
+      .ag-no-harnesses { font-family: var(--font-mono); font-size: 11px; color: oklch(0.45 0 0); padding: 8px 0; }
+      /* identity file chips */
+      .ag-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+      .ag-tag { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
+        padding: 5px 11px; border-radius: var(--radius); cursor: pointer; transition: all .15s;
         background: color-mix(in oklch, var(--foreground) 5%, transparent); border: 1px solid oklch(1 0 0 / 0.08); color: oklch(0.7 0 0); }
       [data-theme="light"] .ag-tag { border-color: oklch(0 0 0 / 0.08); color: oklch(0.35 0 0); }
       .ag-tag:hover { background: color-mix(in oklch, oklch(0.7 0.1 220) 12%, transparent); border-color: oklch(0.6 0.1 220 / 0.3); color: oklch(0.7 0.1 220); }
       [data-theme="light"] .ag-tag:hover { color: oklch(0.45 0.12 220); }
+      .ag-tag.is-active { background: color-mix(in oklch, oklch(0.7 0.1 220) 14%, transparent); border-color: oklch(0.6 0.1 220 / 0.4); color: oklch(0.7 0.1 220); }
+      [data-theme="light"] .ag-tag.is-active { color: oklch(0.45 0.12 220); }
       .ag-tag--more { background: none; border-style: dashed; color: var(--muted-foreground); cursor: default; }
+      /* unboxed editor — toolbar header + borderless text surface */
+      .ag-editor { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+      .ag-editor__bar { display: flex; align-items: center; gap: 8px; padding: 6px 0 8px; border-bottom: 1px solid oklch(1 0 0 / 0.06); flex-shrink: 0; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
+      [data-theme="light"] .ag-editor__bar { border-bottom-color: oklch(0 0 0 / 0.06); }
+      .ag-editor__bar b { color: var(--foreground); font-weight: 600; }
+      .ag-editor__bar .sep { color: oklch(0.35 0 0); }
+      [data-theme="light"] .ag-editor__bar .sep { color: oklch(0.65 0 0); }
+      .ag-editor__surface { flex: 1; overflow-y: auto; padding: 10px 0; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.7; }
+      .ag-editor__surface::-webkit-scrollbar { width: 5px; }
+      .ag-editor__surface::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 15%, transparent); border-radius: 3px; }
+      .ag-editor__line { display: block; white-space: pre-wrap; word-break: break-word; color: oklch(0.78 0 0); }
+      [data-theme="light"] .ag-editor__line { color: oklch(0.3 0 0); }
+      .ag-editor__line--heading { color: oklch(0.92 0 0); font-weight: 600; }
+      [data-theme="light"] .ag-editor__line--heading { color: oklch(0.1 0 0); }
       /* workspace custody footer */
-      .ag-custody { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid oklch(1 0 0 / 0.06); }
+      .ag-custody { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 20px; border-top: 1px solid oklch(1 0 0 / 0.06); flex-shrink: 0; }
       [data-theme="light"] .ag-custody { border-top-color: oklch(0 0 0 / 0.06); }
-      .ag-stats { display: flex; align-items: baseline; gap: 12px; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+      .ag-stats { display: flex; align-items: baseline; gap: 16px; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
       .ag-stats b { color: var(--foreground); font-weight: 600; }
-      .ag-actions { display: flex; gap: 2px; }
-      .ag-btn { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 9.5px; padding: 5px 9px; border-radius: var(--radius); cursor: pointer; transition: all .15s; color: var(--muted-foreground); border: 1px solid oklch(1 0 0 / 0.08); }
+      .ag-actions { display: flex; gap: 6px; }
+      .ag-btn { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 9.5px; padding: 5px 10px; border-radius: var(--radius); cursor: pointer; transition: all .15s; color: var(--muted-foreground); border: 1px solid oklch(1 0 0 / 0.08); }
       [data-theme="light"] .ag-btn { border-color: oklch(0 0 0 / 0.08); }
       .ag-btn:hover { color: var(--foreground); border-color: oklch(1 0 0 / 0.16); }
       .ag-btn svg { width: 12px; height: 12px; }
@@ -2209,8 +2246,11 @@
                 New agent
               </span>
             </div>
-            <!-- agent grid (populated by JS) -->
-            <div class="ag-grid" id="ag-grid"></div>
+            <!-- split-pane: agent list + detail workspace -->
+            <div class="ag-layout">
+              <div class="ag-list" id="ag-list"></div>
+              <div class="ag-detail" id="ag-detail"></div>
+            </div>
           </div>
 
           <!-- ════════ MEMORY VIEW ════════ -->
@@ -2278,7 +2318,7 @@
               <span class="graph-hud__sep">/</span>
               <span><b>5,904</b> edges</span>
               <span class="graph-hud__sep">/</span>
-              <span><b>8</b> clusters</span>
+              <span><b>13</b> clusters</span>
             </div>
             <!-- floating legend gear -->
             <div class="graph-legend-btn" id="legend-btn" title="Node categories">
@@ -2293,9 +2333,8 @@
 
             <div class="graph-stage-wrap">
               <div class="graph-stage">
-                <svg class="graph-canvas" id="graph-canvas" viewBox="0 0 800 500" preserveAspectRatio="xMidYMid meet">
-                  <g id="graph-content"><!-- nodes + edges injected by JS --></g>
-                </svg>
+                <canvas id="graph-canvas" style="width:100%;height:100%;display:block"></canvas>
+                <div id="graph-labels" style="position:absolute;inset:0;pointer-events:none;z-index:1"></div>
               </div>
 
               <!-- floating prompt chips (legacy, hidden) -->
@@ -3047,247 +3086,6 @@
       })();
 
       // ── Graph view: memory graph explorer + ask-signet ──
-      (function () {
-        const COLORS = { source: "#38bdf8", document: "#60a5fa", session: "#818cf8", entity: "#7dd3fc", aspect: "#60a5fa", attribute: "#a78bfa", memory: "#22d3ee", proposal: "#f59e0b" };
-        // realistic graph: entities, aspects, memories, sources clustered around topics
-        const NODES = [
-          // cluster: dashboard rewrite (#948)
-          { id: "e-dashboard", label: "dashboard rewrite", kind: "entity", x: 180, y: 150, r: 12, mentions: 41 },
-          { id: "a-react", label: "React + Vite", kind: "aspect", x: 110, y: 95, r: 8, mentions: 18 },
-          { id: "a-svelte-out", label: "Svelte (archived)", kind: "aspect", x: 95, y: 175, r: 7, mentions: 9 },
-          { id: "m-948", label: "#948 decision", kind: "memory", x: 160, y: 230, r: 9, mentions: 1 },
-          { id: "m-palette", label: "oklch palette", kind: "memory", x: 235, y: 95, r: 7, mentions: 1 },
-          // cluster: positioning
-          { id: "e-positioning", label: "infrastructure-forward", kind: "entity", x: 420, y: 110, r: 11, mentions: 28 },
-          { id: "a-headline", label: "persistent identity", kind: "aspect", x: 500, y: 70, r: 8, mentions: 14 },
-          { id: "m-pos", label: "positioning convergence", kind: "memory", x: 480, y: 165, r: 8, mentions: 1 },
-          // cluster: inference
-          { id: "e-inference", label: "inference routing", kind: "entity", x: 620, y: 200, r: 11, mentions: 22 },
-          { id: "a-hosted", label: "hosted vs local", kind: "aspect", x: 700, y: 160, r: 8, mentions: 11 },
-          { id: "m-tension", label: "Mira tension", kind: "memory", x: 660, y: 270, r: 8, mentions: 1 },
-          // cluster: storage
-          { id: "e-storage", label: "data location", kind: "entity", x: 320, y: 330, r: 10, mentions: 16 },
-          { id: "a-sqlite", label: "SQLite default", kind: "aspect", x: 255, y: 380, r: 7, mentions: 8 },
-          { id: "m-dataloc", label: "$SIGNET_WORKSPACE", kind: "memory", x: 385, y: 385, r: 7, mentions: 1 },
-          // cluster: scoping
-          { id: "e-scoping", label: "agent scoping", kind: "entity", x: 540, y: 360, r: 10, mentions: 13 },
-          { id: "m-issue422", label: "agent_id leak", kind: "memory", x: 610, y: 410, r: 7, mentions: 1 },
-          // sources
-          { id: "s-obsidian", label: "Obsidian", kind: "source", x: 60, y: 320, r: 9, mentions: 142 },
-          { id: "s-github", label: "GitHub", kind: "source", x: 720, y: 420, r: 9, mentions: 318 },
-          { id: "s-notion", label: "Notion", kind: "source", x: 430, y: 50, r: 7, mentions: 64 },
-        ];
-        const EDGES = [
-          ["e-dashboard", "a-react", "has_aspect"], ["e-dashboard", "a-svelte-out", "has_aspect"],
-          ["e-dashboard", "m-948", "mentions"], ["e-dashboard", "m-palette", "mentions"],
-          ["e-positioning", "a-headline", "has_aspect"], ["e-positioning", "m-pos", "mentions"],
-          ["e-inference", "a-hosted", "has_aspect"], ["e-inference", "m-tension", "mentions"],
-          ["e-storage", "a-sqlite", "has_aspect"], ["e-storage", "m-dataloc", "mentions"],
-          ["e-scoping", "m-issue422", "mentions"],
-          // cross-cluster semantic links
-          ["m-948", "m-palette", "extends"], ["m-pos", "e-positioning", "about"],
-          ["e-dashboard", "e-positioning", "supports"], ["e-inference", "e-scoping", "updates"],
-          // source provenance
-          ["s-obsidian", "m-948", "contains"], ["s-github", "m-dataloc", "contains"],
-          ["s-github", "m-issue422", "contains"], ["s-notion", "m-pos", "contains"],
-          ["s-obsidian", "e-dashboard", "mentions"],
-        ];
-        const byId = Object.fromEntries(NODES.map((n) => [n.id, n]));
-        const content = document.getElementById("graph-content");
-        const canvas = document.getElementById("graph-canvas");
-        if (!content || !canvas) return;
-
-        // render edges first (under nodes)
-        function edgePath(a, b) {
-          return "M" + a.x + " " + a.y + " L" + b.x + " " + b.y;
-        }
-        EDGES.forEach(([s, t], i) => {
-          const a = byId[s], b = byId[t];
-          if (!a || !b) return;
-          const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-          p.setAttribute("d", edgePath(a, b));
-          p.setAttribute("class", "gedge");
-          p.setAttribute("data-edge", s + "|" + t);
-          content.appendChild(p);
-        });
-        // render nodes + labels
-        NODES.forEach((n) => {
-          const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-          g.setAttribute("class", "gnode");
-          g.setAttribute("data-id", n.id);
-          g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
-          g.style.color = COLORS[n.kind];
-          const halo = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-          halo.setAttribute("class", "node-halo"); halo.setAttribute("r", 6 + 6); halo.setAttribute("fill", COLORS[n.kind]); halo.setAttribute("opacity", "0.08");
-          const fill = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-          fill.setAttribute("class", "node-fill"); fill.setAttribute("r", 6); fill.setAttribute("fill", COLORS[n.kind]);
-          g.appendChild(halo); g.appendChild(fill);
-          g.addEventListener("click", () => focusNode(n.id));
-          content.appendChild(g);
-          const lbl = document.createElementNS("http://www.w3.org/2000/svg", "text");
-          lbl.setAttribute("class", "glabel"); lbl.setAttribute("data-label", n.id);
-          lbl.setAttribute("x", n.x); lbl.setAttribute("y", n.y - 13);
-          lbl.setAttribute("text-anchor", "middle"); lbl.textContent = n.label;
-          content.appendChild(lbl);
-        });
-
-        // neighbors of a node
-        function neighbors(id) {
-          const set = new Set([id]);
-          EDGES.forEach(([s, t]) => { if (s === id) set.add(t); if (t === id) set.add(s); });
-          return set;
-        }
-        // apply counter-scale to labels so text stays fixed-size on zoom
-        function syncLabels(scale) {
-          const inv = 1 / scale;
-          content.querySelectorAll(".glabel").forEach((lbl) => {
-            const id = lbl.getAttribute("data-label");
-            const n = byId[id]; if (!n) return;
-            // position label at node, counter-scaled so the font stays 11px
-            const lx = n.x, ly = n.y - 13;
-            lbl.setAttribute("transform", "translate(" + lx + "," + ly + ") scale(" + inv + ")");
-            lbl.setAttribute("x", 0); lbl.setAttribute("y", 0);
-          });
-        }
-        // zoom + highlight a node cluster. When the drawer is open, offset the
-        // focal point left so the active cluster sits in the left 70% of the
-        // canvas, keeping the right 30% clear for the response drawer.
-        function focusNode(id, animateEdges, drawerOpen) {
-          const n = byId[id]; if (!n) return;
-          const targetScale = 1.8;
-          const vw = 800, vh = 500;
-          const focalX = drawerOpen ? vw * 0.35 : vw * 0.5;
-          const tx = focalX - n.x * targetScale, ty = vh / 2 - n.y * targetScale;
-          canvas.classList.add("zooming");
-          content.style.transition = "transform .6s cubic-bezier(0.4, 0, 0.2, 1)";
-          content.setAttribute("transform", "translate(" + tx + "," + ty + ") scale(" + targetScale + ")");
-          syncLabels(targetScale);
-          setTimeout(() => canvas.classList.remove("zooming"), 600);
-          // highlight the cluster
-          const cluster = neighbors(id);
-          NODES.forEach((nn) => {
-            const g = content.querySelector('.gnode[data-id="' + nn.id + '"]');
-            const lbl = content.querySelectorAll(".glabel")[NODES.indexOf(nn)];
-            if (!g) return;
-            const inCluster = cluster.has(nn.id);
-            g.classList.toggle("hl", inCluster); g.classList.toggle("dim", !inCluster);
-            if (lbl) lbl.classList.toggle("dim", !inCluster);
-          });
-          EDGES.forEach(([s, t], i) => {
-            const e = content.querySelectorAll(".gedge")[i];
-            if (!e) return;
-            const inCluster = cluster.has(s) && cluster.has(t);
-            e.classList.toggle("hl", inCluster); e.classList.toggle("dim", !inCluster);
-            if (animateEdges) e.classList.toggle("hl-flow", inCluster); else e.classList.remove("hl-flow");
-          });
-        }
-        function resetView() {
-          content.style.transition = "transform .6s cubic-bezier(0.4, 0, 0.2, 1)";
-          content.setAttribute("transform", "translate(0,0) scale(1)");
-          syncLabels(1);
-          NODES.forEach((nn) => {
-            const g = content.querySelector('.gnode[data-id="' + nn.id + '"]');
-            const lbl = content.querySelectorAll(".glabel")[NODES.indexOf(nn)];
-            if (g) { g.classList.remove("hl", "dim"); }
-            if (lbl) lbl.classList.remove("dim");
-          });
-          EDGES.forEach((_, i) => { const e = content.querySelectorAll(".gedge")[i]; if (e) e.classList.remove("hl", "dim", "hl-flow"); });
-        }
-
-        // chat: authoritative glass dock + right insight drawer
-        const input = document.getElementById("gc-input");
-        const send = document.getElementById("gc-send");
-        const dock = document.getElementById("graph-dock");
-        const respPanel = document.getElementById("graph-response");
-        const respBody = document.getElementById("gr-body");
-        const respTitle = document.getElementById("gr-title");
-        const closeBtn = document.getElementById("gr-close");
-        const QA = [
-          { q: ["dashboard", "react", "svelte", "#948", "rewrite"], focus: "e-dashboard", title: "Dashboard rewrite", a: "Your <b>dashboard rewrite</b> hardened into a firm decision: Svelte is out, <b>Vite + React + shadcn/ui</b> is in. The deciding factor was the Electron <span class=\"mono\">app://</span> static-SPA contract.", src: "3 memories · #948 cluster",
-            cites: [
-              { color: "#22d3ee", txt: "Dashboard rewrite moves to Vite + React 19 + shadcn/ui. Svelte is out.", meta: "mem-948-decision · 07:40 today · obsidian" },
-              { color: "#a78bfa", txt: "Neutral monochrome oklch baseline. Radius 0.3rem, flat shadows.", meta: "mem-palette · 11:30 yesterday · agent:Ant" },
-            ],
-            log: ["recall(hybrid, top=8) \u2192 3 matches", "cluster #948 resolved (5 nodes)", "graph zoom: 1.8x \u2192 dashboard rewrite", "edges animated: has_aspect \u00d7 2, mentions \u00d7 2"] },
-          { q: ["positioning", "headline", "marketing", "infrastructure"], focus: "e-positioning", title: "Positioning convergence", a: "Your <b>infrastructure-forward positioning</b> is converging across 6 sources toward the headline <i>persistent identity for intelligent systems</i>. Looks ready to commit.", src: "6 memories · positioning cluster",
-            cites: [
-              { color: "#22d3ee", txt: "Six sources point at persistent identity for intelligent systems.", meta: "mem-positioning · 14:05 yesterday · notion" },
-            ],
-            log: ["recall(hybrid, top=8) \u2192 6 matches", "cluster positioning resolved (4 nodes)", "graph zoom: 1.8x \u2192 infrastructure-forward"] },
-          { q: ["inference", "model", "hosted", "local", "tension", "mira"], focus: "e-inference", title: "Inference tension", a: "<b>Mira flagged a tension</b> twice this week: you keep reaching for hosted inference while insisting on local-first ownership. Your notes contradict on this 4 times \u2014 worth a deliberate call.", src: "2 memories · inference cluster",
-            cites: [
-              { color: "#22d3ee", txt: "Flagged tension: hosted inference vs local-first ownership.", meta: "mem-948-tension · 03:12 today · agent:Mira" },
-            ],
-            log: ["recall(vector, top=5) \u2192 2 matches", "cluster inference resolved (3 nodes)", "graph zoom: 1.8x \u2192 inference routing"] },
-          { q: ["storage", "data", "sqlite", "workspace", "location"], focus: "e-storage", title: "Data location", a: "User data lives in <b>$SIGNET_WORKSPACE</b> (default <span class=\"mono\">~/.agents/</span>). SQLite is the default storage; JSON sidecars only for genuine artifacts.", src: "3 memories · storage cluster",
-            cites: [
-              { color: "#22d3ee", txt: "SQLite is the default storage. JSON sidecars only for genuine artifacts.", meta: "mem-data-loc · 13:10 3d ago · github" },
-            ],
-            log: ["recall(hybrid, top=5) \u2192 3 matches", "cluster storage resolved (4 nodes)", "graph zoom: 1.8x \u2192 data location"] },
-          { q: ["scoping", "agent_id", "agentid", "leak", "multi-agent"], focus: "e-scoping", title: "Agent scoping", a: "Cross-agent reads must thread <b>both agent_id AND agentId</b>. Hardcoding <span class=\"mono\">default</span> for scoped paths when a real id is known is a scoping leak.", src: "1 memory · scoping cluster",
-            cites: [
-              { color: "#22d3ee", txt: "Cross-agent reads must thread both agent_id and agentId.", meta: "mem-issue-422 · 09:22 2d ago · slack" },
-            ],
-            log: ["recall(vector, top=3) \u2192 1 match", "cluster scoping resolved (2 nodes)", "graph zoom: 1.8x \u2192 agent scoping"] },
-        ];
-        function answer(q) {
-          const ql = q.toLowerCase();
-          let best = null, bestHits = 0;
-          QA.forEach((entry) => {
-            let h = 0; entry.q.forEach((kw) => { if (ql.includes(kw)) h++; });
-            if (h > bestHits) { bestHits = h; best = entry; }
-          });
-          return best;
-        }
-        function drawerHTML(r, q) {
-          if (!r) return '<div class="gr-answer">No cluster matched \u201c' + q.replace(/</g, "&lt;") + '\u201d. Try asking about the dashboard, positioning, inference, storage, or scoping.</div>';
-          const cites = r.cites.map((c) => '<div class="gr-cite"><span class="gr-cite__dot" style="background:' + c.color + '"></span><div><div class="gr-cite__txt">' + c.txt + '</div><div class="gr-cite__meta">' + c.meta + "</div></div></div>").join("");
-          const log = r.log.map((l) => "<div>" + l + "</div>").join("");
-          return [
-            '<div><div class="gr-answer">' + r.a + '<div class="gr-prov"><span class="dot"></span> ' + r.src + "</div></div></div>",
-            '<div><div class="gr-section-label" style="margin-bottom:8px">Citations</div>' + cites + "</div>",
-            '<div class="gr-acc"><div class="gr-acc-trigger"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg> Execution log</div><div class="gr-acc-body">' + log + "</div></div>",
-          ].join("");
-        }
-        function runQuery(q) {
-          const r = answer(q);
-          if (dock) dock.classList.add("responded");
-          if (respBody) {
-            respBody.innerHTML = drawerHTML(r, q);
-            // wire accordion + clickable citations
-            respBody.querySelectorAll(".gr-acc-trigger").forEach((t) => t.addEventListener("click", () => t.parentElement.classList.toggle("open")));
-            respBody.querySelectorAll(".gr-cite").forEach((c) => c.addEventListener("click", () => { c.style.borderColor = "oklch(0.85 0 0 / 0.4)"; }));
-          }
-          if (respTitle) respTitle.textContent = r ? r.title : "No match";
-          if (respPanel) respPanel.classList.add("show");
-          if (r) focusNode(r.focus, true, true); else resetView();
-        }
-        function closeResponse() {
-          if (respPanel) respPanel.classList.remove("show");
-          if (dock) dock.classList.remove("responded");
-          resetView();
-        }
-        if (send) send.addEventListener("click", () => { if (input.value.trim()) { runQuery(input.value.trim()); input.value = ""; } });
-        if (input) input.addEventListener("input", () => { if (send) send.disabled = !input.value.trim(); });
-        if (input) input.addEventListener("keydown", (e) => { if (e.key === "Enter" && input.value.trim()) { runQuery(input.value.trim()); input.value = ""; } });
-        if (closeBtn) closeBtn.addEventListener("click", closeResponse);
-        // follow-up input inside the drawer takes over the conversation thread
-        const followup = document.getElementById("gr-followup");
-        const followSend = document.getElementById("gr-send");
-        if (followup) {
-          followup.addEventListener("input", () => { if (followSend) followSend.disabled = !followup.value.trim(); });
-          followup.addEventListener("keydown", (e) => { if (e.key === "Enter" && followup.value.trim()) { runQuery(followup.value.trim()); followup.value = ""; } });
-        }
-        if (followSend) followSend.addEventListener("click", () => { if (followup && followup.value.trim()) { runQuery(followup.value.trim()); followup.value = ""; } });
-        // legend popover toggle
-        const legendBtn = document.getElementById("legend-btn");
-        const legendPop = document.getElementById("legend-pop");
-        if (legendBtn && legendPop) {
-          legendBtn.addEventListener("click", (e) => { e.stopPropagation(); legendPop.classList.toggle("show"); });
-          document.addEventListener("click", () => legendPop.classList.remove("show"));
-          legendPop.addEventListener("click", (e) => e.stopPropagation());
-        }
-      })();
         </script>
 
     <script>
@@ -3760,92 +3558,870 @@
         }
       })();
 
-      // ── Agents view: identity + access config cards ──
+      // ── Agents view: split-pane master/detail ──
       (function () {
-        // real Signet agent/identity model — 3 agents matching the home KPI
         const AGENTS = [
           { id: "default", name: "Signet", initials: "Si", color: "linear-gradient(150deg, oklch(0.6 0.02 270), oklch(0.35 0.02 270))",
             desc: "Primary system harness & cortex coordinator",
-            connections: 2,
+            connections: 2, status: "active",
             harnesses: [
-              { name: "Claude Code", via: "MCP", sync: "Just now" },
-              { name: "Dreaming Worker", via: "daemon", sync: "14m ago" },
+              { name: "Claude Code", via: "connector", sync: "Just now" },
+              { name: "Pi", via: "extension", sync: "14m ago" },
             ],
             files: ["SOUL.md", "AGENTS.md", "IDENTITY.md", "USER.md", "DREAMING.md"],
             memories: "8.1k", edges: "2.4k" },
           { id: "hermes", name: "Hermes", initials: "He", color: "linear-gradient(150deg, oklch(0.5 0.12 250), oklch(0.35 0.08 250))",
             desc: "Autonomous CLI agent & multi-tool orchestrator",
-            connections: 1,
+            connections: 1, status: "active",
             harnesses: [
-              { name: "Kanban Worker", via: "s6", sync: "2m ago" },
+              { name: "OpenCode", via: "plugin", sync: "2m ago" },
             ],
             files: ["SOUL.md", "AGENTS.md", "MEMORY.md"],
             memories: "3.2k", edges: "890" },
           { id: "mira", name: "Mira", initials: "Mi", color: "linear-gradient(150deg, oklch(0.5 0.1 330), oklch(0.35 0.08 330))",
             desc: "Read-only research & recall assistant",
-            connections: 0,
+            connections: 0, status: "idle",
             harnesses: [],
             files: ["AGENTS.md"],
             memories: "412", edges: "28" },
         ];
-        function cardHtml(a) {
+        const listEl = document.getElementById("ag-list");
+        const detailEl = document.getElementById("ag-detail");
+        let selectedId = AGENTS[0].id;
+        const HARNESS_SVG = '<svg class="ag-harness__ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M7 6V4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M12 12v0"/></svg>';
+        function listItemHtml(a) {
+          const sel = a.id === selectedId ? " is-selected" : "";
+          return '<div class="ag-item' + sel + '" data-id="' + a.id + '">' +
+            '<div class="ag-item__avatar" style="background:' + a.color + '">' + a.initials + "</div>" +
+            '<div class="ag-item__meta"><div class="ag-item__name">' + a.name + "</div>" +
+            '<div class="ag-item__sub">' + a.connections + " connections</div></div>" +
+            '<span class="ag-item__dot ag-item__dot--' + a.status + '"></span></div>';
+        }
+        const PREVIEWS = {
+          "SOUL.md": "# SOUL\n\nYou are Signet, a persistent agent substrate. You\noperate with calm precision. You value local-first\nownership and source-backed truth. You never print\nsecrets. You apply provenance to every claim.",
+          "AGENTS.md": "# AGENTS\n\nFix/triage answers need source, tests, current behavior,\nand dependency contract proof. Reviews default to\nexhaustive relevant codebase search before verdict.\nValidate the real daemon or CLI when the bug is runtime.",
+          "IDENTITY.md": "# IDENTITY\n\nName: Signet\nType: System coordinator\nVibe: Calm, precise, infrastructure-forward.\nPreset: hermes\nStartup: SOUL.md \u2192 AGENTS.md \u2192 IDENTITY.md",
+          "USER.md": "# USER\n\nNicholai prefers targeted edits over rewrites. American\nspelling. Neutral monochrome oklch baseline, no SaaS\nslop. Prefers local-first architectures. Dislikes\nemojis in UI. Values source-backed evidence.",
+          "DREAMING.md": "# DREAMING\n\nRead accumulated source evidence and turn it into\nontology structure. Apply first with provenance.\nHigh-confidence maintenance should use audited\noperation handlers. Do not rewrite raw transcripts.",
+          "MEMORY.md": "# MEMORY\n\nProcedurally generated working ledger. Do not hand-edit\n\u2014 the synthesis hook regenerates this file from the\ntemporal DAG after each compaction.",
+        };
+        const DEFAULT_PREVIEW = "# " + "\n\nThis identity file has not been configured yet.\nClick Edit to define the agent prompt.";
+        let activeFile = null;
+        function detailHtml(a) {
           const connLabel = a.connections > 0 ? a.connections + " active connections" : "No active connections";
           const connClass = a.connections > 0 ? "ag-conn--active" : "ag-conn--idle";
           const harnessHtml = a.harnesses.length > 0
-            ? a.harnesses.map((h) => '<div class="ag-harness"><svg class="ag-harness__ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg><span class="ag-harness__name">' + h.name + "</span><span class=\"ag-harness__via\">" + h.via + '</span><span class="ag-harness__sync">' + h.sync + "</span></div>").join("")
+            ? a.harnesses.map((h) => '<div class="ag-harness">' + HARNESS_SVG + '<span class="ag-harness__name">' + h.name + '</span><span class="ag-harness__via">' + h.via + '</span><span class="ag-harness__sync">' + h.sync + "</span></div>").join("")
             : '<div class="ag-no-harnesses">No active harnesses connected</div>';
-          const MAX_TAGS = 4;
-          const visible = a.files.slice(0, MAX_TAGS);
-          const extra = a.files.length - MAX_TAGS;
-          const tags = visible.map((f) => '<span class="ag-tag" data-file="' + f + '">' + f + "</span>").join("");
-          const more = extra > 0 ? '<span class="ag-tag ag-tag--more">+' + extra + "</span>" : "";
+          const showFile = activeFile || a.files[0];
+          const previewText = PREVIEWS[showFile] || DEFAULT_PREVIEW.replace("# ", "# " + showFile);
+          const previewLines = previewText.split("\n");
+          const editorLines = previewLines.map((line) => {
+            if (line.startsWith("# ")) return '<span class="ag-editor__line ag-editor__line--heading">' + line + "</span>";
+            if (line.trim() === "") return '<span class="ag-editor__line"> </span>';
+            return '<span class="ag-editor__line">' + line + "</span>";
+          }).join("");
+          const fileSize = Math.round(previewText.length / 10) * 10;
+          const tags = a.files.map((f) => '<span class="ag-tag' + (f === showFile ? " is-active" : "") + '" data-file="' + f + '">' + f + "</span>").join("");
           return [
-            '<div class="ag-card" data-id="' + a.id + '">',
-              '<div class="ag-card__top">',
-                '<div class="ag-card__avatar" style="background:' + a.color + '">' + a.initials + "</div>",
-                '<div class="ag-card__meta">',
-                  '<div class="ag-card__name">' + a.name + "</div>",
-                  '<div class="ag-card__desc">' + a.desc + "</div>",
-                "</div>",
-                '<span class="ag-conn ' + connClass + '"><span class="dot"></span>' + connLabel + "</span>",
+            '<div class="ag-detail__head">',
+              '<div class="ag-detail__avatar" style="background:' + a.color + '">' + a.initials + "</div>",
+              '<div class="ag-detail__meta">',
+                '<div class="ag-detail__name">' + a.name + "</div>",
+                '<div class="ag-detail__desc">' + a.desc + "</div>",
               "</div>",
-              '<div><div class="ag-harness-label">Connected harnesses</div><div class="ag-harnesses">' + harnessHtml + "</div></div>",
-              '<div><div class="ag-stack-label">Identity stack</div><div class="ag-tags">' + tags + more + "</div></div>",
-              '<div class="ag-custody">',
-                '<div class="ag-stats"><span><b>' + a.memories + "</b> memories</span><span><b>" + a.edges + "</b> graph edges</span></div>",
-                '<div class="ag-actions">',
-                  '<span class="ag-btn" data-act="config"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Config</span>',
-                  '<span class="ag-btn" data-act="edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>Edit</span>',
-                "</div>",
+              '<span class="ag-conn ' + connClass + '"><span class="dot"></span>' + connLabel + "</span>",
+            "</div>",
+            '<div class="ag-detail__body">',
+              '<div class="ag-section"><div class="ag-section__label">Connected harnesses</div><div class="ag-harnesses">' + harnessHtml + "</div></div>",
+              '<div class="ag-section"><div class="ag-section__label">Identity stack</div><div class="ag-tags">' + tags + "</div></div>",
+              '<div class="ag-section ag-section--grow"><div class="ag-editor"><div class="ag-editor__bar"><b>' + showFile + '</b><span class="sep">\u00b7</span>' + fileSize + ' bytes<span class="sep">\u00b7</span>Read-only</div><div class="ag-editor__surface">' + editorLines + "</div></div></div>",
+            "</div>",
+            '<div class="ag-custody">',
+              '<div class="ag-stats"><span><b>' + a.memories + "</b> memories</span><span><b>" + a.edges + "</b> graph edges</span></div>",
+              '<div class="ag-actions">',
+                '<span class="ag-btn" data-act="config"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Config</span>',
+                '<span class="ag-btn" data-act="edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>Edit</span>',
               "</div>",
             "</div>",
           ].join("");
         }
         function render() {
-          const grid = document.getElementById("ag-grid");
-          if (grid) grid.innerHTML = AGENTS.map(cardHtml).join("");
+          if (listEl) listEl.innerHTML = AGENTS.map(listItemHtml).join("");
+          const a = AGENTS.find((x) => x.id === selectedId);
+          if (detailEl && a) detailEl.innerHTML = detailHtml(a);
         }
         render();
-        // file edit + card actions
-        const grid = document.getElementById("ag-grid");
-        if (grid) grid.addEventListener("click", (e) => {
+        if (listEl) listEl.addEventListener("click", (e) => {
+          const item = e.target.closest(".ag-item"); if (!item) return;
+          selectedId = item.dataset.id;
+          render();
+        });
+        if (detailEl) detailEl.addEventListener("click", (e) => {
           const tag = e.target.closest(".ag-tag:not(.ag-tag--more)");
-          if (tag) {
-            tag.style.color = "oklch(0.72 0.15 150)";
-            setTimeout(() => { tag.style.color = ""; }, 800);
-            e.stopPropagation(); return;
-          }
-          const act = e.target.closest(".ag-act"); if (!act) return;
-          const card = act.closest(".ag-card"); if (!card) return;
-          const id = card.dataset.id;
-          const action = act.dataset.act;
-          if (action === "delete") {
-            const idx = AGENTS.findIndex((a) => a.id === id); if (idx === -1) return;
-            card.style.transition = "opacity .2s, transform .2s"; card.style.opacity = "0"; card.style.transform = "translateX(20px)";
-            setTimeout(() => { AGENTS.splice(idx, 1); render(); }, 200);
-          }
+          if (tag) { activeFile = tag.dataset.file; render(); e.stopPropagation(); return; }
         });
       })();
+    </script>
+    <script type="module">
+      window.__graphDebug = [];
+      window.addEventListener('error', (e) => { window.__graphDebug.push('ERROR: ' + e.message + ' @ ' + e.filename + ':' + e.lineno); });
+      window.addEventListener('unhandledrejection', (e) => { window.__graphDebug.push('REJECT: ' + (e.reason && e.reason.message || e.reason)); });
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+      import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
+      window.__graphDebug.push('imports OK, THREE=' + (typeof THREE));
+      window.THREE = THREE;
+
+      (function () {
+        const COLORS = { source: "#38bdf8", document: "#60a5fa", session: "#818cf8", entity: "#ffffff", aspect: "#34d399", attribute: "#a78bfa", memory: "#a1a1aa", proposal: "#f59e0b" };
+        const NODES = [
+          // cluster: dashboard rewrite (#948)
+          { id: "e-dashboard", label: "dashboard rewrite", kind: "entity", cluster: "dashboard", mentions: 41 },
+          { id: "a-react", label: "React + Vite", kind: "aspect", cluster: "dashboard", mentions: 18 },
+          { id: "a-svelte-out", label: "Svelte (archived)", kind: "aspect", cluster: "dashboard", mentions: 9 },
+          { id: "a-shadcn", label: "shadcn/ui", kind: "aspect", cluster: "dashboard", mentions: 12 },
+          { id: "a-tailwind", label: "Tailwind v4", kind: "aspect", cluster: "dashboard", mentions: 7 },
+          { id: "m-948", label: "#948 decision", kind: "memory", cluster: "dashboard", mentions: 1 },
+          { id: "m-palette", label: "oklch palette", kind: "memory", cluster: "dashboard", mentions: 1 },
+          { id: "m-frameless", label: "frameless chrome", kind: "memory", cluster: "dashboard", mentions: 1 },
+          // cluster: positioning
+          { id: "e-positioning", label: "infrastructure-forward", kind: "entity", cluster: "positioning", mentions: 28 },
+          { id: "a-headline", label: "persistent identity", kind: "aspect", cluster: "positioning", mentions: 14 },
+          { id: "a-local-first", label: "local-first", kind: "aspect", cluster: "positioning", mentions: 16 },
+          { id: "m-pos", label: "positioning convergence", kind: "memory", cluster: "positioning", mentions: 1 },
+          { id: "m-oss-trust", label: "OSS trust story", kind: "memory", cluster: "positioning", mentions: 1 },
+          // cluster: inference routing
+          { id: "e-inference", label: "inference routing", kind: "entity", cluster: "inference", mentions: 22 },
+          { id: "a-hosted", label: "hosted vs local", kind: "aspect", cluster: "inference", mentions: 11 },
+          { id: "a-fallback", label: "cosine fallback", kind: "aspect", cluster: "inference", mentions: 6 },
+          { id: "m-tension", label: "Mira tension", kind: "memory", cluster: "inference", mentions: 1 },
+          { id: "m-acpx", label: "ACPX bridge", kind: "memory", cluster: "inference", mentions: 1 },
+          // cluster: storage & data
+          { id: "e-storage", label: "data location", kind: "entity", cluster: "storage", mentions: 16 },
+          { id: "a-sqlite", label: "SQLite default", kind: "aspect", cluster: "storage", mentions: 8 },
+          { id: "a-sidecars", label: "JSON sidecars", kind: "aspect", cluster: "storage", mentions: 5 },
+          { id: "m-dataloc", label: "$SIGNET_WORKSPACE", kind: "memory", cluster: "storage", mentions: 1 },
+          { id: "m-migrations", label: "migration 055", kind: "memory", cluster: "storage", mentions: 1 },
+          // cluster: agent scoping
+          { id: "e-scoping", label: "agent scoping", kind: "entity", cluster: "scoping", mentions: 13 },
+          { id: "a-agent-id", label: "agent_id threading", kind: "aspect", cluster: "scoping", mentions: 9 },
+          { id: "a-visibility", label: "visibility filter", kind: "aspect", cluster: "scoping", mentions: 4 },
+          { id: "m-issue422", label: "agent_id leak", kind: "memory", cluster: "scoping", mentions: 1 },
+          // cluster: identity stack
+          { id: "e-identity", label: "identity system", kind: "entity", cluster: "identity", mentions: 19 },
+          { id: "a-soul", label: "SOUL.md", kind: "aspect", cluster: "identity", mentions: 11 },
+          { id: "a-agents-md", label: "AGENTS.md", kind: "aspect", cluster: "identity", mentions: 14 },
+          { id: "a-identity-md", label: "IDENTITY.md", kind: "aspect", cluster: "identity", mentions: 8 },
+          { id: "a-user-md", label: "USER.md", kind: "aspect", cluster: "identity", mentions: 6 },
+          { id: "a-presets", label: "identity presets", kind: "aspect", cluster: "identity", mentions: 7 },
+          // cluster: pipeline & dreaming
+          { id: "e-pipeline", label: "daemon pipeline", kind: "entity", cluster: "pipeline", mentions: 24 },
+          { id: "a-extract", label: "extraction stage", kind: "aspect", cluster: "pipeline", mentions: 8 },
+          { id: "a-decision", label: "decision stage", kind: "aspect", cluster: "pipeline", mentions: 6 },
+          { id: "a-graph", label: "graph stage", kind: "aspect", cluster: "pipeline", mentions: 9 },
+          { id: "a-retention", label: "retention decay", kind: "aspect", cluster: "pipeline", mentions: 5 },
+          { id: "m-dream-pass", label: "dream pass 01J7", kind: "memory", cluster: "pipeline", mentions: 1 },
+          // cluster: connectors & harnesses
+          { id: "e-connectors", label: "connector registry", kind: "entity", cluster: "connectors", mentions: 31 },
+          { id: "a-cc", label: "Claude Code", kind: "aspect", cluster: "connectors", mentions: 12 },
+          { id: "a-pi", label: "Pi extension", kind: "aspect", cluster: "connectors", mentions: 8 },
+          { id: "a-opencode", label: "OpenCode plugin", kind: "aspect", cluster: "connectors", mentions: 6 },
+          { id: "a-codex", label: "Codex connector", kind: "aspect", cluster: "connectors", mentions: 4 },
+          { id: "a-hooks", label: "hook lifecycle", kind: "aspect", cluster: "connectors", mentions: 10 },
+          // cluster: embeddings & search
+          { id: "e-embeddings", label: "vector search", kind: "entity", cluster: "embeddings", mentions: 17 },
+          { id: "a-sqlite-vec", label: "sqlite-vec", kind: "aspect", cluster: "embeddings", mentions: 8 },
+          { id: "a-hybrid", label: "hybrid recall", kind: "aspect", cluster: "embeddings", mentions: 11 },
+          { id: "a-voyage", label: "Voyage-3", kind: "attribute", cluster: "embeddings", mentions: 3 },
+          { id: "a-rerank", label: "reranker", kind: "aspect", cluster: "embeddings", mentions: 5 },
+          // cluster: secrets & auth
+          { id: "e-secrets", label: "secrets vault", kind: "entity", cluster: "secrets", mentions: 14 },
+          { id: "a-oauth", label: "OAuth flow", kind: "aspect", cluster: "secrets", mentions: 6 },
+          { id: "a-token-ref", label: "token-ref pattern", kind: "aspect", cluster: "secrets", mentions: 7 },
+          { id: "a-1password", label: "1Password", kind: "attribute", cluster: "secrets", mentions: 3 },
+          { id: "a-bitwarden", label: "Bitwarden", kind: "attribute", cluster: "secrets", mentions: 2 },
+          // cluster: ontology control plane
+          { id: "e-ontology", label: "ontology plane", kind: "entity", cluster: "ontology", mentions: 21 },
+          { id: "a-claims", label: "claim slots", kind: "aspect", cluster: "ontology", mentions: 8 },
+          { id: "a-proposals", label: "proposals queue", kind: "aspect", cluster: "ontology", mentions: 6 },
+          { id: "a-merge", label: "entity merge-plan", kind: "aspect", cluster: "ontology", mentions: 4 },
+          { id: "a-deps", label: "entity_dependencies", kind: "aspect", cluster: "ontology", mentions: 9 },
+          // cluster: cloud sync
+          { id: "e-cloud", label: "cloud sync", kind: "entity", cluster: "cloud", mentions: 12 },
+          { id: "a-encrypt", label: "encrypted backup", kind: "aspect", cluster: "cloud", mentions: 5 },
+          { id: "a-signetai-sh", label: "signetai.sh", kind: "attribute", cluster: "cloud", mentions: 2 },
+          // cluster: sources (orbit on outer shell)
+          { id: "s-obsidian", label: "Obsidian", kind: "source", cluster: "source", mentions: 142 },
+          { id: "s-github", label: "GitHub", kind: "source", cluster: "source", mentions: 318 },
+          { id: "s-notion", label: "Notion", kind: "source", cluster: "source", mentions: 64 },
+          { id: "s-discord", label: "Discord", kind: "source", cluster: "source", mentions: 89 },
+          { id: "s-slack", label: "Slack", kind: "source", cluster: "source", mentions: 31 },
+        ];
+        const EDGES = [
+          // dashboard cluster
+          ["e-dashboard", "a-react", "has_aspect"], ["e-dashboard", "a-svelte-out", "has_aspect"],
+          ["e-dashboard", "a-shadcn", "has_aspect"], ["e-dashboard", "a-tailwind", "has_aspect"],
+          ["e-dashboard", "m-948", "mentions"], ["e-dashboard", "m-palette", "mentions"],
+          ["e-dashboard", "m-frameless", "mentions"], ["a-react", "a-shadcn", "extends"],
+          ["a-tailwind", "a-shadcn", "supports"],
+          // positioning cluster
+          ["e-positioning", "a-headline", "has_aspect"], ["e-positioning", "a-local-first", "has_aspect"],
+          ["e-positioning", "m-pos", "mentions"], ["e-positioning", "m-oss-trust", "mentions"],
+          ["a-local-first", "a-headline", "supports"],
+          // inference cluster
+          ["e-inference", "a-hosted", "has_aspect"], ["e-inference", "a-fallback", "has_aspect"],
+          ["e-inference", "m-tension", "mentions"], ["e-inference", "m-acpx", "mentions"],
+          ["a-hosted", "a-fallback", "updates"],
+          // storage cluster
+          ["e-storage", "a-sqlite", "has_aspect"], ["e-storage", "a-sidecars", "has_aspect"],
+          ["e-storage", "m-dataloc", "mentions"], ["e-storage", "m-migrations", "mentions"],
+          // scoping cluster
+          ["e-scoping", "a-agent-id", "has_aspect"], ["e-scoping", "a-visibility", "has_aspect"],
+          ["e-scoping", "m-issue422", "mentions"],
+          // identity cluster
+          ["e-identity", "a-soul", "has_aspect"], ["e-identity", "a-agents-md", "has_aspect"],
+          ["e-identity", "a-identity-md", "has_aspect"], ["e-identity", "a-user-md", "has_aspect"],
+          ["e-identity", "a-presets", "has_aspect"], ["a-soul", "a-agents-md", "supports"],
+          // pipeline cluster
+          ["e-pipeline", "a-extract", "has_aspect"], ["e-pipeline", "a-decision", "has_aspect"],
+          ["e-pipeline", "a-graph", "has_aspect"], ["e-pipeline", "a-retention", "has_aspect"],
+          ["e-pipeline", "m-dream-pass", "mentions"], ["a-extract", "a-decision", "extends"],
+          ["a-decision", "a-graph", "extends"], ["a-graph", "a-retention", "extends"],
+          // connectors cluster
+          ["e-connectors", "a-cc", "has_aspect"], ["e-connectors", "a-pi", "has_aspect"],
+          ["e-connectors", "a-opencode", "has_aspect"], ["e-connectors", "a-codex", "has_aspect"],
+          ["e-connectors", "a-hooks", "has_aspect"], ["a-hooks", "a-cc", "supports"],
+          // embeddings cluster
+          ["e-embeddings", "a-sqlite-vec", "has_aspect"], ["e-embeddings", "a-hybrid", "has_aspect"],
+          ["e-embeddings", "a-rerank", "has_aspect"], ["e-embeddings", "a-voyage", "has_attribute"],
+          ["a-sqlite-vec", "a-hybrid", "supports"], ["a-voyage", "a-hybrid", "updates"],
+          // secrets cluster
+          ["e-secrets", "a-oauth", "has_aspect"], ["e-secrets", "a-token-ref", "has_aspect"],
+          ["e-secrets", "a-1password", "has_attribute"], ["e-secrets", "a-bitwarden", "has_attribute"],
+          ["a-token-ref", "a-oauth", "supports"],
+          // ontology cluster
+          ["e-ontology", "a-claims", "has_aspect"], ["e-ontology", "a-proposals", "has_aspect"],
+          ["e-ontology", "a-merge", "has_aspect"], ["e-ontology", "a-deps", "has_aspect"],
+          ["a-claims", "a-deps", "extends"], ["a-merge", "a-proposals", "supports"],
+          // cloud cluster
+          ["e-cloud", "a-encrypt", "has_aspect"], ["e-cloud", "a-signetai-sh", "has_attribute"],
+          // ── cross-cluster semantic links (the Walrus web) ──
+          ["e-dashboard", "e-positioning", "supports"], ["e-dashboard", "e-identity", "extends"],
+          ["e-inference", "e-scoping", "updates"], ["e-storage", "e-embeddings", "supports"],
+          ["e-pipeline", "e-ontology", "updates"], ["e-connectors", "e-identity", "supports"],
+          ["e-connectors", "e-secrets", "uses"], ["e-pipeline", "e-embeddings", "uses"],
+          ["e-ontology", "e-scoping", "supports"], ["e-cloud", "e-storage", "extends"],
+          ["e-cloud", "e-secrets", "uses"], ["e-positioning", "e-cloud", "supports"],
+          ["m-948", "m-palette", "extends"], ["m-pos", "e-positioning", "about"],
+          ["m-tension", "e-scoping", "about"], ["m-dream-pass", "e-ontology", "about"],
+          ["a-hooks", "e-pipeline", "supports"], ["a-presets", "e-scoping", "supports"],
+          ["a-sqlite", "a-sqlite-vec", "extends"], ["a-agent-id", "e-identity", "supports"],
+          // ── source provenance (outer shell → inner clusters) ──
+          ["s-obsidian", "m-948", "contains"], ["s-obsidian", "e-dashboard", "mentions"],
+          ["s-github", "m-dataloc", "contains"], ["s-github", "m-issue422", "contains"],
+          ["s-github", "e-pipeline", "mentions"], ["s-github", "e-connectors", "mentions"],
+          ["s-notion", "m-pos", "contains"], ["s-notion", "e-positioning", "mentions"],
+          ["s-discord", "m-tension", "contains"], ["s-discord", "e-connectors", "mentions"],
+          ["s-slack", "m-issue422", "contains"], ["s-slack", "e-scoping", "mentions"],
+          ["s-obsidian", "e-identity", "mentions"], ["s-github", "e-embeddings", "mentions"],
+        ];
+
+        // ── nested spherical shells (Walrus layout) ──
+        // Center (r=0): root node. Inner shell (r~100): cluster heads.
+        // Outer shell (r~250): leaf memories/sources fanning as disks.
+        const SPHERE_R = 260;
+        const seededRand = (s) => { let x = Math.sin(s * 9999 + 1) * 10000; return x - Math.floor(x); };
+        const byId = {};
+
+        // Group nodes by cluster
+        const clusterNodes = {};
+        NODES.forEach((n) => {
+          if (!clusterNodes[n.cluster]) clusterNodes[n.cluster] = [];
+          clusterNodes[n.cluster].push(n);
+        });
+
+        // Distribute cluster heads on inner shell using Fibonacci spiral
+        const clusterNames = Object.keys(clusterNodes);
+        const clusterBases = {};
+        clusterNames.forEach((cl, ci) => {
+          const N = clusterNames.length;
+          const golden = Math.PI * (3 - Math.sqrt(5));
+          const y = 1 - (ci / (N - 1)) * 2;
+          const radiusXZ = Math.sqrt(1 - y * y);
+          const theta = golden * ci;
+          const dir = new THREE.Vector3(
+            Math.cos(theta) * radiusXZ,
+            y,
+            Math.sin(theta) * radiusXZ
+          ).normalize();
+          // perpendicular basis for disk fans
+          const helper = Math.abs(dir.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+          const u = new THREE.Vector3().crossVectors(dir, helper).normalize();
+          const v = new THREE.Vector3().crossVectors(dir, u).normalize();
+          clusterBases[cl] = { dir, u, v };
+        });
+
+        // Assign positions: hubs on inner shell, leaves on outer shell disks
+        NODES.forEach((n, i) => {
+          const cb = clusterBases[n.cluster] || Object.values(clusterBases)[0];
+          const isHub = n.kind === "entity" || n.kind === "source";
+          const isLeaf = n.kind === "memory";
+
+          if (isHub) {
+            // Inner shell: r = 90-120, minimal disk offset
+            const r = 90 + seededRand(i + 200) * 30;
+            const jitter = 12;
+            n.pos = cb.dir.clone().multiplyScalar(r)
+              .add(cb.u.clone().multiplyScalar((seededRand(i + 1) - 0.5) * jitter))
+              .add(cb.v.clone().multiplyScalar((seededRand(i + 100) - 0.5) * jitter));
+          } else if (isLeaf) {
+            // Outer shell: r = 220-250, large perpendicular disk fan
+            const r = 220 + seededRand(i + 200) * 30;
+            const angle = seededRand(i + 1) * Math.PI * 2;
+            const diskR = (0.4 + seededRand(i + 50) * 0.6) * 55;
+            n.pos = cb.dir.clone().multiplyScalar(r)
+              .add(cb.u.clone().multiplyScalar(Math.cos(angle) * diskR))
+              .add(cb.v.clone().multiplyScalar(Math.sin(angle) * diskR));
+          } else {
+            // Mid shell: aspects/attributes at r = 150-180, medium disk
+            const r = 150 + seededRand(i + 200) * 30;
+            const angle = seededRand(i + 1) * Math.PI * 2;
+            const diskR = (0.3 + seededRand(i + 50) * 0.7) * 35;
+            n.pos = cb.dir.clone().multiplyScalar(r)
+              .add(cb.u.clone().multiplyScalar(Math.cos(angle) * diskR))
+              .add(cb.v.clone().multiplyScalar(Math.sin(angle) * diskR));
+          }
+          byId[n.id] = n;
+        });
+
+        // ── Three.js setup ──
+        const canvas = document.getElementById("graph-canvas");
+        const labelContainer = document.getElementById("graph-labels");
+        const view = document.getElementById("view-graph");
+        if (!canvas || !view) return;
+
+        const scene = new THREE.Scene();
+        // Stronger depth fog for Walrus depth perception
+        scene.fog = new THREE.FogExp2(0x050505, 0.0018);
+        const w = view.clientWidth || 800, h = view.clientHeight || 500;
+        const camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 3000);
+        camera.position.set(0, 80, 520);
+
+        const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(w, h, false);
+
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(w, h);
+        labelRenderer.domElement.style.position = "absolute";
+        labelRenderer.domElement.style.top = "0";
+        labelRenderer.domElement.style.pointerEvents = "none";
+        labelContainer.appendChild(labelRenderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
+        controls.rotateSpeed = 0.5;
+        controls.zoomSpeed = 0.8;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.4;
+        controls.minDistance = 100;
+        controls.maxDistance = 1200;
+
+        // ── wireframe bounding sphere from OBJ model (Walrus anchor) ──
+        const objLoader = new OBJLoader();
+        const sphereMat = new THREE.LineBasicMaterial({ color: 0x10b981, transparent: true, opacity: 0.28, depthWrite: false });
+        objLoader.load("bounding-sphere.obj", (obj) => {
+          obj.traverse((child) => {
+            if (child.isLineSegments) {
+              child.material = sphereMat;
+            }
+          });
+          obj.scale.setScalar(SPHERE_R);
+          scene.add(obj);
+        });
+
+        // ── glow texture for nodes ──
+        // ── node shape textures: crosshair (hub), diamond (entity), square (leaf) ──
+        function makeShapeTexture(drawFn) {
+          const c = document.createElement("canvas");
+          c.width = c.height = 16;
+          const ctx = c.getContext("2d");
+          ctx.strokeStyle = "#fff"; ctx.fillStyle = "#fff";
+          drawFn(ctx);
+          return new THREE.CanvasTexture(c);
+        }
+        // Hub/source: crosshair +
+        const crossTex = makeShapeTexture((ctx) => {
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(8, 2); ctx.lineTo(8, 14);
+          ctx.moveTo(2, 8); ctx.lineTo(14, 8);
+          ctx.stroke();
+        });
+        // Entity: diamond
+        const diamondTex = makeShapeTexture((ctx) => {
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(8, 2); ctx.lineTo(14, 8); ctx.lineTo(8, 14); ctx.lineTo(2, 8);
+          ctx.closePath(); ctx.stroke();
+        });
+        // Leaf: tiny filled square
+        const squareTex = makeShapeTexture((ctx) => {
+          ctx.fillRect(6, 6, 4, 4);
+        });
+
+        // ── nodes rendered as multiple Points layers by kind ──
+        const baseColors = [];
+        const nodeLayers = {};
+        const KIND_TEX = { entity: diamondTex, source: crossTex, aspect: squareTex, attribute: squareTex, memory: squareTex };
+        const KIND_SIZE = { entity: 24, source: 27, aspect: 12, attribute: 9, memory: 9 };
+        ["entity", "source", "aspect", "attribute", "memory"].forEach((kind) => {
+          const kindNodes = NODES.map((n, i) => ({ n, i })).filter(({ n }) => n.kind === kind);
+          if (kindNodes.length === 0) return;
+          const geo = new THREE.BufferGeometry();
+          const pos = new Float32Array(kindNodes.length * 3);
+          const col = new Float32Array(kindNodes.length * 3);
+          kindNodes.forEach(({ n, i: origIdx }, j) => {
+            pos[j * 3] = n.pos.x; pos[j * 3 + 1] = n.pos.y; pos[j * 3 + 2] = n.pos.z;
+            const c = new THREE.Color(COLORS[kind] || "#fff");
+            col[j * 3] = c.r; col[j * 3 + 1] = c.g; col[j * 3 + 2] = c.b;
+            if (baseColors[origIdx] === undefined) baseColors[origIdx] = c.clone();
+          });
+          geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+          geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+          const mat = new THREE.PointsMaterial({
+            size: KIND_SIZE[kind], map: KIND_TEX[kind], vertexColors: true,
+            transparent: true, depthWrite: false, sizeAttenuation: true
+          });
+          const pts = new THREE.Points(geo, mat);
+          pts.userData = { kind, origIndices: kindNodes.map(({ i }) => i) };
+          scene.add(pts);
+          nodeLayers[kind] = { pts, geo, colArr: col, origIndices: kindNodes.map(({ i }) => i) };
+        });
+        // Fill baseColors for any remaining nodes
+        NODES.forEach((n, i) => { if (!baseColors[i]) baseColors[i] = new THREE.Color(COLORS[n.kind] || "#fff"); });
+        const colArr = new Float32Array(NODES.length * 3);
+        const nodeGeo = { getAttribute: () => ({ needsUpdate: false }) }; // compat stub
+
+        // ── CSS2D labels (major hubs only) ──
+        const labelObjs = {};
+        NODES.forEach((n) => {
+          // Only show labels on hubs (entity/source) and high-mention aspects
+          if (n.kind !== "entity" && n.kind !== "source" && n.mentions < 20) return;
+          const div = document.createElement("div");
+          div.className = "glabel3d";
+          div.textContent = n.label;
+          div.style.cssText = "font-family:var(--font-mono);font-size:10px;color:#f4f4f5;" +
+            "background:rgba(9,9,11,0.9);padding:1px 4px;border-radius:3px;border:1px solid oklch(1 0 0 / 0.08);" +
+            "white-space:nowrap;opacity:0;transition:opacity .4s;letter-spacing:0.02em;font-weight:500";
+          const obj = new CSS2DObject(div);
+          obj.position.set(n.pos.x + 10 * 0.7, n.pos.y + 10, n.pos.z + 10 * 0.7);
+          scene.add(obj);
+          // Leader line: tiny hairline from label anchor to node
+          // 45-degree diagonal leader line from node to label anchor
+          const lOffset = 10;
+          const leaderPts = [
+            n.pos.x, n.pos.y, n.pos.z,
+            n.pos.x + lOffset * 0.7, n.pos.y + lOffset, n.pos.z + lOffset * 0.7,
+          ];
+          const leaderGeo = new THREE.BufferGeometry();
+          leaderGeo.setAttribute("position", new THREE.Float32BufferAttribute(leaderPts, 3));
+          const leaderMat = new THREE.LineBasicMaterial({ color: 0x71717a, transparent: true, opacity: 0.5, depthWrite: false });
+          const leader = new THREE.Line(leaderGeo, leaderMat);
+          scene.add(leader);
+          labelObjs[n.id] = { obj, div, pos: n.pos.clone(), leader };
+        });
+
+        // ── razor-thin Bezier edges (0.1 opacity for moiré density) ──
+        const edgeMeshes = [];
+        EDGES.forEach(([s, t]) => {
+          const a = byId[s], b = byId[t];
+          if (!a || !b) return;
+          const mid = a.pos.clone().add(b.pos).multiplyScalar(0.5);
+          if (mid.length() > 0) mid.multiplyScalar(1.25);
+          const curve = new THREE.QuadraticBezierCurve3(a.pos, mid, b.pos);
+          const pts = curve.getPoints(8);
+          const geo = new THREE.BufferGeometry().setFromPoints(pts);
+          const mat = new THREE.LineBasicMaterial({ color: 0x00f2ff, transparent: true, opacity: 0.1, depthWrite: false });
+          const line = new THREE.Line(geo, mat);
+          scene.add(line);
+          edgeMeshes.push(line);
+        });
+
+        // ── ground dot grid floor ──
+        const floorY = -SPHERE_R - 30;
+        const gridDivs = 20, gridStep = SPHERE_R * 0.15;
+        const gridPos = [];
+        for (let gx = -gridDivs; gx <= gridDivs; gx++) {
+          for (let gz = -gridDivs; gz <= gridDivs; gz++) {
+            const dist = Math.sqrt(gx * gx + gz * gz);
+            if (dist > gridDivs * 0.8) continue;
+            gridPos.push(gx * gridStep, floorY, gz * gridStep);
+          }
+        }
+        const gridGeo = new THREE.BufferGeometry();
+        gridGeo.setAttribute("position", new THREE.Float32BufferAttribute(gridPos, 3));
+        const gridMat = new THREE.PointsMaterial({ size: 1.5, color: 0x1a3a30, transparent: true, opacity: 0.3, sizeAttenuation: true, depthWrite: false });
+        scene.add(new THREE.Points(gridGeo, gridMat));
+
+        // ── dashed drop lines from major hubs to floor ──
+        const dropPositions = [];
+        NODES.forEach((n) => {
+          if (n.kind !== "entity" && n.kind !== "source") return;
+          dropPositions.push(n.pos.x, n.pos.y, n.pos.z, n.pos.x, floorY, n.pos.z);
+        });
+        if (dropPositions.length > 0) {
+          const dropGeo = new THREE.BufferGeometry();
+          dropGeo.setAttribute("position", new THREE.Float32BufferAttribute(dropPositions, 3));
+          const dropMat = new THREE.LineDashedMaterial({ color: 0x1a4a3a, transparent: true, opacity: 0.15, dashSize: 3, gapSize: 6, depthWrite: false });
+          const dropLines = new THREE.LineSegments(dropGeo, dropMat);
+          dropLines.computeLineDistances();
+          scene.add(dropLines);
+        }
+
+        // ── background micro-pixel dust (2,000+ static leaf points) ──
+        const DUST_COUNT = 2200;
+        const dustPos = new Float32Array(DUST_COUNT * 3);
+        for (let d = 0; d < DUST_COUNT; d++) {
+          // random points inside the sphere volume
+          const r = (0.3 + Math.random() * 0.7) * SPHERE_R;
+          const th = Math.random() * Math.PI * 2;
+          const ph = Math.acos(2 * Math.random() - 1);
+          dustPos[d * 3] = r * Math.sin(ph) * Math.cos(th);
+          dustPos[d * 3 + 1] = r * Math.cos(ph);
+          dustPos[d * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+        }
+        const dustGeo = new THREE.BufferGeometry();
+        dustGeo.setAttribute("position", new THREE.BufferAttribute(dustPos, 3));
+        const dustMat = new THREE.PointsMaterial({ size: 1.5, color: 0x52525b, transparent: true, opacity: 0.4, sizeAttenuation: true, depthWrite: false });
+        scene.add(new THREE.Points(dustGeo, dustMat));
+
+        // ── origin reticle crosshair ⊕ ──
+        const reticleR = 8;
+        const reticlePts = [
+          -reticleR, 0, 0, reticleR, 0, 0,
+          0, -reticleR, 0, 0, reticleR, 0,
+          0, 0, -reticleR, 0, 0, reticleR,
+        ];
+        const reticleGeo = new THREE.BufferGeometry();
+        reticleGeo.setAttribute("position", new THREE.Float32BufferAttribute(reticlePts, 3));
+        const reticleMat = new THREE.LineBasicMaterial({ color: 0x10b981, transparent: true, opacity: 0.4, depthWrite: false });
+        scene.add(new THREE.LineSegments(reticleGeo, reticleMat));
+
+        // ── node targeting bracket + readout (CAD-style hover reticle) ──
+        const targetBracket = new THREE.Group();
+        targetBracket.visible = false;
+        const bracketR = 14;
+        const bracketCorner = 5;
+        // 4 L-shaped corner brackets
+        const cornerPts = [];
+        [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx, sy]) => {
+          const x = sx * bracketR, y = sy * bracketR;
+          cornerPts.push(x, y, 0,  x - sx * bracketCorner, y, 0);  // horizontal arm
+          cornerPts.push(x, y, 0,  x, y - sy * bracketCorner, 0);  // vertical arm
+        });
+        const bracketGeo = new THREE.BufferGeometry();
+        bracketGeo.setAttribute("position", new THREE.Float32BufferAttribute(cornerPts, 3));
+        const bracketMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8, depthWrite: false });
+        targetBracket.add(new THREE.LineSegments(bracketGeo, bracketMat));
+        scene.add(targetBracket);
+        // CSS readout overlay
+        const targetReadout = document.createElement("div");
+        targetReadout.style.cssText = "position:absolute;display:none;font-family:var(--font-mono);font-size:9px;" +
+          "color:#f4f4f5;background:rgba(9,9,11,0.92);padding:5px 8px;border-radius:4px;border:1px solid oklch(1 0 0 / 0.1);" +
+          "pointer-events:none;line-height:1.5;z-index:10;white-space:nowrap";
+        labelContainer.appendChild(targetReadout);
+        // Raycaster for hover
+        const raycaster = new THREE.Raycaster();
+        raycaster.params.Points = { threshold: 8 };
+        const mouseNDC = new THREE.Vector2();
+        let hoveredNode = null;
+        renderer.domElement.addEventListener("pointermove", (ev) => {
+          const rect = renderer.domElement.getBoundingClientRect();
+          mouseNDC.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+          mouseNDC.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+        });
+
+        // ── turntable camera rig: pivot at origin, camera on local Z ──
+        // Like a Blender empty at world origin that only rotates, with the
+        // camera as a child that can only dolly forward/back (change radius).
+        let camTween = null;
+        function dirToAngles(dir) {
+          const d = dir.clone().normalize();
+          return {
+            theta: Math.atan2(d.x, d.z),      // azimuth around Y
+            phi: Math.acos(Math.max(-1, Math.min(1, d.y))),  // polar from Y
+          };
+        }
+        function anglesToDir(theta, phi) {
+          return new THREE.Vector3(
+            Math.sin(phi) * Math.sin(theta),
+            Math.cos(phi),
+            Math.sin(phi) * Math.cos(theta)
+          );
+        }
+        const ORIGIN = new THREE.Vector3(0, 0, 0);
+        function startTween(toTheta, toPhi, toRadius, toTarget, dur) {
+          const curDir = camera.position.clone().sub(ORIGIN);
+          const a = dirToAngles(curDir);
+          // Shortest angular path: normalize delta to [-π, π]
+          let dTheta = toTheta - a.theta;
+          while (dTheta > Math.PI) dTheta -= 2 * Math.PI;
+          while (dTheta < -Math.PI) dTheta += 2 * Math.PI;
+          // Shortest path on phi: normalize delta to [-π, π]
+          let dPhi = toPhi - a.phi;
+          while (dPhi > Math.PI) dPhi -= 2 * Math.PI;
+          while (dPhi < -Math.PI) dPhi += 2 * Math.PI;
+          camTween = {
+            t0: performance.now(), dur: dur || 1680,
+            fromTheta: a.theta, fromPhi: a.phi,
+            dTheta, dPhi,
+            fromRadius: curDir.length(),
+            toRadius,
+            fromTarget: controls.target.clone(),
+            toTarget: toTarget.clone(),
+          };
+        }
+
+        function neighbors(id) {
+          const set = new Set([id]);
+          EDGES.forEach(([s, t]) => { if (s === id) set.add(t); if (t === id) set.add(s); });
+          return set;
+        }
+        function highlightCluster(id) {
+          const cluster = neighbors(id);
+          Object.values(nodeLayers).forEach((layer) => {
+            layer.origIndices.forEach((origIdx, j) => {
+              const n = NODES[origIdx];
+              const inCluster = cluster.has(n.id);
+              const base = baseColors[origIdx];
+              const a = inCluster ? 1 : 0.08;
+              layer.colArr[j * 3] = base.r * a;
+              layer.colArr[j * 3 + 1] = base.g * a;
+              layer.colArr[j * 3 + 2] = base.b * a;
+            });
+            layer.geo.getAttribute("color").needsUpdate = true;
+          });
+          edgeMeshes.forEach((e) => { e.material.opacity = 0.03; });
+        }
+        function resetHighlight() {
+          Object.values(nodeLayers).forEach((layer) => {
+            layer.origIndices.forEach((origIdx, j) => {
+              const base = baseColors[origIdx];
+              layer.colArr[j * 3] = base.r;
+              layer.colArr[j * 3 + 1] = base.g;
+              layer.colArr[j * 3 + 2] = base.b;
+            });
+            layer.geo.getAttribute("color").needsUpdate = true;
+          });
+          edgeMeshes.forEach((e) => { e.material.opacity = 0.1; });
+        }
+        function focusNode(id, drawerOpen) {
+          const n = byId[id]; if (!n) return;
+          controls.autoRotate = false;
+          // The "empty" rotates to aim the camera toward the cluster from origin
+          const targetDir = n.pos.clone().normalize();
+          const a = dirToAngles(targetDir);
+          // The camera dollies in along its local Z to this radius
+          const targetRadius = 240;
+          // Look-at target = cluster center. When the drawer is open,
+          // shift the look-at point to screen-right so the cluster
+          // sits in the left ~70% of the canvas. We offset perpendicular
+          // to the view direction using the turntable's right vector.
+          const target = n.pos.clone();
+          if (drawerOpen) {
+            const right = anglesToDir(a.theta + Math.PI / 2, Math.PI / 2);
+            target.add(right.multiplyScalar(45));
+          }
+          startTween(a.theta, a.phi, targetRadius, target, 1680);
+          highlightCluster(id);
+        }
+        function resetView() {
+          controls.autoRotate = true;
+          const homeDir = new THREE.Vector3(0, 0.15, 1).normalize();
+          const a = dirToAngles(homeDir);
+          startTween(a.theta, a.phi, 520, ORIGIN.clone(), 1680);
+          resetHighlight();
+        }
+
+        // ── query interaction (ported from original) ──
+        const input = document.getElementById("gc-input");
+        const send = document.getElementById("gc-send");
+        const dock = document.getElementById("graph-dock");
+        const respPanel = document.getElementById("graph-response");
+        const respBody = document.getElementById("gr-body");
+        const respTitle = document.getElementById("gr-title");
+        const closeBtn = document.getElementById("gr-close");
+        const QA = [
+          { q: ["dashboard", "react", "svelte", "#948", "rewrite"], focus: "e-dashboard", title: "Dashboard rewrite", a: "Your <b>dashboard rewrite</b> hardened into a firm decision: Svelte is out, <b>Vite + React + shadcn/ui</b> is in.", src: "3 memories \u00b7 #948 cluster",
+            cites: [{ color: "#22d3ee", txt: "Dashboard rewrite moves to Vite + React 19 + shadcn/ui.", meta: "mem-948 \u00b7 obsidian" }],
+            log: ["recall(hybrid, top=8) \u2192 3 matches", "cluster resolved (5 nodes)"] },
+          { q: ["positioning", "headline", "marketing", "infrastructure"], focus: "e-positioning", title: "Positioning convergence", a: "<b>Infrastructure-forward positioning</b> converging across 6 sources.", src: "6 memories \u00b7 positioning cluster",
+            cites: [{ color: "#22d3ee", txt: "Persistent identity for intelligent systems.", meta: "mem-positioning \u00b7 notion" }],
+            log: ["recall(hybrid, top=8) \u2192 6 matches", "cluster resolved (3 nodes)"] },
+          { q: ["inference", "model", "hosted", "local", "tension"], focus: "e-inference", title: "Inference tension", a: "<b>Mira flagged a tension</b>: hosted inference vs local-first ownership.", src: "2 memories \u00b7 inference cluster",
+            cites: [{ color: "#22d3ee", txt: "Hosted inference vs local-first ownership.", meta: "mem-tension \u00b7 agent:Mira" }],
+            log: ["recall(vector, top=5) \u2192 2 matches", "cluster resolved (3 nodes)"] },
+          { q: ["storage", "data", "sqlite", "workspace"], focus: "e-storage", title: "Data location", a: "User data lives in <b>$SIGNET_WORKSPACE</b>. SQLite is the default storage.", src: "3 memories \u00b7 storage cluster",
+            cites: [{ color: "#22d3ee", txt: "SQLite is the default storage.", meta: "mem-data-loc \u00b7 github" }],
+            log: ["recall(hybrid, top=5) \u2192 3 matches", "cluster resolved (3 nodes)"] },
+          { q: ["scoping", "agent_id", "leak", "multi-agent"], focus: "e-scoping", title: "Agent scoping", a: "Cross-agent reads must thread <b>both agent_id AND agentId</b>.", src: "1 memory \u00b7 scoping cluster",
+            cites: [{ color: "#22d3ee", txt: "Thread both agent_id and agentId.", meta: "mem-issue-422 \u00b7 slack" }],
+            log: ["recall(vector, top=3) \u2192 1 match", "cluster resolved (2 nodes)"] },
+        ];
+        function answer(q) {
+          const ql = q.toLowerCase(); let best = null, hits = 0;
+          QA.forEach((e) => { let h = 0; e.q.forEach((kw) => { if (ql.includes(kw)) h++; }); if (h > hits) { hits = h; best = e; } });
+          return best;
+        }
+        function drawerHTML(r, q) {
+          if (!r) return '<div class="gr-answer">No cluster matched.</div>';
+          const cites = r.cites.map((c) => '<div class="gr-cite"><span class="gr-cite__dot" style="background:' + c.color + '"></span><div><div class="gr-cite__txt">' + c.txt + '</div><div class="gr-cite__meta">' + c.meta + "</div></div></div>").join("");
+          const log = r.log.map((l) => "<div>" + l + "</div>").join("");
+          return '<div><div class="gr-answer">' + r.a + '<div class="gr-prov"><span class="dot"></span> ' + r.src + "</div></div></div>" +
+            '<div><div class="gr-section-label" style="margin-bottom:8px">Citations</div>' + cites + "</div>" +
+            '<div class="gr-acc"><div class="gr-acc-trigger"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg> Execution log</div><div class="gr-acc-body">' + log + "</div></div>";
+        }
+        function runQuery(q) {
+          const r = answer(q);
+          if (dock) dock.classList.add("responded");
+          if (respBody) {
+            respBody.innerHTML = drawerHTML(r, q);
+            respBody.querySelectorAll(".gr-acc-trigger").forEach((t) => t.addEventListener("click", () => t.parentElement.classList.toggle("open")));
+            respBody.querySelectorAll(".gr-cite").forEach((c) => c.addEventListener("click", () => { c.style.borderColor = "oklch(0.85 0 0 / 0.4)"; }));
+          }
+          if (respTitle) respTitle.textContent = r ? r.title : "No match";
+          if (respPanel) respPanel.classList.add("show");
+          if (r) focusNode(r.focus, true); else resetView();
+        }
+        function closeResponse() {
+          if (respPanel) respPanel.classList.remove("show");
+          if (dock) dock.classList.remove("responded");
+          resetView();
+        }
+        if (send) send.addEventListener("click", () => { if (input.value.trim()) { runQuery(input.value.trim()); input.value = ""; } });
+        if (input) { input.addEventListener("input", () => { if (send) send.disabled = !input.value.trim(); }); input.addEventListener("keydown", (e) => { if (e.key === "Enter" && input.value.trim()) { runQuery(input.value.trim()); input.value = ""; } }); }
+        if (closeBtn) closeBtn.addEventListener("click", closeResponse);
+        const followup = document.getElementById("gr-followup");
+        const followSend = document.getElementById("gr-send");
+        if (followup) { followup.addEventListener("input", () => { if (followSend) followSend.disabled = !followup.value.trim(); }); followup.addEventListener("keydown", (e) => { if (e.key === "Enter" && followup.value.trim()) { runQuery(followup.value.trim()); followup.value = ""; } }); }
+        if (followSend) followSend.addEventListener("click", () => { if (followup && followup.value.trim()) { runQuery(followup.value.trim()); followup.value = ""; } });
+        const legendBtn = document.getElementById("legend-btn");
+        const legendPop = document.getElementById("legend-pop");
+        if (legendBtn && legendPop) {
+          legendBtn.addEventListener("click", (e) => { e.stopPropagation(); legendPop.classList.toggle("show"); });
+          document.addEventListener("click", () => legendPop.classList.remove("show"));
+          legendPop.addEventListener("click", (e) => e.stopPropagation());
+        }
+
+        // ── render loop ──
+        function animate() {
+          requestAnimationFrame(animate);
+          if (camTween) {
+            const elapsed = performance.now() - camTween.t0;
+            const t = Math.min(1, elapsed / camTween.dur);
+            // Quintic ease-in-out for buttery smooth orbit
+            const orbitEase = t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2;
+            // Interpolate using deltas (guarantees shortest path)
+            const theta = camTween.fromTheta + camTween.dTheta * orbitEase;
+            const phi = camTween.fromPhi + camTween.dPhi * orbitEase;
+            // Dolly: zoom starts at 40%, smootherstep through the end
+            let radius;
+            if (t < 0.4) {
+              radius = camTween.fromRadius;
+            } else {
+              const zoomT = (t - 0.4) / 0.6;
+              const zoomEase = zoomT * zoomT * zoomT * (zoomT * (6 * zoomT - 15) + 10);
+              radius = camTween.fromRadius + (camTween.toRadius - camTween.fromRadius) * zoomEase;
+            }
+            // Camera position = ORIGIN + direction * radius (turntable — never translates)
+            const dir = anglesToDir(theta, phi);
+            camera.position.copy(ORIGIN).add(dir.multiplyScalar(radius));
+            // Look-at target lerps smoothly to the cluster center
+            controls.target.lerpVectors(camTween.fromTarget, camTween.toTarget, orbitEase);
+            if (t >= 1) camTween = null;
+          }
+          controls.update();
+          // Spherical depth fade + label visibility
+          const camDir = camera.position.clone().sub(controls.target).normalize();
+          // Fade node layers: front hemisphere = full, back hemisphere = 0.2
+          Object.entries(nodeLayers).forEach(([kind, layer]) => {
+            const isHub = kind === "entity" || kind === "source";
+            layer.origIndices.forEach((origIdx, j) => {
+              const n = NODES[origIdx];
+              const nodeDir = n.pos.clone().normalize();
+              const dot = nodeDir.dot(camDir);
+              const base = baseColors[origIdx];
+              // sharp curve: front=1.0, back=0.2 for hubs, back=0.1 for leaves
+              const minAlpha = isHub ? 0.2 : 0.08;
+              const alpha = dot > 0 ? 1.0 : minAlpha;
+              layer.colArr[j * 3] = base.r * alpha;
+              layer.colArr[j * 3 + 1] = base.g * alpha;
+              layer.colArr[j * 3 + 2] = base.b * alpha;
+            });
+            layer.geo.getAttribute("color").needsUpdate = true;
+          });
+          // Labels: only front-facing hubs
+          Object.values(labelObjs).forEach((lb) => {
+            const nodeDir = lb.pos.clone().normalize();
+            const dot = nodeDir.dot(camDir);
+            lb.div.style.opacity = dot > 0.3 ? String(Math.min(1, (dot - 0.3) * 1.5)) : "0";
+            if (lb.leader) lb.leader.material.opacity = dot > 0.3 ? 0.4 : 0;
+          });
+          // Raycast for node hover → targeting bracket
+          raycaster.setFromCamera(mouseNDC, camera);
+          const hubPoints = [];
+          ["entity", "source"].forEach((k) => { if (nodeLayers[k]) hubPoints.push(nodeLayers[k].pts); });
+          if (hubPoints.length > 0) {
+            const intersects = raycaster.intersectObjects(hubPoints, false);
+            if (intersects.length > 0) {
+              const layer = nodeLayers[intersects[0].object.userData.kind];
+              const origIdx = layer.origIndices[intersects[0].index];
+              const n = NODES[origIdx];
+              hoveredNode = n;
+              targetBracket.visible = true;
+              targetBracket.position.copy(n.pos);
+              // project to screen for readout
+              const sp = n.pos.clone().project(camera);
+              const sx = (sp.x * 0.5 + 0.5) * renderer.domElement.clientWidth;
+              const sy = (-sp.y * 0.5 + 0.5) * renderer.domElement.clientHeight;
+              const edgeCount = EDGES.filter(([s, t]) => s === n.id || t === n.id).length;
+              targetReadout.style.display = "block";
+              targetReadout.style.left = (sx + 20) + "px";
+              targetReadout.style.top = (sy - 30) + "px";
+              targetReadout.innerHTML =
+                'node: <span style="color:#38bdf8">' + n.id + '</span><br>' +
+                'edges: ' + edgeCount + ' \u00b7 deg: ' + n.mentions + '<br>' +
+                'xyz: ' + n.pos.x.toFixed(1) + ', ' + n.pos.y.toFixed(1) + ', ' + n.pos.z.toFixed(1);
+            } else {
+              hoveredNode = null;
+              targetBracket.visible = false;
+              targetReadout.style.display = "none";
+            }
+          }
+          renderer.render(scene, camera);
+          labelRenderer.render(scene, camera);
+        }
+        animate();
+
+        // ── resize ──
+        const ro = new ResizeObserver(() => {
+          const nw = view.clientWidth, nh = view.clientHeight;
+          if (nw === 0 || nh === 0) return;
+          camera.aspect = nw / nh;
+          camera.updateProjectionMatrix();
+          renderer.setSize(nw, nh, false);
+          labelRenderer.setSize(nw, nh);
+        });
+        ro.observe(view);
+
+        // stop auto-rotate on interaction
+        controls.addEventListener("start", () => { controls.autoRotate = false; });
+      })();
+      window.__graphDebug.push('IIFE completed');
     </script>
     <div class="src-modal-bg" id="src-modal-bg">
       <div class="src-modal">
