@@ -7,7 +7,8 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-07-24
-- Bug fixes: infer compatible privacy from endpoint.
+- Features: add dreaming view with pass brief and history timeline; add mobile responsive layout to redesign mockup.
+- Bug fixes: surface extraction route blockers; replace emoji mutation symbols with typographic glyphs; unbox dreaming view, git-style mutation symbols, normalize prose; remove pass history ledger, rename Dreaming→Dreams with moon icon; dreaming brief leads with narrative summary, ledger demoted; quiet dreaming entity text, minimal buffer gauge, single summary line; unbox dreaming mutations, add buffer bar and entity pills; clean legacy config and honor repair dry runs; infer compatible privacy from endpoint.
 
 ### 2026-07-23
 - Features: surface and repair dead summary-job backlog (#901); recover missed native transcripts; inference settings density + hierarchy refactor; select connected providers as backends + compact rows.
@@ -34,6 +35,27 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: centralize canonical recall requests.
 
 ## Release Ledger
+
+## [0.153.0] - 2026-07-24
+
+Release summary: 2 features and 8 bug fixes.
+Tag range: `v0.152.3..v0.153.0`.
+
+### Features
+
+- **dashboard**: add dreaming view with pass brief and history timeline
+- **dashboard**: add mobile responsive layout to redesign mockup
+
+### Bug Fixes
+
+- **daemon**: surface extraction route blockers (#1012)
+- **dashboard**: replace emoji mutation symbols with typographic glyphs
+- **dashboard**: unbox dreaming view, git-style mutation symbols, normalize prose
+- **dashboard**: remove pass history ledger, rename Dreaming→Dreams with moon icon
+- **dashboard**: dreaming brief leads with narrative summary, ledger demoted
+- **dashboard**: quiet dreaming entity text, minimal buffer gauge, single summary line
+- **dashboard**: unbox dreaming mutations, add buffer bar and entity pills
+- **daemon**: clean legacy config and honor repair dry runs (#1009)
 
 ## [0.152.3] - 2026-07-24
 
