@@ -1160,20 +1160,30 @@
       .ag-card__status--active .dot { background: oklch(0.72 0.15 150); box-shadow: 0 0 6px oklch(0.72 0.15 150 / 0.5); }
       .ag-card__status--idle { color: var(--muted-foreground); }
       .ag-card__status--idle .dot { background: oklch(0.55 0 0); }
-      .ag-files { display: flex; flex-direction: column; gap: 4px; }
-      .ag-file { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; background: color-mix(in oklch, var(--foreground) 2.5%, transparent); transition: background .15s; cursor: pointer; }
-      .ag-file:hover { background: color-mix(in oklch, var(--foreground) 5%, transparent); }
-      .ag-file__ic { width: 14px; height: 14px; flex-shrink: 0; color: oklch(0.65 0.1 220); }
-      .ag-file__name { font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--foreground); flex: 1; min-width: 0; }
-      .ag-file__desc { font-size: 10px; color: var(--muted-foreground); flex: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .ag-file__edit { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 5px; color: var(--muted-foreground); opacity: 0; transition: opacity .15s; flex-shrink: 0; }
-      .ag-file:hover .ag-file__edit { opacity: 0.7; }
-      .ag-file__edit:hover { opacity: 1 !important; color: var(--foreground); background: oklch(1 0 0 / 0.08); }
-      .ag-file__edit svg { width: 12px; height: 12px; }
-      .ag-config { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-      .ag-config__item { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 6px; background: color-mix(in oklch, var(--foreground) 2.5%, transparent); }
-      .ag-config__label { font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-foreground); }
-      .ag-config__val { font-family: var(--font-mono); font-size: 11px; color: var(--foreground); font-weight: 500; }
+      /* current focus telemetry (active agents only) */
+      .ag-focus { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 6px; font-family: var(--font-mono); font-size: 10.5px;
+        background: color-mix(in oklch, var(--success) 6%, transparent); border: 1px solid color-mix(in oklch, var(--success) 14%, transparent); }
+      .ag-focus__dot { width: 6px; height: 6px; border-radius: 50%; background: oklch(0.72 0.15 150); flex-shrink: 0; box-shadow: 0 0 6px oklch(0.72 0.15 150 / 0.5); animation: ag-focus-pulse 1.8s ease-in-out infinite; }
+      @keyframes ag-focus-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      @media (prefers-reduced-motion: reduce) { .ag-focus__dot { animation: none; } }
+      .ag-focus__label { color: var(--muted-foreground); }
+      .ag-focus__txt { color: oklch(0.82 0.15 150); font-weight: 500; }
+      /* 4-column spec bar — borderless tabular row */
+      .ag-spec { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 8px 0; border-top: 1px solid oklch(1 0 0 / 0.06); border-bottom: 1px solid oklch(1 0 0 / 0.06); }
+      [data-theme="light"] .ag-spec { border-top-color: oklch(0 0 0 / 0.06); border-bottom-color: oklch(0 0 0 / 0.06); }
+      .ag-spec__cell { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; border-right: 1px solid oklch(1 0 0 / 0.04); }
+      [data-theme="light"] .ag-spec__cell { border-right-color: oklch(0 0 0 / 0.04); }
+      .ag-spec__cell:last-child { border-right: none; }
+      .ag-spec__label { font-family: var(--font-mono); font-size: 8px; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(0.5 0 0); }
+      [data-theme="light"] .ag-spec__label { color: oklch(0.55 0 0); }
+      .ag-spec__val { font-family: var(--font-mono); font-size: 10.5px; color: var(--foreground); font-weight: 500; }
+      .ag-spec__val--muted { color: var(--muted-foreground); }
+      /* prompt tags — borderless inline chips */
+      .ag-tags { display: flex; flex-wrap: wrap; gap: 4px; min-height: 24px; align-content: flex-start; }
+      .ag-tag { display: inline-flex; align-items: center; font-family: var(--font-mono); font-size: 10px; font-weight: 500; color: oklch(0.65 0.1 220); cursor: pointer; transition: color .15s; }
+      [data-theme="light"] .ag-tag { color: oklch(0.45 0.12 220); }
+      .ag-tag:hover { color: var(--foreground); }
+      .ag-tag--more { color: var(--muted-foreground); cursor: default; }
       .ag-card__foot { display: flex; align-items: center; justify-content: space-between; padding-top: 10px; border-top: 1px solid oklch(1 0 0 / 0.06); }
       [data-theme="light"] .ag-card__foot { border-top-color: oklch(0 0 0 / 0.06); }
       .ag-scope { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
@@ -3752,56 +3762,48 @@
 
       // ── Agents view: identity + access config cards ──
       (function () {
-        const FILE_IC = '<svg class="ag-file__ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
-        const EDIT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>';
         // real Signet agent/identity model — 3 agents matching the home KPI
         const AGENTS = [
           { id: "default", name: "Signet", initials: "Si", color: "linear-gradient(150deg, oklch(0.6 0.02 270), oklch(0.35 0.02 270))", preset: "hermes", status: "active",
-            model: "Claude Sonnet 4.5", embeddings: "Voyage-3", scope: "full",
-            files: [
-              { name: "SOUL.md", desc: "Primary identity \u00b7 persona & values" },
-              { name: "AGENTS.md", desc: "Operating instructions & repo policy" },
-              { name: "IDENTITY.md", desc: "Name, creature type, vibe" },
-              { name: "USER.md", desc: "User context & preferences" },
-              { name: "DREAMING.md", desc: "Dreaming session prompt" },
-            ] },
+            model: "Claude Sonnet 4.5", embeddings: "Voyage-3", scope: "full", latency: "42ms", lastActive: "now",
+            focus: "Indexing #research-vault diff",
+            files: ["SOUL.md", "AGENTS.md", "IDENTITY.md", "USER.md", "DREAMING.md"] },
           { id: "hermes", name: "Hermes", initials: "He", color: "linear-gradient(150deg, oklch(0.5 0.12 250), oklch(0.35 0.08 250))", preset: "hermes", status: "active",
-            model: "GPT-5", embeddings: "text-embedding-3-large", scope: "full",
-            files: [
-              { name: "SOUL.md", desc: "Hermes persona \u00b7 autonomous agent" },
-              { name: "AGENTS.md", desc: "Project context discovery" },
-              { name: "MEMORY.md", desc: "Generated working ledger" },
-            ] },
+            model: "GPT-5", embeddings: "text-embedding-3-large", scope: "full", latency: "88ms", lastActive: "now",
+            focus: "Summarizing claude-code session (142 turns)",
+            files: ["SOUL.md", "AGENTS.md", "MEMORY.md"] },
           { id: "mira", name: "Mira", initials: "Mi", color: "linear-gradient(150deg, oklch(0.5 0.1 330), oklch(0.35 0.08 330))", preset: "minimal", status: "idle",
-            model: "Claude Sonnet 4.5", embeddings: "Voyage-3", scope: "read-only",
-            files: [
-              { name: "AGENTS.md", desc: "Minimal startup \u00b7 operating only" },
-            ] },
+            model: "Claude Sonnet 4.5", embeddings: "Voyage-3", scope: "read-only", latency: "—", lastActive: "3h ago",
+            focus: null,
+            files: ["AGENTS.md"] },
         ];
         function cardHtml(a) {
-          const files = a.files.map((f) =>
-            '<div class="ag-file" data-agent="' + a.id + '" data-file="' + f.name + '">' + FILE_IC +
-            '<span class="ag-file__name">' + f.name + '</span>' +
-            '<span class="ag-file__desc">' + f.desc + '</span>' +
-            '<span class="ag-file__edit" title="Edit">' + EDIT_SVG + '</span></div>'
-          ).join("");
+          const MAX_TAGS = 3;
+          const visible = a.files.slice(0, MAX_TAGS);
+          const extra = a.files.length - MAX_TAGS;
+          const tags = visible.map((f) => '<span class="ag-tag" data-file="' + f + '">' + f + '</span>').join("");
+          const more = extra > 0 ? '<span class="ag-tag ag-tag--more">+' + extra + " more</span>" : "";
+          const focusHtml = a.focus ? '<div class="ag-focus"><span class="ag-focus__dot"></span><span class="ag-focus__label">Focus</span><span class="ag-focus__txt">' + a.focus + "</span></div>" : "";
           return [
             '<div class="ag-card" data-id="' + a.id + '">',
               '<div class="ag-card__top">',
                 '<div class="ag-card__avatar" style="background:' + a.color + '">' + a.initials + '</div>',
                 '<div class="ag-card__meta">',
                   '<div class="ag-card__name">' + a.name + '</div>',
-                  '<div class="ag-card__sub"><span class="ag-card__preset">' + a.preset + '</span> \u00b7 ' + a.id + '</div>',
+                  '<div class="ag-card__sub"><span class="ag-card__preset">' + a.preset + '</span> · ' + a.id + '</div>',
                 '</div>',
                 '<span class="ag-card__status ag-card__status--' + a.status + '"><span class="dot"></span>' + a.status + '</span>',
               '</div>',
-              '<div class="ag-files">' + files + '</div>',
-              '<div class="ag-config">',
-                '<div class="ag-config__item"><span class="ag-config__label">Model</span><span class="ag-config__val">' + a.model + '</span></div>',
-                '<div class="ag-config__item"><span class="ag-config__label">Embeddings</span><span class="ag-config__val">' + a.embeddings + '</span></div>',
+              focusHtml,
+              '<div class="ag-spec">',
+                '<div class="ag-spec__cell"><span class="ag-spec__label">Model</span><span class="ag-spec__val">' + a.model + '</span></div>',
+                '<div class="ag-spec__cell"><span class="ag-spec__label">Embeds</span><span class="ag-spec__val">' + a.embeddings + '</span></div>',
+                '<div class="ag-spec__cell"><span class="ag-spec__label">Access</span><span class="ag-spec__val">' + a.scope + '</span></div>',
+                '<div class="ag-spec__cell"><span class="ag-spec__label">Activity</span><span class="ag-spec__val ag-spec__val--muted">' + a.lastActive + '</span></div>',
               '</div>',
+              '<div class="ag-tags">' + tags + more + '</div>',
               '<div class="ag-card__foot">',
-                '<span class="ag-scope">Access \u00b7 <b>' + a.scope + '</b></span>',
+                '<span class="ag-scope">Latency <b>' + a.latency + '</b></span>',
                 '<div class="ag-card__actions">',
                   '<span class="ag-act" title="Duplicate" data-act="dup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span>',
                   '<span class="ag-act" title="Settings" data-act="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></span>',
@@ -3819,12 +3821,10 @@
         // file edit + card actions
         const grid = document.getElementById("ag-grid");
         if (grid) grid.addEventListener("click", (e) => {
-          const fileEdit = e.target.closest(".ag-file__edit");
-          if (fileEdit) {
-            const file = fileEdit.closest(".ag-file");
-            const name = file && file.dataset.file;
-            if (name) fileEdit.style.color = "oklch(0.72 0.15 150)";
-            setTimeout(() => { if (fileEdit) fileEdit.style.color = ""; }, 800);
+          const tag = e.target.closest(".ag-tag:not(.ag-tag--more)");
+          if (tag) {
+            tag.style.color = "oklch(0.72 0.15 150)";
+            setTimeout(() => { tag.style.color = ""; }, 800);
             e.stopPropagation(); return;
           }
           const act = e.target.closest(".ag-act"); if (!act) return;
