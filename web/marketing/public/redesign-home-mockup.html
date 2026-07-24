@@ -1142,17 +1142,17 @@
       .ag-section-label { font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(0.45 0 0); padding: 4px 2px 0; flex-shrink: 0; }
       [data-theme="light"] .ag-section-label { color: oklch(0.55 0 0); }
       .ag-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; align-content: start; flex: 1; }
-      .ag-card { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: var(--radius);
+      .ag-card { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--radius);
         background: var(--card); border: 1px solid oklch(1 0 0 / 0.05); box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.04), 0 1px 2px oklch(0 0 0 / 0.3); transition: border-color .2s; }
       [data-theme="light"] .ag-card { border-color: oklch(0 0 0 / 0.06); }
       .ag-card:hover { border-color: oklch(1 0 0 / 0.14); }
       [data-theme="light"] .ag-card:hover { border-color: oklch(0 0 0 / 0.14); }
-      .ag-card__top { display: flex; align-items: center; gap: 12px; }
-      .ag-card__avatar { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; flex-shrink: 0;
-        color: #fff; font-size: 14px; font-weight: 600; }
+      .ag-card__top { display: flex; align-items: center; gap: 10px; }
+      .ag-card__avatar { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0;
+        color: #fff; font-size: 13px; font-weight: 600; }
       .ag-card__meta { flex: 1; min-width: 0; }
       .ag-card__name { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
-      .ag-card__sub { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
+      .ag-card__sub { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
       .ag-card__preset { text-transform: uppercase; letter-spacing: 0.05em; }
       .ag-card__status { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; flex-shrink: 0; }
       .ag-card__status .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
@@ -1160,39 +1160,26 @@
       .ag-card__status--active .dot { background: oklch(0.72 0.15 150); box-shadow: 0 0 6px oklch(0.72 0.15 150 / 0.5); }
       .ag-card__status--idle { color: var(--muted-foreground); }
       .ag-card__status--idle .dot { background: oklch(0.55 0 0); }
-      /* current focus telemetry (active agents only) */
-      .ag-focus { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 6px; font-family: var(--font-mono); font-size: 10.5px;
-        background: color-mix(in oklch, var(--success) 6%, transparent); border: 1px solid color-mix(in oklch, var(--success) 14%, transparent); }
-      .ag-focus__dot { width: 6px; height: 6px; border-radius: 50%; background: oklch(0.72 0.15 150); flex-shrink: 0; box-shadow: 0 0 6px oklch(0.72 0.15 150 / 0.5); animation: ag-focus-pulse 1.8s ease-in-out infinite; }
-      @keyframes ag-focus-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-      @media (prefers-reduced-motion: reduce) { .ag-focus__dot { animation: none; } }
-      .ag-focus__label { color: var(--muted-foreground); }
-      .ag-focus__txt { color: oklch(0.82 0.15 150); font-weight: 500; }
-      /* 4-column spec bar — borderless tabular row */
-      .ag-spec { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 8px 0; border-top: 1px solid oklch(1 0 0 / 0.06); border-bottom: 1px solid oklch(1 0 0 / 0.06); }
-      [data-theme="light"] .ag-spec { border-top-color: oklch(0 0 0 / 0.06); border-bottom-color: oklch(0 0 0 / 0.06); }
-      .ag-spec__cell { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; border-right: 1px solid oklch(1 0 0 / 0.04); }
-      [data-theme="light"] .ag-spec__cell { border-right-color: oklch(0 0 0 / 0.04); }
-      .ag-spec__cell:last-child { border-right: none; }
-      .ag-spec__label { font-family: var(--font-mono); font-size: 8px; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(0.5 0 0); }
-      [data-theme="light"] .ag-spec__label { color: oklch(0.55 0 0); }
-      .ag-spec__val { font-family: var(--font-mono); font-size: 10.5px; color: var(--foreground); font-weight: 500; }
-      .ag-spec__val--muted { color: var(--muted-foreground); }
-      /* prompt tags — borderless inline chips */
-      .ag-tags { display: flex; flex-wrap: wrap; gap: 4px; min-height: 24px; align-content: flex-start; }
-      .ag-tag { display: inline-flex; align-items: center; font-family: var(--font-mono); font-size: 10px; font-weight: 500; color: oklch(0.65 0.1 220); cursor: pointer; transition: color .15s; }
-      [data-theme="light"] .ag-tag { color: oklch(0.45 0.12 220); }
-      .ag-tag:hover { color: var(--foreground); }
-      .ag-tag--more { color: var(--muted-foreground); cursor: default; }
-      .ag-card__foot { display: flex; align-items: center; justify-content: space-between; padding-top: 10px; border-top: 1px solid oklch(1 0 0 / 0.06); }
+      /* session count badge */
+      .ag-sessions { font-family: var(--font-mono); font-size: 9px; padding: 2px 7px; border-radius: 4px; background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--muted-foreground); flex-shrink: 0; }
+n      /* identity file chips — tactile glass pills */
+      .ag-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+      .ag-tag { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+        padding: 4px 9px; border-radius: var(--radius); cursor: pointer; transition: all .15s;
+        background: color-mix(in oklch, var(--foreground) 5%, transparent); border: 1px solid oklch(1 0 0 / 0.08); color: oklch(0.7 0 0); }
+      [data-theme="light"] .ag-tag { border-color: oklch(0 0 0 / 0.08); color: oklch(0.35 0 0); }
+      .ag-tag:hover { background: color-mix(in oklch, oklch(0.7 0.1 220) 12%, transparent); border-color: oklch(0.6 0.1 220 / 0.3); color: oklch(0.7 0.1 220); }
+      [data-theme="light"] .ag-tag:hover { color: oklch(0.45 0.12 220); }
+      .ag-tag--more { background: none; border-style: dashed; color: var(--muted-foreground); cursor: default; }
+n      /* footer */
+      .ag-card__foot { display: flex; align-items: center; justify-content: space-between; padding-top: 8px; border-top: 1px solid oklch(1 0 0 / 0.06); }
       [data-theme="light"] .ag-card__foot { border-top-color: oklch(0 0 0 / 0.06); }
-      .ag-scope { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
-      .ag-scope b { color: var(--foreground); font-weight: 600; }
-      .ag-card__actions { display: flex; gap: 2px; opacity: 0.4; transition: opacity .15s; }
-      .ag-card:hover .ag-card__actions { opacity: 1; }
+      .ag-access { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
+      .ag-access--full { color: oklch(0.72 0.15 150); }
+      .ag-access--read-only { color: var(--muted-foreground); }
       .ag-act { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: var(--muted-foreground); cursor: pointer; transition: all .15s; }
       .ag-act:hover { color: var(--foreground); background: oklch(1 0 0 / 0.08); }
-      .ag-act svg { width: 13px; height: 13px; }
+      .ag-act svg { width: 14px; height: 14px; }
       .ag-act.is-danger:hover { color: oklch(0.7 0.18 25); }
 
       /* ════════════════════════════════════════════════════════════════
@@ -3764,53 +3751,36 @@
       (function () {
         // real Signet agent/identity model — 3 agents matching the home KPI
         const AGENTS = [
-          { id: "default", name: "Signet", initials: "Si", color: "linear-gradient(150deg, oklch(0.6 0.02 270), oklch(0.35 0.02 270))", preset: "hermes", status: "active",
-            model: "Claude Sonnet 4.5", embeddings: "Voyage-3", scope: "full", latency: "42ms", lastActive: "now",
-            focus: "Indexing #research-vault diff",
+          { id: "default", name: "Signet", initials: "Si", color: "linear-gradient(150deg, oklch(0.6 0.02 270), oklch(0.35 0.02 270))", preset: "hermes", status: "active", sessions: 3, access: "full",
             files: ["SOUL.md", "AGENTS.md", "IDENTITY.md", "USER.md", "DREAMING.md"] },
-          { id: "hermes", name: "Hermes", initials: "He", color: "linear-gradient(150deg, oklch(0.5 0.12 250), oklch(0.35 0.08 250))", preset: "hermes", status: "active",
-            model: "GPT-5", embeddings: "text-embedding-3-large", scope: "full", latency: "88ms", lastActive: "now",
-            focus: "Summarizing claude-code session (142 turns)",
+          { id: "hermes", name: "Hermes", initials: "He", color: "linear-gradient(150deg, oklch(0.5 0.12 250), oklch(0.35 0.08 250))", preset: "hermes", status: "active", sessions: 1, access: "full",
             files: ["SOUL.md", "AGENTS.md", "MEMORY.md"] },
-          { id: "mira", name: "Mira", initials: "Mi", color: "linear-gradient(150deg, oklch(0.5 0.1 330), oklch(0.35 0.08 330))", preset: "minimal", status: "idle",
-            model: "Claude Sonnet 4.5", embeddings: "Voyage-3", scope: "read-only", latency: "—", lastActive: "3h ago",
-            focus: null,
+          { id: "mira", name: "Mira", initials: "Mi", color: "linear-gradient(150deg, oklch(0.5 0.1 330), oklch(0.35 0.08 330))", preset: "minimal", status: "idle", sessions: 0, access: "read-only",
             files: ["AGENTS.md"] },
         ];
         function cardHtml(a) {
-          const MAX_TAGS = 3;
+          const MAX_TAGS = 4;
           const visible = a.files.slice(0, MAX_TAGS);
           const extra = a.files.length - MAX_TAGS;
-          const tags = visible.map((f) => '<span class="ag-tag" data-file="' + f + '">' + f + '</span>').join("");
-          const more = extra > 0 ? '<span class="ag-tag ag-tag--more">+' + extra + " more</span>" : "";
-          const focusHtml = a.focus ? '<div class="ag-focus"><span class="ag-focus__dot"></span><span class="ag-focus__label">Focus</span><span class="ag-focus__txt">' + a.focus + "</span></div>" : "";
+          const tags = visible.map((f) => '<span class="ag-tag" data-file="' + f + '">' + f + "</span>").join("");
+          const more = extra > 0 ? '<span class="ag-tag ag-tag--more">+' + extra + "</span>" : "";
           return [
             '<div class="ag-card" data-id="' + a.id + '">',
               '<div class="ag-card__top">',
-                '<div class="ag-card__avatar" style="background:' + a.color + '">' + a.initials + '</div>',
+                '<div class="ag-card__avatar" style="background:' + a.color + '">' + a.initials + "</div>",
                 '<div class="ag-card__meta">',
-                  '<div class="ag-card__name">' + a.name + '</div>',
-                  '<div class="ag-card__sub"><span class="ag-card__preset">' + a.preset + '</span> · ' + a.id + '</div>',
-                '</div>',
-                '<span class="ag-card__status ag-card__status--' + a.status + '"><span class="dot"></span>' + a.status + '</span>',
-              '</div>',
-              focusHtml,
-              '<div class="ag-spec">',
-                '<div class="ag-spec__cell"><span class="ag-spec__label">Model</span><span class="ag-spec__val">' + a.model + '</span></div>',
-                '<div class="ag-spec__cell"><span class="ag-spec__label">Embeds</span><span class="ag-spec__val">' + a.embeddings + '</span></div>',
-                '<div class="ag-spec__cell"><span class="ag-spec__label">Access</span><span class="ag-spec__val">' + a.scope + '</span></div>',
-                '<div class="ag-spec__cell"><span class="ag-spec__label">Activity</span><span class="ag-spec__val ag-spec__val--muted">' + a.lastActive + '</span></div>',
-              '</div>',
-              '<div class="ag-tags">' + tags + more + '</div>',
+                  '<div class="ag-card__name">' + a.name + "</div>",
+                  '<div class="ag-card__sub"><span class="ag-card__preset">' + a.preset + "</span> \u00b7 " + a.id + "</div>",
+                "</div>",
+                '<span class="ag-card__status ag-card__status--' + a.status + '"><span class="dot"></span>' + a.status + "</span>",
+                '<span class="ag-sessions">' + a.sessions + " sessions</span>",
+              "</div>",
+              '<div class="ag-tags">' + tags + more + "</div>",
               '<div class="ag-card__foot">',
-                '<span class="ag-scope">Latency <b>' + a.latency + '</b></span>',
-                '<div class="ag-card__actions">',
-                  '<span class="ag-act" title="Duplicate" data-act="dup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span>',
-                  '<span class="ag-act" title="Settings" data-act="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></span>',
-                  '<span class="ag-act is-danger" title="Delete" data-act="delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></span>',
-                '</div>',
-              '</div>',
-            '</div>',
+                '<span class="ag-access ag-access--' + a.access + '">' + a.access + "</span>",
+                '<span class="ag-act" title="Settings" data-act="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>',
+              "</div>",
+            "</div>",
           ].join("");
         }
         function render() {
