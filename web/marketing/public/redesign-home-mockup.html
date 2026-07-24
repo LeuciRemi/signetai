@@ -1267,10 +1267,7 @@
       .dr-trigger:hover { color: oklch(0.82 0.16 150); border-color: color-mix(in oklch, var(--success) 40%, transparent); }
       .dr-trigger svg { width: 12px; height: 12px; }
       /* ── Last pass brief — narrative journal ── */
-      .dr-brief { position: relative; display: flex; flex-direction: column; gap: 14px; padding: 20px 22px; border-radius: var(--radius);
-        background: var(--card); border: 1px solid oklch(1 0 0 / 0.05); box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.04), 0 1px 2px oklch(0 0 0 / 0.3); flex-shrink: 0; }
-      [data-theme="light"] .dr-brief { border-color: oklch(0 0 0 / 0.06); }
-      .dr-brief::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; background: linear-gradient(180deg, oklch(1 0 0 / 0.18), transparent 50%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
+      .dr-brief { display: flex; flex-direction: column; gap: 16px; padding: 4px 2px; flex-shrink: 0; }
       .dr-brief__head { display: flex; align-items: center; gap: 10px; }
       .dr-brief__ic { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0;
         background: oklch(0.3 0 0); color: oklch(0.8 0.08 250); border: 1px solid oklch(1 0 0 / 0.06); }
@@ -1288,25 +1285,33 @@
       .dr-brief__narrative p { margin: 0 0 12px; }
       .dr-brief__narrative p:last-child { margin-bottom: 0; }
       .dr-brief__narrative b { color: var(--foreground); font-weight: 600; }
-      .dr-brief__narrative code { font-family: var(--font-mono); font-size: 11.5px; color: oklch(0.75 0.13 145); background: color-mix(in oklch, var(--foreground) 5%, transparent); padding: 1px 5px; border-radius: 4px; }
+      .dr-brief__narrative code { font-family: var(--font-mono); font-size: 12px; color: oklch(0.75 0.13 145); font-weight: 500; }
+      [data-theme="light"] .dr-brief__narrative code { color: oklch(0.4 0.15 145); }
+      .dr-brief__narrative .ent { font-family: var(--font-mono); font-size: 12.5px; font-weight: 500; color: oklch(0.65 0.1 200); }
+      [data-theme="light"] .dr-brief__narrative .ent { color: oklch(0.45 0.12 220); }
       [data-theme="light"] .dr-brief__narrative code { color: oklch(0.45 0.15 145); }
       /* mutation chips */
-      .dr-summary { font-family: var(--font-mono); font-size: 9.5px; color: oklch(0.5 0 0); padding-top: 10px; border-top: 1px solid oklch(1 0 0 / 0.04); }
-      [data-theme="light"] .dr-summary { color: oklch(0.5 0 0); border-top-color: oklch(0 0 0 / 0.04); }
+      .dr-summary { font-family: var(--font-mono); font-size: 9.5px; color: oklch(0.5 0 0); }
+      [data-theme="light"] .dr-summary { color: oklch(0.5 0 0); }
       .dr-summary b { color: oklch(0.7 0 0); font-weight: 600; }
       [data-theme="light"] .dr-summary b { color: oklch(0.35 0 0); }
-      /* entity changes list */
-      /* mutation rows — no inner box, hairline dividers, badges anchor left */
+      /* section separator between narrative and diff */
+      .dr-section-rule { border-top: 1px solid oklch(1 0 0 / 0.06); margin: 4px 0 0; padding-top: 16px; }
+      [data-theme="light"] .dr-section-rule { border-top-color: oklch(0 0 0 / 0.06); }
+      .dr-section-label { font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: oklch(0.45 0 0); padding-bottom: 6px; }
+      [data-theme="light"] .dr-section-label { color: oklch(0.55 0 0); }
+      /* mutation rows — no inner box, hairline dividers */
       .dr-changes { display: flex; flex-direction: column; gap: 0; }
       .dr-change { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid oklch(1 0 0 / 0.04); }
       [data-theme="light"] .dr-change { border-bottom-color: oklch(0 0 0 / 0.04); }
       .dr-change:last-child { border-bottom: none; }
-      .dr-change__op { font-family: var(--font-mono); font-size: 8.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 4px; flex-shrink: 0; margin-top: 1px; }
-      .dr-change__op--create { background: color-mix(in oklch, var(--success) 14%, transparent); color: oklch(0.72 0.15 150); }
-      .dr-change__op--merge { background: oklch(0.6 0.1 250 / 0.14); color: oklch(0.7 0.1 250); }
-      .dr-change__op--delete { background: oklch(0.6 0.15 25 / 0.14); color: oklch(0.7 0.15 25); }
-      .dr-change__op--supersede { background: oklch(0.6 0.15 85 / 0.14); color: oklch(0.75 0.15 85); }
-      .dr-change__op--update { background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--muted-foreground); }
+      .dr-change__op { font-family: var(--font-mono); font-size: 13px; font-weight: 700; flex-shrink: 0; width: 16px; text-align: center; margin-top: 0; line-height: 1.5; }
+      .dr-change__op--create { color: oklch(0.72 0.15 150); }
+      .dr-change__op--merge { color: oklch(0.7 0.1 250); }
+      .dr-change__op--delete { color: oklch(0.7 0.15 25); }
+      .dr-change__op--supersede { color: oklch(0.78 0.15 85); }
+      .dr-change__op--update { color: oklch(0.55 0 0); }
+      [data-theme="light"] .dr-change__op--update { color: oklch(0.5 0 0); }
       .dr-change__txt { font-size: 12.5px; line-height: 1.5; color: oklch(0.82 0 0); flex: 1; min-width: 0; }
       [data-theme="light"] .dr-change__txt { color: oklch(0.3 0 0); }
       /* entity:* references — distinct cyan mono pills */
@@ -3642,9 +3647,10 @@
           if (diff < 60) return diff + "s";
           return Math.floor(diff / 60) + "m " + (diff % 60) + "s";
         }
+        const OP_SYM = { create: "+", merge: "\u2794", supersede: "\u26a1", update: "~", delete: "\u2212" };
         function briefHtml(p) {
           const changes = p.changes.map((c) =>
-            '<div class="dr-change"><span class="dr-change__op dr-change__op--' + c.op + '">' + c.op + '</span><div><div class="dr-change__txt">' + c.detail + '</div><div class="dr-change__reason">' + c.reason + "</div></div></div>"
+            '<div class="dr-change"><span class="dr-change__op dr-change__op--' + c.op + '">' + (OP_SYM[c.op] || c.op) + '</span><div><div class="dr-change__txt">' + c.detail + '</div><div class="dr-change__reason">' + c.reason + "</div></div></div>"
           ).join("");
           return [
             '<div class="dr-brief__head">',
@@ -3659,7 +3665,7 @@
               '</div>',
             '</div>',
             '<div class="dr-brief__narrative"><p>Your work this week converged hard on the <b>dashboard rewrite</b>. Three sessions pushed <span class="ent">entity:dashboard</span> toward <span class="ent">entity:signet</span> until dreaming merged them \u2014 the dashboard is now an aspect of Signet, not a sibling. <span class="ent">entity:Hermes</span> split off as its own node after four sessions treated it as a distinct harness.</p><p>The bigger signal: dreaming flagged an <b>inference tension</b> on your profile \u2014 you keep reaching for hosted models while writing local-first principles. And <code>infrastructure-forward</code> positioning is settling across six sources, ready to commit as messaging.</p></div>',
-            '<div class="dr-summary">Pass complete \u00b7 <b>' + p.mutationsApplied + "</b> mutations applied \u00b7 <b>" + (p.tokensConsumed / 1000).toFixed(1) + "k</b> tokens processed \u00b7 <b>" + p.mutationsSkipped + "</b> skipped</div>",
+            '<div class="dr-section-rule"><div class="dr-section-label">Graph mutations</div><div class="dr-summary">Pass complete \u00b7 <b>' + p.mutationsApplied + "</b> mutations applied \u00b7 <b>" + (p.tokensConsumed / 1000).toFixed(1) + "k</b> tokens processed \u00b7 <b>" + p.mutationsSkipped + "</b> skipped</div></div>",
             '<div class="dr-changes">' + changes + '</div>',
           ].join("");
         }
