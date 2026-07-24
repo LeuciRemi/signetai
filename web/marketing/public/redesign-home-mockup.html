@@ -1316,25 +1316,6 @@
       .dr-change__txt .arr { color: oklch(0.5 0 0); margin: 0 3px; font-family: var(--font-mono); font-weight: 500; }
       [data-theme="light"] .dr-change__txt .arr { color: oklch(0.5 0 0); }
       .dr-change__reason { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); margin-top: 4px; }
-      /* ── Pass history timeline ── */
-      .dr-history-label { font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground); padding: 4px 2px 0; flex-shrink: 0; }
-      .dr-history { display: flex; flex-direction: column; gap: 0; flex-shrink: 0; }
-      .dr-pass { display: grid; grid-template-columns: 24px 1fr auto; gap: 12px; padding: 10px 0; border-bottom: 1px solid oklch(1 0 0 / 0.04); align-items: center; }
-      [data-theme="light"] .dr-pass { border-bottom-color: oklch(0 0 0 / 0.04); }
-      .dr-pass:last-child { border-bottom: none; }
-      .dr-pass__dot { width: 8px; height: 8px; border-radius: 50%; justify-self: center; }
-      .dr-pass__dot--complete { background: var(--success); box-shadow: 0 0 6px color-mix(in oklch, var(--success) 40%, transparent); }
-      .dr-pass__dot--error { background: oklch(0.7 0.18 25); }
-      .dr-pass__dot--running { background: oklch(0.7 0.1 220); box-shadow: 0 0 6px oklch(0.7 0.1 220 / 0.5); animation: dr-pulse 1.5s ease-in-out infinite; }
-      @keyframes dr-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-      @media (prefers-reduced-motion: reduce) { .dr-pass__dot--running { animation: none; } }
-      .dr-pass__body { min-width: 0; }
-      .dr-pass__time { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
-      .dr-pass__summary { font-size: 12px; color: oklch(0.82 0 0); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      [data-theme="light"] .dr-pass__summary { color: oklch(0.3 0 0); }
-      /* lock pass history stats into a fixed-width grid so columns align */
-      .dr-pass__stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); flex-shrink: 0; width: 108px; text-align: right; }
-      .dr-pass__stat { display: flex; align-items: baseline; justify-content: flex-end; gap: 3px; }
       .dr-pass__stat b { color: var(--foreground); font-weight: 600; }
 
       /* ════════════════════════════════════════════════════════════════
@@ -1649,8 +1630,8 @@
                 <span class="nav__kbd">G G</span>
               </li>
               <li class="nav__item" data-view="dreaming">
-                <span class="nav__icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7c0 2.4 1.2 4 2.5 5 .8.6 1.5 1.4 1.5 2.5V18h6v-1.5c0-1.1.7-1.9 1.5-2.5C18.8 13 20 11.4 20 9a7 7 0 0 0-8-7z"/><path d="M9 21h6M10 18h4"/></svg></span>
-                <span class="nav__label">Dreaming</span>
+                <span class="nav__icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
+                <span class="nav__label">Dreams</span>
                 <span class="nav__badge is-green">14</span>
                 <span class="nav__kbd">G D</span>
               </li>
@@ -2374,9 +2355,6 @@
             <!-- last pass brief (populated by JS) -->
             <div class="dr-brief" id="dr-brief"></div>
 
-            <!-- pass history (populated by JS) -->
-            <div class="dr-history-label">Pass history</div>
-            <div class="dr-history" id="dr-history"></div>
           </div>
 
         </div>
@@ -2832,7 +2810,8 @@
             item.classList.toggle("is-active", item.dataset.view === name);
           });
           const crumb = document.getElementById("crumb-view");
-          if (crumb) crumb.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+          const labels = { dreaming: "Dreams" };
+          if (crumb) crumb.textContent = labels[name] || (name.charAt(0).toUpperCase() + name.slice(1));
         }
         document.querySelectorAll(".nav__item[data-view]").forEach((item) => {
           item.addEventListener("click", () => showView(item.dataset.view));
@@ -3650,14 +3629,6 @@
             { op: "update", target: "Positioning", detail: "Updated aspect <code>positioning</code> on <span class=\"ent\">entity:Signet</span> \u2014 <code>infrastructure-forward</code> converging across 6 sources.", reason: "Convergence detected across Obsidian, Notion, GitHub" },
           ],
         };
-        const PASSES = [
-          { id: "dream_01J7XK4M3N", status: "complete", mode: "incremental", startedAt: "2026-07-22T03:00:00Z", completedAt: "2026-07-22T03:02:47Z", tokens: 14200, applied: 11, skipped: 3, failed: 0, summary: "Consolidated dashboard migration evidence — Signet entity merged, Hermes created, inference tension flagged" },
-          { id: "dream_01J7VZ9P2K", status: "complete", mode: "incremental", startedAt: "2026-07-21T03:00:00Z", completedAt: "2026-07-21T03:01:22Z", tokens: 11800, applied: 8, skipped: 2, failed: 0, summary: "Imported product strategy notes — created entity:Cloud Sync, updated positioning claims" },
-          { id: "dream_01J7KH7R8M", status: "complete", mode: "compact", startedAt: "2026-07-20T03:00:00Z", completedAt: "2026-07-20T03:04:15Z", tokens: 28000, applied: 24, skipped: 5, failed: 1, summary: "Compact pass — merged 7 duplicate entities, pruned 3 stale aspects from openclaw migration" },
-          { id: "dream_01J7A2C4D6", status: "error", mode: "incremental", startedAt: "2026-07-19T03:00:00Z", completedAt: "2026-07-19T03:00:31Z", tokens: 2100, applied: 0, skipped: 0, failed: 1, summary: "Provider timeout — Claude Sonnet 4.5 did not respond within 30s" },
-          { id: "dream_01J763X8F2", status: "complete", mode: "incremental", startedAt: "2026-07-18T03:00:00Z", completedAt: "2026-07-18T03:02:08Z", tokens: 13400, applied: 9, skipped: 4, failed: 0, summary: "Processed 3 claude-code sessions — created 4 entities, superseded 2 stale attributes" },
-          { id: "dream_01J6ZZ5M7K", status: "complete", mode: "incremental", startedAt: "2026-07-17T03:00:00Z", completedAt: "2026-07-17T03:01:45Z", tokens: 10500, applied: 7, skipped: 1, failed: 0, summary: "Imported GitHub source artifacts — linked 12 issues to entity:dashboard" },
-        ];
         const MOON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
         function relTime(iso) {
           const d = new Date(iso), now = new Date("2026-07-22T09:00:00Z"), diff = (now - d) / 1000;
@@ -3692,14 +3663,8 @@
             '<div class="dr-changes">' + changes + '</div>',
           ].join("");
         }
-        function passHtml(p) {
-          const failNote = p.status === "error" ? " · failed" : "";
-          return `<div class="dr-pass"><span class="dr-pass__dot dr-pass__dot--${p.status}"></span><div class="dr-pass__body"><div class="dr-pass__time">${relTime(p.startedAt)} · ${p.mode}${failNote}</div><div class="dr-pass__summary">${p.summary}</div></div><div class="dr-pass__stats"><span class="dr-pass__stat"><b>${p.applied}</b>applied</span><span class="dr-pass__stat"><b>${p.skipped}</b>skip</span><span class="dr-pass__stat"><b>${(p.tokens / 1000).toFixed(1)}k</b>tok</span></div></div>`;
-        }
         const briefEl = document.getElementById("dr-brief");
-        const historyEl = document.getElementById("dr-history");
         if (briefEl) briefEl.innerHTML = briefHtml(LAST_PASS);
-        if (historyEl) historyEl.innerHTML = PASSES.map(passHtml).join("");
         // dynamic buffer gauge + threshold state
         const TOKENS = 8240, THRESHOLD = 10000;
         const pct = Math.min(100, Math.round((TOKENS / THRESHOLD) * 100));
