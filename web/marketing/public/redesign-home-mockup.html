@@ -3647,7 +3647,7 @@
           if (diff < 60) return diff + "s";
           return Math.floor(diff / 60) + "m " + (diff % 60) + "s";
         }
-        const OP_SYM = { create: "+", merge: "\u2794", supersede: "\u26a1", update: "~", delete: "\u2212" };
+        const OP_SYM = { create: "+", merge: "\u2192", supersede: "\u2260", update: "~", delete: "\u2212" };
         function briefHtml(p) {
           const changes = p.changes.map((c) =>
             '<div class="dr-change"><span class="dr-change__op dr-change__op--' + c.op + '">' + (OP_SYM[c.op] || c.op) + '</span><div><div class="dr-change__txt">' + c.detail + '</div><div class="dr-change__reason">' + c.reason + "</div></div></div>"
