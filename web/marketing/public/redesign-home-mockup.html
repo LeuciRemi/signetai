@@ -1268,17 +1268,6 @@
       .dr-trigger svg { width: 12px; height: 12px; }
       /* ── Last pass brief — narrative journal ── */
       .dr-brief { display: flex; flex-direction: column; gap: 16px; padding: 4px 2px; flex-shrink: 0; }
-      .dr-brief__head { display: flex; align-items: center; gap: 10px; }
-      .dr-brief__ic { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0;
-        background: oklch(0.3 0 0); color: oklch(0.8 0.08 250); border: 1px solid oklch(1 0 0 / 0.06); }
-      [data-theme="light"] .dr-brief__ic { background: oklch(0.92 0 0); }
-      .dr-brief__ic svg { width: 18px; height: 18px; }
-      .dr-brief__title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-      .dr-brief__meta { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); margin-top: 2px; display: flex; align-items: center; gap: 8px; }
-      .dr-brief__tag { font-family: var(--font-mono); font-size: 8.5px; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
-      .dr-brief__tag--incremental { background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--muted-foreground); }
-      .dr-brief__tag--compact { background: oklch(0.6 0.12 250 / 0.14); color: oklch(0.7 0.1 250); }
-      .dr-brief__tag--complete { background: color-mix(in oklch, var(--success) 14%, transparent); color: oklch(0.72 0.15 150); }
       /* narrative body */
       .dr-brief__narrative { font-size: 14px; line-height: 1.7; color: oklch(0.85 0 0); }
       [data-theme="light"] .dr-brief__narrative { color: oklch(0.28 0 0); }
@@ -3634,7 +3623,6 @@
             { op: "update", target: "Positioning", detail: "Updated aspect <code>positioning</code> on <span class=\"ent\">entity:Signet</span> \u2014 <code>infrastructure-forward</code> converging across 6 sources.", reason: "Convergence detected across Obsidian, Notion, GitHub" },
           ],
         };
-        const MOON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
         function relTime(iso) {
           const d = new Date(iso), now = new Date("2026-07-22T09:00:00Z"), diff = (now - d) / 1000;
           if (diff < 60) return "just now";
@@ -3653,17 +3641,7 @@
             '<div class="dr-change"><span class="dr-change__op dr-change__op--' + c.op + '">' + (OP_SYM[c.op] || c.op) + '</span><div><div class="dr-change__txt">' + c.detail + '</div><div class="dr-change__reason">' + c.reason + "</div></div></div>"
           ).join("");
           return [
-            '<div class="dr-brief__head">',
-              '<div class="dr-brief__ic">' + MOON_SVG + '</div>',
-              '<div style="flex:1">',
-                '<div class="dr-brief__title">Last dreaming pass</div>',
-                '<div class="dr-brief__meta">',
-                  '<span class="dr-brief__tag dr-brief__tag--' + p.mode + '">' + p.mode + '</span>',
-                  '<span class="dr-brief__tag dr-brief__tag--complete">complete</span>',
-                  relTime(p.completedAt) + ' · ' + duration(p.startedAt, p.completedAt) + ' · ' + (p.tokensConsumed / 1000).toFixed(1) + 'k tokens',
-                '</div>',
-              '</div>',
-            '</div>',
+            '<div class="dr-section-label">Synthesis · Pass complete ' + relTime(p.completedAt) + ' · ' + duration(p.startedAt, p.completedAt) + ' · ' + (p.tokensConsumed / 1000).toFixed(1) + 'k tokens</div>',
             '<div class="dr-brief__narrative"><p>Your work this week converged hard on the <b>dashboard rewrite</b>. Three sessions pushed <span class="ent">entity:dashboard</span> toward <span class="ent">entity:signet</span> until dreaming merged them \u2014 the dashboard is now an aspect of Signet, not a sibling. <span class="ent">entity:Hermes</span> split off as its own node after four sessions treated it as a distinct harness.</p><p>The bigger signal: dreaming flagged an <b>inference tension</b> on your profile \u2014 you keep reaching for hosted models while writing local-first principles. And <code>infrastructure-forward</code> positioning is settling across six sources, ready to commit as messaging.</p></div>',
             '<div class="dr-section-rule"><div class="dr-section-label">Graph mutations</div><div class="dr-summary">Pass complete \u00b7 <b>' + p.mutationsApplied + "</b> mutations applied \u00b7 <b>" + (p.tokensConsumed / 1000).toFixed(1) + "k</b> tokens processed \u00b7 <b>" + p.mutationsSkipped + "</b> skipped</div></div>",
             '<div class="dr-changes">' + changes + '</div>',
