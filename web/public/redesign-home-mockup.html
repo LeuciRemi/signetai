@@ -556,7 +556,7 @@
 
       .mgroup-label { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.62 0 0); margin: 0 0 4px; padding: 0 6px; }
       [data-theme="light"] .mgroup-label { color: oklch(0.42 0 0); }
-      .modal__body { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px; }
+      .modal__body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 18px 20px; }
       .msection { display: none; flex-direction: column; gap: 12px; }
       .msection.is-on { display: flex; }
 
@@ -625,48 +625,76 @@
       .pcard.is-on .pact { background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--muted-foreground); }
       .pact--oauth:hover { border-color: color-mix(in oklch, var(--success) 40%, transparent); color: oklch(0.82 0.16 150); }
 
-      /* ════ LOGS section (replaces Audit tab) ════ */
-      .log-toolbar { display: flex; align-items: center; gap: 6px; padding: 0 2px 10px; }
-      .log-filter { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
-        padding: 4px 9px; border-radius: var(--radius); cursor: pointer; white-space: nowrap; border: 1px solid oklch(1 0 0 / 0.1); color: var(--muted-foreground); transition: all .15s; }
-      [data-theme="light"] .log-filter { border-color: oklch(0 0 0 / 0.1); }
-      .log-filter:hover { color: var(--foreground); border-color: oklch(1 0 0 / 0.2); }
-      .log-filter.is-on { color: var(--foreground); border-color: oklch(1 0 0 / 0.22); background: color-mix(in oklch, var(--foreground) 6%, transparent); }
-      .log-filter__dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-      .log-spacer { flex: 1; }
-      .log-search { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.1); background: color-mix(in oklch, var(--foreground) 3%, transparent); }
+      /* ════ LOGS section — edge-to-edge high-precision telemetry ════ */
+      .msection[data-section="logs"] { height: 100%; min-height: 0; }
+      .log-view { display: flex; flex-direction: column; height: 100%; min-height: 0; margin: 0 -20px; }
+      /* header row — pulsing tail indicator + segmented pill + search */
+      .log-head { display: flex; align-items: center; gap: 10px; padding: 6px 24px 12px; border-bottom: 1px solid oklch(1 0 0 / 0.06); flex-shrink: 0; }
+      [data-theme="light"] .log-head { border-bottom-color: oklch(0 0 0 / 0.06); }
+      .log-export { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10px; cursor: pointer; color: var(--muted-foreground);
+        padding: 4px 10px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.1); background: transparent; transition: all .15s; user-select: none; }
+      [data-theme="light"] .log-export { border-color: oklch(0 0 0 / 0.1); }
+      .log-export:hover { color: var(--foreground); border-color: oklch(1 0 0 / 0.22); }
+      .log-export svg { width: 12px; height: 12px; }
+      .log-head__spacer { flex: 1; }
+      .log-search { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 10px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.1); background: color-mix(in oklch, var(--foreground) 3%, transparent); }
       [data-theme="light"] .log-search { border-color: oklch(0 0 0 / 0.1); }
-      .log-search svg { width: 13px; height: 13px; color: var(--muted-foreground); flex-shrink: 0; }
-      .log-search input { border: none; background: none; outline: none; color: var(--foreground); font: inherit; font-size: 11.5px; width: 150px; }
+      .log-search svg { width: 12px; height: 12px; color: var(--muted-foreground); flex-shrink: 0; }
+      .log-search input { border: none; background: none; outline: none; color: var(--foreground); font: inherit; font-size: 11px; width: 130px; }
       .log-search input::placeholder { color: var(--muted-foreground); }
-      /* terminal stream */
-      .log-stream { font-family: var(--font-mono); font-size: 11px; line-height: 1.65; max-height: 360px; overflow-y: auto;
-        padding: 12px 14px; border-radius: var(--radius); background: oklch(0.16 0 0); border: 1px solid oklch(1 0 0 / 0.06); }
-      [data-theme="light"] .log-stream { background: oklch(0.97 0 0); border-color: oklch(0 0 0 / 0.08); }
+      /* segmented glass pill — level filter */
+      .log-seg { display: inline-flex; align-items: center; gap: 0; padding: 3px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.08);
+        background: color-mix(in oklch, var(--foreground) 4%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+      [data-theme="light"] .log-seg { border-color: oklch(0 0 0 / 0.08); }
+      .log-seg__item { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+        padding: 4px 9px; border-radius: calc(var(--radius) - 2px); cursor: pointer; white-space: nowrap; color: var(--muted-foreground); transition: all .15s; }
+      .log-seg__item:hover { color: var(--foreground); }
+      .log-seg__item.is-on { color: var(--foreground); background: color-mix(in oklch, var(--foreground) 10%, transparent); }
+      .log-seg__dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+      /* edge-to-edge stream — no inner card, no border, no padding around list */
+      .log-stream { flex: 1; min-height: 0; overflow-y: auto; font-family: var(--font-mono); font-size: 11px; line-height: 1.7;
+        -webkit-mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 20px), transparent 100%); mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 20px), transparent 100%); }
       .log-stream::-webkit-scrollbar { width: 6px; }
-      .log-stream::-webkit-scrollbar-thumb { background: oklch(0.4 0 0); border-radius: 3px; }
-      .log-line { display: flex; gap: 10px; padding: 1px 0; white-space: nowrap; }
+      .log-stream::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 18%, transparent); border-radius: 3px; }
+      /* locked-width grid columns for straight-down scanning */
+      /* locked 4-column grid: time | level | scope | message */
+      .log-line { display: grid; grid-template-columns: 88px 52px 84px 1fr; gap: 0; padding: 3px 24px; cursor: pointer; transition: background .1s; align-items: baseline; border-bottom: 1px solid oklch(1 0 0 / 0.03); }
+      [data-theme="light"] .log-line { border-bottom-color: oklch(0 0 0 / 0.03); }
+      .log-line:hover { background: color-mix(in oklch, var(--foreground) 5%, transparent); }
+      .log-line.is-error:hover { background: oklch(0.4 0.15 25 / 0.08); }
+      .log-line.is-warn:hover { background: oklch(0.5 0.15 85 / 0.06); }
       .log-line[hidden] { display: none; }
-      .log-line__time { color: oklch(0.5 0 0); flex-shrink: 0; }
+      .log-line__time { color: oklch(0.5 0 0); padding-right: 12px; }
       [data-theme="light"] .log-line__time { color: oklch(0.55 0 0); }
-      .log-line__lvl { flex-shrink: 0; width: 38px; font-weight: 600; }
+      /* level — warn/error get micropilled background tints */
+      .log-line__lvl { font-weight: 600; padding-right: 12px; font-size: 10px; }
       .log-line__lvl--info { color: oklch(0.7 0.1 220); }
-      .log-line__lvl--warn { color: oklch(0.78 0.15 85); }
-      .log-line__lvl--error { color: oklch(0.72 0.19 25); }
+      .log-line__lvl--warn { color: oklch(0.82 0.15 85); padding: 1px 6px; border-radius: 4px; background: oklch(0.7 0.15 85 / 0.12); }
+      .log-line__lvl--error { color: oklch(0.78 0.19 25); padding: 1px 6px; border-radius: 4px; background: oklch(0.6 0.2 25 / 0.14); }
       .log-line__lvl--debug { color: oklch(0.55 0 0); }
       [data-theme="light"] .log-line__lvl--debug { color: oklch(0.5 0 0); }
-      .log-line__msg { color: oklch(0.82 0 0); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      /* scope column — the module name */
+      .log-line__scope { color: oklch(0.62 0 0); padding-right: 12px; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      [data-theme="light"] .log-line__scope { color: oklch(0.42 0 0); }
+      .log-line__msg { color: oklch(0.82 0 0); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       [data-theme="light"] .log-line__msg { color: oklch(0.25 0 0); }
-      .log-line__msg b { color: oklch(0.95 0 0); font-weight: 600; }
-      [data-theme="light"] .log-line__msg b { color: oklch(0.1 0 0); }
       .log-line__msg .path { color: oklch(0.6 0 0); }
       [data-theme="light"] .log-line__msg .path { color: oklch(0.45 0 0); }
-      .log-foot { display: flex; align-items: center; justify-content: space-between; padding: 8px 4px 0; }
-      .log-foot__txt { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
-      .log-tail { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 9.5px; cursor: pointer; color: var(--muted-foreground); transition: color .15s; }
-      .log-tail:hover { color: var(--foreground); }
-      .log-tail.is-on { color: oklch(0.72 0.15 150); }
-      .log-tail .live { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; }
+      /* inline slide-down drawer for raw payload / stack */
+      .log-drawer { display: none; grid-column: 1 / -1; margin: 2px 24px 4px; padding: 10px 14px; border-radius: var(--radius);
+        background: oklch(0.14 0 0); border: 1px solid oklch(1 0 0 / 0.08); font-family: var(--font-mono); font-size: 10px; line-height: 1.6;
+        max-height: 160px; overflow: auto; animation: log-drawer-in .18s ease; }
+      [data-theme="light"] .log-drawer { background: oklch(0.96 0 0); border-color: oklch(0 0 0 / 0.08); }
+      @keyframes log-drawer-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+      .log-drawer::-webkit-scrollbar { width: 5px; }
+      .log-drawer::-webkit-scrollbar-thumb { background: oklch(0.4 0 0); border-radius: 3px; }
+      .log-drawer.is-open { display: block; }
+      .log-drawer__key { color: oklch(0.6 0 0); }
+      [data-theme="light"] .log-drawer__key { color: oklch(0.45 0 0); }
+      .log-drawer__str { color: oklch(0.75 0.13 145); }
+      .log-drawer__num { color: oklch(0.75 0.13 70); }
+      .log-drawer__err { color: oklch(0.72 0.19 25); }
+      .log-drawer__path { color: oklch(0.65 0.05 220); }
 
       /* setting rows */
       .mrow { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 10px; border-radius: var(--radius); }
@@ -1092,6 +1120,199 @@
       .btn-ghost:hover { color: var(--foreground); }
       .btn-primary { height: 32px; padding: 0 14px; border-radius: var(--radius); font-size: 12px; font-weight: 500; color: oklch(0.15 0 0); background: var(--foreground); cursor: pointer; transition: opacity .15s; }
       .btn-primary:hover { opacity: 0.88; }
+
+      /* ════════════════════════════════════════════════════════════════
+         SECRETS VIEW — locked vault → unlocked secret grid
+      ════════════════════════════════════════════════════════════════ */
+      .sec-view { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
+      /* locked gate — centered card */
+      .sec-gate { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; z-index: 10;
+        background: transparent; transition: opacity .3s ease; }
+      .sec-gate.is-hidden { opacity: 0; pointer-events: none; }
+      .sec-lock-ic { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 18px; color: var(--muted-foreground);
+        background: color-mix(in oklch, var(--card) 80%, transparent); border: 1px solid oklch(1 0 0 / 0.08); box-shadow: 0 8px 32px oklch(0 0 0 / 0.4), inset 0 1px 0 oklch(1 0 0 / 0.06);
+        margin-bottom: 24px; transition: all .4s; }
+      [data-theme="light"] .sec-lock-ic { border-color: oklch(0 0 0 / 0.08); }
+      .sec-gate.is-unlocking .sec-lock-ic { color: oklch(0.72 0.15 150); border-color: color-mix(in oklch, var(--success) 40%, transparent); box-shadow: 0 0 24px color-mix(in oklch, var(--success) 24%, transparent), inset 0 1px 0 oklch(1 0 0 / 0.06); }
+      .sec-lock-ic svg { width: 28px; height: 28px; }
+      .sec-gate__title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+      .sec-gate__sub { font-size: 12px; color: var(--muted-foreground); margin-top: 6px; font-family: var(--font-mono); }
+      .sec-pw-wrap { display: flex; align-items: center; gap: 8px; margin-top: 24px; }
+      .sec-pw { width: 280px; height: 38px; padding: 0 14px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.12); background: color-mix(in oklch, var(--card) 60%, transparent);
+        color: var(--foreground); font: inherit; font-size: 13px; outline: none; transition: border-color .15s; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+      [data-theme="light"] .sec-pw { border-color: oklch(0 0 0 / 0.12); }
+      .sec-pw:focus { border-color: color-mix(in oklch, var(--success) 45%, transparent); }
+      .sec-pw.shake { animation: sec-shake .4s; }
+      @keyframes sec-shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+      .sec-unlock-btn { height: 38px; padding: 0 16px; border-radius: var(--radius); font-size: 12.5px; font-weight: 500; color: oklch(0.15 0 0); background: var(--foreground); cursor: pointer; transition: opacity .15s; }
+      .sec-unlock-btn:hover { opacity: 0.88; }
+      .sec-error { font-family: var(--font-mono); font-size: 10.5px; color: oklch(0.72 0.19 25); height: 16px; margin-top: 10px; opacity: 0; transition: opacity .2s; }
+      .sec-error.show { opacity: 1; }
+      /* unlocked vault */
+      .sec-vault { display: flex; flex-direction: column; height: 100%; min-height: 0; opacity: 0; transform: translateY(8px); transition: opacity .35s ease, transform .35s ease; pointer-events: none; }
+      .sec-vault.is-open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+      /* borderless telemetry line */
+      .sec-hero { display: flex; align-items: center; gap: 9px; padding: 2px 2px 14px; flex-shrink: 0; font-family: var(--font-mono); }
+      .sec-hero__stat { display: inline-flex; align-items: baseline; gap: 5px; }
+      .sec-hero__val { font-size: 12px; font-weight: 500; color: var(--foreground); letter-spacing: -0.01em; }
+      .sec-hero__label { font-size: 10.5px; color: var(--muted-foreground); }
+      .sec-hero__sep { color: oklch(0.35 0 0); user-select: none; }
+      [data-theme="light"] .sec-hero__sep { color: oklch(0.65 0 0); }
+      .sec-hero__spacer { flex: 1; }
+      .sec-lock-back { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 10px; cursor: pointer; color: var(--muted-foreground); transition: color .15s; }
+      .sec-lock-back:hover { color: var(--foreground); }
+      .sec-lock-back svg { width: 12px; height: 12px; }
+      /* secret card grid */
+      .sec-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; flex: 1; overflow-y: auto; align-content: start; padding-bottom: 12px;
+        -webkit-mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 20px), transparent 100%); mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 20px), transparent 100%); }
+      .sec-card { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: var(--radius);
+        background: var(--card); border: 1px solid oklch(1 0 0 / 0.05); box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.04), 0 1px 2px oklch(0 0 0 / 0.3); transition: border-color .2s; }
+      [data-theme="light"] .sec-card { border-color: oklch(0 0 0 / 0.06); }
+      .sec-card:hover { border-color: oklch(1 0 0 / 0.14); }
+      [data-theme="light"] .sec-card:hover { border-color: oklch(0 0 0 / 0.14); }
+      .sec-card__top { display: flex; align-items: center; gap: 10px; }
+      .sec-card__ic { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; color: var(--muted-foreground); flex-shrink: 0;
+        background: color-mix(in oklch, var(--glass, var(--foreground)) 4%, transparent); border: 1px solid oklch(1 0 0 / 0.06); }
+      .sec-card__ic svg { width: 16px; height: 16px; }
+      .sec-card__meta { flex: 1; min-width: 0; }
+      .sec-card__name { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sec-card__src { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground); margin-top: 2px; }
+      .sec-card__src-dot { width: 5px; height: 5px; border-radius: 50%; }
+      .sec-card__src--local .sec-card__src-dot { background: var(--muted-foreground); }
+      .sec-card__src--1password .sec-card__src-dot { background: oklch(0.7 0.12 250); }
+      .sec-card__src--bitwarden .sec-card__src-dot { background: oklch(0.72 0.15 150); }
+      /* masked value */
+      .sec-card__val { font-family: var(--font-mono); font-size: 11px; color: oklch(0.5 0 0); padding: 6px 10px; border-radius: 6px; background: color-mix(in oklch, var(--foreground) 3%, transparent);
+        display: flex; align-items: center; justify-content: space-between; }
+      [data-theme="light"] .sec-card__val { color: oklch(0.45 0 0); }
+      .sec-card__val-mask { letter-spacing: 1px; }
+      .sec-card__copy { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 5px; color: var(--muted-foreground); cursor: pointer; opacity: 0; transition: opacity .15s; }
+      .sec-card:hover .sec-card__copy { opacity: 0.7; }
+      .sec-card__copy:hover { opacity: 1 !important; color: var(--foreground); background: oklch(1 0 0 / 0.08); }
+      .sec-card__copy svg { width: 12px; height: 12px; }
+      /* footer with usage ref */
+      .sec-card__foot { display: flex; align-items: center; justify-content: space-between; padding-top: 8px; margin-top: 2px; border-top: 1px solid oklch(1 0 0 / 0.06); }
+      [data-theme="light"] .sec-card__foot { border-top-color: oklch(0 0 0 / 0.06); }
+      .sec-card__ref { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sec-card__ref b { color: var(--foreground); font-weight: 500; }
+      .sec-card__actions { display: flex; gap: 2px; opacity: 0.4; transition: opacity .15s; }
+      .sec-card:hover .sec-card__actions { opacity: 1; }
+      .sec-act { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 5px; color: var(--muted-foreground); cursor: pointer; transition: all .15s; }
+      .sec-act:hover { color: var(--foreground); background: oklch(1 0 0 / 0.08); }
+      .sec-act svg { width: 12px; height: 12px; }
+      .sec-act.is-danger:hover { color: oklch(0.7 0.18 25); }
+      /* inline add tile */
+      .sec-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 20px 16px; border-radius: var(--radius);
+        border: 1.5px dashed oklch(1 0 0 / 0.12); background: color-mix(in oklch, var(--card) 86%, transparent); cursor: pointer; transition: all .2s; min-height: 140px; }
+      [data-theme="light"] .sec-add { border-color: oklch(0 0 0 / 0.12); }
+      .sec-add:hover { border-color: color-mix(in oklch, var(--success) 45%, transparent); background: color-mix(in oklch, var(--success) 4%, transparent); }
+      .sec-add__ic { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: var(--muted-foreground);
+        background: color-mix(in oklch, var(--foreground) 4%, transparent); border: 1px solid oklch(1 0 0 / 0.08); transition: all .2s; }
+      .sec-add:hover .sec-add__ic { color: oklch(0.82 0.16 150); border-color: color-mix(in oklch, var(--success) 40%, transparent); box-shadow: 0 0 10px color-mix(in oklch, var(--success) 20%, transparent); }
+      .sec-add__ic svg { width: 15px; height: 15px; }
+      .sec-add__label { font-size: 11.5px; font-weight: 500; color: var(--foreground); }
+      /* add-secret modal */
+      .sec-modal-bg { position: fixed; inset: 0; z-index: 100; background: oklch(0 0 0 / 0.5); backdrop-filter: blur(8px); display: grid; place-items: center; opacity: 0; pointer-events: none; transition: opacity .25s; }
+      .sec-modal-bg.show { opacity: 1; pointer-events: auto; }
+      .sec-modal { width: 440px; max-width: 90vw; border-radius: 16px; background: var(--card); border: 1px solid oklch(1 0 0 / 0.1); box-shadow: 0 24px 64px oklch(0 0 0 / 0.6); transform: scale(0.96); transition: transform .25s cubic-bezier(0.34, 1.3, 0.64, 1); }
+      .sec-modal-bg.show .sec-modal { transform: scale(1); }
+      .sec-modal__head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid oklch(1 0 0 / 0.06); }
+      .sec-modal__title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+      .sec-modal__close { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--muted-foreground); cursor: pointer; }
+      .sec-modal__close:hover { color: var(--foreground); background: oklch(1 0 0 / 0.08); }
+      .sec-modal__body { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+      .sec-field { display: flex; flex-direction: column; gap: 5px; }
+      .sec-field__label { font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground); }
+      .sec-field__input { height: 34px; padding: 0 12px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.1); background: color-mix(in oklch, var(--foreground) 3%, transparent); color: var(--foreground); font: inherit; font-size: 12.5px; outline: none; transition: border-color .15s; }
+      [data-theme="light"] .sec-field__input { border-color: oklch(0 0 0 / 0.1); }
+      .sec-field__input:focus { border-color: color-mix(in oklch, var(--foreground) 30%, transparent); }
+      .sec-field__hint { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); }
+      .sec-modal__foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid oklch(1 0 0 / 0.06); }
+
+      /* ════════════════════════════════════════════════════════════════
+         SKILLS VIEW — file tree + markdown editor
+      ════════════════════════════════════════════════════════════════ */
+      .sk-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+      /* borderless telemetry header */
+      .sk-hero { display: flex; align-items: center; gap: 9px; padding: 2px 2px 14px; flex-shrink: 0; font-family: var(--font-mono); }
+      .sk-hero__stat { display: inline-flex; align-items: baseline; gap: 5px; }
+      .sk-hero__val { font-size: 12px; font-weight: 500; color: var(--foreground); letter-spacing: -0.01em; }
+      .sk-hero__label { font-size: 10.5px; color: var(--muted-foreground); }
+      .sk-hero__sep { color: oklch(0.35 0 0); user-select: none; }
+      [data-theme="light"] .sk-hero__sep { color: oklch(0.65 0 0); }
+      .sk-hero__spacer { flex: 1; }
+      .sk-new { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10px; cursor: pointer; color: var(--muted-foreground);
+        padding: 4px 10px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.1); transition: all .15s; user-select: none; }
+      [data-theme="light"] .sk-new { border-color: oklch(0 0 0 / 0.1); }
+      .sk-new:hover { color: var(--foreground); border-color: oklch(1 0 0 / 0.22); }
+      .sk-new svg { width: 12px; height: 12px; }
+      /* two-pane layout — edge-to-edge, no outer card */
+      .sk-layout { display: flex; gap: 0; flex: 1; min-height: 0; border-radius: 0; overflow: hidden;
+        border-top: 1px solid oklch(1 0 0 / 0.06); }
+      [data-theme="light"] .sk-layout { border-top-color: oklch(0 0 0 / 0.06); }
+      /* file tree */
+      .sk-tree { width: 240px; flex-shrink: 0; overflow-y: auto; border-right: 1px solid oklch(1 0 0 / 0.06); padding: 8px 0; }
+      [data-theme="light"] .sk-tree { border-right-color: oklch(0 0 0 / 0.06); }
+      .sk-tree::-webkit-scrollbar { width: 5px; }
+      .sk-tree::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 15%, transparent); border-radius: 3px; }
+      .sk-tree-search { display: flex; align-items: center; gap: 7px; padding: 0 12px 8px; }
+      .sk-tree-search svg { width: 13px; height: 13px; color: var(--muted-foreground); flex-shrink: 0; }
+      .sk-tree-search input { flex: 1; border: none; background: none; outline: none; color: var(--foreground); font: inherit; font-size: 11.5px; }
+      .sk-tree-search input::placeholder { color: var(--muted-foreground); }
+      /* tree nodes */
+      .sk-node { font-size: 11.5px; cursor: pointer; white-space: nowrap; user-select: none; display: flex; align-items: center; gap: 5px; padding: 2px 12px; transition: background .1s; color: var(--muted-foreground); }
+      .sk-node:hover { background: color-mix(in oklch, var(--foreground) 5%, transparent); color: var(--foreground); }
+      .sk-node.is-active { background: color-mix(in oklch, var(--foreground) 8%, transparent); color: var(--foreground); }
+      .sk-node__chev { width: 12px; height: 12px; flex-shrink: 0; color: oklch(0.45 0 0); transition: transform .15s; }
+      [data-theme="light"] .sk-node__chev { color: oklch(0.55 0 0); }
+      .sk-node.is-open .sk-node__chev { transform: rotate(90deg); }
+      .sk-node__ic { width: 14px; height: 14px; flex-shrink: 0; }
+      .sk-node__ic--folder { color: oklch(0.6 0 0); }
+      [data-theme="light"] .sk-node__ic--folder { color: oklch(0.5 0 0); }
+      .sk-node__ic--md { color: oklch(0.65 0.1 220); }
+      .sk-node__label { overflow: hidden; text-overflow: ellipsis; }
+      .sk-node__badge { font-family: var(--font-mono); font-size: 8px; padding: 1px 4px; border-radius: 3px; margin-left: auto; text-transform: uppercase; letter-spacing: 0.04em; }
+      .sk-node__badge--builtin { background: color-mix(in oklch, var(--success) 14%, transparent); color: oklch(0.72 0.15 150); }
+      .sk-node__children { overflow: hidden; }
+      .sk-node__children.is-hidden { display: none; }
+      /* editor pane */
+      .sk-editor { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+      .sk-editor__head { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid oklch(1 0 0 / 0.06); flex-shrink: 0; }
+      [data-theme="light"] .sk-editor__head { border-bottom-color: oklch(0 0 0 / 0.06); }
+      .sk-editor__path { font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .sk-editor__path b { color: var(--foreground); font-weight: 600; }
+      .sk-editor__tag { font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 7px; border-radius: 4px; flex-shrink: 0; }
+      .sk-editor__tag--builtin { background: color-mix(in oklch, var(--success) 14%, transparent); color: oklch(0.72 0.15 150); }
+      .sk-editor__tag--invocable { background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--muted-foreground); }
+      .sk-editor__tag--custom { background: color-mix(in oklch, oklch(0.7 0.1 250) 14%, transparent); color: oklch(0.7 0.1 250); }
+      /* markdown body */
+      .sk-md { flex: 1; overflow-y: auto; padding: 24px 32px; line-height: 1.65; }
+      .sk-md::-webkit-scrollbar { width: 6px; }
+      .sk-md::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 15%, transparent); border-radius: 3px; }
+      .sk-md h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 16px; }
+      .sk-md h2 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin: 24px 0 8px; color: var(--foreground); }
+      .sk-md h3 { font-size: 13px; font-weight: 600; margin: 18px 0 6px; color: var(--foreground); }
+      .sk-md p { font-size: 12.5px; color: oklch(0.8 0 0); margin: 0 0 10px; }
+      [data-theme="light"] .sk-md p { color: oklch(0.3 0 0); }
+      .sk-md ul { font-size: 12.5px; color: oklch(0.8 0 0); margin: 0 0 10px; padding-left: 20px; }
+      [data-theme="light"] .sk-md ul { color: oklch(0.3 0 0); }
+      .sk-md li { margin-bottom: 4px; }
+      .sk-md li::marker { color: oklch(0.5 0 0); }
+      .sk-md code { font-family: var(--font-mono); font-size: 11px; background: color-mix(in oklch, var(--foreground) 6%, transparent); padding: 1px 5px; border-radius: 4px; color: oklch(0.75 0.13 145); }
+      [data-theme="light"] .sk-md code { color: oklch(0.45 0.15 145); }
+      .sk-md pre { font-family: var(--font-mono); font-size: 11px; background: oklch(0.16 0 0); border: 1px solid oklch(1 0 0 / 0.06); border-radius: var(--radius); padding: 12px 14px; overflow-x: auto; margin: 0 0 12px; line-height: 1.5; }
+      [data-theme="light"] .sk-md pre { background: oklch(0.97 0 0); }
+      .sk-md pre code { background: none; padding: 0; color: oklch(0.82 0 0); font-size: 11px; }
+      [data-theme="light"] .sk-md pre code { color: oklch(0.25 0 0); }
+      .sk-md blockquote { border-left: 2px solid oklch(1 0 0 / 0.15); padding-left: 12px; margin: 0 0 12px; font-size: 12.5px; color: oklch(0.65 0 0); font-style: italic; }
+      [data-theme="light"] .sk-md blockquote { color: oklch(0.45 0 0); border-left-color: oklch(0 0 0 / 0.15); }
+      .sk-md table { width: 100%; font-size: 11.5px; border-collapse: collapse; margin: 0 0 12px; }
+      .sk-md th { text-align: left; font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground); padding: 6px 10px; border-bottom: 1px solid oklch(1 0 0 / 0.1); }
+      [data-theme="light"] .sk-md th { border-bottom-color: oklch(0 0 0 / 0.1); }
+      .sk-md td { padding: 6px 10px; border-bottom: 1px solid oklch(1 0 0 / 0.04); color: oklch(0.8 0 0); }
+      [data-theme="light"] .sk-md td { border-bottom-color: oklch(0 0 0 / 0.04); color: oklch(0.3 0 0); }
+      .sk-md a { color: oklch(0.7 0.1 220); text-decoration: none; }
+      .sk-md a:hover { text-decoration: underline; }
     </style>
   </head>
   <body>
@@ -1215,14 +1436,16 @@
           <div class="nav__group">
             <div class="nav__group-label">Assets</div>
             <ul class="nav__list">
-              <li class="nav__item">
+              <li class="nav__item" data-view="skills">
                 <span class="nav__icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
                 <span class="nav__label">Skills</span>
+                <span class="nav__badge is-green">120</span>
                 <span class="nav__kbd">G K</span>
               </li>
-              <li class="nav__item">
+              <li class="nav__item" data-view="secrets">
                 <span class="nav__icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
                 <span class="nav__label">Secrets</span>
+                <span class="nav__badge is-amber">12</span>
                 <span class="nav__kbd">G X</span>
               </li>
             </ul>
@@ -1832,6 +2055,76 @@
             <div class="src-grid" id="src-grid"></div>
           </div>
 
+          <!-- ═══════════════ SECRETS VIEW ═══════════════ -->
+          <div class="view sec-view" id="view-secrets" hidden>
+            <!-- locked gate -->
+            <div class="sec-gate" id="sec-gate">
+              <div class="sec-lock-ic" id="sec-lock-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+              <div class="sec-gate__title">Secrets vault</div>
+              <div class="sec-gate__sub">Enter password to decrypt · 12 secrets stored</div>
+              <div class="sec-pw-wrap">
+                <input class="sec-pw" id="sec-pw" type="password" placeholder="Password" autocomplete="off" />
+                <button class="sec-unlock-btn" id="sec-unlock-btn">Unlock</button>
+              </div>
+              <div class="sec-error" id="sec-error">Incorrect password. Try again.</div>
+            </div>
+
+            <!-- unlocked vault -->
+            <div class="sec-vault" id="sec-vault">
+              <!-- telemetry line -->
+              <div class="sec-hero">
+                <div class="sec-hero__stat"><span class="sec-hero__val" id="sec-count">12</span><span class="sec-hero__label">secrets</span></div>
+                <span class="sec-hero__sep">/</span>
+                <div class="sec-hero__stat"><span class="sec-hero__val">8</span><span class="sec-hero__label">local</span></div>
+                <span class="sec-hero__sep">/</span>
+                <div class="sec-hero__stat"><span class="sec-hero__val">3</span><span class="sec-hero__label">1Password</span></div>
+                <span class="sec-hero__sep">/</span>
+                <div class="sec-hero__stat"><span class="sec-hero__val">1</span><span class="sec-hero__label">Bitwarden</span></div>
+                <span class="sec-hero__spacer"></span>
+                <span class="sec-lock-back" id="sec-lock-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Lock</span>
+              </div>
+
+              <!-- secret grid (populated by JS) -->
+              <div class="sec-grid" id="sec-grid"></div>
+            </div>
+          </div>
+
+          <!-- ═══════════════ SKILLS VIEW ═══════════════ -->
+          <div class="view sk-view" id="view-skills" hidden>
+            <!-- telemetry header -->
+            <div class="sk-hero">
+              <div class="sk-hero__stat"><span class="sk-hero__val">120</span><span class="sk-hero__label">skills</span></div>
+              <span class="sk-hero__sep">/</span>
+              <div class="sk-hero__stat"><span class="sk-hero__val">6</span><span class="sk-hero__label">builtin</span></div>
+              <span class="sk-hero__sep">/</span>
+              <div class="sk-hero__stat"><span class="sk-hero__val">114</span><span class="sk-hero__label">installed</span></div>
+              <span class="sk-hero__spacer"></span>
+              <span class="sk-new" id="sk-new-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                New skill
+              </span>
+            </div>
+
+            <!-- file tree + editor -->
+            <div class="sk-layout">
+              <!-- file tree -->
+              <div class="sk-tree" id="sk-tree">
+                <div class="sk-tree-search">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                  <input id="sk-search" placeholder="Filter skills…" />
+                </div>
+                <div id="sk-tree-nodes"></div>
+              </div>
+              <!-- editor -->
+              <div class="sk-editor">
+                <div class="sk-editor__head" id="sk-editor-head">
+                  <span class="sk-editor__path" id="sk-path"></span>
+                </div>
+                <div class="sk-md" id="sk-md"></div>
+              </div>
+            </div>
+          </div>
+
         </div>
       </main>
     </div>
@@ -2006,29 +2299,30 @@
             </div>
           </div>
 
-          <!-- Logs section (replaces Audit) -->
-          <div class="msection" data-section="logs">
-            <div class="mcard" style="padding:14px 16px">
-              <!-- filter toolbar -->
-              <div class="log-toolbar">
-                <span class="log-filter is-on" data-level="all"><span class="log-filter__dot" style="background:var(--muted-foreground)"></span>All</span>
-                <span class="log-filter" data-level="info"><span class="log-filter__dot" style="background:oklch(0.7 0.1 220)"></span>Info</span>
-                <span class="log-filter" data-level="warn"><span class="log-filter__dot" style="background:oklch(0.78 0.15 85)"></span>Warn</span>
-                <span class="log-filter" data-level="error"><span class="log-filter__dot" style="background:oklch(0.72 0.19 25)"></span>Error</span>
-                <span class="log-filter" data-level="debug"><span class="log-filter__dot" style="background:oklch(0.55 0 0)"></span>Debug</span>
-                <span class="log-spacer"></span>
+          <!-- Logs section (replaces Audit) — edge-to-edge telemetry -->
+          <div class="msection" data-section="logs" style="padding:0">
+            <div class="log-view">
+              <!-- header: pulsing tail + spacer + segmented pill + search -->
+              <div class="log-head">
+                <span class="log-export" id="log-export" title="Export logs as JSON">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+                  Export
+                </span>
+                <span class="log-head__spacer"></span>
                 <div class="log-search">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
                   <input id="log-search-input" placeholder="Filter logs…" />
                 </div>
+                <div class="log-seg" id="log-seg">
+                  <span class="log-seg__item is-on" data-level="all">All</span>
+                  <span class="log-seg__item" data-level="info"><span class="log-seg__dot" style="background:oklch(0.7 0.1 220)"></span>Info</span>
+                  <span class="log-seg__item" data-level="warn"><span class="log-seg__dot" style="background:oklch(0.78 0.15 85)"></span>Warn</span>
+                  <span class="log-seg__item" data-level="error"><span class="log-seg__dot" style="background:oklch(0.72 0.19 25)"></span>Error</span>
+                  <span class="log-seg__item" data-level="debug"><span class="log-seg__dot" style="background:oklch(0.55 0 0)"></span>Debug</span>
+                </div>
               </div>
-              <!-- terminal stream -->
+              <!-- edge-to-edge stream -->
               <div class="log-stream" id="log-stream"></div>
-              <!-- footer -->
-              <div class="log-foot">
-                <span class="log-foot__txt" id="log-count">— lines</span>
-                <span class="log-tail is-on" id="log-tail"><span class="live"></span> Tail live</span>
-              </div>
             </div>
           </div>
 
@@ -2159,63 +2453,107 @@
 
         // ── Logs viewer ──
         const LOGS = [
-          { t: "09:14:32.104", lvl: "info", msg: "<b>daemon</b> pipeline cycle complete · <span class=\"path\">extraction → decision → graph → retention</span> in 412ms" },
-          { t: "09:14:30.891", lvl: "info", msg: "<b>ontology</b> applied claim <span class=\"path\">entity_dependencies[signet:dashboard]</span> · provenance: source/github#948" },
-          { t: "09:14:28.340", lvl: "debug", msg: "<b>embedding</b> cosine fallback · 14 chunks · sqlite-vec not available" },
-          { t: "09:14:25.002", lvl: "warn", msg: "<b>source</b> discord:team partial fetch · 3 channels returned 403 · recorded failure artifacts" },
-          { t: "09:14:22.718", lvl: "info", msg: "<b>source</b> obsidian:nicholai-vault resync complete · 4,291 artifacts, 0 changed" },
-          { t: "09:14:18.503", lvl: "info", msg: "<b>source</b> github:Signet-AI/signetai index job running · <span class=\"path\">847/1204 · issues/open/#948</span>" },
-          { t: "09:14:15.220", lvl: "debug", msg: "<b>watcher</b> debounced auto-commit skipped · no workspace changes since last commit" },
-          { t: "09:14:10.994", lvl: "info", msg: "<b>session</b> claude-code session summarized · 142 turns → 8 memories extracted" },
-          { t: "09:14:08.331", lvl: "error", msg: "<b>connector</b> pi-extension health check failed · x-signet-runtime-path header missing on 2 hooks" },
-          { t: "09:14:05.107", lvl: "warn", msg: "<b>source</b> discord:team checkpoint stale · last successful backfill cursor 2h ago" },
-          { t: "09:14:02.844", lvl: "info", msg: "<b>graph</b> community detection complete · 8 communities, modularity 0.74" },
-          { t: "09:13:58.612", lvl: "debug", msg: "<b>retention</b> decay pass · 142 memories evaluated, 3 downweighted, 0 purged" },
-          { t: "09:13:55.330", lvl: "info", msg: "<b>daemon</b> GET /api/memory/search · 200 · 38ms · hybrid recall" },
-          { t: "09:13:52.091", lvl: "info", msg: "<b>memory</b> saved · <span class=\"path\">decision[dashboard-react-migration]</span> · importance 0.92" },
-          { t: "09:13:48.774", lvl: "warn", msg: "<b>auth</b> rate limit approaching · agent:hermes · 84/100 requests in window" },
-          { t: "09:13:45.502", lvl: "debug", msg: "<b>watcher</b> file change detected · <span class=\"path\">~/.agents/MEMORY.md</span> · coalescing resync" },
-          { t: "09:13:40.118", lvl: "info", msg: "<b>ontology</b> proposal created · merge-plan[entity:signet ↔ entity:dashboard] · pending review" },
-          { t: "09:13:35.890", lvl: "error", msg: "<b>source</b> discord:team gateway reconnect failed · code 4004 authentication failed" },
-          { t: "09:13:32.441", lvl: "info", msg: "<b>daemon</b> POST /api/sources/github · 201 · job queued · sourceId github:Signet-AI/signetai" },
-          { t: "09:13:28.107", lvl: "debug", msg: "<b>embedding</b> sqlite-vec mirror write · 14 vectors · dim 1024" },
+          { t: "09:14:32.104", lvl: "info", scope: "daemon", msg: "pipeline cycle complete · <span class=\"path\">extraction → decision → graph → retention</span> in 412ms",
+            raw: '{\n  "event": "pipeline.cycle",\n  "stages": ["extraction", "decision", "graph", "retention"],\n  "durationMs": <span class="log-drawer__num">412</span>,\n  "memoriesProcessed": <span class="log-drawer__num">8</span>\n}' },
+          { t: "09:14:30.891", lvl: "info", scope: "ontology", msg: "applied claim <span class=\"path\">entity_dependencies[signet:dashboard]</span> · provenance: source/github#948",
+            raw: '{\n  "op": <span class="log-drawer__str">"claim.apply"</span>,\n  "group_key": <span class="log-drawer__str">"entity_dependencies"</span>,\n  "claim_key": <span class="log-drawer__str">"signet:dashboard"</span>,\n  "provenance": <span class="log-drawer__str">"source/github#948"</span>\n}' },
+          { t: "09:14:28.340", lvl: "debug", scope: "embedding", msg: "cosine fallback · 14 chunks · sqlite-vec not available",
+            raw: '{\n  "provider": <span class="log-drawer__str">"cosine-fallback"</span>,\n  "chunks": <span class="log-drawer__num">14</span>,\n  "sqlite_vec": <span class="log-drawer__key">false</span>,\n  "dim": <span class="log-drawer__num">1024</span>\n}' },
+          { t: "09:14:25.002", lvl: "warn", scope: "source", msg: "discord:team partial fetch · 3 channels returned 403 · recorded failure artifacts",
+            raw: '{\n  "source": <span class="log-drawer__str">"discord:team"</span>,\n  "failedChannels": <span class="log-drawer__num">3</span>,\n  "status": <span class="log-drawer__num">403</span>,\n  "failureArtifacts": <span class="log-drawer__num">3</span>\n}' },
+          { t: "09:14:22.718", lvl: "info", scope: "source", msg: "obsidian:nicholai-vault resync complete · 4,291 artifacts, 0 changed",
+            raw: '{\n  "source": <span class="log-drawer__str">"obsidian:nicholai-vault"</span>,\n  "artifacts": <span class="log-drawer__num">4291</span>,\n  "changed": <span class="log-drawer__num">0</span>,\n  "fingerprintsMatched": <span class="log-drawer__num">4291</span>\n}' },
+          { t: "09:14:18.503", lvl: "info", scope: "source", msg: "github:Signet-AI/signetai index job running · <span class=\"path\">847/1204 · issues/open/#948</span>",
+            raw: '{\n  "source": <span class="log-drawer__str">"github:Signet-AI/signetai"</span>,\n  "scanned": <span class="log-drawer__num">847</span>,\n  "total": <span class="log-drawer__num">1204</span>,\n  "currentPath": <span class="log-drawer__str">"issues/open/#948"</span>\n}' },
+          { t: "09:14:15.220", lvl: "debug", scope: "watcher", msg: "debounced auto-commit skipped · no workspace changes since last commit",
+            raw: '{\n  "event": <span class="log-drawer__str">"watcher.debounce"</span>,\n  "action": <span class="log-drawer__str">"skip"</span>,\n  "reason": <span class="log-drawer__str">"no_changes"</span>\n}' },
+          { t: "09:14:10.994", lvl: "info", scope: "session", msg: "claude-code session summarized · 142 turns → 8 memories extracted",
+            raw: '{\n  "harness": <span class="log-drawer__str">"claude-code"</span>,\n  "turns": <span class="log-drawer__num">142</span>,\n  "memoriesExtracted": <span class="log-drawer__num">8</span>\n}' },
+          { t: "09:14:08.331", lvl: "error", scope: "connector", msg: "pi-extension health check failed · x-signet-runtime-path header missing on 2 hooks",
+            raw: '<span class="log-drawer__err">Error: pi-extension health check failed</span>\n  at ConnectorHealth.check (<span class="log-drawer__path">connector/pi/health.ts:47</span>)\n  at Pipeline.runStage (<span class="log-drawer__path">pipeline/stage.ts:112</span>)\n  cause: <span class="log-drawer__err">x-signet-runtime-path header missing on 2 hooks</span>\n  hooks: [<span class="log-drawer__str">"PreToolUse"</span>, <span class="log-drawer__str">"PostToolUse"</span>]' },
+          { t: "09:14:05.107", lvl: "warn", scope: "source", msg: "discord:team checkpoint stale · last successful backfill cursor 2h ago",
+            raw: '{\n  "source": <span class="log-drawer__str">"discord:team"</span>,\n  "checkpointAge": <span class="log-drawer__str">"2h"</span>,\n  "status": <span class="log-drawer__str">"stale"</span>\n}' },
+          { t: "09:14:02.844", lvl: "info", scope: "graph", msg: "community detection complete · 8 communities, modularity 0.74",
+            raw: '{\n  "communities": <span class="log-drawer__num">8</span>,\n  "modularity": <span class="log-drawer__num">0.74</span>,\n  "algorithm": <span class="log-drawer__str">"louvain"</span>\n}' },
+          { t: "09:13:58.612", lvl: "debug", scope: "retention", msg: "decay pass · 142 memories evaluated, 3 downweighted, 0 purged",
+            raw: '{\n  "evaluated": <span class="log-drawer__num">142</span>,\n  "downweighted": <span class="log-drawer__num">3</span>,\n  "purged": <span class="log-drawer__num">0</span>\n}' },
+          { t: "09:13:55.330", lvl: "info", scope: "daemon", msg: "GET /api/memory/search · 200 · 38ms · hybrid recall",
+            raw: '{\n  "method": <span class="log-drawer__str">"GET"</span>,\n  "path": <span class="log-drawer__str">"/api/memory/search"</span>,\n  "status": <span class="log-drawer__num">200</span>,\n  "durationMs": <span class="log-drawer__num">38</span>,\n  "source": <span class="log-drawer__str">"hybrid"</span>\n}' },
+          { t: "09:13:52.091", lvl: "info", scope: "memory", msg: "saved · <span class=\"path\">decision[dashboard-react-migration]</span> · importance 0.92",
+            raw: '{\n  "type": <span class="log-drawer__str">"decision"</span>,\n  "key": <span class="log-drawer__str">"dashboard-react-migration"</span>,\n  "importance": <span class="log-drawer__num">0.92</span>\n}' },
+          { t: "09:13:48.774", lvl: "warn", scope: "auth", msg: "rate limit approaching · agent:hermes · 84/100 requests in window",
+            raw: '{\n  "agent": <span class="log-drawer__str">"hermes"</span>,\n  "requests": <span class="log-drawer__num">84</span>,\n  "limit": <span class="log-drawer__num">100</span>,\n  "window": <span class="log-drawer__str">"60s"</span>\n}' },
+          { t: "09:13:45.502", lvl: "debug", scope: "watcher", msg: "file change detected · <span class=\"path\">~/.agents/MEMORY.md</span> · coalescing resync",
+            raw: '{\n  "event": <span class="log-drawer__str">"watcher.fileChange"</span>,\n  "path": <span class="log-drawer__str">"~/.agents/MEMORY.md"</span>,\n  "action": <span class="log-drawer__str">"coalesce"</span>\n}' },
+          { t: "09:13:40.118", lvl: "info", scope: "ontology", msg: "proposal created · merge-plan[entity:signet ↔ entity:dashboard] · pending review",
+            raw: '{\n  "op": <span class="log-drawer__str">"proposal.create"</span>,\n  "type": <span class="log-drawer__str">"merge-plan"</span>,\n  "target": <span class="log-drawer__str">"entity:signet"</span>,\n  "source": <span class="log-drawer__str">"entity:dashboard"</span>,\n  "status": <span class="log-drawer__str">"pending"</span>\n}' },
+          { t: "09:13:35.890", lvl: "error", scope: "source", msg: "discord:team gateway reconnect failed · code 4004 authentication failed",
+            raw: '<span class="log-drawer__err">Error: Discord gateway reconnect failed</span>\n  at DiscordGateway.connect (<span class="log-drawer__path">source/discord/gateway.ts:89</span>)\n  at SourceJob.run (<span class="log-drawer__path">source/job.ts:234</span>)\n  code: <span class="log-drawer__num">4004</span>\n  cause: <span class="log-drawer__err">Authentication failed — invalid bot token</span>' },
+          { t: "09:13:32.441", lvl: "info", scope: "daemon", msg: "POST /api/sources/github · 201 · job queued · sourceId github:Signet-AI/signetai",
+            raw: '{\n  "method": <span class="log-drawer__str">"POST"</span>,\n  "path": <span class="log-drawer__str">"/api/sources/github"</span>,\n  "status": <span class="log-drawer__num">201</span>,\n  "sourceId": <span class="log-drawer__str">"github:Signet-AI/signetai"</span>\n}' },
+          { t: "09:13:28.107", lvl: "debug", scope: "embedding", msg: "sqlite-vec mirror write · 14 vectors · dim 1024",
+            raw: '{\n  "store": <span class="log-drawer__str">"sqlite-vec"</span>,\n  "vectors": <span class="log-drawer__num">14</span>,\n  "dim": <span class="log-drawer__num">1024</span>\n}' },
         ];
         const logStream = document.getElementById("log-stream");
-        const logCount = document.getElementById("log-count");
         const logSearch = document.getElementById("log-search-input");
-        const logTail = document.getElementById("log-tail");
+        const logExport = document.getElementById("log-export");
         let activeLevel = "all";
         let searchQuery = "";
-        function renderLogs() {
-          if (!logStream) return;
-          const lines = LOGS.filter((l) => {
+        let openIdx = -1;
+        function visibleLogs() {
+          return LOGS.map((l, i) => ({ ...l, idx: i })).filter((l) => {
             if (activeLevel !== "all" && l.lvl !== activeLevel) return false;
-            if (searchQuery && !l.msg.toLowerCase().includes(searchQuery) && !l.lvl.includes(searchQuery)) return false;
+            if (searchQuery && !l.msg.toLowerCase().includes(searchQuery) && !l.lvl.includes(searchQuery) && !(l.scope || "").toLowerCase().includes(searchQuery)) return false;
             return true;
           });
-          logStream.innerHTML = lines.map((l) =>
-            '<div class="log-line" data-level="' + l.lvl + '"><span class="log-line__time">' + l.t + '</span><span class="log-line__lvl log-line__lvl--' + l.lvl + '">' + l.lvl.toUpperCase() + '</span><span class="log-line__msg">' + l.msg + '</span></div>'
-          ).join("");
-          if (logCount) logCount.textContent = lines.length + " lines";
-          if (logTail && logTail.classList.contains("is-on")) logStream.scrollTop = logStream.scrollHeight;
+        }
+        function renderLogs() {
+          if (!logStream) return;
+          const lines = visibleLogs();
+          logStream.innerHTML = lines.map((l) => {
+            const stateCls = l.lvl === "error" ? " is-error" : l.lvl === "warn" ? " is-warn" : "";
+            const drawer = openIdx === l.idx && l.raw
+              ? '<div class="log-drawer is-open"><pre style="margin:0">' + l.raw + "</pre></div>"
+              : "";
+            return '<div class="log-line' + stateCls + '" data-idx="' + l.idx + '"><span class="log-line__time">' + l.t + '</span><span class="log-line__lvl log-line__lvl--' + l.lvl + '">' + l.lvl.toUpperCase() + '</span><span class="log-line__scope">' + (l.scope || "") + '</span><span class="log-line__msg">' + l.msg + "</span>" + drawer + "</div>";
+          }).join("");
         }
         renderLogs();
-        document.querySelectorAll(".log-filter").forEach((f) => {
-          f.addEventListener("click", () => {
-            document.querySelectorAll(".log-filter").forEach((x) => x.classList.remove("is-on"));
-            f.classList.add("is-on");
-            activeLevel = f.dataset.level;
+        // segmented filter
+        document.querySelectorAll(".log-seg__item").forEach((item) => {
+          item.addEventListener("click", () => {
+            document.querySelectorAll(".log-seg__item").forEach((x) => x.classList.remove("is-on"));
+            item.classList.add("is-on");
+            activeLevel = item.dataset.level;
+            openIdx = -1;
             renderLogs();
           });
         });
         if (logSearch) logSearch.addEventListener("input", () => { searchQuery = logSearch.value.trim().toLowerCase(); renderLogs(); });
-        if (logTail) logTail.addEventListener("click", () => { logTail.classList.toggle("is-on"); renderLogs(); });
+        // export visible logs as JSON
+        if (logExport) logExport.addEventListener("click", () => {
+          const strip = (s) => s.replace(/<[^>]*>/g, "");
+          const data = visibleLogs().map((l) => ({ timestamp: l.t, level: l.lvl, message: strip(l.msg), raw: strip(l.raw || "") }));
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url; a.download = "signet-logs-" + Date.now() + ".json";
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(url);
+        });
+        // row click → toggle drawer
+        if (logStream) logStream.addEventListener("click", (e) => {
+          const line = e.target.closest(".log-line"); if (!line) return;
+          const idx = parseInt(line.dataset.idx, 10);
+          openIdx = openIdx === idx ? -1 : idx;
+          renderLogs();
+        });
 
       })();
 
       // ── View switching (Home / Memory) ──
       (function () {
-        const VIEWS = { home: "view-home", memory: "view-memory", graph: "view-graph", sources: "view-sources" };
+        const VIEWS = { home: "view-home", memory: "view-memory", graph: "view-graph", sources: "view-sources", secrets: "view-secrets", skills: "view-skills" };
         function showView(name) {
           Object.entries(VIEWS).forEach(([key, id]) => {
             const el = document.getElementById(id);
@@ -2778,6 +3116,248 @@
           }
         });
       })();
+
+      // ── Secrets view: vault lock, secret cards, add modal ──
+      (function () {
+        const SECRET_ICONS = {
+          key: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="3.5"/><path d="M10 13l8-8M16 5l3 3M14 7l3 3"/></svg>',
+          token: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 7v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V7z"/></svg>',
+          cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.5 1.5A4 4 0 0 0 6 19z"/></svg>',
+          bot: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="11" rx="2"/><circle cx="9" cy="13" r="1.2" fill="currentColor"/><circle cx="15" cy="13" r="1.2" fill="currentColor"/><path d="M12 8V4M9 4h6"/></svg>',
+        };
+        const COPY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+        const SECRETS = [
+          { name: "OPENAI_API_KEY", src: "local", icon: "key", ref: "<b>$secret:OPENAI_API_KEY</b> · inference" },
+          { name: "ANTHROPIC_API_KEY", src: "local", icon: "key", ref: "<b>$secret:ANTHROPIC_API_KEY</b> · inference" },
+          { name: "VOYAGE_API_KEY", src: "local", icon: "key", ref: "<b>$secret:VOYAGE_API_KEY</b> · embeddings" },
+          { name: "GITHUB_TOKEN", src: "local", icon: "token", ref: "<b>$secret:GITHUB_TOKEN</b> · git sync · sources/github" },
+          { name: "DISCORD_BOT_TOKEN", src: "local", icon: "bot", ref: "<b>--token-ref DISCORD_BOT_TOKEN</b> · sources/discord" },
+          { name: "SIGNET_CLOUD_KEY", src: "local", icon: "cloud", ref: "<b>$secret:SIGNET_CLOUD_KEY</b> · cloud sync" },
+          { name: "COHERE_API_KEY", src: "local", icon: "key", ref: "<b>$secret:COHERE_API_KEY</b> · embeddings (fallback)" },
+          { name: "PERPLEXITY_API_KEY", src: "local", icon: "key", ref: "<b>$secret:PERPLEXITY_API_KEY</b> · sonar rerank" },
+          { name: "GOOGLE_CLIENT_SECRET", src: "1password", icon: "cloud", ref: "<b>$secret:GOOGLE_CLIENT_SECRET</b> · gemini OAuth" },
+          { name: "HUGGINGFACE_TOKEN", src: "1password", icon: "token", ref: "<b>$secret:HUGGINGFACE_TOKEN</b> · model hub" },
+          { name: "STRIPE_SECRET_KEY", src: "1password", icon: "key", ref: "<b>$secret:STRIPE_SECRET_KEY</b> · billing webhooks" },
+          { name: "BW_SESSION", src: "bitwarden", icon: "token", ref: "<b>bitwarden</b> · provider session token" },
+        ];
+        function mask() { return "•".repeat(12 + Math.floor(Math.random() * 4)); }
+        function cardHtml(s) {
+          return [
+            '<div class="sec-card" data-name="' + s.name + '">',
+              '<div class="sec-card__top">',
+                '<div class="sec-card__ic">' + (SECRET_ICONS[s.icon] || SECRET_ICONS.key) + '</div>',
+                '<div class="sec-card__meta">',
+                  '<div class="sec-card__name">' + s.name + '</div>',
+                  '<div class="sec-card__src sec-card__src--' + s.src + '"><span class="sec-card__src-dot"></span>' + s.src + '</div>',
+                '</div>',
+              '</div>',
+              '<div class="sec-card__val">',
+                '<span class="sec-card__val-mask">' + mask() + '</span>',
+                '<span class="sec-card__copy" data-act="copy" title="Copy $secret ref">' + COPY_SVG + '</span>',
+              '</div>',
+              '<div class="sec-card__foot">',
+                '<span class="sec-card__ref">' + s.ref + '</span>',
+                '<div class="sec-card__actions">',
+                  '<span class="sec-act" title="Copy ref" data-act="copyref"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span>',
+                  '<span class="sec-act is-danger" title="Delete" data-act="delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></span>',
+                '</div>',
+              '</div>',
+            '</div>',
+          ].join("");
+        }
+        function render() {
+          const grid = document.getElementById("sec-grid");
+          if (grid) {
+            const ADD = '<div class="sec-add" id="sec-add-tile"><span class="sec-add__ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><span class="sec-add__label">Add secret</span></div>';
+            grid.innerHTML = SECRETS.map(cardHtml).join("") + ADD;
+            const addTile = document.getElementById("sec-add-tile");
+            if (addTile) addTile.addEventListener("click", openModal);
+          }
+          const countEl = document.getElementById("sec-count");
+          if (countEl) countEl.textContent = SECRETS.length;
+        }
+        // gate logic
+        const gate = document.getElementById("sec-gate");
+        const vault = document.getElementById("sec-vault");
+        const pwInput = document.getElementById("sec-pw");
+        const unlockBtn = document.getElementById("sec-unlock-btn");
+        const errEl = document.getElementById("sec-error");
+        const lockBack = document.getElementById("sec-lock-back");
+        function tryUnlock() {
+          if (!pwInput || !gate) return;
+          if (!pwInput.value.trim()) { showError(); return; }
+          gate.classList.add("is-unlocking");
+          setTimeout(() => {
+            gate.classList.add("is-hidden");
+            if (vault) vault.classList.add("is-open");
+            render();
+          }, 600);
+        }
+        function showError() {
+          if (!pwInput || !errEl) return;
+          pwInput.classList.add("shake");
+          errEl.classList.add("show");
+          setTimeout(() => pwInput.classList.remove("shake"), 400);
+        }
+        function lockVault() {
+          if (gate) { gate.classList.remove("is-hidden", "is-unlocking"); }
+          if (vault) vault.classList.remove("is-open");
+          if (pwInput) { pwInput.value = ""; pwInput.focus(); }
+          if (errEl) errEl.classList.remove("show");
+        }
+        if (unlockBtn) unlockBtn.addEventListener("click", tryUnlock);
+        if (pwInput) pwInput.addEventListener("keydown", (e) => { if (e.key === "Enter") tryUnlock(); });
+        if (lockBack) lockBack.addEventListener("click", lockVault);
+        // card actions
+        const grid = document.getElementById("sec-grid");
+        if (grid) grid.addEventListener("click", (e) => {
+          const act = e.target.closest("[data-act]"); if (!act) return;
+          const card = act.closest(".sec-card"); if (!card) return;
+          const name = card.dataset.name;
+          const action = act.dataset.act;
+          if (action === "copyref" || action === "copy") {
+            const ref = "$secret:" + name;
+            if (navigator.clipboard) navigator.clipboard.writeText(ref).catch(() => {});
+            act.style.color = "oklch(0.72 0.15 150)";
+            setTimeout(() => { act.style.color = ""; }, 800);
+          } else if (action === "delete") {
+            const idx = SECRETS.findIndex((s) => s.name === name); if (idx === -1) return;
+            card.style.transition = "opacity .2s, transform .2s"; card.style.opacity = "0"; card.style.transform = "translateX(20px)";
+            setTimeout(() => { SECRETS.splice(idx, 1); render(); }, 200);
+          }
+        });
+        // add-secret modal
+        const modalBg = document.getElementById("sec-modal-bg");
+        const modalClose = document.getElementById("sec-modal-close");
+        const modalCancel = document.getElementById("sec-modal-cancel");
+        const modalSave = document.getElementById("sec-modal-save");
+        function openModal() { if (modalBg) modalBg.classList.add("show"); }
+        function closeModal() { if (modalBg) modalBg.classList.remove("show"); }
+        if (modalClose) modalClose.addEventListener("click", closeModal);
+        if (modalCancel) modalCancel.addEventListener("click", closeModal);
+        if (modalBg) modalBg.addEventListener("click", (e) => { if (e.target === modalBg) closeModal(); });
+        if (modalSave) modalSave.addEventListener("click", () => {
+          const nameEl = document.getElementById("sec-field-name");
+          if (nameEl && nameEl.value.trim()) {
+            SECRETS.unshift({ name: nameEl.value.trim().toUpperCase(), src: "local", icon: "key", ref: "<b>$secret:" + nameEl.value.trim().toUpperCase() + "</b> · new" });
+            nameEl.value = "";
+            const valEl = document.getElementById("sec-field-value"); if (valEl) valEl.value = "";
+            closeModal(); render();
+          }
+        });
+      })();
+
+      // ── Skills view: file tree + markdown editor ──
+      (function () {
+        const FOLDER_SVG = '<svg class="sk-node__chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>';
+        const FOLDER_IC = '<svg class="sk-node__ic sk-node__ic--folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+        const MD_IC = '<svg class="sk-node__ic sk-node__ic--md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13l2 2 2-2M9 17l2 2 2-2"/></svg>';
+        // representative skill tree (subset of the real 120)
+        const TREE = [
+          { type: "folder", name: "design", children: [
+            { type: "file", name: "interactive-graph-canvas", builtin: false },
+            { type: "file", name: "signet-public-brand-design", builtin: false },
+            { type: "file", name: "surgical-reference-polish", builtin: false },
+            { type: "file", name: "interactive-flow-polish", builtin: false },
+          ]},
+          { type: "folder", name: "productivity", children: [
+            { type: "file", name: "linear", builtin: false },
+            { type: "file", name: "email-inbox-scan", builtin: false },
+            { type: "file", name: "kitsu-project-setup", builtin: false },
+          ]},
+          { type: "folder", name: "software-development", children: [
+            { type: "file", name: "software-development-workflows", builtin: false },
+            { type: "file", name: "acpx-client-integration", builtin: false },
+            { type: "file", name: "agent-and-repository-tooling-workflows", builtin: false },
+          ]},
+          { type: "file", name: "onboarding", builtin: true },
+          { type: "file", name: "recall", builtin: true },
+          { type: "file", name: "remember", builtin: true },
+          { type: "file", name: "memory-debug", builtin: true },
+          { type: "file", name: "signet", builtin: true },
+          { type: "file", name: "skill-creator", builtin: true },
+          { type: "file", name: "web-design", builtin: false },
+          { type: "file", name: "astro-portfolio-site", builtin: false },
+          { type: "file", name: "copywriting", builtin: false },
+          { type: "file", name: "authentic-writing", builtin: false },
+          { type: "file", name: "autoresearch", builtin: false },
+          { type: "file", name: "autoreview", builtin: false },
+          { type: "file", name: "obsidian-cli", builtin: false },
+          { type: "file", name: "obsidian-markdown", builtin: false },
+        ];
+        // markdown content per skill (realistic excerpts)
+        const CONTENT = {
+          onboarding: { path: "skills/onboarding/SKILL.md", tags: ["builtin", "invocable"], html: `<h1>/onboarding</h1><p>Interactive interview to set up your Signet workspace (~5-10 minutes). Writes identity files to <code>~/.agents/</code> — does not access external APIs, send data anywhere, or execute arbitrary code.</p><h2>What This Skill Does</h2><p>This skill writes configuration files to <code>~/.agents/</code>. Specifically:</p><ul><li><code>agent.yaml</code> — agent config and model defaults</li><li><code>AGENTS.md</code> — repo-level AI operating instructions</li><li><code>SOUL.md</code> — agent personality and values</li><li><code>IDENTITY.md</code> — agent name and identity</li><li><code>USER.md</code> — user context and preferences</li></ul><blockquote>Use when user runs <code>/onboarding</code> or says 'set up my agent'.</blockquote>` },
+          recall: { path: "skills/recall/SKILL.md", tags: ["builtin", "invocable"], html: `<h1>/recall</h1><p>Use this skill for targeted explicit recall. It is not the same surface as prompt-submit context injection.</p><p>Signet's canonical explicit recall endpoint is <code>POST /api/memory/recall</code>. The CLI, MCP, and hook recall surfaces should stay thin wrappers around that endpoint.</p><h2>Usage</h2><pre><code>POST /api/memory/recall\n{ "query": "dashboard design decisions",\n  "limit": 5,\n  "agentId": "default" }</code></pre><p>Returns scored results with provenance — <code>source</code>, <code>score</code>, <code>created_at</code>, and supplementary context.</p>` },
+          remember: { path: "skills/remember/SKILL.md", tags: ["builtin", "invocable"], html: `<h1>/remember</h1><p>Save an explicit scoped memory through Signet. Use only when the user clearly asks to remember something or when a tool/harness must persist an explicit memory row.</p><h2>Memory Types</h2><table><tr><th>Type</th><th>Use for</th></tr><tr><td>fact</td><td>Durable knowledge the agent owns</td></tr><tr><td>decision</td><td>Choices that should persist</td></tr><tr><td>preference</td><td>User style/workflow preferences</td></tr><tr><td>learning</td><td>Insights and observations</td></tr></table><p>Memories are scoped by <code>agent_id</code> and carry provenance metadata.</p>` },
+          "memory-debug": { path: "skills/memory-debug/SKILL.md", tags: ["builtin"], html: `<h1>memory-debug</h1><p>Diagnose Signet memory, recall, source, session, embedding, and graph issues from runtime truth without bypassing scope or provenance.</p><h2>Common Issues</h2><ul><li><b>Empty recall</b> — check embedding provider, verify <code>sqlite-vec</code> availability</li><li><b>Missing source hits</b> — verify source is enabled and indexed</li><li><b>Stale graph</b> — check ontology apply pipeline and entity_dependencies</li><li><b>Cosine fallback</b> — <code>sqlite-vec</code> not loaded, daemon-side fallback active</li></ul>` },
+          signet: { path: "skills/signet/SKILL.md", tags: ["builtin"], html: `<h1>signet</h1><p>Operate Signet as the local source-backed substrate for agent identity, scoped memory, provenance, ontology, skills, secrets, sources, and harness integrations.</p><h2>Core Concepts</h2><p>Signet is a <b>local-first</b> substrate. All data lives in <code>$SIGNET_WORKSPACE</code> (default <code>~/.agents/</code>). Nothing leaves the machine unless explicitly configured.</p><blockquote>The source stays canonical. Signet reads from the vault — it does not edit notes, rewrite frontmatter, or create files inside the source directory.</blockquote>` },
+          "skill-creator": { path: "skills/skill-creator/SKILL.md", tags: ["builtin"], html: `<h1>skill-creator</h1><p>Guide for discovering, installing, and creating effective skills. This skill should be used when users want to discover and install existing skills or create a new skill that extends capabilities with specialized knowledge, workflows, or tool integrations.</p><h2>Skill Structure</h2><pre><code>skills/my-skill/\n└── SKILL.md</code></pre><p>Each <code>SKILL.md</code> has YAML frontmatter:</p><pre><code>---\nname: my-skill\ndescription: "When to use this skill"\nuser_invocable: false\nbuiltin: false\n---</code></pre>` },
+          "web-design": { path: "skills/web-design/SKILL.md", tags: ["custom"], html: `<h1>web-design</h1><p>Web design — distinctive, production-grade frontend interfaces and high-converting landing pages. Use when building web components, pages, applications, landing pages, or any web UI.</p><h2>Coverage</h2><ul><li>Aesthetic direction, typography, color, motion</li><li>Spatial composition and conversion optimization</li><li>Hero sections, CTA psychology, above-the-fold design</li><li>F-pattern reading and visual hierarchy</li></ul><blockquote>NOT for dashboards or admin panels — use <code>interface-design</code>.</blockquote>` },
+          "astro-portfolio-site": { path: "skills/astro-portfolio-site/SKILL.md", tags: ["custom"], html: `<h1>astro-portfolio-site</h1><p>Build a complete indie studio, small business, or creative portfolio website from a client brief and brand assets. Produces a production-ready Astro 5 + React 19 + Tailwind CSS 4 + GSAP site deployed to Cloudflare Pages.</p><h2>Stack</h2><table><tr><th>Layer</th><th>Choice</th></tr><tr><td>Framework</td><td>Astro 5</td></tr><tr><td>UI</td><td>React 19</td></tr><tr><td>Styling</td><td>Tailwind CSS 4</td></tr><tr><td>Motion</td><td>GSAP</td></tr><tr><td>Deploy</td><td>Cloudflare Pages</td></tr></table>` },
+          copywriting: { path: "skills/copywriting/SKILL.md", tags: ["custom"], html: `<h1>copywriting</h1><p>When the user wants to write, rewrite, or improve marketing copy for any page — including homepage, landing pages, pricing pages, feature pages, about pages, or product pages.</p><p>Also use when the user says <code>write copy for</code>, <code>improve this copy</code>, <code>rewrite this page</code>, <code>marketing copy</code>, <code>headline help</code>, or <code>CTA copy</code>.</p><blockquote>NOT for formal/professional prose (use <code>authentic-writing</code>) or technical docs (use <code>documentation-writer</code>).</blockquote>` },
+        };
+        const DEFAULT_MD = { path: "skills/—/SKILL.md", tags: [], html: `<h1>Select a skill</h1><p>Choose a skill from the file tree to view its documentation.</p>` };
+        const treeNodes = document.getElementById("sk-tree-nodes");
+        const mdEl = document.getElementById("sk-md");
+        const pathEl = document.getElementById("sk-path");
+        const headEl = document.getElementById("sk-editor-head");
+        const searchEl = document.getElementById("sk-search");
+        let activeSkill = null;
+        let searchQuery = "";
+        function filterNode(node) {
+          if (!searchQuery) return true;
+          if (node.type === "folder") return node.children.some(filterNode);
+          return node.name.toLowerCase().includes(searchQuery);
+        }
+        function nodeHtml(node, depth) {
+          const pad = "padding-left:" + (12 + depth * 14) + "px;";
+          if (node.type === "folder") {
+            const childHtml = node.children.filter(filterNode).map((c) => nodeHtml(c, depth + 1)).join("");
+            const visibleCount = node.children.filter(filterNode).length;
+            if (visibleCount === 0) return "";
+            return '<div class="sk-node is-open" style="' + pad + '">' + FOLDER_SVG + FOLDER_IC + '<span class="sk-node__label">' + node.name + '</span><span class="sk-node__badge" style="background:color-mix(in oklch, var(--foreground) 5%, transparent);color:var(--muted-foreground)">' + visibleCount + '</span></div><div class="sk-node__children">' + childHtml + "</div>";
+          }
+          const badge = node.builtin ? '<span class="sk-node__badge sk-node__badge--builtin">core</span>' : "";
+          return '<div class="sk-node' + (activeSkill === node.name ? " is-active" : "") + '" data-skill="' + node.name + '" style="' + pad + '"><span style="width:12px;flex-shrink:0"></span>' + MD_IC + '<span class="sk-node__label">' + node.name + '</span>' + badge + "</div>";
+        }
+        function renderTree() {
+          if (!treeNodes) return;
+          treeNodes.innerHTML = TREE.map((n) => nodeHtml(n, 0)).join("");
+          treeNodes.querySelectorAll(".sk-node[data-skill]").forEach((el) => {
+            el.addEventListener("click", () => selectSkill(el.dataset.skill));
+          });
+          treeNodes.querySelectorAll(".sk-node:not([data-skill])").forEach((el) => {
+            el.addEventListener("click", () => {
+              el.classList.toggle("is-open");
+              const next = el.nextElementSibling;
+              if (next) next.classList.toggle("is-hidden");
+            });
+          });
+        }
+        function selectSkill(name) {
+          activeSkill = name;
+          const c = CONTENT[name] || DEFAULT_MD;
+          if (mdEl) mdEl.innerHTML = c.html;
+          if (pathEl) pathEl.innerHTML = '<b>' + name + '</b> · <span style="color:var(--muted-foreground)">' + c.path + "</span>";
+          if (headEl) {
+            headEl.querySelectorAll(".sk-editor__tag").forEach((t) => t.remove());
+            c.tags.forEach((tag) => {
+              const span = document.createElement("span");
+              span.className = "sk-editor__tag sk-editor__tag--" + tag;
+              span.textContent = tag;
+              headEl.appendChild(span);
+            });
+          }
+          renderTree();
+        }
+        renderTree();
+        selectSkill("onboarding");
+        if (searchEl) searchEl.addEventListener("input", () => {
+          searchQuery = searchEl.value.trim().toLowerCase();
+          renderTree();
+        });
+      })();
     </script>
     <div class="src-modal-bg" id="src-modal-bg">
       <div class="src-modal">
@@ -2813,6 +3393,32 @@
         <div class="src-modal__foot">
           <button class="btn-ghost" id="src-modal-cancel">Cancel</button>
           <button class="btn-primary" id="src-modal-connect">Connect &amp; index</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Secrets: add-secret modal -->
+    <div class="sec-modal-bg" id="sec-modal-bg">
+      <div class="sec-modal">
+        <div class="sec-modal__head">
+          <span class="sec-modal__title">Add secret</span>
+          <span class="sec-modal__close" id="sec-modal-close"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+        </div>
+        <div class="sec-modal__body">
+          <div class="sec-field">
+            <span class="sec-field__label">Name</span>
+            <input class="sec-field__input" id="sec-field-name" placeholder="OPENAI_API_KEY" />
+            <span class="sec-field__hint">Uppercase SNAKE_CASE · referenced as $secret:NAME</span>
+          </div>
+          <div class="sec-field">
+            <span class="sec-field__label">Value</span>
+            <input class="sec-field__input" id="sec-field-value" type="password" placeholder="••••••••••••" />
+            <span class="sec-field__hint">Encrypted at rest · never displayed again</span>
+          </div>
+        </div>
+        <div class="sec-modal__foot">
+          <button class="btn-ghost" id="sec-modal-cancel">Cancel</button>
+          <button class="btn-primary" id="sec-modal-save">Encrypt &amp; save</button>
         </div>
       </div>
     </div>
