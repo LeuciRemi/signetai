@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-07-24
+- Bug fixes: infer compatible privacy from endpoint.
+
 ### 2026-07-23
 - Features: surface and repair dead summary-job backlog (#901); recover missed native transcripts; inference settings density + hierarchy refactor; select connected providers as backends + compact rows.
 - Bug fixes: expose macOS physical memory; harden native WASM inference; quiesce background inference on pause; harden sterile OpenCode inference; provider wall completeness, optional keys, OAuth window; support agent-managed models; parse JSON after model preambles; bound llama.cpp inputs; remove invalid hook ownership markers; stop native embedding smoke child within bun's afterEach budget; integrate pi-ai OAuth providers; make maintenance supersession sweep non-fatal without a provider; enable Astro ClientRouter for client-side navigation.
@@ -30,10 +33,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 ### 2026-07-15
 - Bug fixes: centralize canonical recall requests.
 
-### 2026-07-12
-- Bug fixes: tolerate immutable-artifact conflict on summary retry; add boundary reason semantics to session synthesis.
-
 ## Release Ledger
+
+## [0.152.3] - 2026-07-24
+
+Release summary: 1 bug fix.
+Tag range: `v0.152.2..v0.152.3`.
+
+### Bug Fixes
+
+- **core**: infer compatible privacy from endpoint (#1013)
 
 ## [0.152.2] - 2026-07-23
 
