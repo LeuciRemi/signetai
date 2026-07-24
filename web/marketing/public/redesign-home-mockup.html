@@ -1243,6 +1243,21 @@
       .dr-hero__sep { color: oklch(0.35 0 0); user-select: none; }
       [data-theme="light"] .dr-hero__sep { color: oklch(0.65 0 0); }
       .dr-hero__spacer { flex: 1; }
+      /* tactile buffer progress pill */
+      .dr-buffer { display: flex; align-items: center; gap: 8px; }
+      .dr-buffer__pill { width: 90px; height: 16px; border-radius: 9px; background: color-mix(in oklch, var(--foreground) 6%, transparent); border: 1px solid oklch(1 0 0 / 0.08); overflow: hidden; position: relative; }
+      [data-theme="light"] .dr-buffer__pill { border-color: oklch(0 0 0 / 0.08); }
+      .dr-buffer__fill { height: 100%; border-radius: 9px; background: linear-gradient(90deg, oklch(0.7 0.13 180), oklch(0.72 0.15 150)); transition: width .5s ease; }
+      .dr-buffer__fill.is-full { background: linear-gradient(90deg, oklch(0.75 0.15 85), oklch(0.72 0.18 25)); }
+      .dr-buffer__txt { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); white-space: nowrap; }
+      .dr-buffer__txt b { color: var(--foreground); font-weight: 600; }
+      /* threshold-reached active state */
+      .dr-status { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--muted-foreground); }
+      .dr-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 6px color-mix(in oklch, var(--success) 50%, transparent); }
+      .dr-status.is-active { color: oklch(0.78 0.16 85); }
+      .dr-status.is-active .dot { background: oklch(0.78 0.16 85); box-shadow: 0 0 8px oklch(0.78 0.16 85 / 0.6); animation: dr-status-pulse 1.4s ease-in-out infinite; }
+      @keyframes dr-status-pulse { 0%, 100% { opacity: 1; box-shadow: 0 0 6px oklch(0.78 0.16 85 / 0.5); } 50% { opacity: 0.5; box-shadow: 0 0 14px oklch(0.78 0.16 85 / 0.9); } }
+      @media (prefers-reduced-motion: reduce) { .dr-status.is-active .dot { animation: none; } }
       .dr-trigger { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10px; cursor: pointer; color: var(--muted-foreground);
         padding: 4px 10px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.1); transition: all .15s; user-select: none; }
       [data-theme="light"] .dr-trigger { border-color: oklch(0 0 0 / 0.1); }
@@ -1286,18 +1301,26 @@
       .dr-mut--supersede { border-color: oklch(0.6 0.15 85 / 0.3); }
       .dr-mut--supersede .dr-mut__val { color: oklch(0.75 0.15 85); }
       /* entity changes list */
-      .dr-changes { display: flex; flex-direction: column; gap: 6px; }
-      .dr-change { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: var(--radius); background: color-mix(in oklch, var(--foreground) 2.5%, transparent); }
-      .dr-change__op { font-family: var(--font-mono); font-size: 8.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 5px; border-radius: 4px; flex-shrink: 0; margin-top: 1px; }
+      /* mutation rows — no inner box, hairline dividers, badges anchor left */
+      .dr-changes { display: flex; flex-direction: column; gap: 0; }
+      .dr-change { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid oklch(1 0 0 / 0.04); }
+      [data-theme="light"] .dr-change { border-bottom-color: oklch(0 0 0 / 0.04); }
+      .dr-change:last-child { border-bottom: none; }
+      .dr-change__op { font-family: var(--font-mono); font-size: 8.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 4px; flex-shrink: 0; margin-top: 1px; }
       .dr-change__op--create { background: color-mix(in oklch, var(--success) 14%, transparent); color: oklch(0.72 0.15 150); }
       .dr-change__op--merge { background: oklch(0.6 0.1 250 / 0.14); color: oklch(0.7 0.1 250); }
       .dr-change__op--delete { background: oklch(0.6 0.15 25 / 0.14); color: oklch(0.7 0.15 25); }
       .dr-change__op--supersede { background: oklch(0.6 0.15 85 / 0.14); color: oklch(0.75 0.15 85); }
       .dr-change__op--update { background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--muted-foreground); }
-      .dr-change__txt { font-size: 12px; line-height: 1.45; color: oklch(0.82 0 0); flex: 1; min-width: 0; }
+      .dr-change__txt { font-size: 12.5px; line-height: 1.5; color: oklch(0.82 0 0); flex: 1; min-width: 0; }
       [data-theme="light"] .dr-change__txt { color: oklch(0.3 0 0); }
-      .dr-change__txt code { font-family: var(--font-mono); font-size: 11px; color: var(--foreground); font-weight: 500; }
-      .dr-change__reason { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); margin-top: 2px; }
+      /* entity:* references — distinct cyan mono pills */
+      .dr-change__txt code { font-family: var(--font-mono); font-size: 11px; color: var(--foreground); font-weight: 500; background: color-mix(in oklch, var(--foreground) 6%, transparent); padding: 1px 5px; border-radius: 4px; }
+      .dr-change__txt .ent { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: oklch(0.72 0.15 180); background: oklch(0.6 0.15 180 / 0.12); padding: 1px 6px; border-radius: 4px; border: 1px solid oklch(0.6 0.15 180 / 0.18); }
+      [data-theme="light"] .dr-change__txt .ent { color: oklch(0.48 0.15 180); background: oklch(0.7 0.15 180 / 0.1); border-color: oklch(0.7 0.15 180 / 0.16); }
+      .dr-change__txt .arr { color: oklch(0.55 0 0); margin: 0 2px; font-family: var(--font-mono); font-weight: 600; }
+      [data-theme="light"] .dr-change__txt .arr { color: oklch(0.45 0 0); }
+      .dr-change__reason { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); margin-top: 4px; }
       /* ── Pass history timeline ── */
       .dr-history-label { font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground); padding: 4px 2px 0; flex-shrink: 0; }
       .dr-history { display: flex; flex-direction: column; gap: 0; flex-shrink: 0; }
@@ -1314,8 +1337,9 @@
       .dr-pass__time { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
       .dr-pass__summary { font-size: 12px; color: oklch(0.82 0 0); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       [data-theme="light"] .dr-pass__summary { color: oklch(0.3 0 0); }
-      .dr-pass__stats { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); flex-shrink: 0; }
-      .dr-pass__stat { display: inline-flex; align-items: baseline; gap: 3px; }
+      /* lock pass history stats into a fixed-width grid so columns align */
+      .dr-pass__stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); flex-shrink: 0; width: 108px; text-align: right; }
+      .dr-pass__stat { display: flex; align-items: baseline; justify-content: flex-end; gap: 3px; }
       .dr-pass__stat b { color: var(--foreground); font-weight: 600; }
 
       /* ════════════════════════════════════════════════════════════════
@@ -2337,11 +2361,12 @@
           <div class="view dr-view" id="view-dreaming" hidden>
             <!-- telemetry line -->
             <div class="dr-hero">
-              <div class="dr-hero__stat"><span class="dr-hero__val" id="dr-tokens">8,240</span><span class="dr-hero__label">tokens accumulated</span></div>
+              <div class="dr-buffer">
+                <div class="dr-buffer__pill"><div class="dr-buffer__fill" id="dr-buffer-fill" style="width:82%"></div></div>
+                <span class="dr-buffer__txt"><b id="dr-buffer-tokens">8,240</b> / 10,000 tokens</span>
+              </div>
               <span class="dr-hero__sep">/</span>
-              <div class="dr-hero__stat"><span class="dr-hero__val">10,000</span><span class="dr-hero__label">threshold</span></div>
-              <span class="dr-hero__sep">/</span>
-              <div class="dr-hero__stat"><span class="dr-hero__label" style="display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 6px color-mix(in oklch, var(--success) 50%, transparent)"></span>worker idle</span></div>
+              <span class="dr-status" id="dr-status"><span class="dot"></span><span id="dr-status-txt">worker idle</span></span>
               <span class="dr-hero__spacer"></span>
               <span class="dr-trigger" id="dr-trigger-btn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7c0 2.4 1.2 4 2.5 5 .8.6 1.5 1.4 1.5 2.5V18h6v-1.5c0-1.1.7-1.9 1.5-2.5C18.8 13 20 11.4 20 9a7 7 0 0 0-8-7z"/><path d="M9 21h6"/></svg>
@@ -3621,11 +3646,11 @@
           mutationsFailed: 0,
           summary: "Consolidated dashboard migration evidence. Signet entity merged with entity:dashboard. Created entity for Hermes. Superseded stale shadcn recommendation.",
           changes: [
-            { op: "create", target: "Hermes", detail: "Agent <code>Hermes</code> created as a separate entity from <code>Signet</code> — referenced in 4 sessions as a distinct harness.", reason: "4 source artifacts reference Hermes independently" },
-            { op: "merge", target: "Signet ↔ Dashboard", detail: "Merged <code>entity:dashboard</code> into <code>entity:signet</code> — the dashboard is an aspect of Signet, not a separate entity.", reason: "100% name overlap, same source root" },
-            { op: "supersede", target: "Dashboard stack", detail: "<code>Svelte 5</code> superseded by <code>Vite + React 19 + shadcn/ui</code> on the dashboard stack aspect.", reason: "Decision recorded in mem-948, 3 sessions confirm" },
-            { op: "create", target: "Inference tension", detail: "Created aspect <code>inference_tension</code> on entity:Nicholai — pattern of reaching for hosted inference while insisting on local-first.", reason: "Mira flagged this twice, 4 contradictory notes" },
-            { op: "update", target: "Positioning", detail: "Updated aspect <code>positioning</code> on entity:Signet — <code>infrastructure-forward</code> converging across 6 sources.", reason: "Convergence detected across Obsidian, Notion, GitHub" },
+            { op: "create", target: "Hermes", detail: "Created <span class=\"ent\">entity:Hermes</span> as a separate node from <span class=\"ent\">entity:Signet</span> \u2014 referenced in 4 sessions as a distinct harness.", reason: "4 source artifacts reference Hermes independently" },
+            { op: "merge", target: "Signet \u2194 Dashboard", detail: "Merged <span class=\"ent\">entity:dashboard</span> <span class=\"arr\">\u2192</span> <span class=\"ent\">entity:signet</span> \u2014 the dashboard is an aspect of Signet, not a separate entity.", reason: "100% name overlap, same source root" },
+            { op: "supersede", target: "Dashboard stack", detail: "Superseded <code>Svelte 5</code> <span class=\"arr\">\u2192</span> <code>Vite + React 19 + shadcn/ui</code> on the dashboard stack aspect.", reason: "Decision recorded in mem-948, 3 sessions confirm" },
+            { op: "create", target: "Inference tension", detail: "Created aspect <code>inference_tension</code> on <span class=\"ent\">entity:Nicholai</span> \u2014 pattern of reaching for hosted inference while insisting on local-first.", reason: "Mira flagged this twice, 4 contradictory notes" },
+            { op: "update", target: "Positioning", detail: "Updated aspect <code>positioning</code> on <span class=\"ent\">entity:Signet</span> \u2014 <code>infrastructure-forward</code> converging across 6 sources.", reason: "Convergence detected across Obsidian, Notion, GitHub" },
           ],
         };
         const PASSES = [
@@ -3685,6 +3710,20 @@
         const historyEl = document.getElementById("dr-history");
         if (briefEl) briefEl.innerHTML = briefHtml(LAST_PASS);
         if (historyEl) historyEl.innerHTML = PASSES.map(passHtml).join("");
+        // dynamic buffer + threshold state
+        const TOKENS = 8240, THRESHOLD = 10000;
+        const pct = Math.min(100, Math.round((TOKENS / THRESHOLD) * 100));
+        const fill = document.getElementById("dr-buffer-fill");
+        const tokTxt = document.getElementById("dr-buffer-tokens");
+        const statusEl = document.getElementById("dr-status");
+        const statusTxt = document.getElementById("dr-status-txt");
+        if (fill) fill.style.width = pct + "%";
+        if (tokTxt) tokTxt.textContent = TOKENS.toLocaleString();
+        if (TOKENS >= THRESHOLD && statusEl && statusTxt) {
+          statusEl.classList.add("is-active");
+          statusTxt.textContent = "\u26a1 Threshold reached \u00b7 Auto-dream queued";
+          if (fill) fill.classList.add("is-full");
+        }
       })();
     </script>
     <div class="src-modal-bg" id="src-modal-bg">
