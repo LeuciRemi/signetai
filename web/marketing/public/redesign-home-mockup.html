@@ -1244,13 +1244,16 @@
       [data-theme="light"] .dr-hero__sep { color: oklch(0.65 0 0); }
       .dr-hero__spacer { flex: 1; }
       /* tactile buffer progress pill */
-      .dr-buffer { display: flex; align-items: center; gap: 8px; }
-      .dr-buffer__pill { width: 90px; height: 16px; border-radius: 9px; background: color-mix(in oklch, var(--foreground) 6%, transparent); border: 1px solid oklch(1 0 0 / 0.08); overflow: hidden; position: relative; }
-      [data-theme="light"] .dr-buffer__pill { border-color: oklch(0 0 0 / 0.08); }
-      .dr-buffer__fill { height: 100%; border-radius: 9px; background: linear-gradient(90deg, oklch(0.7 0.13 180), oklch(0.72 0.15 150)); transition: width .5s ease; }
-      .dr-buffer__fill.is-full { background: linear-gradient(90deg, oklch(0.75 0.15 85), oklch(0.72 0.18 25)); }
-      .dr-buffer__txt { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); white-space: nowrap; }
-      .dr-buffer__txt b { color: var(--foreground); font-weight: 600; }
+      .dr-buffer { display: flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+      .dr-buffer__label { font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.45 0 0); }
+      [data-theme="light"] .dr-buffer__label { color: oklch(0.55 0 0); }
+      .dr-buffer__gauge { font-size: 10.5px; letter-spacing: 1px; }
+      .dr-buffer__gauge .on { color: oklch(0.65 0.1 200); }
+      [data-theme="light"] .dr-buffer__gauge .on { color: oklch(0.45 0.12 220); }
+      .dr-buffer__gauge .off { color: oklch(0.32 0 0); }
+      [data-theme="light"] .dr-buffer__gauge .off { color: oklch(0.78 0 0); }
+      .dr-buffer__pct { color: var(--foreground); font-weight: 600; }
+      .dr-buffer__txt { color: var(--muted-foreground); }
       /* threshold-reached active state */
       .dr-status { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--muted-foreground); }
       .dr-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 6px color-mix(in oklch, var(--success) 50%, transparent); }
@@ -1287,19 +1290,9 @@
       .dr-brief__narrative code { font-family: var(--font-mono); font-size: 11.5px; color: oklch(0.75 0.13 145); background: color-mix(in oklch, var(--foreground) 5%, transparent); padding: 1px 5px; border-radius: 4px; }
       [data-theme="light"] .dr-brief__narrative code { color: oklch(0.45 0.15 145); }
       /* mutation chips */
-      .dr-muts { display: flex; flex-wrap: wrap; gap: 6px; }
-      .dr-mut { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 10px; padding: 4px 9px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.08); }
-      [data-theme="light"] .dr-mut { border-color: oklch(0 0 0 / 0.08); }
-      .dr-mut__val { font-weight: 600; color: var(--foreground); }
-      .dr-mut__label { color: var(--muted-foreground); }
-      .dr-mut--create { border-color: color-mix(in oklch, var(--success) 30%, transparent); }
-      .dr-mut--create .dr-mut__val { color: oklch(0.72 0.15 150); }
-      .dr-mut--merge { border-color: oklch(0.6 0.1 250 / 0.3); }
-      .dr-mut--merge .dr-mut__val { color: oklch(0.7 0.1 250); }
-      .dr-mut--delete { border-color: oklch(0.6 0.15 25 / 0.25); }
-      .dr-mut--delete .dr-mut__val { color: oklch(0.7 0.15 25); }
-      .dr-mut--supersede { border-color: oklch(0.6 0.15 85 / 0.3); }
-      .dr-mut--supersede .dr-mut__val { color: oklch(0.75 0.15 85); }
+      .dr-summary { font-size: 12.5px; color: oklch(0.7 0 0); }
+      [data-theme="light"] .dr-summary { color: oklch(0.4 0 0); }
+      .dr-summary b { color: var(--foreground); font-weight: 600; }
       /* entity changes list */
       /* mutation rows — no inner box, hairline dividers, badges anchor left */
       .dr-changes { display: flex; flex-direction: column; gap: 0; }
@@ -1316,10 +1309,10 @@
       [data-theme="light"] .dr-change__txt { color: oklch(0.3 0 0); }
       /* entity:* references — distinct cyan mono pills */
       .dr-change__txt code { font-family: var(--font-mono); font-size: 11px; color: var(--foreground); font-weight: 500; background: color-mix(in oklch, var(--foreground) 6%, transparent); padding: 1px 5px; border-radius: 4px; }
-      .dr-change__txt .ent { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: oklch(0.72 0.15 180); background: oklch(0.6 0.15 180 / 0.12); padding: 1px 6px; border-radius: 4px; border: 1px solid oklch(0.6 0.15 180 / 0.18); }
-      [data-theme="light"] .dr-change__txt .ent { color: oklch(0.48 0.15 180); background: oklch(0.7 0.15 180 / 0.1); border-color: oklch(0.7 0.15 180 / 0.16); }
-      .dr-change__txt .arr { color: oklch(0.55 0 0); margin: 0 2px; font-family: var(--font-mono); font-weight: 600; }
-      [data-theme="light"] .dr-change__txt .arr { color: oklch(0.45 0 0); }
+      .dr-change__txt .ent { font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: oklch(0.65 0.1 200); }
+      [data-theme="light"] .dr-change__txt .ent { color: oklch(0.45 0.12 220); }
+      .dr-change__txt .arr { color: oklch(0.5 0 0); margin: 0 3px; font-family: var(--font-mono); font-weight: 500; }
+      [data-theme="light"] .dr-change__txt .arr { color: oklch(0.5 0 0); }
       .dr-change__reason { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); margin-top: 4px; }
       /* ── Pass history timeline ── */
       .dr-history-label { font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground); padding: 4px 2px 0; flex-shrink: 0; }
@@ -2362,8 +2355,10 @@
             <!-- telemetry line -->
             <div class="dr-hero">
               <div class="dr-buffer">
-                <div class="dr-buffer__pill"><div class="dr-buffer__fill" id="dr-buffer-fill" style="width:82%"></div></div>
-                <span class="dr-buffer__txt"><b id="dr-buffer-tokens">8,240</b> / 10,000 tokens</span>
+                <span class="dr-buffer__label">Cortex buffer</span>
+                <span class="dr-buffer__gauge" id="dr-gauge"></span>
+                <span class="dr-buffer__pct" id="dr-pct">82%</span>
+                <span class="dr-buffer__txt" id="dr-buffer-tokens">8.2k / 10k tokens</span>
               </div>
               <span class="dr-hero__sep">/</span>
               <span class="dr-status" id="dr-status"><span class="dot"></span><span id="dr-status-txt">worker idle</span></span>
@@ -3691,14 +3686,7 @@
               '</div>',
             '</div>',
             '<div class="dr-brief__narrative">' + p.summary + '</div>',
-            '<div class="dr-muts">',
-              '<span class="dr-mut dr-mut--create"><span class="dr-mut__val">4</span><span class="dr-mut__label">created</span></span>',
-              '<span class="dr-mut dr-mut--merge"><span class="dr-mut__val">1</span><span class="dr-mut__label">merged</span></span>',
-              '<span class="dr-mut dr-mut--supersede"><span class="dr-mut__val">1</span><span class="dr-mut__label">superseded</span></span>',
-              '<span class="dr-mut dr-mut--delete"><span class="dr-mut__val">0</span><span class="dr-mut__label">deleted</span></span>',
-              '<span class="dr-mut"><span class="dr-mut__val">' + p.mutationsSkipped + '</span><span class="dr-mut__label">skipped</span></span>',
-              '<span class="dr-mut"><span class="dr-mut__val">' + p.tokensConsumed.toLocaleString() + '</span><span class="dr-mut__label">tokens</span></span>',
-            '</div>',
+            '<div class="dr-summary">Pass complete \u00b7 <b>' + p.mutationsApplied + "</b> mutations applied \u00b7 <b>" + (p.tokensConsumed / 1000).toFixed(1) + "k</b> tokens processed</div>",
             '<div class="dr-changes">' + changes + '</div>',
           ].join("");
         }
@@ -3710,19 +3698,21 @@
         const historyEl = document.getElementById("dr-history");
         if (briefEl) briefEl.innerHTML = briefHtml(LAST_PASS);
         if (historyEl) historyEl.innerHTML = PASSES.map(passHtml).join("");
-        // dynamic buffer + threshold state
+        // dynamic buffer gauge + threshold state
         const TOKENS = 8240, THRESHOLD = 10000;
         const pct = Math.min(100, Math.round((TOKENS / THRESHOLD) * 100));
-        const fill = document.getElementById("dr-buffer-fill");
+        const filled = Math.round(pct / 10);
+        const gauge = document.getElementById("dr-gauge");
+        const pctEl = document.getElementById("dr-pct");
         const tokTxt = document.getElementById("dr-buffer-tokens");
         const statusEl = document.getElementById("dr-status");
         const statusTxt = document.getElementById("dr-status-txt");
-        if (fill) fill.style.width = pct + "%";
-        if (tokTxt) tokTxt.textContent = TOKENS.toLocaleString();
+        if (gauge) gauge.innerHTML = "<span class=\"on\">" + "\u2593".repeat(filled) + "</span><span class=\"off\">" + "\u2591".repeat(10 - filled) + "</span>";
+        if (pctEl) pctEl.textContent = pct + "%";
+        if (tokTxt) tokTxt.textContent = (TOKENS / 1000).toFixed(1) + "k / " + (THRESHOLD / 1000) + "k tokens";
         if (TOKENS >= THRESHOLD && statusEl && statusTxt) {
           statusEl.classList.add("is-active");
           statusTxt.textContent = "\u26a1 Threshold reached \u00b7 Auto-dream queued";
-          if (fill) fill.classList.add("is-full");
         }
       })();
     </script>
