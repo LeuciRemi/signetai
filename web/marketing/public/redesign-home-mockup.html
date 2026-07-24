@@ -1230,6 +1230,95 @@
       .sec-modal__foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid oklch(1 0 0 / 0.06); }
 
       /* ════════════════════════════════════════════════════════════════
+         DREAMING VIEW — pass brief + history timeline
+      ════════════════════════════════════════════════════════════════ */
+      .dr-view { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 14px; overflow-y: auto; }
+      .dr-view::-webkit-scrollbar { width: 6px; }
+      .dr-view::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 15%, transparent); border-radius: 3px; }
+      /* telemetry line */
+      .dr-hero { display: flex; align-items: center; gap: 9px; padding: 2px 2px; flex-shrink: 0; font-family: var(--font-mono); }
+      .dr-hero__stat { display: inline-flex; align-items: baseline; gap: 5px; }
+      .dr-hero__val { font-size: 12px; font-weight: 500; color: var(--foreground); letter-spacing: -0.01em; }
+      .dr-hero__label { font-size: 10.5px; color: var(--muted-foreground); }
+      .dr-hero__sep { color: oklch(0.35 0 0); user-select: none; }
+      [data-theme="light"] .dr-hero__sep { color: oklch(0.65 0 0); }
+      .dr-hero__spacer { flex: 1; }
+      .dr-trigger { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10px; cursor: pointer; color: var(--muted-foreground);
+        padding: 4px 10px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.1); transition: all .15s; user-select: none; }
+      [data-theme="light"] .dr-trigger { border-color: oklch(0 0 0 / 0.1); }
+      .dr-trigger:hover { color: oklch(0.82 0.16 150); border-color: color-mix(in oklch, var(--success) 40%, transparent); }
+      .dr-trigger svg { width: 12px; height: 12px; }
+      /* ── Last pass brief — narrative journal ── */
+      .dr-brief { position: relative; display: flex; flex-direction: column; gap: 14px; padding: 20px 22px; border-radius: var(--radius);
+        background: var(--card); border: 1px solid oklch(1 0 0 / 0.05); box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.04), 0 1px 2px oklch(0 0 0 / 0.3); flex-shrink: 0; }
+      [data-theme="light"] .dr-brief { border-color: oklch(0 0 0 / 0.06); }
+      .dr-brief::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; background: linear-gradient(180deg, oklch(1 0 0 / 0.18), transparent 50%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
+      .dr-brief__head { display: flex; align-items: center; gap: 10px; }
+      .dr-brief__ic { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0;
+        background: oklch(0.3 0 0); color: oklch(0.8 0.08 250); border: 1px solid oklch(1 0 0 / 0.06); }
+      [data-theme="light"] .dr-brief__ic { background: oklch(0.92 0 0); }
+      .dr-brief__ic svg { width: 18px; height: 18px; }
+      .dr-brief__title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+      .dr-brief__meta { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); margin-top: 2px; display: flex; align-items: center; gap: 8px; }
+      .dr-brief__tag { font-family: var(--font-mono); font-size: 8.5px; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+      .dr-brief__tag--incremental { background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--muted-foreground); }
+      .dr-brief__tag--compact { background: oklch(0.6 0.12 250 / 0.14); color: oklch(0.7 0.1 250); }
+      .dr-brief__tag--complete { background: color-mix(in oklch, var(--success) 14%, transparent); color: oklch(0.72 0.15 150); }
+      /* narrative body */
+      .dr-brief__narrative { font-size: 13px; line-height: 1.65; color: oklch(0.82 0 0); }
+      [data-theme="light"] .dr-brief__narrative { color: oklch(0.3 0 0); }
+      .dr-brief__narrative p { margin: 0 0 10px; }
+      .dr-brief__narrative b { color: var(--foreground); font-weight: 600; }
+      .dr-brief__narrative code { font-family: var(--font-mono); font-size: 11.5px; color: oklch(0.75 0.13 145); background: color-mix(in oklch, var(--foreground) 5%, transparent); padding: 1px 5px; border-radius: 4px; }
+      [data-theme="light"] .dr-brief__narrative code { color: oklch(0.45 0.15 145); }
+      /* mutation chips */
+      .dr-muts { display: flex; flex-wrap: wrap; gap: 6px; }
+      .dr-mut { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 10px; padding: 4px 9px; border-radius: var(--radius); border: 1px solid oklch(1 0 0 / 0.08); }
+      [data-theme="light"] .dr-mut { border-color: oklch(0 0 0 / 0.08); }
+      .dr-mut__val { font-weight: 600; color: var(--foreground); }
+      .dr-mut__label { color: var(--muted-foreground); }
+      .dr-mut--create { border-color: color-mix(in oklch, var(--success) 30%, transparent); }
+      .dr-mut--create .dr-mut__val { color: oklch(0.72 0.15 150); }
+      .dr-mut--merge { border-color: oklch(0.6 0.1 250 / 0.3); }
+      .dr-mut--merge .dr-mut__val { color: oklch(0.7 0.1 250); }
+      .dr-mut--delete { border-color: oklch(0.6 0.15 25 / 0.25); }
+      .dr-mut--delete .dr-mut__val { color: oklch(0.7 0.15 25); }
+      .dr-mut--supersede { border-color: oklch(0.6 0.15 85 / 0.3); }
+      .dr-mut--supersede .dr-mut__val { color: oklch(0.75 0.15 85); }
+      /* entity changes list */
+      .dr-changes { display: flex; flex-direction: column; gap: 6px; }
+      .dr-change { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: var(--radius); background: color-mix(in oklch, var(--foreground) 2.5%, transparent); }
+      .dr-change__op { font-family: var(--font-mono); font-size: 8.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 5px; border-radius: 4px; flex-shrink: 0; margin-top: 1px; }
+      .dr-change__op--create { background: color-mix(in oklch, var(--success) 14%, transparent); color: oklch(0.72 0.15 150); }
+      .dr-change__op--merge { background: oklch(0.6 0.1 250 / 0.14); color: oklch(0.7 0.1 250); }
+      .dr-change__op--delete { background: oklch(0.6 0.15 25 / 0.14); color: oklch(0.7 0.15 25); }
+      .dr-change__op--supersede { background: oklch(0.6 0.15 85 / 0.14); color: oklch(0.75 0.15 85); }
+      .dr-change__op--update { background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--muted-foreground); }
+      .dr-change__txt { font-size: 12px; line-height: 1.45; color: oklch(0.82 0 0); flex: 1; min-width: 0; }
+      [data-theme="light"] .dr-change__txt { color: oklch(0.3 0 0); }
+      .dr-change__txt code { font-family: var(--font-mono); font-size: 11px; color: var(--foreground); font-weight: 500; }
+      .dr-change__reason { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); margin-top: 2px; }
+      /* ── Pass history timeline ── */
+      .dr-history-label { font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground); padding: 4px 2px 0; flex-shrink: 0; }
+      .dr-history { display: flex; flex-direction: column; gap: 0; flex-shrink: 0; }
+      .dr-pass { display: grid; grid-template-columns: 24px 1fr auto; gap: 12px; padding: 10px 0; border-bottom: 1px solid oklch(1 0 0 / 0.04); align-items: center; }
+      [data-theme="light"] .dr-pass { border-bottom-color: oklch(0 0 0 / 0.04); }
+      .dr-pass:last-child { border-bottom: none; }
+      .dr-pass__dot { width: 8px; height: 8px; border-radius: 50%; justify-self: center; }
+      .dr-pass__dot--complete { background: var(--success); box-shadow: 0 0 6px color-mix(in oklch, var(--success) 40%, transparent); }
+      .dr-pass__dot--error { background: oklch(0.7 0.18 25); }
+      .dr-pass__dot--running { background: oklch(0.7 0.1 220); box-shadow: 0 0 6px oklch(0.7 0.1 220 / 0.5); animation: dr-pulse 1.5s ease-in-out infinite; }
+      @keyframes dr-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      @media (prefers-reduced-motion: reduce) { .dr-pass__dot--running { animation: none; } }
+      .dr-pass__body { min-width: 0; }
+      .dr-pass__time { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+      .dr-pass__summary { font-size: 12px; color: oklch(0.82 0 0); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      [data-theme="light"] .dr-pass__summary { color: oklch(0.3 0 0); }
+      .dr-pass__stats { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-foreground); flex-shrink: 0; }
+      .dr-pass__stat { display: inline-flex; align-items: baseline; gap: 3px; }
+      .dr-pass__stat b { color: var(--foreground); font-weight: 600; }
+
+      /* ════════════════════════════════════════════════════════════════
          SKILLS VIEW — file tree + markdown editor
       ════════════════════════════════════════════════════════════════ */
       .sk-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
@@ -1540,9 +1629,10 @@
                 <span class="nav__badge is-green">2.4k</span>
                 <span class="nav__kbd">G G</span>
               </li>
-              <li class="nav__item">
+              <li class="nav__item" data-view="dreaming">
                 <span class="nav__icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7c0 2.4 1.2 4 2.5 5 .8.6 1.5 1.4 1.5 2.5V18h6v-1.5c0-1.1.7-1.9 1.5-2.5C18.8 13 20 11.4 20 9a7 7 0 0 0-8-7z"/><path d="M9 21h6M10 18h4"/></svg></span>
                 <span class="nav__label">Dreaming</span>
+                <span class="nav__badge is-green">14</span>
                 <span class="nav__kbd">G D</span>
               </li>
             </ul>
@@ -2243,6 +2333,30 @@
             </div>
           </div>
 
+          <!-- ═══════════════ DREAMING VIEW ═══════════════ -->
+          <div class="view dr-view" id="view-dreaming" hidden>
+            <!-- telemetry line -->
+            <div class="dr-hero">
+              <div class="dr-hero__stat"><span class="dr-hero__val" id="dr-tokens">8,240</span><span class="dr-hero__label">tokens accumulated</span></div>
+              <span class="dr-hero__sep">/</span>
+              <div class="dr-hero__stat"><span class="dr-hero__val">10,000</span><span class="dr-hero__label">threshold</span></div>
+              <span class="dr-hero__sep">/</span>
+              <div class="dr-hero__stat"><span class="dr-hero__label" style="display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 6px color-mix(in oklch, var(--success) 50%, transparent)"></span>worker idle</span></div>
+              <span class="dr-hero__spacer"></span>
+              <span class="dr-trigger" id="dr-trigger-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7c0 2.4 1.2 4 2.5 5 .8.6 1.5 1.4 1.5 2.5V18h6v-1.5c0-1.1.7-1.9 1.5-2.5C18.8 13 20 11.4 20 9a7 7 0 0 0-8-7z"/><path d="M9 21h6"/></svg>
+                Trigger pass
+              </span>
+            </div>
+
+            <!-- last pass brief (populated by JS) -->
+            <div class="dr-brief" id="dr-brief"></div>
+
+            <!-- pass history (populated by JS) -->
+            <div class="dr-history-label">Pass history</div>
+            <div class="dr-history" id="dr-history"></div>
+          </div>
+
         </div>
       </main>
     </div>
@@ -2686,7 +2800,7 @@
 
       // ── View switching (Home / Memory) ──
       (function () {
-        const VIEWS = { home: "view-home", memory: "view-memory", graph: "view-graph", sources: "view-sources", secrets: "view-secrets", skills: "view-skills" };
+        const VIEWS = { home: "view-home", memory: "view-memory", graph: "view-graph", sources: "view-sources", secrets: "view-secrets", skills: "view-skills", dreaming: "view-dreaming" };
         function showView(name) {
           Object.entries(VIEWS).forEach(([key, id]) => {
             const el = document.getElementById(id);
@@ -3490,6 +3604,87 @@
           searchQuery = searchEl.value.trim().toLowerCase();
           renderTree();
         });
+      })();
+
+      // ── Dreaming view: last pass brief + history timeline ──
+      (function () {
+        // real DreamingPassRow-shaped data reflecting the dreaming schema
+        const LAST_PASS = {
+          id: "dream_01J7XK4M3N",
+          mode: "incremental",
+          status: "complete",
+          startedAt: "2026-07-22T03:00:00Z",
+          completedAt: "2026-07-22T03:02:47Z",
+          tokensConsumed: 14200,
+          mutationsApplied: 11,
+          mutationsSkipped: 3,
+          mutationsFailed: 0,
+          summary: "Consolidated dashboard migration evidence. Signet entity merged with entity:dashboard. Created entity for Hermes. Superseded stale shadcn recommendation.",
+          changes: [
+            { op: "create", target: "Hermes", detail: "Agent <code>Hermes</code> created as a separate entity from <code>Signet</code> — referenced in 4 sessions as a distinct harness.", reason: "4 source artifacts reference Hermes independently" },
+            { op: "merge", target: "Signet ↔ Dashboard", detail: "Merged <code>entity:dashboard</code> into <code>entity:signet</code> — the dashboard is an aspect of Signet, not a separate entity.", reason: "100% name overlap, same source root" },
+            { op: "supersede", target: "Dashboard stack", detail: "<code>Svelte 5</code> superseded by <code>Vite + React 19 + shadcn/ui</code> on the dashboard stack aspect.", reason: "Decision recorded in mem-948, 3 sessions confirm" },
+            { op: "create", target: "Inference tension", detail: "Created aspect <code>inference_tension</code> on entity:Nicholai — pattern of reaching for hosted inference while insisting on local-first.", reason: "Mira flagged this twice, 4 contradictory notes" },
+            { op: "update", target: "Positioning", detail: "Updated aspect <code>positioning</code> on entity:Signet — <code>infrastructure-forward</code> converging across 6 sources.", reason: "Convergence detected across Obsidian, Notion, GitHub" },
+          ],
+        };
+        const PASSES = [
+          { id: "dream_01J7XK4M3N", status: "complete", mode: "incremental", startedAt: "2026-07-22T03:00:00Z", completedAt: "2026-07-22T03:02:47Z", tokens: 14200, applied: 11, skipped: 3, failed: 0, summary: "Consolidated dashboard migration evidence — Signet entity merged, Hermes created, inference tension flagged" },
+          { id: "dream_01J7VZ9P2K", status: "complete", mode: "incremental", startedAt: "2026-07-21T03:00:00Z", completedAt: "2026-07-21T03:01:22Z", tokens: 11800, applied: 8, skipped: 2, failed: 0, summary: "Imported product strategy notes — created entity:Cloud Sync, updated positioning claims" },
+          { id: "dream_01J7KH7R8M", status: "complete", mode: "compact", startedAt: "2026-07-20T03:00:00Z", completedAt: "2026-07-20T03:04:15Z", tokens: 28000, applied: 24, skipped: 5, failed: 1, summary: "Compact pass — merged 7 duplicate entities, pruned 3 stale aspects from openclaw migration" },
+          { id: "dream_01J7A2C4D6", status: "error", mode: "incremental", startedAt: "2026-07-19T03:00:00Z", completedAt: "2026-07-19T03:00:31Z", tokens: 2100, applied: 0, skipped: 0, failed: 1, summary: "Provider timeout — Claude Sonnet 4.5 did not respond within 30s" },
+          { id: "dream_01J763X8F2", status: "complete", mode: "incremental", startedAt: "2026-07-18T03:00:00Z", completedAt: "2026-07-18T03:02:08Z", tokens: 13400, applied: 9, skipped: 4, failed: 0, summary: "Processed 3 claude-code sessions — created 4 entities, superseded 2 stale attributes" },
+          { id: "dream_01J6ZZ5M7K", status: "complete", mode: "incremental", startedAt: "2026-07-17T03:00:00Z", completedAt: "2026-07-17T03:01:45Z", tokens: 10500, applied: 7, skipped: 1, failed: 0, summary: "Imported GitHub source artifacts — linked 12 issues to entity:dashboard" },
+        ];
+        const MOON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+        function relTime(iso) {
+          const d = new Date(iso), now = new Date("2026-07-22T09:00:00Z"), diff = (now - d) / 1000;
+          if (diff < 60) return "just now";
+          if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+          if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+          return Math.floor(diff / 86400) + "d ago";
+        }
+        function duration(start, end) {
+          const s = new Date(start), e = new Date(end), diff = Math.round((e - s) / 1000);
+          if (diff < 60) return diff + "s";
+          return Math.floor(diff / 60) + "m " + (diff % 60) + "s";
+        }
+        function briefHtml(p) {
+          const changes = p.changes.map((c) =>
+            '<div class="dr-change"><span class="dr-change__op dr-change__op--' + c.op + '">' + c.op + '</span><div><div class="dr-change__txt">' + c.detail + '</div><div class="dr-change__reason">' + c.reason + "</div></div></div>"
+          ).join("");
+          return [
+            '<div class="dr-brief__head">',
+              '<div class="dr-brief__ic">' + MOON_SVG + '</div>',
+              '<div style="flex:1">',
+                '<div class="dr-brief__title">Last dreaming pass</div>',
+                '<div class="dr-brief__meta">',
+                  '<span class="dr-brief__tag dr-brief__tag--' + p.mode + '">' + p.mode + '</span>',
+                  '<span class="dr-brief__tag dr-brief__tag--complete">complete</span>',
+                  relTime(p.completedAt) + ' · ' + duration(p.startedAt, p.completedAt) + ' · ' + (p.tokensConsumed / 1000).toFixed(1) + 'k tokens',
+                '</div>',
+              '</div>',
+            '</div>',
+            '<div class="dr-brief__narrative">' + p.summary + '</div>',
+            '<div class="dr-muts">',
+              '<span class="dr-mut dr-mut--create"><span class="dr-mut__val">4</span><span class="dr-mut__label">created</span></span>',
+              '<span class="dr-mut dr-mut--merge"><span class="dr-mut__val">1</span><span class="dr-mut__label">merged</span></span>',
+              '<span class="dr-mut dr-mut--supersede"><span class="dr-mut__val">1</span><span class="dr-mut__label">superseded</span></span>',
+              '<span class="dr-mut dr-mut--delete"><span class="dr-mut__val">0</span><span class="dr-mut__label">deleted</span></span>',
+              '<span class="dr-mut"><span class="dr-mut__val">' + p.mutationsSkipped + '</span><span class="dr-mut__label">skipped</span></span>',
+              '<span class="dr-mut"><span class="dr-mut__val">' + p.tokensConsumed.toLocaleString() + '</span><span class="dr-mut__label">tokens</span></span>',
+            '</div>',
+            '<div class="dr-changes">' + changes + '</div>',
+          ].join("");
+        }
+        function passHtml(p) {
+          const failNote = p.status === "error" ? " · failed" : "";
+          return `<div class="dr-pass"><span class="dr-pass__dot dr-pass__dot--${p.status}"></span><div class="dr-pass__body"><div class="dr-pass__time">${relTime(p.startedAt)} · ${p.mode}${failNote}</div><div class="dr-pass__summary">${p.summary}</div></div><div class="dr-pass__stats"><span class="dr-pass__stat"><b>${p.applied}</b>applied</span><span class="dr-pass__stat"><b>${p.skipped}</b>skip</span><span class="dr-pass__stat"><b>${(p.tokens / 1000).toFixed(1)}k</b>tok</span></div></div>`;
+        }
+        const briefEl = document.getElementById("dr-brief");
+        const historyEl = document.getElementById("dr-history");
+        if (briefEl) briefEl.innerHTML = briefHtml(LAST_PASS);
+        if (historyEl) historyEl.innerHTML = PASSES.map(passHtml).join("");
       })();
     </script>
     <div class="src-modal-bg" id="src-modal-bg">
