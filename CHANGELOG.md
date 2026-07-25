@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-07-25
+- Refactoring: consolidate workspace path resolution (#956).
+
 ### 2026-07-24
 - Features: rework agents as identity & custody cards; rename Tasks→Agents, add identity and access config view; add dreaming view with pass brief and history timeline; add mobile responsive layout to redesign mockup.
 - Bug fixes: sync legacy extraction label with routing target (#1017); stop baking stale SIGNET_PATH into managed extensions; align assetPathsOverride key names with EmbeddingHandleOptions (#1018); validate routing config references on load (#1005); never report 100% embedding coverage while gaps remain (#906); await native smoke child teardown; rework agents — dense cards, session count, tactile chips; compact agent cards — spec bar, prompt tags, focus telemetry; dissolve dreaming card head, normalize code spans; surface extraction route blockers; replace emoji mutation symbols with typographic glyphs; unbox dreaming view, git-style mutation symbols, normalize prose; remove pass history ledger, rename Dreaming→Dreams with moon icon; dreaming brief leads with narrative summary, ledger demoted; quiet dreaming entity text, minimal buffer gauge, single summary line; unbox dreaming mutations, add buffer bar and entity pills; clean legacy config and honor repair dry runs; infer compatible privacy from endpoint.
@@ -32,10 +35,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Refactoring: extract shared tableExists and add cross-daemon constant parity test; tighten recall scope typing.
 - Docs: document /health/live and /health/ready probes.
 
-### 2026-07-15
-- Bug fixes: centralize canonical recall requests.
-
 ## Release Ledger
+
+## [0.154.7] - 2026-07-25
+
+Release summary: 1 refactor.
+Tag range: `v0.154.6..v0.154.7`.
+
+### Refactoring
+
+- **core**: consolidate workspace path resolution (#956) (#1025)
 
 ## [0.154.6] - 2026-07-24
 
