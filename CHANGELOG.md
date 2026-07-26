@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-07-26
+- Bug fixes: guard checkInference and complete workload-state contract; separate extraction workload state.
+
 ### 2026-07-25
 - Refactoring: consolidate workspace path resolution (#956).
 
@@ -31,6 +34,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: restore plugin discovery and lifecycle hooks.
 
 ## Release Ledger
+
+## [0.154.9] - 2026-07-26
+
+Release summary: 2 bug fixes.
+Tag range: `v0.154.8..v0.154.9`.
+
+### Bug Fixes
+
+- **status**: guard checkInference and complete workload-state contract
+- **status**: separate extraction workload state
 
 ## [0.154.8] - 2026-07-26
 
