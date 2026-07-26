@@ -30,12 +30,14 @@ Surface summary of the most recent release dates. See the release ledger below f
 ### 2026-07-20
 - Bug fixes: restore plugin discovery and lifecycle hooks.
 
-### 2026-07-19
-- Bug fixes: add missing repair routes for rust daemon parity; correct lease anomaly staleness column and document readDb adapter; mirror /health/live and /health/ready probes; label daemon liveness separately from readiness; add /health/live and /health/ready probes.
-- Refactoring: extract shared tableExists and add cross-daemon constant parity test; tighten recall scope typing.
-- Docs: document /health/live and /health/ready probes.
-
 ## Release Ledger
+
+## [0.154.8] - 2026-07-26
+
+Release summary: internal maintenance release with no conventional commit entries captured.
+Tag range: `v0.154.7..v0.154.8`.
+
+No notable changes were captured from conventional commit subjects for this release.
 
 ## [0.154.7] - 2026-07-25
 
