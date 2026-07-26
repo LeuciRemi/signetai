@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-07-26
-- Bug fixes: guard checkInference and complete workload-state contract; separate extraction workload state.
+- Bug fixes: refuse migration on vec dimension mismatch + harden backfill; add migration backfill; guard checkInference and complete workload-state contract; separate extraction workload state.
 
 ### 2026-07-25
 - Refactoring: consolidate workspace path resolution (#956).
@@ -34,6 +34,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: restore plugin discovery and lifecycle hooks.
 
 ## Release Ledger
+
+## [0.154.10] - 2026-07-26
+
+Release summary: 2 bug fixes.
+Tag range: `v0.154.9..v0.154.10`.
+
+### Bug Fixes
+
+- **embeddings**: refuse migration on vec dimension mismatch + harden backfill
+- **embeddings**: add migration backfill
 
 ## [0.154.9] - 2026-07-26
 
