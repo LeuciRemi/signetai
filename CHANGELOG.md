@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-07-28
-- Bug fixes: remove session synthesis routing.
+- Bug fixes: resolve wrapper entry after skipped postinstall; harden desktop runtime migration; migrate stale desktop runtimes; remove session synthesis routing.
 
 ### 2026-07-27
 - Bug fixes: absolutize native smoke binary override path.
@@ -36,6 +36,17 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Refactoring: align runtime request contracts.
 
 ## Release Ledger
+
+## [0.155.3] - 2026-07-28
+
+Release summary: 3 bug fixes.
+Tag range: `v0.155.2..v0.155.3`.
+
+### Bug Fixes
+
+- **codex**: resolve wrapper entry after skipped postinstall
+- **codex**: harden desktop runtime migration
+- **codex**: migrate stale desktop runtimes
 
 ## [0.155.2] - 2026-07-28
 
