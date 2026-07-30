@@ -6,6 +6,11 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-07-30
+- Features: run OAuth via pi-ai SDK directly; drop llama.cpp embeddings; add 'Disable background inference' option to the menu; dashboard-matching provider connect for memory extraction; provider-connect toolkit for dashboard-matching extraction UX; show full brand banner on interactive signet setup; connect obsidian vault sources during setup; remote-instance config (daemon.url); multi-agent roster loop + phase-2 findings; dreaming toggle (memory.dreaming.enabled); distinct synthesis provider route; reviewable summary screen before apply; headless plan path (--file/--json), --dry-run, non-TTY guard.
+- Bug fixes: address review findings; harden provider route setup; keep the event loop alive during the OAuth login; OAuth login fails gracefully instead of quitting silently; run OAuth during the wizard (pi-ai login) before listing models; don't put the model key in extractionConnect; aggregate-recall uses pi-ai catalog + searchable models; wire the pi-ai catalog imports into the wizard (runtime crash); source providers + models from pi-ai, not a hand-rolled catalog; TDZ crash on interactive connect + model/catalog cleanups (autoreview); connect flow — accept all provider families, fix model + catalog (autoreview); make aggregate-recall provider resolvable + daemon-valid (autoreview); drop dead synthesisEndpoint read in wizard prompt; malformed daemon.url no longer bricks the CLI (autoreview); harden synthesis/agent validation (autoreview findings); schema/runtime contract parity, existing-install guard, stdin TTY.
+- Refactoring: merge daemon-hosting and remote-daemon into one prompt; drop the 'Where is Signet running?' prompt from interactive setup; trim background-inference menu to four options; collapse passthrough into off; replace synthesis route with aggregate-recall provider; introduce SetupPlan seam (zod) with --schema introspection.
+
 ### 2026-07-28
 - Bug fixes: resolve wrapper entry after skipped postinstall; harden desktop runtime migration; migrate stale desktop runtimes; remove session synthesis routing.
 
@@ -30,12 +35,55 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: expose macOS physical memory; harden native WASM inference; quiesce background inference on pause; harden sterile OpenCode inference; provider wall completeness, optional keys, OAuth window; support agent-managed models; parse JSON after model preambles; bound llama.cpp inputs; remove invalid hook ownership markers; stop native embedding smoke child within bun's afterEach budget; integrate pi-ai OAuth providers; make maintenance supersession sweep non-fatal without a provider; enable Astro ClientRouter for client-side navigation.
 - Docs: update roadmap to reflect current priorities (dashboard, desktop, config UX).
 
-### 2026-07-22
-- Features: replace inference provisioning with pi-ai (#947).
-- Bug fixes: prevent recursive background hooks; stop session-start injection from advancing access tracking; restore provider-status contract after #949 (#960); add temporal intent / freshness prior to hybrid recall; forward per-call reasoning ThinkingLevel to pi-ai (#959); unblock main after #949 (build:core tsc error + retire rust-daemon-parity); retain memory across turn transforms; support remote-only connector installs.
-- Refactoring: align runtime request contracts.
-
 ## Release Ledger
+
+## [0.156.0] - 2026-07-30
+
+Release summary: 12 features, 16 bug fixes, and 6 refactors.
+Tag range: `v0.155.3..v0.156.0`.
+
+### Features
+
+- **setup**: run OAuth via pi-ai SDK directly; drop llama.cpp embeddings
+- **setup**: add 'Disable background inference' option to the menu
+- **setup**: dashboard-matching provider connect for memory extraction
+- **setup**: provider-connect toolkit for dashboard-matching extraction UX
+- **cli**: show full brand banner on interactive `signet setup`
+- **setup**: connect obsidian vault sources during setup
+- **setup**: remote-instance config (daemon.url)
+- **setup**: multi-agent roster loop + phase-2 findings
+- **setup**: dreaming toggle (memory.dreaming.enabled)
+- **setup**: distinct synthesis provider route
+- **setup**: reviewable summary screen before apply
+- **setup**: headless plan path (--file/--json), --dry-run, non-TTY guard
+
+### Bug Fixes
+
+- **setup**: address review findings
+- **setup**: harden provider route setup
+- **setup**: keep the event loop alive during the OAuth login
+- **setup**: OAuth login fails gracefully instead of quitting silently
+- **setup**: run OAuth during the wizard (pi-ai login) before listing models
+- **setup**: don't put the model key in extractionConnect
+- **setup**: aggregate-recall uses pi-ai catalog + searchable models
+- **setup**: wire the pi-ai catalog imports into the wizard (runtime crash)
+- **setup**: source providers + models from pi-ai, not a hand-rolled catalog
+- **setup**: TDZ crash on interactive connect + model/catalog cleanups (autoreview)
+- **setup**: connect flow — accept all provider families, fix model + catalog (autoreview)
+- **setup**: make aggregate-recall provider resolvable + daemon-valid (autoreview)
+- **setup**: drop dead synthesisEndpoint read in wizard prompt
+- **setup**: malformed daemon.url no longer bricks the CLI (autoreview)
+- **setup**: harden synthesis/agent validation (autoreview findings)
+- **setup**: schema/runtime contract parity, existing-install guard, stdin TTY
+
+### Refactoring
+
+- **setup**: merge daemon-hosting and remote-daemon into one prompt
+- **setup**: drop the 'Where is Signet running?' prompt from interactive setup
+- **setup**: trim background-inference menu to four options
+- **identity**: collapse passthrough into off
+- **setup**: replace synthesis route with aggregate-recall provider
+- **setup**: introduce SetupPlan seam (zod) with --schema introspection
 
 ## [0.155.3] - 2026-07-28
 
