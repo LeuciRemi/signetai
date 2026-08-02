@@ -259,6 +259,48 @@ describe("dreaming", () => {
 			expect(result.summary).toBe("No new episodic evidence or semantic entities to process");
 		});
 
+		it("preserves the episodic cursor across an idle pass", async () => {
+			seedEpisodicMemory(db, "before-idle", "BEFORE_IDLE_EVIDENCE");
+			db.prepare("UPDATE memories SET created_at = ? WHERE id = ?").run("2026-08-01T00:00:00.000Z", "before-idle");
+			await runDreamingPass(
+				accessor,
+				async () => JSON.stringify({ operations: [], summary: "Processed initial evidence" }),
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			const cursorBeforeIdle = getDreamingState(accessor, AGENT).evidenceCursor;
+			expect(cursorBeforeIdle).toEqual({ capturedAt: "2026-08-01T00:00:00.000Z", kind: "memory", id: "before-idle" });
+
+			await runDreamingPass(
+				accessor,
+				async () => JSON.stringify({ operations: [], summary: "Should not run" }),
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(getDreamingState(accessor, AGENT).evidenceCursor).toEqual(cursorBeforeIdle);
+
+			seedEpisodicMemory(db, "after-idle", "AFTER_IDLE_EVIDENCE");
+			db.prepare("UPDATE memories SET created_at = ? WHERE id = ?").run("2026-08-01T00:00:01.000Z", "after-idle");
+			let prompt = "";
+			await runDreamingPass(
+				accessor,
+				async (input) => {
+					prompt = input;
+					return JSON.stringify({ operations: [], summary: "Processed evidence after idle" });
+				},
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(prompt).toContain("AFTER_IDLE_EVIDENCE");
+			expect(prompt).not.toContain("BEFORE_IDLE_EVIDENCE");
+		});
+
 		it("records pass history", async () => {
 			// Seed some data so we get past the empty check
 			seedEntity(db, "ent-1", "TypeScript", "tool");

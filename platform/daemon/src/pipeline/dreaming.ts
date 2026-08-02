@@ -826,7 +826,7 @@ export async function runDreamingPass(
 		warnIfTruncated(graph, graphLimits);
 
 		if (mode === "incremental" && evidence.length === 0 && graph.entities.length === 0) {
-			const evidenceCursor: EpisodicCursor = { capturedAt: passStartedAt, kind: null, id: "" };
+			const evidenceCursor: EpisodicCursor = state.evidenceCursor ?? { capturedAt: passStartedAt, kind: null, id: "" };
 			accessor.withWriteTx((db) => {
 				db.prepare(
 					`UPDATE dreaming_passes
