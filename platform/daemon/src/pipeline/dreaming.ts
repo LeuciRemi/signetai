@@ -18,9 +18,9 @@ import {
 	resolveStartupIdentityFiles,
 } from "@signet/core";
 import type { DbAccessor, ReadDb, WriteDb } from "../db-accessor";
-import { concreteEntityTypesForPrompt, shouldPersistEntity } from "../entity-quality";
 import { type EpisodicCursor, type EpisodicSourceRecord, readRecentEpisodicSources } from "../episodic-sources";
 import { logger } from "../logger";
+import { type OntologyOperationInput, applyOntologyOperationBatchInTx } from "../ontology-proposals";
 import { extractBalancedJsonObjects } from "./extraction";
 import { countTokens } from "./tokenizer";
 
@@ -30,66 +30,14 @@ import { countTokens } from "./tokenizer";
 
 export type DreamingMode = "incremental" | "compact";
 
-type DreamingMutation =
-	| {
-			readonly op: "create_entity";
-			readonly name: string;
-			readonly type?: string;
-			readonly aspects?: ReadonlyArray<{
-				readonly name: string;
-				readonly attributes?: readonly string[];
-			}>;
-	  }
-	| {
-			readonly op: "merge_entities";
-			readonly source: readonly string[];
-			readonly target: string;
-			readonly reason?: string;
-	  }
-	| {
-			readonly op: "delete_entity";
-			readonly name: string;
-			readonly reason?: string;
-	  }
-	| {
-			readonly op: "update_aspect";
-			readonly entity: string;
-			readonly aspect: string;
-			readonly attributes: readonly string[];
-	  }
-	| {
-			readonly op: "delete_aspect";
-			readonly entity: string;
-			readonly aspect: string;
-			readonly reason?: string;
-	  }
-	| {
-			readonly op: "supersede_attribute";
-			readonly entity: string;
-			readonly aspect: string;
-			readonly old: string;
-			readonly new: string;
-	  }
-	| {
-			readonly op: "create_attribute";
-			readonly entity: string;
-			readonly aspect: string;
-			readonly content: string;
-	  }
-	| {
-			readonly op: "delete_attribute";
-			readonly entity: string;
-			readonly aspect: string;
-			readonly content: string;
-			readonly reason?: string;
-	  };
+type DreamingOperation = OntologyOperationInput;
 
 export interface DreamingResult {
-	readonly mutations: readonly DreamingMutation[];
+	readonly operations: readonly DreamingOperation[];
 	readonly summary: string;
 	readonly tokensConsumed: number;
-	/** Mutations discarded at parse time because they failed shape validation. */
-	readonly invalidMutations: number;
+	/** Operations discarded because they failed structural or evidence validation. */
+	readonly invalidOperations: number;
 }
 
 export interface DreamingState {
@@ -235,13 +183,13 @@ function resetDreamingTokens(
 			     last_pass_mode = ?,
 			     updated_at = datetime('now')
 			 WHERE agent_id = ?`,
-	).run(lastPassAt, JSON.stringify(evidenceCursor), passId, mode, agentId);
+		).run(lastPassAt, JSON.stringify(evidenceCursor), passId, mode, agentId);
 	} else {
 		db.prepare(
 			`INSERT INTO dreaming_state
 			 (agent_id, consecutive_failures, last_pass_at, evidence_cursor, last_pass_id, last_pass_mode)
 			 VALUES (?, 0, ?, ?, ?, ?)`,
-	).run(agentId, lastPassAt, JSON.stringify(evidenceCursor), passId, mode);
+		).run(agentId, lastPassAt, JSON.stringify(evidenceCursor), passId, mode);
 	}
 }
 
@@ -554,8 +502,6 @@ Guidelines:
 - When merging, pick the best canonical name as the target
 - Provide clear reasons for all deletions and merges
 - Be conservative — only change what you're confident about
-- "update_aspect" is ADDITIVE — it adds new attributes to an aspect without removing existing ones. To replace a stale attribute, use "supersede_attribute" instead
-- "delete_attribute" soft-deletes a single attribute (auditable, recoverable). "delete_aspect" hard-deletes the entire aspect and all its attributes permanently — use only when the whole aspect is no longer meaningful
 - Episodic evidence is immutable source material. Do not treat it as semantic memory or rewrite it; use its provenance when deciding whether a semantic change is warranted.
 </task>
 
@@ -571,15 +517,14 @@ ${depText || "(no relationships yet)"}
 Respond with ONLY a JSON object in this exact format (no markdown code fences, no other text):
 
 {
-  "mutations": [
-    { "op": "create_entity", "name": "...", "type": "${concreteEntityTypesForPrompt()}", "aspects": [{"name": "...", "attributes": ["..."]}] },
-    { "op": "merge_entities", "source": ["entity name 1", "entity name 2"], "target": "canonical name", "reason": "..." },
-    { "op": "delete_entity", "name": "...", "reason": "..." },
-    { "op": "update_aspect", "entity": "...", "aspect": "...", "attributes": ["attribute to add 1", "attribute to add 2"] },
-    { "op": "delete_aspect", "entity": "...", "aspect": "...", "reason": "..." },
-    { "op": "supersede_attribute", "entity": "...", "aspect": "...", "old": "old content", "new": "new content" },
-    { "op": "create_attribute", "entity": "...", "aspect": "...", "content": "..." },
-    { "op": "delete_attribute", "entity": "...", "aspect": "...", "content": "...", "reason": "..." }
+  "operations": [
+    {
+      "operation": "create_entity|create_aspect|add_claim_value|set_claim_value|supersede_claim_value|merge_entities|archive_entity|archive_aspect|archive_claim_value|create_link|update_link|archive_link",
+      "payload": { "create_entity": { "name": "...", "entity_type": "project" }, "add_claim_value": { "entity": "...", "aspect": "...", "claim_key": "...", "value": "..." }, "merge_entities": { "target_entity": "...", "source_entities": ["..."] } },
+      "reason": "why this semantic change is warranted",
+      "confidence": 0.0,
+      "evidence": [{ "source_kind": "copy exactly from an episodic_evidence heading", "source_id": "copy that source's provenance id", "source_path": "copy when present", "quote": "exact supporting quote from that source" }]
+    }
   ],
   "summary": "Brief description of what you changed and why"
 }`,
@@ -589,80 +534,80 @@ Respond with ONLY a JSON object in this exact format (no markdown code fences, n
 }
 
 // ---------------------------------------------------------------------------
-// Mutation validation — narrows unknown LLM output to typed DreamingMutation
+// Audited semantic operation validation
 // ---------------------------------------------------------------------------
 
-const MUTATION_OPS = new Set([
+const DREAMING_OPERATIONS = new Set([
 	"create_entity",
+	"create_aspect",
+	"add_claim_value",
+	"set_claim_value",
+	"supersede_claim_value",
 	"merge_entities",
-	"delete_entity",
-	"update_aspect",
-	"delete_aspect",
-	"supersede_attribute",
-	"create_attribute",
-	"delete_attribute",
-] as const);
+	"archive_entity",
+	"archive_aspect",
+	"archive_claim_value",
+	"create_link",
+	"update_link",
+	"archive_link",
+]);
 
-function isValidMutation(v: unknown): v is DreamingMutation {
-	if (typeof v !== "object" || v === null) return false;
-	const obj = v as Record<string, unknown>;
-	if (typeof obj.op !== "string" || !MUTATION_OPS.has(obj.op as DreamingMutation["op"])) return false;
-	switch (obj.op) {
-		case "create_entity":
-			return typeof obj.name === "string";
-		case "merge_entities":
-			return Array.isArray(obj.source) && typeof obj.target === "string";
-		case "delete_entity":
-			return typeof obj.name === "string";
-		case "update_aspect":
-			return typeof obj.entity === "string" && typeof obj.aspect === "string" && Array.isArray(obj.attributes);
-		case "delete_aspect":
-			return typeof obj.entity === "string" && typeof obj.aspect === "string";
-		case "supersede_attribute":
-			return (
-				typeof obj.entity === "string" &&
-				typeof obj.aspect === "string" &&
-				typeof obj.old === "string" &&
-				typeof obj.new === "string"
-			);
-		case "create_attribute":
-			return typeof obj.entity === "string" && typeof obj.aspect === "string" && typeof obj.content === "string";
-		case "delete_attribute":
-			return typeof obj.entity === "string" && typeof obj.aspect === "string" && typeof obj.content === "string";
-		default:
-			return false;
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readNonEmptyString(value: unknown): string | null {
+	return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function evidenceMatchesSelectedSource(value: unknown, sources: readonly EpisodicSourceRecord[]): boolean {
+	if (!isRecord(value)) return false;
+	const sourceKind = readNonEmptyString(value.source_kind);
+	const sourceId = readNonEmptyString(value.source_id);
+	const sourcePath = readNonEmptyString(value.source_path);
+	const quote = readNonEmptyString(value.quote);
+	if (!sourceKind || !sourceId || !quote) return false;
+	return sources.some(
+		(source) =>
+			source.sourceKind === sourceKind &&
+			(source.sourceId === sourceId || source.id === sourceId) &&
+			(sourcePath === null || source.sourcePath === sourcePath) &&
+			source.content.includes(quote),
+	);
+}
+
+function normalizeDreamingOperation(raw: unknown, sources: readonly EpisodicSourceRecord[]): DreamingOperation | null {
+	if (!isRecord(raw)) return null;
+	const operation = readNonEmptyString(raw.operation);
+	const payload = raw.payload;
+	const reason = readNonEmptyString(raw.reason) ?? readNonEmptyString(raw.rationale);
+	const evidence = Array.isArray(raw.evidence) ? raw.evidence : [];
+	if (!operation || !DREAMING_OPERATIONS.has(operation) || !isRecord(payload) || !reason || evidence.length === 0)
+		return null;
+	if (!evidence.every((item) => evidenceMatchesSelectedSource(item, sources))) return null;
+	const confidence = raw.confidence;
+	if (
+		confidence !== undefined &&
+		(typeof confidence !== "number" || !Number.isFinite(confidence) || confidence < 0 || confidence > 1)
+	) {
+		return null;
 	}
+	const firstEvidence = evidence[0] as Record<string, unknown>;
+	return {
+		operation,
+		payload,
+		reason,
+		evidence,
+		confidence: confidence as number | undefined,
+		risk: readNonEmptyString(raw.risk),
+		sourceKind: readNonEmptyString(firstEvidence.source_kind),
+		sourceId: readNonEmptyString(firstEvidence.source_id),
+		sourcePath: readNonEmptyString(firstEvidence.source_path),
+		sourceRoot: "dreaming",
+	};
 }
 
-// ---------------------------------------------------------------------------
-// Mutation execution
-// ---------------------------------------------------------------------------
-
-/**
- * Insert a single attribute row under `aspectId`, deduplicating by
- * `normalizedContent`.  Shared by all mutation handlers that create
- * attributes so the column list only lives in one place.
- */
-function insertAttr(
-	db: WriteDb,
-	aspectId: string,
-	agentId: string,
-	content: string,
-	normalized: string,
-	kind = "attribute",
-	confidence = 0.8,
-	importance = 0.5,
-): string {
-	const id = randomUUID();
-	db.prepare(
-		`INSERT INTO entity_attributes
-		 (id, aspect_id, agent_id, kind, content, normalized_content, confidence, importance, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))`,
-	).run(id, aspectId, agentId, kind, content, normalized, confidence, importance);
-	return id;
-}
-
-function parseDreamingResult(raw: string): DreamingResult {
+function parseDreamingResult(raw: string, sources: readonly EpisodicSourceRecord[]): DreamingResult {
 	const cleaned = raw.trim();
 	let parsed: unknown;
 	try {
@@ -678,542 +623,24 @@ function parseDreamingResult(raw: string): DreamingResult {
 		}
 		if (parsed === undefined) throw rawParseError;
 	}
-
-	const result = parsed as {
-		mutations?: unknown[];
-		summary?: string;
-	};
-	const all = Array.isArray(result.mutations) ? result.mutations : [];
-	const mutations = all.filter(isValidMutation);
-	const invalidMutations = all.length - mutations.length;
-	if (invalidMutations > 0) {
-		logger.warn("dreaming", "LLM response contained invalid mutations — discarded", {
-			count: invalidMutations,
-			sample: all
-				.filter((m) => !isValidMutation(m))
-				.slice(0, 3)
-				.map((m) => JSON.stringify(m).slice(0, 120)),
+	const result = isRecord(parsed) ? parsed : {};
+	if (!Array.isArray(result.operations)) throw new Error("Dreaming response operations must be an array");
+	const all = result.operations;
+	const operations = all
+		.map((operation) => normalizeDreamingOperation(operation, sources))
+		.filter((operation): operation is DreamingOperation => operation !== null);
+	const invalidOperations = all.length - operations.length;
+	if (invalidOperations > 0) {
+		logger.warn("dreaming", "LLM response contained invalid semantic operations — discarded", {
+			count: invalidOperations,
 		});
 	}
 	return {
-		mutations,
-		summary: typeof result.summary === "string" ? result.summary : "No summary provided",
+		operations,
+		summary: readNonEmptyString(result.summary) ?? "No summary provided",
 		tokensConsumed: countTokens(raw),
-		invalidMutations,
+		invalidOperations,
 	};
-}
-
-function applyMutations(
-	db: WriteDb,
-	agentId: string,
-	mutations: readonly DreamingMutation[],
-): { applied: number; skipped: number; failed: number; errors: readonly string[] } {
-	let applied = 0;
-	let skipped = 0;
-	let failed = 0;
-	const errors: string[] = [];
-
-	for (const mut of mutations) {
-		try {
-			// merge_entities returns a rich { applied, skipped } object because
-			// a single mutation can have mixed pinned/non-pinned sources — both
-			// counters must be updated to reflect the full picture.
-			if (mut.op === "merge_entities") {
-				const r = applyMergeEntities(db, agentId, mut);
-				applied += r.applied;
-				skipped += r.skipped;
-				continue;
-			}
-			const result = (() => {
-				switch (mut.op) {
-					case "create_entity":
-						return applyCreateEntity(db, agentId, mut);
-					case "delete_entity":
-						return applyDeleteEntity(db, agentId, mut);
-					case "update_aspect":
-						return applyUpdateAspect(db, agentId, mut);
-					case "delete_aspect":
-						return applyDeleteAspect(db, agentId, mut);
-					case "supersede_attribute":
-						return applySupersede(db, agentId, mut);
-					case "create_attribute":
-						return applyCreateAttribute(db, agentId, mut);
-					case "delete_attribute":
-						return applyDeleteAttribute(db, agentId, mut);
-					default: {
-						const _exhaustive: never = mut;
-						void _exhaustive;
-						errors.push("Unknown mutation op");
-						failed++;
-						return undefined;
-					}
-				}
-			})();
-			if (result === undefined) continue;
-			if (result === "skipped") {
-				skipped++;
-			} else {
-				applied++;
-			}
-		} catch (e) {
-			const msg = e instanceof Error ? e.message : String(e);
-			errors.push(`${mut.op} failed: ${msg}`);
-			failed++;
-		}
-	}
-
-	return { applied, skipped, failed, errors };
-}
-
-function resolveEntity(db: WriteDb | ReadDb, agentId: string, name: string): string | null {
-	const canonical = name.trim().toLowerCase().replace(/\s+/g, " ");
-	const row = db
-		.prepare(
-			`SELECT id FROM entities
-			 WHERE agent_id = ?
-			   AND (COALESCE(canonical_name, LOWER(name)) = ? OR LOWER(name) = ?)
-			 LIMIT 1`,
-		)
-		.get(agentId, canonical, canonical) as { id: string } | undefined;
-	return row?.id ?? null;
-}
-
-function resolveOrCreateEntity(db: WriteDb, agentId: string, name: string, type = "unknown"): string | null {
-	const existing = resolveEntity(db, agentId, name);
-	if (existing) return existing;
-	if (!shouldPersistEntity(name, type === "unknown" ? undefined : type)) return null;
-	const id = randomUUID();
-	const canonical = name.trim().toLowerCase().replace(/\s+/g, " ");
-	db.prepare(
-		`INSERT INTO entities (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))`,
-	).run(id, name.trim(), canonical, type, agentId);
-	return id;
-}
-
-function resolveAspect(db: WriteDb | ReadDb, entityId: string, agentId: string, name: string): string | null {
-	const canonical = name.trim().toLowerCase().replace(/\s+/g, " ");
-	const row = db
-		.prepare(
-			`SELECT id FROM entity_aspects
-			 WHERE entity_id = ? AND agent_id = ? AND canonical_name = ?
-			 LIMIT 1`,
-		)
-		.get(entityId, agentId, canonical) as { id: string } | undefined;
-	return row?.id ?? null;
-}
-
-function resolveOrCreateAspect(db: WriteDb, entityId: string, agentId: string, name: string): string {
-	const existing = resolveAspect(db, entityId, agentId, name);
-	if (existing) return existing;
-	const id = randomUUID();
-	const canonical = name.trim().toLowerCase().replace(/\s+/g, " ");
-	db.prepare(
-		`INSERT INTO entity_aspects (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, 0.5, datetime('now'), datetime('now'))`,
-	).run(id, entityId, agentId, name.trim(), canonical);
-	return id;
-}
-
-function applyCreateEntity(
-	db: WriteDb,
-	agentId: string,
-	mut: DreamingMutation & { op: "create_entity" },
-): "applied" | "skipped" {
-	if (!mut.name) return "skipped";
-	const entityId = resolveOrCreateEntity(db, agentId, mut.name, mut.type ?? "unknown");
-	if (entityId === null) return "skipped";
-	if (!mut.aspects) return "applied";
-	for (const aspect of mut.aspects) {
-		const aspectId = resolveOrCreateAspect(db, entityId, agentId, aspect.name);
-		for (const content of aspect.attributes ?? []) {
-			if (!content || content.trim().length < 5) continue;
-			const normalized = content.trim().toLowerCase();
-			const exists = db
-				.prepare(
-					`SELECT 1 FROM entity_attributes
-					 WHERE aspect_id = ? AND agent_id = ? AND normalized_content = ?`,
-				)
-				.get(aspectId, agentId, normalized);
-			if (!exists) {
-				insertAttr(db, aspectId, agentId, content.trim(), normalized);
-			}
-		}
-	}
-	return "applied";
-}
-
-function applyMergeEntities(
-	db: WriteDb,
-	agentId: string,
-	mut: DreamingMutation & { op: "merge_entities" },
-): { applied: number; skipped: number } {
-	if (!mut.source || !mut.target || mut.source.length === 0) return { applied: 0, skipped: 1 };
-
-	// Resolve target — do NOT create; if the target doesn't exist, skip
-	const targetId = resolveEntity(db, agentId, mut.target);
-	if (!targetId) {
-		logger.warn("dreaming", `Merge target "${mut.target}" not found, skipping`);
-		return { applied: 0, skipped: 1 };
-	}
-
-	let merged = 0;
-	let pinnedSkipped = 0;
-	for (const src of mut.source) {
-		const srcId = resolveEntity(db, agentId, src);
-		if (!srcId || srcId === targetId) continue;
-
-		// Don't consume a pinned entity as a merge source — same invariant as delete
-		const srcRow = db.prepare("SELECT pinned FROM entities WHERE id = ? AND agent_id = ?").get(srcId, agentId) as
-			| { pinned: number }
-			| undefined;
-		if (srcRow?.pinned === 1) {
-			logger.warn("dreaming", `Merge source "${src}" is pinned, skipping`);
-			pinnedSkipped++;
-			continue;
-		}
-		merged++;
-
-		// Move non-colliding aspects to target
-		db.prepare(
-			`UPDATE entity_aspects SET entity_id = ?, updated_at = datetime('now')
-			 WHERE entity_id = ? AND agent_id = ?
-			   AND canonical_name NOT IN (
-			     SELECT canonical_name FROM entity_aspects WHERE entity_id = ? AND agent_id = ?
-			   )`,
-		).run(targetId, srcId, agentId, targetId, agentId);
-
-		// For colliding aspects (same canonical_name on both entities),
-		// copy active attributes from the source aspect into the target aspect
-		// so they aren't lost in the cascade delete below.
-		const collidingSourceAspects = db
-			.prepare(
-				`SELECT sa.id AS srcAspectId, ta.id AS tgtAspectId
-				 FROM entity_aspects sa
-				 JOIN entity_aspects ta
-				   ON ta.entity_id = ? AND ta.agent_id = ? AND ta.canonical_name = sa.canonical_name
-				 WHERE sa.entity_id = ? AND sa.agent_id = ?`,
-			)
-			.all(targetId, agentId, srcId, agentId) as Array<{ srcAspectId: string; tgtAspectId: string }>;
-
-		for (const { srcAspectId, tgtAspectId } of collidingSourceAspects) {
-			// Copy active attributes that don't already exist on the target aspect
-			const srcAttrs = db
-				.prepare(
-					`SELECT content, normalized_content, kind, confidence, importance
-					 FROM entity_attributes
-					 WHERE aspect_id = ? AND agent_id = ? AND status = 'active'`,
-				)
-				.all(srcAspectId, agentId) as Array<{
-				content: string;
-				normalized_content: string;
-				kind: string;
-				confidence: number;
-				importance: number;
-			}>;
-			for (const attr of srcAttrs) {
-				const exists = db
-					.prepare(
-						`SELECT 1 FROM entity_attributes
-						 WHERE aspect_id = ? AND agent_id = ? AND normalized_content = ?`,
-					)
-					.get(tgtAspectId, agentId, attr.normalized_content);
-				if (!exists) {
-					insertAttr(
-						db,
-						tgtAspectId,
-						agentId,
-						attr.content,
-						attr.normalized_content,
-						attr.kind,
-						attr.confidence,
-						attr.importance,
-					);
-				}
-			}
-		}
-		// OR IGNORE handles collision when T→X already exists (S→X can't become T→X)
-		// Check ahead of time whether S→T exists so we know if a self-loop will be
-		// created below (S→T becomes T→T after the rewrite).
-		const hadSrcToTarget = !!db
-			.prepare(
-				`SELECT 1 FROM entity_dependencies
-				 WHERE source_entity_id = ? AND target_entity_id = ? AND agent_id = ?`,
-			)
-			.get(srcId, targetId, agentId);
-		const hadTargetSelfLoop = !!db
-			.prepare(
-				`SELECT 1 FROM entity_dependencies
-				 WHERE source_entity_id = ? AND target_entity_id = ? AND agent_id = ?`,
-			)
-			.get(targetId, targetId, agentId);
-		db.prepare(
-			`UPDATE OR IGNORE entity_dependencies SET source_entity_id = ?, updated_at = datetime('now')
-			 WHERE source_entity_id = ? AND agent_id = ?`,
-		).run(targetId, srcId, agentId);
-		// Clean up colliding duplicates that OR IGNORE couldn't move
-		db.prepare("DELETE FROM entity_dependencies WHERE source_entity_id = ? AND agent_id = ?").run(srcId, agentId);
-
-		// Move dependencies (target side)
-		db.prepare(
-			`UPDATE OR IGNORE entity_dependencies SET target_entity_id = ?, updated_at = datetime('now')
-			 WHERE target_entity_id = ? AND agent_id = ?`,
-		).run(targetId, srcId, agentId);
-		// Clean up colliding duplicates that OR IGNORE couldn't move
-		db.prepare("DELETE FROM entity_dependencies WHERE target_entity_id = ? AND agent_id = ?").run(srcId, agentId);
-
-		// If S→T was rewritten to T→T and no self-loop existed beforehand, remove it.
-		// Preserves any intentional pre-existing T→T edge.
-		if (hadSrcToTarget && !hadTargetSelfLoop) {
-			db.prepare(
-				`DELETE FROM entity_dependencies
-				 WHERE source_entity_id = ? AND target_entity_id = ? AND agent_id = ?`,
-			).run(targetId, targetId, agentId);
-		}
-
-		// Move memory mentions (OR IGNORE skips duplicates).
-		// memory_entity_mentions has no agent_id column — scope implicitly
-		// through the entities table since entity UUIDs are agent-unique.
-		db.prepare(
-			`UPDATE OR IGNORE memory_entity_mentions SET entity_id = ?
-			 WHERE entity_id = ?
-			   AND entity_id IN (SELECT id FROM entities WHERE agent_id = ?)`,
-		).run(targetId, srcId, agentId);
-		// Clean up any remaining source mentions (duplicates skipped above)
-		db.prepare(
-			`DELETE FROM memory_entity_mentions
-			 WHERE entity_id = ?
-			   AND entity_id IN (SELECT id FROM entities WHERE agent_id = ?)`,
-		).run(srcId, agentId);
-
-		// Transfer mention count
-		db.prepare(
-			`UPDATE entities SET mentions = mentions + COALESCE(
-			   (SELECT mentions FROM entities WHERE id = ?), 0
-			 ), updated_at = datetime('now')
-			 WHERE id = ?`,
-		).run(srcId, targetId);
-
-		// Delete remaining aspects/attributes on source (cascade)
-		// and the source entity itself
-		db.prepare(
-			`DELETE FROM entity_attributes WHERE agent_id = ? AND aspect_id IN (
-			   SELECT id FROM entity_aspects WHERE entity_id = ? AND agent_id = ?
-			 )`,
-		).run(agentId, srcId, agentId);
-		db.prepare("DELETE FROM entity_aspects WHERE entity_id = ? AND agent_id = ?").run(srcId, agentId);
-		db.prepare("DELETE FROM entities WHERE id = ? AND agent_id = ?").run(srcId, agentId);
-	}
-	return { applied: merged > 0 ? 1 : 0, skipped: (merged === 0 ? 1 : 0) + pinnedSkipped };
-}
-
-function applyDeleteEntity(
-	db: WriteDb,
-	agentId: string,
-	mut: DreamingMutation & { op: "delete_entity" },
-): "applied" | "skipped" {
-	if (!mut.name) return "skipped";
-	const entityId = resolveEntity(db, agentId, mut.name);
-	if (!entityId) return "skipped";
-
-	// Don't delete pinned entities
-	const pinned = db.prepare("SELECT pinned FROM entities WHERE id = ? AND agent_id = ?").get(entityId, agentId) as
-		| { pinned: number }
-		| undefined;
-	if (pinned?.pinned === 1) return "skipped";
-
-	// Don't delete entities that own active constraint attributes (invariant 5)
-	const hasConstraints = db
-		.prepare(
-			`SELECT 1 FROM entity_attributes ea
-			 JOIN entity_aspects asp ON ea.aspect_id = asp.id
-			 WHERE asp.entity_id = ? AND asp.agent_id = ?
-			   AND ea.kind = 'constraint' AND ea.status = 'active'`,
-		)
-		.get(entityId, agentId);
-	if (hasConstraints) return "skipped";
-
-	db.prepare(
-		`DELETE FROM entity_attributes WHERE agent_id = ? AND aspect_id IN (
-		   SELECT id FROM entity_aspects WHERE entity_id = ? AND agent_id = ?
-		 )`,
-	).run(agentId, entityId, agentId);
-	db.prepare("DELETE FROM entity_aspects WHERE entity_id = ? AND agent_id = ?").run(entityId, agentId);
-	db.prepare(
-		"DELETE FROM entity_dependencies WHERE (source_entity_id = ? OR target_entity_id = ?) AND agent_id = ?",
-	).run(entityId, entityId, agentId);
-	db.prepare(
-		`DELETE FROM memory_entity_mentions
-		 WHERE entity_id = ?
-		   AND entity_id IN (SELECT id FROM entities WHERE agent_id = ?)`,
-	).run(entityId, agentId);
-	db.prepare("DELETE FROM entities WHERE id = ? AND agent_id = ?").run(entityId, agentId);
-	return "applied";
-}
-
-/** Additive: inserts new attributes into an aspect. Does NOT replace existing ones.
- *  For replacement semantics, the LLM should use supersede_attribute instead. */
-function applyUpdateAspect(
-	db: WriteDb,
-	agentId: string,
-	mut: DreamingMutation & { op: "update_aspect" },
-): "applied" | "skipped" {
-	if (!mut.entity || !mut.aspect || !mut.attributes) return "skipped";
-
-	const entityId = resolveEntity(db, agentId, mut.entity);
-	if (!entityId) return "skipped";
-
-	// Pre-filter: drop attributes that are too short before touching the DB.
-	// This prevents creating an empty aspect row as a side effect.
-	const candidates = mut.attributes
-		.filter((a) => a && a.trim().length >= 5)
-		.map((a) => ({ content: a.trim(), normalized: a.trim().toLowerCase() }));
-	if (candidates.length === 0) return "skipped";
-
-	// If the aspect already exists, filter out attributes that are already present.
-	// Only create the aspect if at least one new attribute will actually be inserted.
-	const existingAspectId = resolveAspect(db, entityId, agentId, mut.aspect);
-	const toInsert = existingAspectId
-		? candidates.filter(({ normalized }) => {
-				const exists = db
-					.prepare(
-						`SELECT 1 FROM entity_attributes
-					 WHERE aspect_id = ? AND agent_id = ? AND normalized_content = ?`,
-					)
-					.get(existingAspectId, agentId, normalized);
-				return !exists;
-			})
-		: candidates;
-
-	if (toInsert.length === 0) return "skipped";
-
-	const aspectId = resolveOrCreateAspect(db, entityId, agentId, mut.aspect);
-	for (const { content, normalized } of toInsert) {
-		insertAttr(db, aspectId, agentId, content, normalized);
-	}
-	return "applied";
-}
-
-function applyDeleteAspect(
-	db: WriteDb,
-	agentId: string,
-	mut: DreamingMutation & { op: "delete_aspect" },
-): "applied" | "skipped" {
-	if (!mut.entity || !mut.aspect) return "skipped";
-
-	const entityId = resolveEntity(db, agentId, mut.entity);
-	if (!entityId) return "skipped";
-	const aspectId = resolveAspect(db, entityId, agentId, mut.aspect);
-	if (!aspectId) return "skipped";
-
-	// Don't delete aspects containing constraints
-	const constraints = db
-		.prepare(
-			`SELECT 1 FROM entity_attributes
-			 WHERE aspect_id = ? AND agent_id = ? AND kind = 'constraint' AND status = 'active'`,
-		)
-		.get(aspectId, agentId);
-	if (constraints) return "skipped";
-
-	// Hard-delete attributes then the aspect itself. Using hard-delete
-	// throughout (not soft-delete) to stay consistent: keeping soft-deleted
-	// attributes whose parent aspect row no longer exists would break any
-	// recovery path that tries to re-attach them.
-	db.prepare("DELETE FROM entity_attributes WHERE aspect_id = ? AND agent_id = ?").run(aspectId, agentId);
-	db.prepare("DELETE FROM entity_aspects WHERE id = ? AND agent_id = ?").run(aspectId, agentId);
-	return "applied";
-}
-
-function applySupersede(
-	db: WriteDb,
-	agentId: string,
-	mut: DreamingMutation & { op: "supersede_attribute" },
-): "applied" | "skipped" {
-	if (!mut.entity || !mut.aspect || !mut.old || !mut.new) return "skipped";
-
-	const entityId = resolveEntity(db, agentId, mut.entity);
-	if (!entityId) return "skipped";
-	const aspectId = resolveAspect(db, entityId, agentId, mut.aspect);
-	if (!aspectId) return "skipped";
-
-	// Find old attribute
-	const normalizedOld = mut.old.trim().toLowerCase();
-	const oldAttr = db
-		.prepare(
-			`SELECT id, kind FROM entity_attributes
-			 WHERE aspect_id = ? AND agent_id = ? AND normalized_content = ? AND status = 'active'`,
-		)
-		.get(aspectId, agentId, normalizedOld) as { id: string; kind: string } | undefined;
-
-	// Don't supersede constraints
-	if (oldAttr?.kind === "constraint") return "skipped";
-	// Old attribute must exist — don't create orphan replacements
-	if (!oldAttr) return "skipped";
-
-	// Create new attribute
-	const normalizedNew = mut.new.trim().toLowerCase();
-	const newId = insertAttr(db, aspectId, agentId, mut.new.trim(), normalizedNew);
-
-	// Mark old as superseded
-	db.prepare(
-		`UPDATE entity_attributes
-		 SET status = 'superseded', superseded_by = ?, updated_at = datetime('now')
-		 WHERE id = ?`,
-	).run(newId, oldAttr.id);
-	return "applied";
-}
-
-function applyCreateAttribute(
-	db: WriteDb,
-	agentId: string,
-	mut: DreamingMutation & { op: "create_attribute" },
-): "applied" | "skipped" {
-	if (!mut.entity || !mut.aspect || !mut.content || mut.content.trim().length < 5) return "skipped";
-
-	const entityId = resolveEntity(db, agentId, mut.entity);
-	if (!entityId) return "skipped";
-	const aspectId = resolveOrCreateAspect(db, entityId, agentId, mut.aspect);
-
-	const normalized = mut.content.trim().toLowerCase();
-	const exists = db
-		.prepare(
-			`SELECT 1 FROM entity_attributes
-			 WHERE aspect_id = ? AND agent_id = ? AND normalized_content = ?`,
-		)
-		.get(aspectId, agentId, normalized);
-	if (exists) return "skipped";
-
-	insertAttr(db, aspectId, agentId, mut.content.trim(), normalized);
-	return "applied";
-}
-
-function applyDeleteAttribute(
-	db: WriteDb,
-	agentId: string,
-	mut: DreamingMutation & { op: "delete_attribute" },
-): "applied" | "skipped" {
-	if (!mut.entity || !mut.aspect || !mut.content) return "skipped";
-
-	const entityId = resolveEntity(db, agentId, mut.entity);
-	if (!entityId) return "skipped";
-	const aspectId = resolveAspect(db, entityId, agentId, mut.aspect);
-	if (!aspectId) return "skipped";
-
-	const normalized = mut.content.trim().toLowerCase();
-	// Don't delete constraints
-	const attr = db
-		.prepare(
-			`SELECT id, kind FROM entity_attributes
-			 WHERE aspect_id = ? AND agent_id = ? AND normalized_content = ? AND status = 'active'`,
-		)
-		.get(aspectId, agentId, normalized) as { id: string; kind: string } | undefined;
-	if (!attr || attr.kind === "constraint") return "skipped";
-
-	db.prepare(
-		`UPDATE entity_attributes SET status = 'deleted', updated_at = datetime('now')
-		 WHERE id = ?`,
-	).run(attr.id);
-	return "applied";
 }
 
 // ---------------------------------------------------------------------------
@@ -1314,43 +741,35 @@ export async function runDreamingPass(
 		});
 
 		// Parse response — count actual tokens for both prompt and output
-		const result = parseDreamingResult(raw);
+		const result = parseDreamingResult(raw, evidence);
 		const promptTokens = countTokens(prompt);
 		const totalTokens = promptTokens + result.tokensConsumed;
 
-		logger.info("dreaming", "Dreaming pass produced mutations", {
-			count: result.mutations.length,
+		logger.info("dreaming", "Dreaming pass produced semantic operations", {
+			count: result.operations.length,
 			promptTokens,
 			outputTokens: result.tokensConsumed,
 			summary: result.summary.slice(0, 200),
 		});
 
-		// Apply mutations and complete pass in a single atomic transaction.
-		// This prevents a crash between mutation apply and pass completion
-		// from leaving the graph mutated with the pass still in 'running'
-		// state and the token counter unreset (which would re-trigger).
-		const { applied, skipped, failed, errors } = accessor.withWriteTx((db) => {
-			const result2 = applyMutations(db, agentId, result.mutations);
-
-			// Post-mutation integrity check: detect orphaned aspects (entity
-			// deleted but aspects left behind) which signals a partial merge/
-			// delete failure within a multi-statement handler.
-			const orphanedAspects = db
-				.prepare(
-					`SELECT COUNT(*) AS cnt FROM entity_aspects ea
-					 WHERE ea.agent_id = ?
-					   AND NOT EXISTS (SELECT 1 FROM entities e WHERE e.id = ea.entity_id)`,
-				)
-				.get(agentId) as { cnt: number };
-			if (orphanedAspects.cnt > 0) {
-				logger.warn("dreaming", "Post-mutation integrity: found orphaned aspects with no parent entity", {
-					count: orphanedAspects.cnt,
-				});
+		// Apply audited semantic operations and advance the cursor atomically.
+		const { applied, skipped, failed } = accessor.withWriteTx((db) => {
+			let applied = 0;
+			let failed = result.invalidOperations;
+			const errors: string[] = [];
+			for (const operation of result.operations) {
+				db.exec("SAVEPOINT dreaming_operation");
+				try {
+					applyOntologyOperationBatchInTx(db, { agentId, actor: "dreaming", operations: [operation] });
+					db.exec("RELEASE SAVEPOINT dreaming_operation");
+					applied++;
+				} catch (error) {
+					db.exec("ROLLBACK TO SAVEPOINT dreaming_operation");
+					db.exec("RELEASE SAVEPOINT dreaming_operation");
+					failed++;
+					errors.push(error instanceof Error ? error.message : String(error));
+				}
 			}
-
-			// Complete pass record + reset token counter in same tx.
-			// invalidMutations are counted as failed — they were not applied
-			// because the LLM returned a structurally invalid object.
 			db.prepare(
 				`UPDATE dreaming_passes
 				 SET status = 'completed',
@@ -1361,22 +780,12 @@ export async function runDreamingPass(
 				     mutations_failed = ?,
 				     summary = ?
 				 WHERE id = ?`,
-			).run(
-				totalTokens,
-				result2.applied,
-				result2.skipped,
-				result2.failed + result.invalidMutations,
-				result.summary,
-				passId,
-			);
+			).run(totalTokens, applied, 0, failed, result.summary, passId);
 			resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, passStartedAt);
-
-			return result2;
+			if (errors.length > 0)
+				logger.warn("dreaming", "Some semantic operations were rejected", { errors: errors.slice(0, 10) });
+			return { applied, skipped: 0, failed };
 		});
-
-		if (errors.length > 0) {
-			logger.warn("dreaming", "Some mutations failed", { errors: errors.slice(0, 10) });
-		}
 
 		logger.info("dreaming", "Dreaming pass complete", {
 			applied,
@@ -1413,13 +822,13 @@ export function getDreamingEpisodicTokenBacklog(accessor: DbAccessor, agentId: s
 export function getDreamingEpisodicTokenBacklogInDb(db: ReadDb, agentId: string): number {
 	const state = readDreamingState(db, agentId);
 	return readRecentEpisodicSources(
-			db,
-			agentId,
-			500,
-			undefined,
-			state.evidenceCursor ? null : state.lastPassAt,
-			"newest",
-			state.evidenceCursor,
+		db,
+		agentId,
+		500,
+		undefined,
+		state.evidenceCursor ? null : state.lastPassAt,
+		"newest",
+		state.evidenceCursor,
 	).reduce((total, source) => total + countTokens(source.content), 0);
 }
 

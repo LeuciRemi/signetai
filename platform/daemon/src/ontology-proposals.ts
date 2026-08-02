@@ -1059,6 +1059,16 @@ function applyArchiveAspect(
 	if (aspectSelector === null) throw new OntologyProposalError("payload.selector is required", 400);
 	const entity = resolveEntityStrict(db, agentId, entitySelector);
 	const aspect = resolveAspectStrict(db, agentId, entity.id, aspectSelector);
+	const constraint = db
+		.prepare(
+			`SELECT 1 FROM entity_attributes
+			 WHERE aspect_id = ? AND agent_id = ? AND kind = 'constraint' AND status = 'active'
+			 LIMIT 1`,
+		)
+		.get(aspect.id, agentId);
+	if (constraint && !truthy(payload.force)) {
+		throw new OntologyProposalError("Refusing to archive aspect with active constraint attributes without force", 409);
+	}
 	db.prepare(
 		`UPDATE entity_aspects
 		 SET status = 'archived', archived_at = datetime('now'), archived_by = ?,
