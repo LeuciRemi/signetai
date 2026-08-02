@@ -113,4 +113,80 @@ describe("episodic source selection", () => {
 			{ kind: "summary", id: "newer-summary" },
 		]);
 	});
+
+	it("uses the temporal-DAG node once for canonical session evidence", () => {
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				`INSERT INTO memories
+				 (id, content, type, importance, agent_id, visibility, created_at, updated_at, memory_kind)
+				 VALUES ('compaction-recall-projection', 'compaction evidence', 'session_summary', 0.8,
+				 'ant', 'global', '2026-08-01T12:00:00.000Z', '2026-08-01T12:00:00.000Z', 'episodic')`,
+			).run();
+			db.prepare(
+				`INSERT INTO memory_artifacts
+				 (agent_id, source_path, source_sha256, source_kind, session_id, session_key, session_token,
+				  captured_at, content, updated_at, is_deleted)
+				 VALUES ('ant', 'sessions/compaction.md', 'sha-compaction', 'compaction', 'session-a', 'session-a', 'token-a',
+				  '2026-08-01T12:00:00.000Z', 'compaction evidence', '2026-08-01T12:00:00.000Z', 0)`,
+			).run();
+			db.prepare(
+				`INSERT INTO session_summaries
+				 (id, content, token_count, depth, kind, source_type, earliest_at, latest_at, session_key, created_at, agent_id)
+				 VALUES ('compaction-node', 'compaction evidence', 2, 0, 'session', 'compaction',
+				  '2026-08-01T12:00:00.000Z', '2026-08-01T12:00:00.000Z', 'session-a', '2026-08-01T12:00:00.000Z', 'ant')`,
+			).run();
+		});
+
+		expect(
+			getDbAccessor().withReadDb((db) => readRecentEpisodicSources(db, "ant", 10, undefined, null, "oldest")),
+		).toMatchObject([{ kind: "summary", id: "compaction-node", sourceKind: "compaction" }]);
+	});
+
+	it("uses the temporal-DAG node once for sessionless compaction evidence", () => {
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				`INSERT INTO memory_artifacts
+				 (agent_id, source_path, source_sha256, source_kind, session_id, session_token,
+				  captured_at, content, updated_at, is_deleted)
+				 VALUES ('ant', 'sessions/sessionless-compaction.md', 'sha-sessionless', 'compaction', 'sessionless',
+				 'token-sessionless', '2026-08-01T12:30:00.000Z', 'sessionless compaction evidence',
+				 '2026-08-01T12:30:00.000Z', 0)`,
+			).run();
+			db.prepare(
+				`INSERT INTO session_summaries
+				 (id, content, token_count, depth, kind, source_type, earliest_at, latest_at, created_at, agent_id)
+				 VALUES ('sessionless-compaction-node', 'sessionless compaction evidence', 2, 0, 'session', 'compaction',
+				  '2026-08-01T12:30:00.000Z', '2026-08-01T12:30:00.000Z', '2026-08-01T12:30:00.000Z', 'ant')`,
+			).run();
+		});
+
+		expect(
+			getDbAccessor().withReadDb((db) => readRecentEpisodicSources(db, "ant", 10, undefined, null, "oldest")),
+		).toMatchObject([{ kind: "summary", id: "sessionless-compaction-node", sourceKind: "compaction" }]);
+	});
+
+	it("retains a session artifact when its canonical transcript is unavailable", () => {
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				`INSERT INTO memory_artifacts
+				 (agent_id, source_path, source_sha256, source_kind, session_id, session_token,
+				  captured_at, content, updated_at, is_deleted)
+				 VALUES ('ant', 'sessions/recovery-manifest.md', 'sha-manifest', 'manifest', 'session-recovery',
+				 'token-recovery', '2026-08-01T12:00:00.000Z', 'structural metadata only',
+				 '2026-08-01T12:00:00.000Z', 0)`,
+			).run();
+			db.prepare(
+				`INSERT INTO memory_artifacts
+				 (agent_id, source_path, source_sha256, source_kind, session_id, session_key, session_token,
+				  captured_at, content, updated_at, is_deleted)
+				 VALUES ('ant', 'sessions/recovery-transcript.md', 'sha-recovery', 'transcript', 'session-recovery',
+				 'session-recovery', 'token-recovery', '2026-08-01T13:00:00.000Z', 'recovered transcript',
+				 '2026-08-01T13:00:00.000Z', 0)`,
+			).run();
+		});
+
+		expect(
+			getDbAccessor().withReadDb((db) => readRecentEpisodicSources(db, "ant", 10, undefined, null, "oldest")),
+		).toMatchObject([{ kind: "artifact", id: "sessions/recovery-transcript.md", sourceKind: "transcript" }]);
+	});
 });

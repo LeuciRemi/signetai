@@ -348,14 +348,13 @@ export function txModifyMemory(db: WriteDb, input: ModifyMemoryTxInput): ModifyM
 		};
 	}
 
-	// Episodic evidence rows (remember/CLI/MCP/plugin saves) are immutable
-	// content. Content and type describe the original evidence record and must
-	// not be rewritten. Metadata fields (tags, importance, pinned) remain
-	// editable so curators can re-rank or re-label evidence without altering
-	// what was originally recorded.
-	const isEpisodic = existing.memory_kind === "episodic";
+	// Episodic evidence and compaction recall projections are immutable content.
+	// The latter is intentionally outside Dreaming input, but mirrors immutable
+	// temporal evidence for ordinary recall. Metadata remains editable so
+	// curators can re-rank or re-label without altering what was recorded.
+	const isImmutableEvidence = existing.memory_kind === "episodic" || existing.type === "session_summary";
 	if (
-		isEpisodic &&
+		isImmutableEvidence &&
 		((input.patch.content !== undefined && input.patch.content !== existing.content) ||
 			(input.patch.type !== undefined && input.patch.type !== existing.type))
 	) {
@@ -617,7 +616,13 @@ export function txForgetMemory(db: WriteDb, input: ForgetMemoryTxInput): ForgetM
 		 WHERE memory_id = ?
 		   AND job_type = 'extract'
 		   AND status IN ('pending', 'leased')`,
-	).run(JSON.stringify({ cancelled: "memory_forgotten" }), "Source memory forgotten", input.changedAt, input.changedAt, input.memoryId);
+	).run(
+		JSON.stringify({ cancelled: "memory_forgotten" }),
+		"Source memory forgotten",
+		input.changedAt,
+		input.changedAt,
+		input.memoryId,
+	);
 	deleteAggregateMemorySourceLinks(db, input.memoryId);
 
 	insertHistoryEvent(db, {

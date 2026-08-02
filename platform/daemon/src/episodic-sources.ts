@@ -339,6 +339,9 @@ export function readRecentEpisodicSources(
 				   AND COALESCE(is_deleted, 0) = 0
 				   AND visibility != 'archived'
 				   AND scope IS NULL
+				   -- Session summaries are retained in memories for ordinary recall,
+				   -- but their temporal-DAG node is the one canonical Dreaming input.
+				   AND COALESCE(type, '') != 'session_summary'
 				   AND ${memoryCursor.sql}
 				 ORDER BY julianday(created_at) ${direction}, id ${direction}
 				 LIMIT ?`,
@@ -377,8 +380,38 @@ export function readRecentEpisodicSources(
 				.prepare(
 					`SELECT source_path, source_kind, source_id, source_node_id, session_id, session_key, session_token,
 			        project, harness, content, captured_at, updated_at
-			 FROM memory_artifacts
-			 WHERE agent_id = ? AND COALESCE(is_deleted, 0) = 0
+			 FROM memory_artifacts AS ma
+			 WHERE ma.agent_id = ? AND COALESCE(ma.is_deleted, 0) = 0
+			   -- Canonical session artifacts preserve immutable lineage. When their
+			   -- matching temporal node is present, it is the single Dreaming input;
+			   -- otherwise keep the artifact as the durable recovery fallback.
+			   AND NOT (
+			     ma.source_kind = 'manifest'
+			     OR (
+			       ma.source_kind = 'transcript' AND ma.session_key IS NOT NULL
+			       AND EXISTS (
+			         SELECT 1 FROM session_transcripts AS st
+			         WHERE st.agent_id = ma.agent_id AND st.session_key = ma.session_key
+			       )
+			     )
+			     OR (
+			       ma.source_kind IN ('summary', 'compaction')
+			       AND EXISTS (
+			         SELECT 1 FROM session_summaries AS ss
+			         WHERE ss.agent_id = ma.agent_id
+			           AND ss.depth = 0
+			           AND COALESCE(ss.source_type, 'summary') = ma.source_kind
+			           AND (
+			             ss.session_key = ma.session_key
+			             OR (
+			               ss.session_key IS NULL AND ma.session_key IS NULL
+			               AND ss.content = ma.content
+			               AND julianday(ss.latest_at) = julianday(ma.captured_at)
+			             )
+			           )
+			       )
+			     )
+			   )
 			   AND ${artifactCursor.sql}
 			 ORDER BY julianday(captured_at) ${direction}, source_path ${direction}
 			 LIMIT ?`,

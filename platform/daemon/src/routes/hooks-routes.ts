@@ -42,7 +42,7 @@ import {
 import { getInferenceRouterOrNull } from "../inference-router";
 import { logger } from "../logger";
 import { loadMemoryConfig } from "../memory-config";
-import { writeCompactionArtifact } from "../memory-lineage.js";
+import { normalizeMarkdownBody, writeCompactionArtifact } from "../memory-lineage.js";
 import { type RecallParams, hybridRecall } from "../memory-search";
 import { getSynthesisWorker, readLastSynthesisTime } from "../pipeline";
 import { isNoiseSession } from "../session-noise";
@@ -801,6 +801,7 @@ function registerCompactionComplete(app: Hono): void {
 			if (!body.harness || !body.summary) {
 				return c.json({ error: "harness and summary are required" }, 400);
 			}
+			const summary = normalizeMarkdownBody(body.summary);
 
 			const runtimePath = resolveRuntimePath(c, body);
 			const duplicate = claimAutomaticSessionOrSkip(
@@ -869,7 +870,7 @@ function registerCompactionComplete(app: Hono): void {
 						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 					).run(
 						summaryId,
-						body.summary,
+						summary,
 						"session_summary",
 						0.8,
 						body.sessionKey ?? null,
@@ -881,7 +882,9 @@ function registerCompactionComplete(app: Hono): void {
 						now,
 						now,
 						"system",
-						"episodic",
+						// This is the keyword/vector-recall projection. The temporal-DAG
+						// compaction node below is the canonical episodic Dreaming input.
+						null,
 					);
 
 					const table = db
@@ -900,8 +903,8 @@ function registerCompactionComplete(app: Hono): void {
 					).run(
 						nodeId,
 						project,
-						body.summary,
-						Math.ceil(body.summary.length / 4),
+						summary,
+						Math.ceil(summary.length / 4),
 						now,
 						now,
 						body.sessionKey ?? null,
@@ -914,7 +917,7 @@ function registerCompactionComplete(app: Hono): void {
 					upsertThreadHead(db as unknown as Database, {
 						agentId,
 						nodeId,
-						content: body.summary,
+						content: summary,
 						latestAt: now,
 						project,
 						sessionKey: body.sessionKey ?? null,
@@ -934,7 +937,7 @@ function registerCompactionComplete(app: Hono): void {
 						capturedAt: now,
 						startedAt: null,
 						endedAt: null,
-						summary: body.summary,
+						summary,
 					});
 				} catch (err) {
 					logger.warn("hooks", "Compaction artifact write failed (non-fatal)", {

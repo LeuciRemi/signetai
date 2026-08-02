@@ -162,7 +162,7 @@ describe("temporal summary API auth", () => {
 		expect(row?.tags).toBe("session,summary,codex");
 	});
 
-	it("sets memory_kind='episodic' on compaction session-end memory (#946)", async () => {
+	it("keeps the compaction memory projection out of episodic Dreaming input (#946)", async () => {
 		const res = await app.request("http://localhost/api/hooks/compaction-complete", {
 			method: "POST",
 			headers: jsonHeader(),
@@ -181,7 +181,31 @@ describe("temporal summary API auth", () => {
 				.get(),
 		) as { memory_kind?: string | null } | undefined;
 
-		expect(row?.memory_kind).toBe("episodic");
+		expect(row?.memory_kind).toBeNull();
+	});
+
+	it("normalizes compaction content before writing the temporal node", async () => {
+		const res = await app.request("http://localhost/api/hooks/compaction-complete", {
+			method: "POST",
+			headers: jsonHeader(),
+			body: JSON.stringify({
+				harness: "codex",
+				summary: "first line  \r\nsecond line\n\n",
+				agentId: "agent-a",
+			}),
+		});
+
+		expect(res.status).toBe(200);
+
+		const row = getDbAccessor().withReadDb((db) =>
+			db
+				.prepare(
+					"SELECT content FROM session_summaries WHERE source_type = 'compaction' ORDER BY created_at DESC LIMIT 1",
+				)
+				.get(),
+		) as { content?: string } | undefined;
+
+		expect(row?.content).toBe("first line\nsecond line");
 	});
 
 	it("uses explicit project fallback when compaction lands before transcript persistence", async () => {

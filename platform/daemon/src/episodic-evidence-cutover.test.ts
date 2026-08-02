@@ -25,6 +25,7 @@ function insertEpisodicMemory(
 		visibility?: "global" | "private" | "archived";
 		project?: string | null;
 		scope?: string | null;
+		type?: string;
 		sourceType?: string;
 		sourceId?: string | null;
 		/** Defaults to 'episodic' when omitted. Pass null explicitly to model a derived row. */
@@ -43,7 +44,7 @@ function insertEpisodicMemory(
 		why: "explicit",
 		project: input.project ?? null,
 		importance: 0.6,
-		type: "fact",
+		type: input.type ?? "fact",
 		tags: null,
 		pinned: 0,
 		isDeleted: input.isDeleted ?? 0,
@@ -132,9 +133,7 @@ describe("episodic-evidence cutover: episodic-sources selector", () => {
 		});
 
 		const readDb = db as unknown as Parameters<typeof readRecentEpisodicSources>[0];
-		expect(readRecentEpisodicSources(readDb, "default", 10).map((record) => record.id)).toEqual([
-			"private-episodic",
-		]);
+		expect(readRecentEpisodicSources(readDb, "default", 10).map((record) => record.id)).toEqual(["private-episodic"]);
 		expect(readEpisodicMemory(readDb, "default", "archived-episodic")).toBeNull();
 		expect(readEpisodicMemory(readDb, "default", "scoped-episodic")).toBeNull();
 	});
@@ -290,6 +289,26 @@ describe("episodic-evidence cutover: immutable content protection", () => {
 		expect(result.status).toBe("episodic_content_immutable");
 	});
 
+	it("rejects content changes on compaction recall projections", () => {
+		insertEpisodicMemory(db, {
+			id: "compaction-projection",
+			content: "immutable compaction evidence",
+			contentHash: "h-compaction-projection",
+			type: "session_summary",
+			memoryKind: null,
+		});
+
+		const result = txModifyMemory(asWriteDb(db), {
+			memoryId: "compaction-projection",
+			patch: { content: "rewritten projection", normalizedContent: "rewritten", contentHash: "h-compaction-rewritten" },
+			reason: "attempt compaction rewrite",
+			changedBy: "curator",
+			changedAt: new Date().toISOString(),
+		});
+
+		expect(result.status).toBe("episodic_content_immutable");
+	});
+
 	it("allows metadata (tags, importance, pinned) updates on episodic memories", () => {
 		insertEpisodicMemory(db, { id: "epi-meta", content: "metadata evidence", contentHash: "h-meta" });
 
@@ -421,7 +440,8 @@ describe("episodic-evidence cutover: structured payload persistence", () => {
 			evidence_meta: string | null;
 		};
 		expect(row.evidence_meta).not.toBeNull();
-		const parsed = JSON.parse(row.evidence_meta!);
+		if (row.evidence_meta === null) throw new Error("Expected structured evidence metadata");
+		const parsed = JSON.parse(row.evidence_meta);
 		expect(parsed.entities).toEqual(structured.entities);
 		expect(parsed.aspects).toEqual(structured.aspects);
 	});

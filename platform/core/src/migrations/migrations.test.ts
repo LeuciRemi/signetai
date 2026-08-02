@@ -16,6 +16,7 @@ import { up as ontologyControlPlaneState } from "./070-ontology-control-plane-st
 import { up as documentScopeColumns } from "./080-document-scope-columns";
 import { up as memoryLifecycleRepair } from "./083-memory-lifecycle-repair";
 import { up as memoryKind } from "./094-memory-kind";
+import { up as compactionRecallProjections } from "./095-compaction-recall-projections";
 import { MIGRATIONS, hasPendingMigrations, runMigrations } from "./index";
 
 function createFreshDb(): Database {
@@ -1633,5 +1634,35 @@ describe("migration framework", () => {
 		expect(byId.get("mem-extract")).toBeNull();
 		expect(byId.get("mem-aggregate")).toBeNull();
 		expect(byId.get("mem-session-end")).toBeNull();
+	});
+
+	test("migration 095 reclassifies compaction recall projections as derived", () => {
+		db = createFreshDb();
+		db.exec(`
+			CREATE TABLE memories (
+				id TEXT PRIMARY KEY,
+				type TEXT,
+				memory_kind TEXT
+			);
+		`);
+		db.prepare("INSERT INTO memories (id, type, memory_kind) VALUES (?, ?, ?)").run(
+			"compaction-projection",
+			"session_summary",
+			"episodic",
+		);
+		db.prepare("INSERT INTO memories (id, type, memory_kind) VALUES (?, ?, ?)").run(
+			"user-evidence",
+			"fact",
+			"episodic",
+		);
+
+		compactionRecallProjections(db as unknown as Parameters<typeof compactionRecallProjections>[0]);
+
+		const rows = db
+			.query<{ id: string; memory_kind: string | null }, []>("SELECT id, memory_kind FROM memories ORDER BY id")
+			.all();
+		const byId = new Map(rows.map((row) => [row.id, row.memory_kind]));
+		expect(byId.get("compaction-projection")).toBeNull();
+		expect(byId.get("user-evidence")).toBe("episodic");
 	});
 });

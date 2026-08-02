@@ -100,6 +100,7 @@ import { up as embeddingIndexGenerations } from "./091-embedding-index-generatio
 import { up as embeddingStagingStore } from "./092-embedding-staging-store";
 import { up as dreamingEvidenceCursor } from "./093-dreaming-evidence-cursor";
 import { up as memoryKind } from "./094-memory-kind";
+import { up as compactionRecallProjections } from "./095-compaction-recall-projections";
 
 // -- Public interface consumed by Database.init() --
 
@@ -897,6 +898,11 @@ export const MIGRATIONS: readonly Migration[] = [
 				{ table: "memories", column: "evidence_meta" },
 			],
 		},
+	},
+	{
+		version: 95,
+		name: "compaction-recall-projections",
+		up: compactionRecallProjections,
 	},
 ];
 
