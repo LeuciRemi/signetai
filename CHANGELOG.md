@@ -7,6 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-02
+- Bug fixes: persist memory embeddings across startup index promotion; validate checkpoint run IDs; unvalidated file path in checkpoint loading.
 - Refactoring: remove nativeShadowEnabled shadow proxy; remove SIGNET_DAEMON_RUNTIME rust switch and binary download.
 - Docs: address review feedback on the daemon-rs removal; remove daemon-rs references and record deprecation.
 
@@ -35,6 +36,17 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Refactoring: share lenient JSON parsing; centralize MCP command resolution.
 
 ## Release Ledger
+
+## [0.157.3] - 2026-08-02
+
+Release summary: 3 bug fixes.
+Tag range: `v0.157.2..v0.157.3`.
+
+### Bug Fixes
+
+- **daemon**: persist memory embeddings across startup index promotion
+- **memorybench**: validate checkpoint run IDs
+- **security**: unvalidated file path in checkpoint loading
 
 ## [0.157.2] - 2026-08-02
 
