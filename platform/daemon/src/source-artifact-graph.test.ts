@@ -171,4 +171,70 @@ describe("source artifact graph structure", () => {
 		}));
 		expect(counts).toEqual({ entities: 0, aspects: 0, attrs: 0 });
 	});
+
+	it("purges dreaming-derived claim values stamped with the source entry id", () => {
+		// A Dreaming-derived entity_attribute carries the configured Signet source
+		// entry id in source_id (the purge key), not the episodic node identity.
+		const db = getDbAccessor();
+		db.withWriteTx((write) => {
+			write
+				.prepare(
+					`INSERT INTO entities (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+					 VALUES ('derived-entity', 'Derived', 'derived', 'project', 'default', 0, datetime('now'), datetime('now'))`,
+				)
+				.run();
+			write
+				.prepare(
+					`INSERT INTO entity_aspects (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
+					 VALUES ('derived-aspect', 'derived-entity', 'default', 'facts', 'facts', 0.5, datetime('now'), datetime('now'))`,
+				)
+				.run();
+			write
+				.prepare(
+					`INSERT INTO entity_attributes
+					 (id, aspect_id, agent_id, kind, content, normalized_content, confidence, importance, status,
+					  group_key, claim_key, version, created_at, updated_at, source_id, source_root)
+					 VALUES ('derived-claim', 'derived-aspect', 'default', 'attribute', 'dreaming-derived claim', 'dreaming-derived claim',
+					  0.8, 0.5, 'active', 'general', 'target', 1, datetime('now'), datetime('now'), 'obsidian:signet', 'dreaming')`,
+				)
+				.run();
+			write
+				.prepare(
+					`INSERT INTO entities (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+					 VALUES ('other-entity', 'Other', 'other', 'project', 'default', 0, datetime('now'), datetime('now'))`,
+				)
+				.run();
+			write
+				.prepare(
+					`INSERT INTO entity_aspects (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
+					 VALUES ('other-aspect', 'other-entity', 'default', 'facts', 'facts', 0.5, datetime('now'), datetime('now'))`,
+				)
+				.run();
+			write
+				.prepare(
+					`INSERT INTO entity_attributes
+					 (id, aspect_id, agent_id, kind, content, normalized_content, confidence, importance, status,
+					  group_key, claim_key, version, created_at, updated_at, source_id)
+					 VALUES ('other-claim', 'other-aspect', 'default', 'attribute', 'unrelated claim', 'unrelated claim',
+					  0.8, 0.5, 'active', 'general', 'target', 1, datetime('now'), datetime('now'), 'other:source')`,
+				)
+				.run();
+		});
+
+		const purged = purgeSourceOwnedRows({ agentId: "default", sourceId: "obsidian:signet" });
+		expect(purged).toBeGreaterThan(0);
+		const counts = getDbAccessor().withReadDb((read) => ({
+			derived: (
+				read.prepare("SELECT COUNT(*) AS count FROM entity_attributes WHERE id = ?").get("derived-claim") as {
+					count: number;
+				}
+			).count,
+			other: (
+				read.prepare("SELECT COUNT(*) AS count FROM entity_attributes WHERE id = ?").get("other-claim") as {
+					count: number;
+				}
+			).count,
+		}));
+		expect(counts).toEqual({ derived: 0, other: 1 });
+	});
 });

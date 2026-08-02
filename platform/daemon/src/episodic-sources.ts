@@ -17,6 +17,13 @@ export interface EpisodicSourceRecord {
 	readonly sourceKind: string;
 	readonly sourceId: string;
 	readonly sourcePath: string | null;
+	/**
+	 * The configured Signet source entry id (memory_artifacts.source_id) that
+	 * owns an artifact, when known. Purge on disconnect matches this id, so
+	 * Dreaming stamps it onto derived semantic rows instead of the episodic
+	 * node/session id in `sourceId`.
+	 */
+	readonly sourceEntryId: string | null;
 	readonly project: string | null;
 	readonly harness: string | null;
 	readonly capturedAt: string;
@@ -78,6 +85,10 @@ function timestampMillis(value: string): number {
 	return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function readNonEmptyTrimmed(value: unknown): string | null {
+	return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
 export function sourceIdCandidates(value: string): string[] {
 	const trimmed = value.trim();
 	const stripped = trimmed.replace(/^(artifact|source|transcript|session|summary):/, "");
@@ -101,7 +112,7 @@ export function readEpisodicArtifact(db: ReadDb, agentId: string, id: string): E
 	const placeholders = ids.map(() => "?").join(", ");
 	const row = db
 		.prepare(
-			`SELECT source_path, source_kind, source_node_id, session_id, session_key, session_token,
+			`SELECT source_path, source_kind, source_id, source_node_id, session_id, session_key, session_token,
 			        project, harness, content, captured_at, updated_at
 			 FROM memory_artifacts
 			 WHERE agent_id = ?
@@ -120,6 +131,7 @@ export function readEpisodicArtifact(db: ReadDb, agentId: string, id: string): E
 		| {
 				readonly source_path: string;
 				readonly source_kind: string;
+				readonly source_id: string | null;
 				readonly source_node_id: string | null;
 				readonly session_id: string;
 				readonly session_key: string | null;
@@ -138,6 +150,7 @@ export function readEpisodicArtifact(db: ReadDb, agentId: string, id: string): E
 		content: row.content,
 		sourceKind: row.source_kind,
 		sourceId: row.source_node_id ?? row.session_key ?? row.session_id ?? row.session_token,
+		sourceEntryId: readNonEmptyTrimmed(row.source_id),
 		sourcePath: row.source_path,
 		project: row.project,
 		harness: row.harness,
@@ -173,6 +186,7 @@ export function readEpisodicTranscript(db: ReadDb, agentId: string, id: string):
 		content: row.content,
 		sourceKind: "transcript",
 		sourceId: row.session_key,
+		sourceEntryId: null,
 		sourcePath: null,
 		project: row.project,
 		harness: row.harness,
@@ -216,6 +230,7 @@ export function readEpisodicSummary(db: ReadDb, agentId: string, id: string): Ep
 		content: row.content,
 		sourceKind: row.source_type ?? "summary",
 		sourceId: row.source_ref ?? row.session_key ?? row.id,
+		sourceEntryId: null,
 		sourcePath: null,
 		project: row.project,
 		harness: row.harness,
@@ -255,7 +270,7 @@ export function readRecentEpisodicSources(
 	const artifacts: EpisodicSourceRecord[] = wants("artifact")
 		? db
 				.prepare(
-					`SELECT source_path, source_kind, source_node_id, session_id, session_key, session_token,
+					`SELECT source_path, source_kind, source_id, source_node_id, session_id, session_key, session_token,
 			        project, harness, content, captured_at, updated_at
 			 FROM memory_artifacts
 			 WHERE agent_id = ? AND COALESCE(is_deleted, 0) = 0
@@ -268,6 +283,7 @@ export function readRecentEpisodicSources(
 					const artifact = row as {
 						readonly source_path: string;
 						readonly source_kind: string;
+						readonly source_id: string | null;
 						readonly source_node_id: string | null;
 						readonly session_id: string;
 						readonly session_key: string | null;
@@ -284,6 +300,7 @@ export function readRecentEpisodicSources(
 						content: artifact.content,
 						sourceKind: artifact.source_kind,
 						sourceId: artifact.source_node_id ?? artifact.session_key ?? artifact.session_id ?? artifact.session_token,
+						sourceEntryId: readNonEmptyTrimmed(artifact.source_id),
 						sourcePath: artifact.source_path,
 						project: artifact.project,
 						harness: artifact.harness,
@@ -317,6 +334,7 @@ export function readRecentEpisodicSources(
 						content: transcript.content,
 						sourceKind: "transcript",
 						sourceId: transcript.session_key,
+						sourceEntryId: null,
 						sourcePath: null,
 						project: transcript.project,
 						harness: transcript.harness,
@@ -354,6 +372,7 @@ export function readRecentEpisodicSources(
 						content: summary.content,
 						sourceKind: summary.source_type ?? "summary",
 						sourceId: summary.source_ref ?? summary.session_key ?? summary.id,
+						sourceEntryId: null,
 						sourcePath: null,
 						project: summary.project,
 						harness: summary.harness,

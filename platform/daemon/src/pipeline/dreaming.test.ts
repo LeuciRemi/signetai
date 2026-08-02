@@ -531,6 +531,212 @@ describe("dreaming", () => {
 			).toEqual({ name: "Meridian" });
 		});
 
+		it("purges dreaming-derived semantics by the configured Signet source id", async () => {
+			// A Signet source artifact: source_id is the configured source entry id
+			// (the purge key), source_node_id is the episodic node identity the LLM
+			// echoes back as evidence source_id.
+			const sourceEvidence = "The roadmap names Helix as the canonical deployment target.";
+			db.prepare(
+				`INSERT INTO memory_artifacts
+				 (agent_id, source_path, source_sha256, source_kind, source_id, source_node_id,
+				  session_id, session_key, session_token, captured_at, content, updated_at, is_deleted)
+				 VALUES (?, 'sources/deploy.md', 'sha', 'source_obsidian_markdown', 'obsidian:signet',
+				  'node-deploy', 'session-helix', 'session-helix', 'token-helix',
+				 datetime('now'), ?, datetime('now'), 0)`,
+			).run(AGENT, sourceEvidence);
+			// Unrelated semantic claim from a different source that must survive purge.
+			seedEntity(db, "unrelated", "Unrelated Project", "project");
+			seedAspect(db, "unrelated-asp", "unrelated", "identity");
+			seedAttribute(db, "unrelated-attr", "unrelated-asp", "This claim belongs to a different source.");
+			db.prepare(`UPDATE entity_attributes SET source_id = 'other:source' WHERE id = ?`).run("unrelated-attr");
+
+			const evidenceBlock = [
+				{
+					source_kind: "source_obsidian_markdown",
+					source_id: "node-deploy",
+					source_path: "sources/deploy.md",
+					quote: sourceEvidence,
+				},
+			];
+			const result = await runDreamingPass(
+				accessor,
+				async () =>
+					JSON.stringify({
+						operations: [
+							{
+								operation: "create_entity",
+								payload: { name: "Helix", entity_type: "project" },
+								reason: "The source artifact names the deployment target.",
+								evidence: evidenceBlock,
+							},
+							{
+								operation: "add_claim_value",
+								payload: {
+									entity: "Helix",
+									aspect: "deployment",
+									claim_key: "target",
+									value: "Helix is the canonical deployment target.",
+								},
+								reason: "The source artifact records the deployment target.",
+								evidence: evidenceBlock,
+							},
+						],
+						summary: "Created Helix and its deployment claim from the artifact",
+					}),
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(result.applied).toBe(2);
+
+			// The claim value is stamped with the configured source entry id, not the
+			// episodic node id, so purge by source entry id removes it.
+			const claimRow = db
+				.prepare(
+					`SELECT id FROM entity_attributes
+					 WHERE agent_id = ? AND source_id = ? AND content LIKE ?`,
+				)
+				.get(AGENT, "obsidian:signet", "%canonical deployment target%") as { id: string } | undefined;
+			expect(claimRow).toBeDefined();
+			expect(
+				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE source_id = ?").get("node-deploy") as {
+					n: number;
+				}).n,
+			).toBe(0);
+
+			// Unrelated source-owned claim is untouched before purge.
+			expect(
+				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE id = ?").get("unrelated-attr") as {
+					n: number;
+				}).n,
+			).toBe(1);
+
+			// Purge by the configured source entry id, mirroring
+			// purgeSourceOwnedRows' entity_attributes/entity_dependencies delete.
+			const purgedAttrs = db
+				.prepare("DELETE FROM entity_attributes WHERE agent_id = ? AND source_id = ?")
+				.run(AGENT, "obsidian:signet").changes;
+			const purgedDeps = db
+				.prepare("DELETE FROM entity_dependencies WHERE agent_id = ? AND source_id = ?")
+				.run(AGENT, "obsidian:signet").changes;
+			expect(purgedAttrs + purgedDeps).toBeGreaterThan(0);
+
+			// The dreaming-derived claim value is removed.
+			expect(
+				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE id = ?").get(claimRow!.id) as {
+					n: number;
+				}).n,
+			).toBe(0);
+			// The unrelated source-owned claim survives the purge.
+			expect(
+				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE id = ?").get("unrelated-attr") as {
+					n: number;
+				}).n,
+			).toBe(1);
+		});
+
+		it("prefers a source-entry provenance regardless of LLM evidence ordering", async () => {
+			// Regression: provenance selection must prefer a matched evidence record
+			// that owns a configured Signet source entry id, independent of the order
+			// the LLM cites the evidence in. Citing a transcript first (no
+			// sourceEntryId) and a Signet-source artifact second must still stamp the
+			// source entry id so the derived semantic row is purgeable by source.
+			const transcriptEvidence = "The transcript records the design review.";
+			seedTranscript(db, transcriptEvidence);
+			const artifactEvidence = "The roadmap names Vortex as the canonical deployment target.";
+			db.prepare(
+				`INSERT INTO memory_artifacts
+				 (agent_id, source_path, source_sha256, source_kind, source_id, source_node_id,
+				  session_id, session_key, session_token, captured_at, content, updated_at, is_deleted)
+				 VALUES (?, 'sources/vortex.md', 'sha', 'source_obsidian_markdown', 'obsidian:vortex',
+				  'node-vortex', 'session-vortex', 'session-vortex', 'token-vortex',
+				 datetime('now'), ?, datetime('now'), 0)`,
+			).run(AGENT, artifactEvidence);
+
+			// The transcript is cited first; the Signet-source artifact second.
+			const evidenceBlock = [
+				{ source_kind: "transcript", source_id: "episodic-session", quote: transcriptEvidence },
+				{
+					source_kind: "source_obsidian_markdown",
+					source_id: "node-vortex",
+					source_path: "sources/vortex.md",
+					quote: artifactEvidence,
+				},
+			];
+			const result = await runDreamingPass(
+				accessor,
+				async () =>
+					JSON.stringify({
+						operations: [
+							{
+								operation: "add_claim_value",
+								payload: {
+									entity: "Vortex",
+									aspect: "deployment",
+									claim_key: "target",
+									value: "Vortex is the canonical deployment target.",
+								},
+								reason: "The transcript and the source artifact record the deployment target.",
+								evidence: evidenceBlock,
+							},
+						],
+						summary: "Created the Vortex deployment claim from transcript and artifact",
+					}),
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(result.applied).toBe(1);
+
+			// All three provenance fields come from the same selected source (the
+			// Signet-source artifact cited second), not a mix of the transcript's
+			// kind/path with the artifact's source entry id.
+			const claimRow = db
+				.prepare(
+					`SELECT id, source_id, source_kind, source_path FROM entity_attributes
+					 WHERE agent_id = ? AND content LIKE ?`,
+				)
+				.get(AGENT, "%canonical deployment target%") as
+				| {
+						id: string;
+						source_id: string | null;
+						source_kind: string | null;
+						source_path: string | null;
+				  }
+				| undefined;
+			expect(claimRow).toBeDefined();
+			// sourceId is the configured source entry id, not the episodic node id.
+			expect(claimRow!.source_id).toBe("obsidian:vortex");
+			// sourceKind matches the selected artifact, not the transcript cited first.
+			expect(claimRow!.source_kind).toBe("source_obsidian_markdown");
+			// sourcePath matches the selected artifact, not the transcript's null path.
+			expect(claimRow!.source_path).toBe("sources/vortex.md");
+			expect(
+				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE source_id = ?").get("episodic-session") as {
+					n: number;
+				}).n,
+			).toBe(0);
+			expect(
+				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE source_kind = ?").get("transcript") as {
+					n: number;
+				}).n,
+			).toBe(0);
+
+			// Purge by the configured source entry id, mirroring
+			// purgeSourceOwnedRows' entity_attributes delete.
+			const purgedAttrs = db
+				.prepare("DELETE FROM entity_attributes WHERE agent_id = ? AND source_id = ?")
+				.run(AGENT, "obsidian:vortex").changes;
+			expect(purgedAttrs).toBeGreaterThan(0);
+			expect(
+				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE id = ?").get(claimRow!.id) as {
+					n: number;
+				}).n,
+			).toBe(0);
+		});
+
 		it("advances evidence after discarding an invalid operation", async () => {
 			const evidence = "Atlas is the active research project.";
 			seedSummary(db, "invalid-operation", evidence, 6);

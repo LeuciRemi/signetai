@@ -576,19 +576,21 @@ function readNonEmptyString(value: unknown): string | null {
 	return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function evidenceMatchesSelectedSource(value: unknown, sources: readonly EpisodicSourceRecord[]): boolean {
-	if (!isRecord(value)) return false;
+function matchEvidenceToSource(value: unknown, sources: readonly EpisodicSourceRecord[]): EpisodicSourceRecord | null {
+	if (!isRecord(value)) return null;
 	const sourceKind = readNonEmptyString(value.source_kind);
 	const sourceId = readNonEmptyString(value.source_id);
 	const sourcePath = readNonEmptyString(value.source_path);
 	const quote = readNonEmptyString(value.quote);
-	if (!sourceKind || !sourceId || !quote) return false;
-	return sources.some(
-		(source) =>
-			source.sourceKind === sourceKind &&
-			source.sourceId === sourceId &&
-			(sourcePath === null || source.sourcePath === sourcePath) &&
-			source.content.includes(quote),
+	if (!sourceKind || !sourceId || !quote) return null;
+	return (
+		sources.find(
+			(source) =>
+				source.sourceKind === sourceKind &&
+				source.sourceId === sourceId &&
+				(sourcePath === null || source.sourcePath === sourcePath) &&
+				source.content.includes(quote),
+		) ?? null
 	);
 }
 
@@ -600,7 +602,10 @@ function normalizeDreamingOperation(raw: unknown, sources: readonly EpisodicSour
 	const evidence = Array.isArray(raw.evidence) ? raw.evidence : [];
 	if (!operation || !DREAMING_OPERATIONS.has(operation) || !isRecord(payload) || !reason || evidence.length === 0)
 		return null;
-	if (!evidence.every((item) => evidenceMatchesSelectedSource(item, sources))) return null;
+	const matchedSources = evidence
+		.map((item) => matchEvidenceToSource(item, sources))
+		.filter((source): source is EpisodicSourceRecord => source !== null);
+	if (matchedSources.length !== evidence.length) return null;
 	const confidence = raw.confidence;
 	if (
 		confidence !== undefined &&
@@ -608,7 +613,19 @@ function normalizeDreamingOperation(raw: unknown, sources: readonly EpisodicSour
 	) {
 		return null;
 	}
-	const firstEvidence = evidence[0] as Record<string, unknown>;
+	// Prefer a matched source that owns a configured Signet source entry id,
+	// independent of the order the LLM cited the evidence in. Derived semantic
+	// rows are purgeable by source on disconnect only when stamped with the
+	// source entry id, so selecting it by evidence position would stamp a
+	// non-purgeable episodic id whenever a transcript/summary is cited first
+	// and a Signet-source artifact second. Fall back to the first matched
+	// source when none owns a source entry id, retaining the normal episodic
+	// provenance behavior. sourceKind, sourceId, and sourcePath must all come
+	// from this single selected provenance source so derived rows carry one
+	// consistent provenance tuple rather than mixing the source entry id from
+	// a later matched artifact with the kind/path of an earlier transcript.
+	const provenanceSource =
+		matchedSources.find((source) => source.sourceEntryId !== null) ?? matchedSources[0];
 	return {
 		operation,
 		payload,
@@ -616,9 +633,9 @@ function normalizeDreamingOperation(raw: unknown, sources: readonly EpisodicSour
 		evidence,
 		confidence: confidence as number | undefined,
 		risk: readNonEmptyString(raw.risk),
-		sourceKind: readNonEmptyString(firstEvidence.source_kind),
-		sourceId: readNonEmptyString(firstEvidence.source_id),
-		sourcePath: readNonEmptyString(firstEvidence.source_path),
+		sourceKind: provenanceSource.sourceKind,
+		sourceId: provenanceSource.sourceEntryId ?? provenanceSource.sourceId,
+		sourcePath: provenanceSource.sourcePath,
 		sourceRoot: "dreaming",
 	};
 }
