@@ -43,8 +43,10 @@ Pipeline V2 Processing
 -----------------------
 
 [[pipeline|Pipeline V2]] is the autonomous memory processing subsystem. It runs
-after every `remember` call when `pipelineV2.enabled = true` in
-`agent.yaml` (see [[configuration]]).
+source ingestion, retention, summaries, and Dreaming under
+`memory.pipelineV2` (see [[configuration]]). A remember save is immediately
+available as immutable episodic evidence; it does not start a per-memory
+extraction or decision worker.
 
 ### Extraction
 
@@ -55,54 +57,19 @@ pipeline (reranker, skill enrichment, contradiction, dreaming) and by the
 ontology modules. Semantic graph authorship flows through the audited
 Dreaming apply path, not a per-memory extraction stage.
 
-### Decision Engine
+### Dreaming
 
-The decision stage (`platform/daemon/src/pipeline/decision.ts`)
-evaluates each extracted fact against existing memories to determine
-what should happen next.
+Dreaming reads the agent-scoped episodic aggregation surface: user evidence,
+source artifacts, live transcripts, and temporal summaries. Each source is
+preserved with its provenance. When a session artifact has a matching
+transcript or temporal-DAG node, Dreaming uses that canonical node once rather
+than repeating the same content from every storage representation. The
+immutable artifact remains available for lineage and recovery.
 
-For each fact, the engine runs a focused hybrid search (top 5
-candidates). If no candidates are found, it immediately proposes
-`add`. Otherwise, it sends the fact and its candidates to the LLM,
-which returns one of four actions:
-
-- `add` — no existing memory covers this fact; store it as new
-- `update` — the fact refines or supersedes a specific candidate
-- `delete` — the fact invalidates a specific candidate
-- `none` — the fact is already covered; skip
-
-The decision includes a `targetId` (required for `update` and
-`delete`), a `confidence` score, and a `reason` string. Proposals
-that reference non-candidate IDs, omit required fields, or return
-invalid JSON are rejected with a warning.
-
-### Shadow Mode vs. Controlled Writes
-
-When `pipelineV2.shadowMode = true`, the pipeline runs fully —
-extraction and decisions execute — but no memory rows are created or
-mutated. All proposals are recorded in `memory_history` with
-`changed_by = 'pipeline-shadow'` for inspection. This is safe to
-enable on any deployment.
-
-When shadow mode is off and `pipelineV2.mutationsFrozen = false`,
-the worker enters controlled-write mode. Only `add` proposals are
-applied. `update` and `delete` proposals are blocked by default
-unless `pipelineV2.allowUpdateDelete = true`. Destructive proposals
-are logged in `memory_history` with `blockedReason` set.
-
-Facts below `pipelineV2.minFactConfidenceForWrite` are skipped.
-Empty content after normalization is also skipped. Both cases produce
-`skippedReason` entries in history.
-
-### Graph Entity Persistence
-
-If `pipelineV2.graphEnabled = true`, entities extracted during
-Pipeline V2 are written to the [[docs/knowledge-architecture|knowledge graph]] after the main
-transaction commits. This is a separate transaction — graph failure
-never reverts fact extraction. Entities are stored by `canonical_name`
-with a `mentions` count. Relations link source entities to targets
-with a relationship label. Memory-entity associations are tracked in
-`memory_entity_mentions`.
+Dreaming is the only automatic semantic writer. It reasons over the selected
+evidence and submits audited ontology operations through the daemon-owned apply
+path. Pause/frozen controls can prevent mutation, but there is no parallel
+extraction, decision, or structural worker that writes semantic state.
 
 
 Hybrid Recall
