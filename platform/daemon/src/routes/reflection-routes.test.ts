@@ -206,12 +206,13 @@ describe("reflection routes", () => {
 
 		const memory = dbAccessor.withReadDb(
 			(db) =>
-				db.prepare("SELECT content, agent_id FROM memories WHERE id = ?").get(body.memoryId) as {
+				db.prepare("SELECT content, agent_id, memory_kind FROM memories WHERE id = ?").get(body.memoryId) as {
 					content: string;
 					agent_id: string;
+					memory_kind: string | null;
 				},
 		);
-		expect(memory).toEqual({ content: "Ship the scoping fix.", agent_id: "agent-b" });
+		expect(memory).toEqual({ content: "Ship the scoping fix.", agent_id: "agent-b", memory_kind: "episodic" });
 	});
 
 	it("does not create duplicate answer memories after the answer is claimed", async () => {

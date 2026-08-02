@@ -99,6 +99,7 @@ import { up as jobArchive } from "./090-job-archive";
 import { up as embeddingIndexGenerations } from "./091-embedding-index-generations";
 import { up as embeddingStagingStore } from "./092-embedding-staging-store";
 import { up as dreamingEvidenceCursor } from "./093-dreaming-evidence-cursor";
+import { up as memoryKind } from "./094-memory-kind";
 
 // -- Public interface consumed by Database.init() --
 
@@ -885,6 +886,17 @@ export const MIGRATIONS: readonly Migration[] = [
 		name: "dreaming-evidence-cursor",
 		up: dreamingEvidenceCursor,
 		artifacts: { columns: [{ table: "dreaming_state", column: "evidence_cursor" }] },
+	},
+	{
+		version: 94,
+		name: "memory-kind",
+		up: memoryKind,
+		artifacts: {
+			columns: [
+				{ table: "memories", column: "memory_kind" },
+				{ table: "memories", column: "evidence_meta" },
+			],
+		},
 	},
 ];
 

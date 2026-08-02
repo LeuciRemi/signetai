@@ -15,8 +15,6 @@ import { type DiagnosticsOptions, type DiagnosticsReport, createProviderTracker,
 import type { EmbeddingTrackerHandle } from "../embedding-tracker";
 import { logger } from "../logger";
 import { type ResolvedMemoryConfig, loadMemoryConfig } from "../memory-config";
-import { enqueueExtractionJob as enqueueExtractionJobBase } from "../pipeline";
-import { deadLetterExtractionJob } from "../pipeline/extraction-fallback";
 import { createRateLimiter } from "../repair-actions";
 import type { TelemetryCollector } from "../telemetry";
 import { getUpdateState } from "../update-system";
@@ -370,16 +368,6 @@ export const authCrossAgentMessageLimiter = new AuthRateLimiter(60_000, 120);
 export const providerTracker = createProviderTracker();
 export const analyticsCollector = createAnalyticsCollector();
 export const repairLimiter = createRateLimiter();
-
-export function queueExtractionJob(memoryId: string): void {
-	if (providerRuntimeResolution.extraction.status === "blocked") {
-		deadLetterExtractionJob(getDbAccessor(), memoryId, {
-			reason: providerRuntimeResolution.extraction.reason ?? "Configured extraction provider unavailable at startup",
-		});
-		return;
-	}
-	enqueueExtractionJobBase(getDbAccessor(), memoryId);
-}
 
 // Version
 function getDaemonVersion(): string {

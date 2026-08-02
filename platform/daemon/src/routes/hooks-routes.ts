@@ -863,9 +863,10 @@ function registerCompactionComplete(app: Hono): void {
 					db.prepare(
 						`INSERT INTO memories (
 							id, content, type, importance, source_id, source_type,
-							who, tags, project, agent_id, created_at, updated_at, updated_by
+							who, tags, project, agent_id, created_at, updated_at, updated_by,
+							memory_kind
 						)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 					).run(
 						summaryId,
 						body.summary,
@@ -880,6 +881,7 @@ function registerCompactionComplete(app: Hono): void {
 						now,
 						now,
 						"system",
+						"episodic",
 					);
 
 					const table = db

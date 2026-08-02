@@ -16,7 +16,6 @@ import {
 	type RecallTimings,
 	hybridRecall,
 } from "./memory-search";
-import { enqueueExtractionJobInTx } from "./pipeline/extraction-queue";
 import { type IngestEnvelope, txIngestEnvelope } from "./transactions";
 
 export type AggregateRecallBudget = "small" | "medium" | "large";
@@ -897,7 +896,6 @@ export async function aggregateRecall(
 				if (duplicate) {
 					deduped = true;
 					saved = duplicate.saved;
-					if (duplicate.saved) enqueueExtractionJobInTx(db, duplicate.row.id);
 					return duplicate.row;
 				}
 				const id = deps.idFactory?.() ?? randomUUID();
@@ -949,13 +947,11 @@ export async function aggregateRecall(
 					}
 					deduped = true;
 					saved = racedDuplicate.saved;
-					if (racedDuplicate.saved) enqueueExtractionJobInTx(db, racedDuplicate.row.id);
 					return racedDuplicate.row;
 				}
 				linkAggregateSources(db, id, sourceMemoryIds, agentId, now);
 				linkAggregateEvidenceSources(db, id, evidenceSources, agentId, now);
 				linkAggregateQueryHint(db, id, agentId, params.query, now);
-				enqueueExtractionJobInTx(db, id);
 				saved = true;
 				return loadAggregateMemory(db, id);
 			}),

@@ -1,7 +1,7 @@
 import type { ReadDb } from "./db-accessor";
 
 /** Immutable evidence available to Dreaming and ontology extraction. */
-export type EpisodicSourceKind = "artifact" | "transcript" | "summary";
+export type EpisodicSourceKind = "memory" | "artifact" | "transcript" | "summary";
 
 /** A stable resume point across the merged episodic stores. */
 export interface EpisodicCursor {
@@ -27,6 +27,14 @@ export interface EpisodicSourceRecord {
 	readonly project: string | null;
 	readonly harness: string | null;
 	readonly capturedAt: string;
+	/**
+	 * Canonical structured evidence metadata (JSON string) preserved verbatim
+	 * from a structured remember save. Present on `memory`-kind records when
+	 * the caller supplied a structured payload; null otherwise. Dreaming reads
+	 * this to reason over structured entities/aspects without direct graph
+	 * writes at save time.
+	 */
+	readonly evidenceMeta: string | null;
 }
 
 export interface ReadEpisodicSourceOptions {
@@ -35,9 +43,10 @@ export interface ReadEpisodicSourceOptions {
 }
 
 const SOURCE_KIND_RANK: Readonly<Record<EpisodicSourceKind, number>> = {
-	artifact: 0,
-	transcript: 1,
-	summary: 2,
+	memory: 0,
+	artifact: 1,
+	transcript: 2,
+	summary: 3,
 };
 
 function cursorPredicate(
@@ -91,12 +100,13 @@ function readNonEmptyTrimmed(value: unknown): string | null {
 
 export function sourceIdCandidates(value: string): string[] {
 	const trimmed = value.trim();
-	const stripped = trimmed.replace(/^(artifact|source|transcript|session|summary):/, "");
+	const stripped = trimmed.replace(/^(memory|artifact|source|transcript|session|summary):/, "");
 	return [
 		...new Set(
 			[
 				trimmed,
 				stripped,
+				`memory:${stripped}`,
 				`artifact:${stripped}`,
 				`source:${stripped}`,
 				`transcript:${stripped}`,
@@ -105,6 +115,52 @@ export function sourceIdCandidates(value: string): string[] {
 			].filter(Boolean),
 		),
 	];
+}
+
+export function readEpisodicMemory(db: ReadDb, agentId: string, id: string): EpisodicSourceRecord | null {
+	const ids = sourceIdCandidates(id);
+	const placeholders = ids.map(() => "?").join(", ");
+	const row = db
+		.prepare(
+			`SELECT id, content, source_type, source_id, source_path, runtime_path, project, who, created_at, evidence_meta
+			 FROM memories
+			 WHERE agent_id = ?
+			   AND memory_kind = 'episodic'
+			   AND COALESCE(is_deleted, 0) = 0
+			   AND id IN (${placeholders})
+			 LIMIT 1`,
+		)
+		.get(agentId, ...ids) as
+		| {
+				readonly id: string;
+				readonly content: string;
+				readonly source_type: string | null;
+				readonly source_id: string | null;
+				readonly source_path: string | null;
+				readonly runtime_path: string | null;
+				readonly project: string | null;
+				readonly who: string | null;
+				readonly created_at: string;
+				readonly evidence_meta: string | null;
+		  }
+		| undefined;
+	if (!row) return null;
+	return {
+		kind: "memory",
+		id: row.id,
+		content: row.content,
+		sourceKind: row.source_type ?? "manual",
+		sourceId: row.source_id ?? row.id,
+		sourceEntryId: null,
+		sourcePath: readNonEmptyTrimmed(row.source_path) ?? readNonEmptyTrimmed(row.runtime_path),
+		project: row.project,
+		harness: readNonEmptyTrimmed(row.who),
+		// Order/cursor by immutable creation (capture) time, not updated_at.
+		// Metadata edits (tags/importance/pinned) bump updated_at but must not
+		// re-submit already-processed evidence to Dreaming.
+		capturedAt: row.created_at,
+		evidenceMeta: row.evidence_meta,
+	};
 }
 
 export function readEpisodicArtifact(db: ReadDb, agentId: string, id: string): EpisodicSourceRecord | null {
@@ -155,6 +211,7 @@ export function readEpisodicArtifact(db: ReadDb, agentId: string, id: string): E
 		project: row.project,
 		harness: row.harness,
 		capturedAt: row.captured_at ?? row.updated_at,
+		evidenceMeta: null,
 	};
 }
 
@@ -191,6 +248,7 @@ export function readEpisodicTranscript(db: ReadDb, agentId: string, id: string):
 		project: row.project,
 		harness: row.harness,
 		capturedAt: row.updated_at ?? row.created_at,
+		evidenceMeta: null,
 	};
 }
 
@@ -235,6 +293,7 @@ export function readEpisodicSummary(db: ReadDb, agentId: string, id: string): Ep
 		project: row.project,
 		harness: row.harness,
 		capturedAt: row.latest_at,
+		evidenceMeta: null,
 	};
 }
 
@@ -256,6 +315,7 @@ export function readRecentEpisodicSources(
 	const boundedLimit = Math.max(1, Math.min(Math.floor(limit), 500));
 	const newer = newerThan?.trim() || null;
 	const direction = order === "oldest" ? "ASC" : "DESC";
+	const memoryCursor = cursorPredicate("created_at", "id", "memory", newer, cursor);
 	const artifactCursor = cursorPredicate("captured_at", "source_path", "artifact", newer, cursor);
 	const transcriptCursor = cursorPredicate(
 		"COALESCE(updated_at, created_at)",
@@ -267,6 +327,47 @@ export function readRecentEpisodicSources(
 	const summaryCursor = cursorPredicate("latest_at", "id", "summary", newer, cursor);
 	const allowedKinds = kinds ? new Set(kinds) : null;
 	const wants = (kind: EpisodicSourceKind): boolean => allowedKinds === null || allowedKinds.has(kind);
+	const memories: EpisodicSourceRecord[] = wants("memory")
+		? db
+				.prepare(
+					`SELECT id, content, source_type, source_id, source_path, runtime_path, project, who, created_at, evidence_meta
+				 FROM memories
+				 WHERE agent_id = ?
+				   AND memory_kind = 'episodic'
+				   AND COALESCE(is_deleted, 0) = 0
+				   AND ${memoryCursor.sql}
+				 ORDER BY julianday(created_at) ${direction}, id ${direction}
+				 LIMIT ?`,
+				)
+				.all(agentId, ...memoryCursor.args, boundedLimit)
+				.map((row) => {
+					const memory = row as {
+						readonly id: string;
+						readonly content: string;
+						readonly source_type: string | null;
+						readonly source_id: string | null;
+						readonly source_path: string | null;
+						readonly runtime_path: string | null;
+						readonly project: string | null;
+						readonly who: string | null;
+						readonly created_at: string;
+						readonly evidence_meta: string | null;
+					};
+					return {
+						kind: "memory",
+						id: memory.id,
+						content: memory.content,
+						sourceKind: memory.source_type ?? "manual",
+						sourceId: memory.source_id ?? memory.id,
+						sourceEntryId: null,
+						sourcePath: readNonEmptyTrimmed(memory.source_path) ?? readNonEmptyTrimmed(memory.runtime_path),
+						project: memory.project,
+						harness: readNonEmptyTrimmed(memory.who),
+						capturedAt: memory.created_at,
+						evidenceMeta: memory.evidence_meta,
+					} satisfies EpisodicSourceRecord;
+				})
+		: [];
 	const artifacts: EpisodicSourceRecord[] = wants("artifact")
 		? db
 				.prepare(
@@ -305,6 +406,7 @@ export function readRecentEpisodicSources(
 						project: artifact.project,
 						harness: artifact.harness,
 						capturedAt: artifact.captured_at ?? artifact.updated_at,
+						evidenceMeta: null,
 					} satisfies EpisodicSourceRecord;
 				})
 		: [];
@@ -339,6 +441,7 @@ export function readRecentEpisodicSources(
 						project: transcript.project,
 						harness: transcript.harness,
 						capturedAt: transcript.updated_at ?? transcript.created_at,
+						evidenceMeta: null,
 					} satisfies EpisodicSourceRecord;
 				})
 		: [];
@@ -377,10 +480,11 @@ export function readRecentEpisodicSources(
 						project: summary.project,
 						harness: summary.harness,
 						capturedAt: summary.latest_at,
+						evidenceMeta: null,
 					} satisfies EpisodicSourceRecord;
 				})
 		: [];
-	return [...artifacts, ...transcripts, ...summaries]
+	return [...memories, ...artifacts, ...transcripts, ...summaries]
 		.sort((a, b) => compareEpisodicSources(a, b, order))
 		.slice(0, boundedLimit);
 }
@@ -389,6 +493,9 @@ export function readRecentEpisodicSources(
 export function readEpisodicSource(db: ReadDb, options: ReadEpisodicSourceOptions): EpisodicSourceRecord | null {
 	const from = options.from.trim();
 	if (!from) return null;
+	if (from.startsWith("memory:")) {
+		return readEpisodicMemory(db, options.agentId, from.replace(/^memory:/, ""));
+	}
 	if (from.startsWith("transcript:") || from.startsWith("session:")) {
 		return readEpisodicTranscript(db, options.agentId, from);
 	}
@@ -397,6 +504,7 @@ export function readEpisodicSource(db: ReadDb, options: ReadEpisodicSourceOption
 		return readEpisodicArtifact(db, options.agentId, from.replace(/^(artifact|source):/, ""));
 	}
 	return (
+		readEpisodicMemory(db, options.agentId, from) ??
 		readEpisodicArtifact(db, options.agentId, from) ??
 		readEpisodicTranscript(db, options.agentId, from) ??
 		readEpisodicSummary(db, options.agentId, from)

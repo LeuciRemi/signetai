@@ -14,6 +14,7 @@ import type { DreamingConfig } from "@signet/core";
 import { runMigrations } from "../../../core/src/migrations";
 import type { DbAccessor } from "../db-accessor";
 import {
+	_testParseEpisodicCursor,
 	getDreamingPasses,
 	getDreamingState,
 	recordDreamingFailure,
@@ -108,9 +109,69 @@ function seedTranscript(db: Database, content: string): void {
 	).run(content, AGENT);
 }
 
+/**
+ * Seed an episodic memory row (user-owned explicit evidence). When
+ * `evidenceMeta` is supplied it is stored verbatim in `evidence_meta`, giving
+ * Dreaming structured facts to reason over. `sourceId` models the configured
+ * Signet source entry id when set; episodic memories carry none by default.
+ */
+function seedEpisodicMemory(
+	db: Database,
+	id: string,
+	content: string,
+	opts?: { evidenceMeta?: string; sourceType?: string; sourceId?: string | null },
+): void {
+	db.prepare(
+		`INSERT INTO memories
+		 (id, content, normalized_content, content_hash, type, source_type, source_id, who, why,
+		  importance, pinned, is_deleted, extraction_status, memory_kind, evidence_meta, agent_id,
+		  visibility, created_at, updated_at, updated_by)
+		 VALUES (?, ?, ?, ?, 'fact', ?, ?, 'test', 'explicit', 0.6, 0, 0, 'none', 'episodic', ?, ?, 'global',
+		         datetime('now'), datetime('now'), 'test')`,
+	).run(
+		id,
+		content,
+		content.toLowerCase(),
+		`hash-${id}`,
+		opts?.sourceType ?? "manual",
+		opts?.sourceId ?? null,
+		opts?.evidenceMeta ?? null,
+		AGENT,
+	);
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("parseEpisodicCursor round-trip", () => {
+	it("accepts and preserves the memory episodic kind (#946)", () => {
+		const cursor = { capturedAt: "2026-01-01T00:00:00.000Z", kind: "memory" as const, id: "mem-1" };
+		const parsed = _testParseEpisodicCursor(JSON.stringify(cursor));
+		expect(parsed).toEqual(cursor);
+	});
+
+	it("round-trips every episodic kind through JSON serialization", () => {
+		for (const kind of ["memory", "artifact", "transcript", "summary"] as const) {
+			const cursor = { capturedAt: "2026-03-01T00:00:00.000Z", kind, id: `id-${kind}` };
+			const parsed = _testParseEpisodicCursor(JSON.stringify(cursor));
+			expect(parsed).toEqual(cursor);
+		}
+	});
+
+	it("round-trips a null-kind cursor (initial backfill boundary)", () => {
+		const cursor = { capturedAt: "2026-01-01T00:00:00.000Z", kind: null, id: "" };
+		const parsed = _testParseEpisodicCursor(JSON.stringify(cursor));
+		expect(parsed).toEqual(cursor);
+	});
+
+	it("rejects unknown kinds and malformed payloads", () => {
+		expect(_testParseEpisodicCursor(null)).toBeNull();
+		expect(_testParseEpisodicCursor("not-json")).toBeNull();
+		expect(_testParseEpisodicCursor(JSON.stringify({ capturedAt: "2026-01-01", kind: "unknown", id: "x" }))).toBeNull();
+		expect(_testParseEpisodicCursor(JSON.stringify({ capturedAt: "2026-01-01", id: "x" }))).toBeNull();
+	});
+});
 
 describe("dreaming", () => {
 	let db: Database;
@@ -600,16 +661,20 @@ describe("dreaming", () => {
 				.get(AGENT, "obsidian:signet", "%canonical deployment target%") as { id: string } | undefined;
 			expect(claimRow).toBeDefined();
 			expect(
-				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE source_id = ?").get("node-deploy") as {
-					n: number;
-				}).n,
+				(
+					db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE source_id = ?").get("node-deploy") as {
+						n: number;
+					}
+				).n,
 			).toBe(0);
 
 			// Unrelated source-owned claim is untouched before purge.
 			expect(
-				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE id = ?").get("unrelated-attr") as {
-					n: number;
-				}).n,
+				(
+					db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE id = ?").get("unrelated-attr") as {
+						n: number;
+					}
+				).n,
 			).toBe(1);
 
 			// Purge by the configured source entry id, mirroring
@@ -624,15 +689,19 @@ describe("dreaming", () => {
 
 			// The dreaming-derived claim value is removed.
 			expect(
-				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE id = ?").get(claimRow!.id) as {
-					n: number;
-				}).n,
+				(
+					db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE id = ?").get(claimRow!.id) as {
+						n: number;
+					}
+				).n,
 			).toBe(0);
 			// The unrelated source-owned claim survives the purge.
 			expect(
-				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE id = ?").get("unrelated-attr") as {
-					n: number;
-				}).n,
+				(
+					db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE id = ?").get("unrelated-attr") as {
+						n: number;
+					}
+				).n,
 			).toBe(1);
 		});
 
@@ -714,14 +783,18 @@ describe("dreaming", () => {
 			// sourcePath matches the selected artifact, not the transcript's null path.
 			expect(claimRow!.source_path).toBe("sources/vortex.md");
 			expect(
-				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE source_id = ?").get("episodic-session") as {
-					n: number;
-				}).n,
+				(
+					db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE source_id = ?").get("episodic-session") as {
+						n: number;
+					}
+				).n,
 			).toBe(0);
 			expect(
-				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE source_kind = ?").get("transcript") as {
-					n: number;
-				}).n,
+				(
+					db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE source_kind = ?").get("transcript") as {
+						n: number;
+					}
+				).n,
 			).toBe(0);
 
 			// Purge by the configured source entry id, mirroring
@@ -731,10 +804,175 @@ describe("dreaming", () => {
 				.run(AGENT, "obsidian:vortex").changes;
 			expect(purgedAttrs).toBeGreaterThan(0);
 			expect(
-				(db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE id = ?").get(claimRow!.id) as {
-					n: number;
-				}).n,
+				(
+					db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE id = ?").get(claimRow!.id) as {
+						n: number;
+					}
+				).n,
 			).toBe(0);
+		});
+
+		it("validates and applies an audited operation cited from structured-only evidence", async () => {
+			// An episodic memory whose content is generic but whose structured
+			// evidence carries the citable fact. The quote the LLM cites appears
+			// only in the rendered structured text, never in `content`.
+			const structuredQuote = "Aurora [owned-by] Dr. Vance";
+			const evidenceMeta = JSON.stringify({
+				entities: [{ source: "Aurora", relationship: "owned-by", target: "Dr. Vance" }],
+				aspects: [{ entityName: "Aurora", aspect: "ownership" }],
+			});
+			seedEpisodicMemory(db, "mem-structured", "Saved a structured memory.", { evidenceMeta });
+
+			let prompt = "";
+			const result = await runDreamingPass(
+				accessor,
+				async (input) => {
+					prompt = input;
+					return JSON.stringify({
+						operations: [
+							{
+								operation: "create_entity",
+								payload: { name: "Aurora", entity_type: "project" },
+								reason: "The structured evidence records a durable ownership relationship.",
+								evidence: [{ source_kind: "manual", source_id: "mem-structured", quote: structuredQuote }],
+							},
+						],
+						summary: "Created Aurora from structured evidence",
+					});
+				},
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+
+			// The structured render is in the prompt...
+			expect(prompt).toContain("structured_evidence:");
+			expect(prompt).toContain("Aurora [owned-by] Dr. Vance");
+			expect(prompt).toContain("Aurora/ownership");
+			// ...but the quote never appears in the raw content.
+			expect(prompt).toContain("Saved a structured memory.");
+			// The structured citation validated and applied.
+			expect(result.applied).toBe(1);
+			expect(
+				db.prepare("SELECT name FROM entities WHERE agent_id = ? AND canonical_name = 'aurora'").get(AGENT),
+			).toEqual({ name: "Aurora" });
+		});
+
+		it("rejects an operation citing text absent from the rendered source form", async () => {
+			// The quote is plausible prose that is NOT in content and NOT in the
+			// rendered structured text. It must be rejected as unrendered/
+			// unrelated text.
+			const evidenceMeta = JSON.stringify({
+				entities: [{ source: "Helios", relationship: "powers", target: "grid" }],
+			});
+			seedEpisodicMemory(db, "mem-structured-reject", "Saved a structured memory.", { evidenceMeta });
+
+			const result = await runDreamingPass(
+				accessor,
+				async () =>
+					JSON.stringify({
+						operations: [
+							{
+								operation: "create_entity",
+								payload: { name: "Helios", entity_type: "system" },
+								reason: "Fabricated citation.",
+								evidence: [
+									{
+										source_kind: "manual",
+										source_id: "mem-structured-reject",
+										quote: "Helios was decommissioned last quarter.",
+									},
+								],
+							},
+						],
+						summary: "Should be discarded",
+					}),
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			// The fabricated citation failed validation and was discarded.
+			expect(result.applied).toBe(0);
+			expect(result.failed).toBe(1);
+			expect(
+				db
+					.prepare("SELECT COUNT(*) AS n FROM entities WHERE agent_id = ? AND canonical_name = 'helios'")
+					.get(AGENT) as { n: number },
+			).toEqual({ n: 0 });
+		});
+
+		it("keeps user-owned explicit memory out of source-disconnect purge scope", async () => {
+			// User-owned explicit memory carries no configured Signet source
+			// entry id, so Dreaming stamps the derived claim with the episodic
+			// source id, not a purge key. Source-disconnect purge by a configured
+			// source entry id must NOT remove it.
+			const structuredQuote = "Solstice [integrates] Atlas";
+			const evidenceMeta = JSON.stringify({
+				entities: [{ source: "Solstice", relationship: "integrates", target: "Atlas" }],
+			});
+			seedEpisodicMemory(db, "mem-user-owned", "Saved a structured memory.", { evidenceMeta });
+
+			const result = await runDreamingPass(
+				accessor,
+				async () =>
+					JSON.stringify({
+						operations: [
+							{
+								operation: "add_claim_value",
+								payload: {
+									entity: "Solstice",
+									aspect: "integration",
+									claim_key: "partner",
+									value: "Solstice integrates Atlas.",
+								},
+								reason: "The structured evidence records the integration.",
+								evidence: [{ source_kind: "manual", source_id: "mem-user-owned", quote: structuredQuote }],
+							},
+						],
+						summary: "Created the Solstice integration claim from structured evidence",
+					}),
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(result.applied).toBe(1);
+
+			// Provenance: stamped with the episodic memory id, not a source entry id.
+			const claimRow = db
+				.prepare(
+					`SELECT id, source_id, source_kind FROM entity_attributes
+					 WHERE agent_id = ? AND content LIKE ?`,
+				)
+				.get(AGENT, "%integrates Atlas%") as
+				| { id: string; source_id: string | null; source_kind: string | null }
+				| undefined;
+			expect(claimRow).toBeDefined();
+			expect(claimRow!.source_id).toBe("mem-user-owned");
+			expect(claimRow!.source_kind).toBe("manual");
+
+			// Source-disconnect purge by a configured source entry id does NOT
+			// remove the derived claim because user-owned explicit memory has no
+			// configured source entry id to match. This is intentional: the
+			// semantic state derived from explicit user memory is user-owned and
+			// survives a source disconnect.
+			const purgedAttrs = db
+				.prepare("DELETE FROM entity_attributes WHERE agent_id = ? AND source_id = ?")
+				.run(AGENT, "obsidian:user-owned").changes;
+			expect(purgedAttrs).toBe(0);
+			expect(
+				(
+					db.prepare("SELECT COUNT(*) AS n FROM entity_attributes WHERE id = ?").get(claimRow!.id) as {
+						n: number;
+					}
+				).n,
+			).toBe(1);
+
+			// Purging by the episodic memory id itself is a user-memory delete, not a
+			// source-disconnect purge, and is out of scope for the Dreaming path.
+			// The claim remains attached to the explicit memory provenance.
 		});
 
 		it("advances evidence after discarding an invalid operation", async () => {

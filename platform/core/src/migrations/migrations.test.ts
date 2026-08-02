@@ -15,6 +15,7 @@ import { up as threadHeadsMigration } from "./048-thread-heads";
 import { up as ontologyControlPlaneState } from "./070-ontology-control-plane-state";
 import { up as documentScopeColumns } from "./080-document-scope-columns";
 import { up as memoryLifecycleRepair } from "./083-memory-lifecycle-repair";
+import { up as memoryKind } from "./094-memory-kind";
 import { MIGRATIONS, hasPendingMigrations, runMigrations } from "./index";
 
 function createFreshDb(): Database {
@@ -1546,5 +1547,91 @@ describe("migration framework", () => {
 				.all("refresh")
 				.map((row) => row.id),
 		).toContain("mem-fts-access");
+	});
+
+	test("migration 094 adds memory_kind and backfills episodic evidence via exclusion", () => {
+		db = createFreshDb();
+		db.exec(`
+			CREATE TABLE memories (
+				id TEXT PRIMARY KEY,
+				content TEXT NOT NULL,
+				source_type TEXT,
+				is_deleted INTEGER DEFAULT 0
+			);
+		`);
+		// Real user/tool/plugin input — various client sourceTypes, all episodic.
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-manual",
+			"manual evidence",
+			"manual",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-chunk",
+			"chunked evidence",
+			"chunk",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-codex",
+			"codex native memory",
+			"codex_native_memory",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-hermes",
+			"hermes plugin log",
+			"hermes-memory",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-custom",
+			"custom tool input",
+			"my-tool-v2",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-null",
+			"pre-pipeline row",
+			null,
+		);
+		// Deleted evidence is still backfilled so kind survives recovery.
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-deleted",
+			"deleted manual",
+			"manual",
+		);
+		db.prepare("UPDATE memories SET is_deleted = 1 WHERE id = ?").run("mem-deleted");
+		// Daemon-derived rows — NOT episodic.
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-extract",
+			"derived fact",
+			"extract",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-aggregate",
+			"synthesized recall",
+			"aggregate-recall",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-session-end",
+			"session summary fact",
+			"session_end",
+		);
+
+		memoryKind(db as unknown as Parameters<typeof memoryKind>[0]);
+		memoryKind(db as unknown as Parameters<typeof memoryKind>[0]);
+
+		const rows = db
+			.query<{ id: string; memory_kind: string | null }, []>("SELECT id, memory_kind FROM memories ORDER BY id")
+			.all();
+		const byId = new Map(rows.map((r) => [r.id, r.memory_kind]));
+		// Real input classified episodic.
+		expect(byId.get("mem-manual")).toBe("episodic");
+		expect(byId.get("mem-chunk")).toBe("episodic");
+		expect(byId.get("mem-codex")).toBe("episodic");
+		expect(byId.get("mem-hermes")).toBe("episodic");
+		expect(byId.get("mem-custom")).toBe("episodic");
+		expect(byId.get("mem-null")).toBe("episodic");
+		expect(byId.get("mem-deleted")).toBe("episodic");
+		// Daemon-derived left NULL.
+		expect(byId.get("mem-extract")).toBeNull();
+		expect(byId.get("mem-aggregate")).toBeNull();
+		expect(byId.get("mem-session-end")).toBeNull();
 	});
 });

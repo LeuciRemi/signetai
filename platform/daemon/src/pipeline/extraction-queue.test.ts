@@ -7,8 +7,8 @@
  * they do not accumulate as a permanent unleased backlog.
  *
  * Covers every active enqueue surface:
- *   - enqueueExtractionJob (accessor variant; used by routes/state.ts queueExtractionJob)
- *   - enqueueExtractionJobInTx (tx variant; used by aggregate-recall.ts and summary-worker.ts)
+ *   - enqueueExtractionJob (accessor variant)
+ *   - enqueueExtractionJobInTx (tx variant; used by summary-worker.ts)
  */
 
 import { Database } from "bun:sqlite";

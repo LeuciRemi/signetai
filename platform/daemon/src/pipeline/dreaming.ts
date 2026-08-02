@@ -55,6 +55,7 @@ function parseEpisodicCursor(value: string | null): EpisodicCursor | null {
 		if (typeof parsed.capturedAt !== "string" || typeof parsed.id !== "string") return null;
 		if (
 			parsed.kind !== null &&
+			parsed.kind !== "memory" &&
 			parsed.kind !== "artifact" &&
 			parsed.kind !== "transcript" &&
 			parsed.kind !== "summary"
@@ -65,6 +66,28 @@ function parseEpisodicCursor(value: string | null): EpisodicCursor | null {
 	} catch {
 		return null;
 	}
+}
+
+/** Exported for cursor round-trip tests. */
+export function _testParseEpisodicCursor(value: string | null): EpisodicCursor | null {
+	return parseEpisodicCursor(value);
+}
+
+/** Exported for structured-evidence rendering tests. */
+export function _testRenderEvidenceMeta(evidenceMeta: string | null): string {
+	return renderEvidenceMeta(evidenceMeta);
+}
+
+/**
+ * The canonical rendered text a source contributes to the Dreaming prompt:
+ * the immutable `content` followed by the rendered structured evidence
+ * metadata (when present). This single form is what the LLM sees, what the
+ * evidence budget accounts for, and what quote validation accepts a citation
+ * against — so structured evidence is genuinely citable and unrelated or
+ * unrendered text is rejected.
+ */
+export function _testRenderSourceText(source: EpisodicSourceRecord): string {
+	return renderSourceText(source);
 }
 
 interface DreamingPassRow {
@@ -395,6 +418,66 @@ function renderIdentityBlock(dir: string, entries: readonly IdentityContextFileE
 		.join("\n\n---\n\n");
 }
 
+/**
+ * Render canonical structured evidence metadata (entities/aspects) as a
+ * compact text block for the Dreaming prompt. The structured payload was
+ * preserved verbatim from a structured remember save; Dreaming reasons over
+ * it to derive semantic state without any direct graph write at save time.
+ * Returns an empty string when no metadata is present.
+ */
+function renderEvidenceMeta(evidenceMeta: string | null): string {
+	if (!evidenceMeta) return "";
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(evidenceMeta);
+	} catch {
+		return "";
+	}
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return "";
+	const data = parsed as { entities?: unknown[]; aspects?: unknown[] };
+	const lines: string[] = [];
+	if (Array.isArray(data.entities) && data.entities.length > 0) {
+		lines.push("structured_entities:");
+		for (const entity of data.entities) {
+			if (typeof entity === "object" && entity !== null) {
+				const e = entity as Record<string, unknown>;
+				const source = typeof e.source === "string" ? e.source : "";
+				const target = typeof e.target === "string" ? e.target : "";
+				const relationship = typeof e.relationship === "string" ? e.relationship : "";
+				if (source || target || relationship) {
+					lines.push(`- ${source} ${relationship ? `[${relationship}] ` : ""}${target}`.trim());
+				}
+			}
+		}
+	}
+	if (Array.isArray(data.aspects) && data.aspects.length > 0) {
+		lines.push("structured_aspects:");
+		for (const aspect of data.aspects) {
+			if (typeof aspect === "object" && aspect !== null) {
+				const a = aspect as Record<string, unknown>;
+				const entityName = typeof a.entityName === "string" ? a.entityName : "";
+				const aspectName = typeof a.aspect === "string" ? a.aspect : "";
+				if (entityName || aspectName) {
+					lines.push(`- ${entityName}/${aspectName}`.trim());
+				}
+			}
+		}
+	}
+	return lines.length > 0 ? `structured_evidence:\n${lines.join("\n")}` : "";
+}
+
+/**
+ * Render the full text a source contributes to the Dreaming prompt: its
+ * immutable `content` plus the rendered structured evidence metadata. This
+ * is the single canonical form used for prompt rendering, evidence budget
+ * accounting, and quote validation so structured evidence is genuinely
+ * citable and unrelated/unrendered text is rejected.
+ */
+function renderSourceText(source: EpisodicSourceRecord): string {
+	const metaText = renderEvidenceMeta(source.evidenceMeta);
+	return metaText ? `${source.content}\n${metaText}` : source.content;
+}
+
 function buildDreamingPrompt(
 	mode: DreamingMode,
 	evidence: readonly EpisodicSourceRecord[],
@@ -472,12 +555,17 @@ function buildDreamingPrompt(
 	for (const source of evidence) {
 		const label = `${source.kind}:${source.sourceKind}`;
 		const heading = `\n### ${label} (${source.capturedAt})${source.project ? ` — ${source.project}` : ""}\nsource_kind: ${source.sourceKind}\nsource_id: ${source.sourceId}\n${source.sourcePath ? `source_path: ${source.sourcePath}\n` : ""}`;
-		if (usedChars + heading.length + source.content.length > evidenceBudget) {
+		// Use the canonical rendered source text (content + structured evidence)
+		// for both budget accounting and prompt rendering so a source whose
+		// structured metadata would overflow the budget is treated consistently
+		// with its actual rendered size.
+		const sourceText = renderSourceText(source);
+		if (usedChars + heading.length + sourceText.length > evidenceBudget) {
 			unrenderableEvidence = lastEvidence === null ? source : null;
 			break;
 		}
-		evidenceText += `${heading}${source.content}\n`;
-		usedChars += heading.length + source.content.length;
+		evidenceText += `${heading}${sourceText}\n`;
+		usedChars += heading.length + sourceText.length;
 		lastEvidence = source;
 	}
 
@@ -589,7 +677,12 @@ function matchEvidenceToSource(value: unknown, sources: readonly EpisodicSourceR
 				source.sourceKind === sourceKind &&
 				source.sourceId === sourceId &&
 				(sourcePath === null || source.sourcePath === sourcePath) &&
-				source.content.includes(quote),
+				// Validate the citation against the canonical rendered source text
+				// (content + rendered structured evidence), not raw content alone.
+				// A quote is only accepted when it appears in exactly what the LLM
+				// saw, so structured evidence is genuinely citable while unrelated
+				// or unrendered text is rejected.
+				renderSourceText(source).includes(quote),
 		) ?? null
 	);
 }
@@ -624,8 +717,7 @@ function normalizeDreamingOperation(raw: unknown, sources: readonly EpisodicSour
 	// from this single selected provenance source so derived rows carry one
 	// consistent provenance tuple rather than mixing the source entry id from
 	// a later matched artifact with the kind/path of an earlier transcript.
-	const provenanceSource =
-		matchedSources.find((source) => source.sourceEntryId !== null) ?? matchedSources[0];
+	const provenanceSource = matchedSources.find((source) => source.sourceEntryId !== null) ?? matchedSources[0];
 	return {
 		operation,
 		payload,

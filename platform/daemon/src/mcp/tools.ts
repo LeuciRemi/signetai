@@ -1040,7 +1040,8 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		"memory_store",
 		{
 			title: "Store Memory",
-			description: "Save a new memory",
+			description:
+				"Save a new memory as immutable episodic evidence. The memory is immediately retrievable via recall/search/list/get but is not written directly into the knowledge graph — Dreaming derives semantic state from episodic evidence. A structured payload, if supplied, is retained alongside the content as evidence but is not applied to the graph from this tool.",
 			inputSchema: z.object({
 				content: z.string().describe("Memory content to save"),
 				type: z.string().optional().describe("Memory type (fact, preference, decision, etc.)"),
@@ -1121,7 +1122,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 					})
 					.optional()
 					.describe(
-						"Pre-extracted structured data: entities, entity aspects with attributes, and hints. Skips pipeline extraction when provided.",
+						"Pre-extracted structured data (entities, aspects, attributes, hints). Retained as immutable episodic evidence alongside the memory content; not applied directly to the knowledge graph from this tool. Dreaming derives semantic state from episodic evidence.",
 					),
 			}),
 			annotations: { readOnlyHint: false },

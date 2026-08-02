@@ -39,6 +39,10 @@ export interface IngestEnvelope {
 	embeddingModel?: string | null;
 	extractionModel?: string | null;
 	updatedBy?: string;
+	/** Evidence vs derived kind. remember writes set 'episodic'. */
+	memoryKind?: string | null;
+	/** Canonical structured payload JSON preserved verbatim as evidence. */
+	evidenceMeta?: string | null;
 	sourceType: string;
 	sourceId: string | null;
 	sourcePath?: string | null;
@@ -108,6 +112,7 @@ export type ModifyMemoryTxStatus =
 	| "deleted"
 	| "version_conflict"
 	| "duplicate_content_hash"
+	| "episodic_content_immutable"
 	| "no_changes";
 
 export interface ModifyMemoryTxResult {
@@ -209,6 +214,7 @@ interface MutableMemoryRow {
 	project: string | null;
 	scope: string | null;
 	visibility: string | null;
+	memory_kind: string | null;
 }
 
 export function insertHistoryEvent(
@@ -272,8 +278,9 @@ export function txIngestEnvelope(db: WriteDb, mem: IngestEnvelope): string {
 		 (id, content, normalized_content, content_hash, who, why, project,
 		  importance, type, tags, pinned, is_deleted, extraction_status,
 		  embedding_model, extraction_model, created_at, updated_at, updated_by,
-		  source_type, source_id, source_path, runtime_path, idempotency_key, scope, agent_id, visibility)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  source_type, source_id, source_path, runtime_path, idempotency_key, scope, agent_id, visibility,
+		  memory_kind, evidence_meta)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	).run(
 		mem.id,
 		mem.content,
@@ -301,6 +308,8 @@ export function txIngestEnvelope(db: WriteDb, mem: IngestEnvelope): string {
 		mem.scope ?? null,
 		mem.agentId ?? "default",
 		mem.visibility ?? "global",
+		mem.memoryKind ?? null,
+		mem.evidenceMeta ?? null,
 	);
 
 	// FTS sync handled by memories_ai AFTER INSERT trigger (migration 001)
@@ -316,7 +325,7 @@ export function txModifyMemory(db: WriteDb, input: ModifyMemoryTxInput): ModifyM
 	const existing = db
 		.prepare(
 			`SELECT id, content, type, tags, importance, pinned, version, is_deleted,
-			        agent_id, project, scope, visibility
+			        agent_id, project, scope, visibility, memory_kind
 			 FROM memories
 			 WHERE id = ?`,
 		)
@@ -335,6 +344,24 @@ export function txModifyMemory(db: WriteDb, input: ModifyMemoryTxInput): ModifyM
 	if (input.ifVersion !== undefined && Number.isFinite(input.ifVersion) && existing.version !== input.ifVersion) {
 		return {
 			status: "version_conflict",
+			memoryId: input.memoryId,
+			currentVersion: existing.version,
+		};
+	}
+
+	// Episodic evidence rows (remember/CLI/MCP/plugin saves) are immutable
+	// content. Content and type describe the original evidence record and must
+	// not be rewritten. Metadata fields (tags, importance, pinned) remain
+	// editable so curators can re-rank or re-label evidence without altering
+	// what was originally recorded.
+	const isEpisodic = existing.memory_kind === "episodic";
+	if (
+		isEpisodic &&
+		((input.patch.content !== undefined && input.patch.content !== existing.content) ||
+			(input.patch.type !== undefined && input.patch.type !== existing.type))
+	) {
+		return {
+			status: "episodic_content_immutable",
 			memoryId: input.memoryId,
 			currentVersion: existing.version,
 		};

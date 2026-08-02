@@ -299,10 +299,13 @@ describe("aggregateRecall", () => {
 		expect(saved.type).toBe("semantic");
 		expect(saved.extraction_status).toBe("none");
 
-		const extractJob = getDbAccessor().withReadDb((db) =>
-			db.prepare("SELECT job_type, status FROM memory_jobs WHERE memory_id = ?").get("aggregate-1"),
-		) as Record<string, unknown>;
-		expect(extractJob).toEqual({ job_type: "extract", status: "pending" });
+		// No legacy extract job is enqueued — the extraction worker runtime is
+		// deleted and Dreaming owns semantic processing. Aggregate saves are
+		// retrievable evidence, not direct graph writes.
+		const extractJobCount = getDbAccessor().withReadDb((db) =>
+			db.prepare("SELECT COUNT(*) as cnt FROM memory_jobs WHERE memory_id = ?").get("aggregate-1"),
+		) as { cnt: number };
+		expect(extractJobCount.cnt).toBe(0);
 
 		const links = getDbAccessor().withReadDb((db) =>
 			db
@@ -319,7 +322,7 @@ describe("aggregateRecall", () => {
 		expect(hint.hint).toBe("what happened");
 	});
 
-	it("does not enqueue an extract job when dreaming owns semantic writes (#946)", async () => {
+	it("never enqueues a legacy extract job — worker runtime is deleted (#946)", async () => {
 		writeFileSync(
 			join(dir, "agent.yaml"),
 			`name: AggregateRecallTest
@@ -349,15 +352,15 @@ memory:
 			},
 		);
 
-		// The aggregate memory is still saved (Dreaming does not block recall saves).
+		// The aggregate memory is still saved (immediate retrieval preserved).
 		expect(result.aggregate).toMatchObject({ savedMemoryId: "aggregate-dream", saved: true });
 
-		// But no legacy extract job is enqueued — Dreaming owns semantic writes.
+		// No legacy extract job is enqueued — the extraction worker runtime is
+		// fully deleted; Dreaming owns semantic processing. This holds regardless
+		// of config because there is no worker to lease the job.
 		const jobCount = getDbAccessor().withReadDb((db) =>
 			db
-				.prepare(
-					"SELECT COUNT(*) as cnt FROM memory_jobs WHERE memory_id = ? AND job_type = 'extract'",
-				)
+				.prepare("SELECT COUNT(*) as cnt FROM memory_jobs WHERE memory_id = ? AND job_type = 'extract'")
 				.get("aggregate-dream"),
 		) as { cnt: number };
 		expect(jobCount.cnt).toBe(0);
@@ -1225,7 +1228,8 @@ memory:
 		) as { loser_count: number; link_count: number; pending_extract_count: number };
 		expect(rows.loser_count).toBe(0);
 		expect(rows.link_count).toBe(1);
-		expect(rows.pending_extract_count).toBe(1);
+		// No extract job — worker runtime deleted, Dreaming owns semantics.
+		expect(rows.pending_extract_count).toBe(0);
 	});
 
 	it("returns structured no-hit metadata when aggregate recall has no evidence", async () => {
