@@ -201,8 +201,8 @@ function resetDreamingTokens(
 	agentId: string,
 	passId: string,
 	mode: string,
-	evidenceCursor: EpisodicCursor,
-	lastPassAt: string,
+	evidenceCursor: EpisodicCursor | null,
+	lastPassAt: string | null,
 ): void {
 	const exists = db.prepare("SELECT 1 FROM dreaming_state WHERE agent_id = ?").get(agentId);
 	if (exists) {
@@ -215,13 +215,13 @@ function resetDreamingTokens(
 			     last_pass_mode = ?,
 			     updated_at = datetime('now')
 			 WHERE agent_id = ?`,
-		).run(lastPassAt, JSON.stringify(evidenceCursor), passId, mode, agentId);
+		).run(lastPassAt, evidenceCursor === null ? null : JSON.stringify(evidenceCursor), passId, mode, agentId);
 	} else {
 		db.prepare(
 			`INSERT INTO dreaming_state
 			 (agent_id, consecutive_failures, last_pass_at, evidence_cursor, last_pass_id, last_pass_mode)
 			 VALUES (?, 0, ?, ?, ?, ?)`,
-		).run(agentId, lastPassAt, JSON.stringify(evidenceCursor), passId, mode);
+		).run(agentId, lastPassAt, evidenceCursor === null ? null : JSON.stringify(evidenceCursor), passId, mode);
 	}
 }
 
@@ -826,7 +826,7 @@ export async function runDreamingPass(
 		warnIfTruncated(graph, graphLimits);
 
 		if (mode === "incremental" && evidence.length === 0 && graph.entities.length === 0) {
-			const evidenceCursor: EpisodicCursor = state.evidenceCursor ?? { capturedAt: passStartedAt, kind: null, id: "" };
+			const evidenceCursor = state.evidenceCursor;
 			accessor.withWriteTx((db) => {
 				db.prepare(
 					`UPDATE dreaming_passes
@@ -839,7 +839,7 @@ export async function runDreamingPass(
 					     summary = ?
 					 WHERE id = ?`,
 				).run("No new episodic evidence or semantic entities to process", passId);
-				resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, passStartedAt);
+				resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, state.lastPassAt);
 			});
 			return {
 				passId,

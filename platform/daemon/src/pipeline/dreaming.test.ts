@@ -257,6 +257,8 @@ describe("dreaming", () => {
 			expect(result.applied).toBe(0);
 			expect(result.failed).toBe(0);
 			expect(result.summary).toBe("No new episodic evidence or semantic entities to process");
+			expect(getDreamingState(accessor, AGENT).lastPassAt).toBeNull();
+			expect(getDreamingState(accessor, AGENT).evidenceCursor).toBeNull();
 		});
 
 		it("preserves the episodic cursor across an idle pass", async () => {
