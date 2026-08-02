@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeDbAccessor, getDbAccessor, initDbAccessor } from "./db-accessor";
-import { getEntityHealth, getPinnedEntities, propagateMemoryStatus, upsertAspect } from "./knowledge-graph";
+import { getEntityHealth, getPinnedEntities, upsertAspect } from "./knowledge-graph";
 import { applyOntologyOperation } from "./ontology-proposals";
 import { applyFtsOverlapFeedback, decayAspectWeights } from "./pipeline/aspect-feedback";
 import { resolveFocalEntities } from "./pipeline/graph-traversal";

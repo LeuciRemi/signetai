@@ -130,7 +130,7 @@ describe("installSkillNode semantic-writer cutover (#946)", () => {
 	// (the old guard required body.trim().length >= 20). Mentions entities the
 	// extractingProvider would return.
 	const BODY =
-		"This skill builds Astro portfolio websites and deploys them to GitHub Pages." +
+		"This skill builds Astro portfolio websites and deploys them to GitHub Pages. " +
 		"It reads brand assets and scaffolds the project from a template.";
 
 	it("performs no LLM semantic extraction even with graph + provider available", async () => {
