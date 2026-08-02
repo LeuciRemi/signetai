@@ -74,6 +74,7 @@ import {
 	stopPipeline,
 } from "./pipeline";
 import { type DreamingWorkerHandle, startDreamingWorker } from "./pipeline/dreaming-worker";
+import { deadLetterPendingExtractionJobs } from "./pipeline/extraction-fallback";
 import type { WorkerInit } from "./pipeline/extraction-thread-protocol";
 import { invalidateTraversalCache } from "./pipeline/graph-traversal";
 import { stopModelRegistry } from "./pipeline/model-registry";
@@ -1271,6 +1272,22 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 	if (memoryCfg.pipelineV2.enabled && dreamingOwnsSemanticWrites) {
 		logger.info("dreaming", "Dreaming cutover owns semantic writes; legacy extraction workers are not started");
 	}
+	// Full cutover: with Dreaming owning semantic writes and the runtime not
+	// paused, retire any PRE-EXISTING legacy `extract` jobs left pending from
+	// before enablement so they cannot backlog. Leased (in-flight) rows are
+	// preserved by the helper. Runs on every startPipelineRuntime invocation,
+	// which covers cold boot and live-reload config transitions (#946).
+	if (dreamingOwnsSemanticWrites && !pipelinePaused) {
+		const deadLettered = deadLetterPendingExtractionJobs(getDbAccessor(), {
+			reason: "Dreaming cutover: legacy extraction worker not started",
+		});
+		if (deadLettered > 0) {
+			logger.info("dreaming", "Retired pre-existing pending legacy extraction jobs", {
+				count: deadLettered,
+			});
+		}
+	}
+
 	const activeEmbeddingCfg = getDbAccessor().withReadDb((db) => resolveActiveEmbeddingConfig(db, memoryCfg.embedding));
 	configureLlmConcurrency(memoryCfg.pipelineV2.worker.maxLlmConcurrency);
 	clearStructuralBackfillTimer();
