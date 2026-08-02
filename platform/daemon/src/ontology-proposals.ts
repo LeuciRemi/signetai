@@ -243,6 +243,48 @@ export interface OntologyOperationBatchError {
 	readonly status: 400 | 404 | 409;
 }
 
+/** Apply an audited operation batch inside a caller-owned transaction. */
+export function applyOntologyOperationBatchInTx(
+	db: WriteDb,
+	params: Pick<ApplyOntologyOperationBatchParams, "agentId" | "actor" | "operations">,
+): ApplyOntologyOperationBatchResult {
+	if (params.operations.length === 0) throw new OntologyProposalError("operations are required", 400);
+	if (params.operations.length > 500)
+		throw new OntologyProposalError("cannot apply more than 500 operations at once", 400);
+
+	const items: ApplyOntologyOperationResult[] = [];
+	for (const operation of params.operations) {
+		const inserted = insertProposalInTx(
+			db,
+			{
+				agentId: params.agentId,
+				operation: operation.operation,
+				payload: operation.payload,
+				confidence: operation.confidence,
+				rationale: operation.reason,
+				evidence: operation.evidence,
+				risk: operation.risk,
+				sourceKind: operation.sourceKind,
+				sourceId: operation.sourceId,
+				sourcePath: operation.sourcePath,
+				sourceRoot: operation.sourceRoot,
+				createdBy: params.actor,
+			},
+			now(),
+		);
+		const row = getProposalInTx(db, inserted.id, params.agentId);
+		if (row === null) throw new OntologyProposalError("Proposal not found", 404);
+		const result = applyOperation(db, row, params.actor);
+		items.push({
+			proposal: markAppliedInTx(db, row, params.actor, result),
+			result,
+			dryRun: false,
+			proposed: false,
+		});
+	}
+	return { items, count: items.length, dryRun: false, proposed: false };
+}
+
 export interface ClaimVersionReadParams {
 	readonly agentId: string;
 	readonly entity: string;
@@ -2190,6 +2232,9 @@ export function applyOntologyOperationBatch(
 			dryRun: false,
 			proposed: true,
 		};
+	}
+	if (!params.dryRun) {
+		return accessor.withWriteTx((db) => applyOntologyOperationBatchInTx(db, params));
 	}
 
 	let preview: ApplyOntologyOperationBatchResult | null = null;
