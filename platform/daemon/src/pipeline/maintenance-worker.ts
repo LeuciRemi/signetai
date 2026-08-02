@@ -125,35 +125,6 @@ function getGraphAgentIds(accessor: DbAccessor): readonly string[] {
 	});
 }
 
-/**
- * Retroactive supersession sweep for a single agent.
- *
- * Opportunistic and best-effort: it must never abort the maintenance
- * cycle. If no inference provider is configured (e.g. the resolver has
- * not been initialised yet) or the sweep itself fails, the error is
- * logged and skipped — consistent with the summary-condensation block
- * below, which is also a non-fatal retroactive LLM pass.
- */
-async function runSupersessionSweep(accessor: DbAccessor, agentId: string, cfg: PipelineV2Config): Promise<void> {
-	if (!cfg.structural.supersessionSweepEnabled) return;
-	try {
-		const { sweepRetroactiveSupersession } = await import("./supersession");
-		const sweep = await sweepRetroactiveSupersession(accessor, agentId, cfg, getLlmProvider());
-		if (sweep.candidates.length > 0) {
-			logger.info("maintenance", "Supersession sweep", {
-				agentId,
-				superseded: sweep.superseded,
-				proposals: sweep.candidates.length,
-			});
-		}
-	} catch (e) {
-		logger.warn("maintenance", "Supersession sweep skipped (non-fatal)", {
-			agentId,
-			error: e instanceof Error ? e.message : String(e),
-		});
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Execution
 // ---------------------------------------------------------------------------
@@ -264,8 +235,6 @@ export function startMaintenanceWorker(
 						});
 					}
 					feedbackPropagatedAttributes += propagateMemoryStatus(accessor, agentId);
-
-					await runSupersessionSweep(accessor, agentId, cfg);
 				}
 				recordFeedbackTelemetry({
 					feedbackDecayedAspects,
@@ -345,8 +314,6 @@ export function startMaintenanceWorker(
 					});
 				}
 				feedbackPropagatedAttributes += propagateMemoryStatus(accessor, agentId);
-
-				await runSupersessionSweep(accessor, agentId, cfg);
 			}
 			recordFeedbackTelemetry({
 				feedbackDecayedAspects,

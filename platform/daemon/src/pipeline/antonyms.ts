@@ -1,8 +1,8 @@
 /**
  * Shared antonym pairs for contradiction detection.
  *
- * Used by both the pipeline worker (prospective contradiction risk)
- * and the supersession module (retroactive attribute contradiction).
+ * Used by the contradiction detection module (semantic attribute
+ * contradiction).
  */
 
 export const NEGATION_TOKENS = new Set([

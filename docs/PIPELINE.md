@@ -262,8 +262,6 @@ The `structural` pipeline-config block still gates behavior that remains live:
   presents those facts alongside the top entities in the graph, and asks the LLM
   to propose new `entity_dependencies` edges. See the "Dependency Synthesis"
   section below.
-- **Supersession** (`structural.supersessionEnabled`) and its periodic sweep
-  (`structural.supersessionSweepEnabled`), maintained by the maintenance worker.
 
 The default pipeline does not use a background LLM to author graph structure;
 structured remember is the normal semantic write path.
@@ -703,11 +701,14 @@ controlled by `semanticContradictionTimeoutMs` (default 120 seconds, range
 5s-300s). On timeout or parse failure, the result defaults to "no
 contradiction" — the check is advisory and never blocks a proposal.
 
-These same detection primitives are reused by the retroactive supersession
-system (`supersession.ts`), which applies contradiction detection to sibling
-attributes on the same entity/aspect rather than to UPDATE/DELETE proposals.
-See the [retroactive supersession spec](./specs/planning/retroactive-supersession.md)
-and [KNOWLEDGE-GRAPH.md](./KNOWLEDGE-GRAPH.md#retroactive-supersession) for
+Under the Dreaming cutover (#946) the periodic retroactive supersession
+sweep and its `supersession.ts` module were retired; the contradiction
+primitives above are no longer consumed by a retroactive supersession path.
+Supersession now happens only at write time: the structured remember path
+supersedes conflicting sibling attributes in the same
+`aspect_id + group_key + claim_key` slot, and an explicit, audited
+`supersede_claim_value` ontology operation handles supersession through the
+mutation API. See [KNOWLEDGE-GRAPH.md](./KNOWLEDGE-GRAPH.md#supersession) for
 details.
 
 ```yaml
@@ -1165,10 +1166,6 @@ structural:
   synthesisTopEntities: 20       # range 5–100
   synthesisMaxFacts: 10          # range 3–50
   synthesisMaxStallMs: 1800000   # 30 min, set 0 to disable
-  supersessionEnabled: true
-  supersessionSweepEnabled: true
-  supersessionSemanticFallback: false
-  supersessionMinConfidence: 0.7
 
 reranker:
   enabled: true

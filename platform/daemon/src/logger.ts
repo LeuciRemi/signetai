@@ -84,7 +84,6 @@ export type LogCategory =
 	| "model-registry" // LLM model registry management
 	| "structural-classify" // Pipeline structural classification
 	| "structural-dependency" // Pipeline structural dependency analysis
-	| "supersession" // Memory supersession detection
 	| "training-pairs" // Training pair generation
 	| "telemetry" // Telemetry collection
 	| "temporal-fallback" // Temporal fallback retrieval

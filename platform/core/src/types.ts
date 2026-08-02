@@ -464,10 +464,6 @@ export interface PipelineStructuralConfig {
 	readonly synthesisTopEntities: number;
 	readonly synthesisMaxFacts: number;
 	readonly synthesisMaxStallMs: number;
-	readonly supersessionEnabled: boolean;
-	readonly supersessionSweepEnabled: boolean;
-	readonly supersessionSemanticFallback: boolean;
-	readonly supersessionMinConfidence: number;
 }
 
 export interface PipelineFeedbackConfig {

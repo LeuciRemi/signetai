@@ -1086,7 +1086,6 @@ describe("loadPipelineConfig", () => {
 
 		expect(result.structural.enabled).toBe(false);
 		expect(result.structural.synthesisEnabled).toBe(false);
-		expect(result.structural.supersessionSemanticFallback).toBe(false);
 	});
 
 	it("preserves zero as the dependency synthesis stall disable value", () => {

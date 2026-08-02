@@ -212,10 +212,6 @@ export const DEFAULT_PIPELINE_V2: ResolvedPipelineV2Config = {
 		synthesisTopEntities: 20,
 		synthesisMaxFacts: 10,
 		synthesisMaxStallMs: 30 * 60_000,
-		supersessionEnabled: true,
-		supersessionSweepEnabled: true,
-		supersessionSemanticFallback: false,
-		supersessionMinConfidence: 0.7,
 	},
 	feedback: {
 		enabled: true,
@@ -967,23 +963,6 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 					dependencySynthesisRaw?.synthesisMaxStallMs,
 				24 * 60 * 60_000,
 				d.structural.synthesisMaxStallMs,
-			),
-			supersessionEnabled: resolveBool(structuralRaw?.supersessionEnabled, undefined, d.structural.supersessionEnabled),
-			supersessionSweepEnabled: resolveBool(
-				structuralRaw?.supersessionSweepEnabled,
-				undefined,
-				d.structural.supersessionSweepEnabled,
-			),
-			supersessionSemanticFallback: resolveBool(
-				structuralRaw?.supersessionSemanticFallback,
-				undefined,
-				d.structural.supersessionSemanticFallback,
-			),
-			supersessionMinConfidence: clampPositive(
-				structuralRaw?.supersessionMinConfidence,
-				0.1,
-				1.0,
-				d.structural.supersessionMinConfidence,
 			),
 		},
 

@@ -330,14 +330,21 @@ Aspect feedback is driven by session outcomes. FTS overlap can increase aspect
 weights when previously injected memories later match full-text searches.
 Aspect decay lowers stale weights toward a configured floor.
 
-Source: `platform/daemon/src/pipeline/supersession.ts`
+Source: `platform/daemon/src/pipeline/graph-transactions.ts`
 
-### Retroactive Supersession
+### Supersession
 
-Supersession detects and marks conflicting active sibling attributes. Structured
-remember does this at write time for matching claim slots. Maintenance can also
-catch older contradictions. Constraints are not automatically superseded by this
-heuristic.
+Conflicting sibling attributes in the same `aspect_id + group_key +
+claim_key` slot are superseded at write time by the structured remember
+path (`txPersistStructured`). The newer attribute wins when its content is
+a likely supersession of the older one; constraints are not
+auto-superseded by this write-time heuristic. Explicit, audited
+supersession flows through the `supersede_claim_value` ontology operation
+handler (see "Ontology Operation Handlers" above), which validates
+inputs, preserves provenance, updates version lineage, and leaves an
+audit row. The periodic retroactive supersession sweep was retired under
+the Dreaming cutover (#946); maintenance does not supersede semantic
+rows.
 
 Source: `platform/daemon/src/knowledge-graph-hygiene.ts`
 
