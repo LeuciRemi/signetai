@@ -245,32 +245,28 @@ graph rows.
 Structural Classification
 ---
 
-When explicitly enabled, after extraction writes facts to the database, the
-structural classification worker (`structural-classify.ts`) runs a second LLM
-pass to assign each extracted fact to its entity's aspect hierarchy. Jobs are
-enqueued as `structural_classify` entries in `memory_jobs` and processed by a
-separate polling worker that batches by `entity_id`, all facts for the same
-entity in one LLM call.
+The per-fact structural classify and structural dependency workers were
+retired under Dreaming (#946). Dreaming owns semantic writes, so the extraction
+worker no longer creates stub `entity_attributes` rows or enqueues
+`structural_classify`/`structural_dependency` jobs, and no worker leases those
+job types. The `structuralBackfill` repair action likewise no-ops under Dreaming
+so it cannot enqueue jobs nothing will lease. The `structural_classify.ts` and
+`structural-dependency.ts` worker modules have been removed.
 
-The prompt presents the entity name, type, existing aspects, and suggested
-aspect names (from `ASPECT_SUGGESTIONS` keyed by entity type). The LLM
-returns a JSON array of `{i, aspect, kind, new}` objects. Each fact is
-assigned to a named aspect and classified as either `attribute` or
-`constraint`. Aspects are upserted into `entity_aspects` on
-`(entity_id, canonical_name)` conflict. The `entity_attributes` row written
-during extraction has its `aspect_id` and `kind` filled in.
+The `structural` pipeline-config block still gates behavior that remains live:
 
-When an entity's type was not determinable during extraction (stored as
-`"extracted"`), the classify prompt also asks the LLM to infer the type.
-If a valid canonical type is returned (`person`, `project`, `system`,
-`tool`, `concept`, `skill`, `task`, or `unknown`), the `entities` row is
-updated in the same transaction.
+- **Dependency synthesis** (`structural.enabled && graph.enabled &&
+  `synthesisEnabled`) — a cross-entity dependency inference worker
+  (`dependency-synthesis.ts`) that is separate from the retired per-fact path.
+  It polls for entities whose facts were updated since their last synthesis,
+  presents those facts alongside the top entities in the graph, and asks the LLM
+  to propose new `entity_dependencies` edges. See the "Dependency Synthesis"
+  section below.
+- **Supersession** (`structural.supersessionEnabled`) and its periodic sweep
+  (`structural.supersessionSweepEnabled`), maintained by the maintenance worker.
 
-The worker configuration lives under `structural` in the pipeline config:
-`enabled` (default `false`), `pollIntervalMs` (how often to check for pending
-jobs), and `classifyBatchSize` (max facts per entity per LLM call). The default
-pipeline does not use a background LLM to author graph structure; structured
-remember is the normal semantic write path.
+The default pipeline does not use a background LLM to author graph structure;
+structured remember is the normal semantic write path.
 
 For details on the knowledge graph persistence stage, see
 [KNOWLEDGE-GRAPH.md](./KNOWLEDGE-GRAPH.md).
@@ -1157,9 +1153,9 @@ graph:
 
 structural:
   enabled: false
-  classifyBatchSize: 8           # range 1–20
-  dependencyBatchSize: 5         # range 1–10
-  pollIntervalMs: 10000          # ms, range 2000–120000
+  classifyBatchSize: 8           # range 1–20 (legacy: no started worker reads this under Dreaming)
+  dependencyBatchSize: 5         # range 1–10 (legacy: no started worker reads this under Dreaming)
+  pollIntervalMs: 10000          # ms, range 2000–120000 (legacy: no started structural worker under Dreaming)
   synthesisEnabled: false
   synthesisIntervalMs: 60000     # ms, range 10000–600000
   synthesisTopEntities: 20       # range 5–100

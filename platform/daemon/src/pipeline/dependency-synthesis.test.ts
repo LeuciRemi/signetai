@@ -7,7 +7,7 @@
 
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { DEPENDENCY_TYPES } from "@signet/core";
+import { DEPENDENCY_DESCRIPTIONS as DEP_DESCRIPTIONS, DEPENDENCY_TYPES } from "@signet/core";
 import { runMigrations } from "../../../core/src/migrations";
 import type { DbAccessor, ReadDb, WriteDb } from "../db-accessor";
 import { DEFAULT_PIPELINE_V2 } from "../memory-config";
@@ -164,6 +164,26 @@ const candidates = [
 	{ id: "ent-platform", name: "platform team", entityType: "person", mentions: 7 },
 	{ id: "ent-audit", name: "audit log", entityType: "system", mentions: 6 },
 ];
+
+describe("dependency descriptions", () => {
+	test("every dependency type has exactly one description", () => {
+		expect(Object.keys(DEP_DESCRIPTIONS).sort()).toEqual([...DEPENDENCY_TYPES].sort());
+	});
+
+	test("all types have descriptions", () => {
+		for (const t of DEPENDENCY_TYPES) {
+			expect(DEP_DESCRIPTIONS[t]).toBeDefined();
+		}
+	});
+
+	test("synthesis prompt includes all types with their descriptions", () => {
+		const prompt = buildSynthesisPrompt(entity, facts, candidates, new Set());
+		for (const t of DEPENDENCY_TYPES) {
+			expect(prompt).toContain(`- ${t}: `);
+			expect(prompt).toContain(DEP_DESCRIPTIONS[t]);
+		}
+	});
+});
 
 describe(`${MODEL} dependency synthesis`, () => {
 	test("pauses when extraction progress is older than the configured stall window", () => {

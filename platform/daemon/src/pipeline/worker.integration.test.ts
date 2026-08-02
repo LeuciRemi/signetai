@@ -2,7 +2,7 @@
  * Full pipeline integration test — exercises the entire extraction flow:
  *
  *   remember → enqueue → lease → extract (LLM) → escalate → decide (LLM)
- *   → Phase C writes → graph persistence → structural pass 1
+ *   → Phase C writes → graph persistence
  *   → hints enqueue → hints generation (LLM) → FTS5 search verification
  *
  * Uses a real in-memory SQLite database with full migrations and scripted
@@ -466,7 +466,7 @@ describe("pipeline integration", () => {
 		db.close();
 	});
 
-	it("full pipeline: extract → decide → write → graph → structural → hints → search", async () => {
+	it("full pipeline: extract → decide → write → graph → hints → search", async () => {
 		const sourceId = crypto.randomUUID();
 		const content =
 			"Nicholai moved from Portland to Seattle in 2019. He prefers walkable neighborhoods with good coffee.";
@@ -563,25 +563,20 @@ describe("pipeline integration", () => {
 			expect(meta.extractionModel).toBe("mock-test");
 		}
 
-		// ----- Stage 5: Structural pass 1 -----
-		// Written facts that mention "Nicholai" should get entity_attributes stubs
-		// and structural_classify jobs
+		// ----- Stage 5: No retired structural jobs/stubs produced -----
+		// The per-fact structural classify/dependency worker was retired in #946
+		// (Dreaming owns semantic writes). The extraction worker must no longer
+		// enqueue structural_classify/structural_dependency jobs or create stub
+		// entity_attributes rows awaiting classification.
 		const allStructuralJobs: Array<{ job_type: string; status: string; payload: string }> = [];
 		for (const fact of facts) {
 			const jobs = getStructuralJobs(db, fact.id);
 			allStructuralJobs.push(...jobs);
 
-			if (fact.content.toLowerCase().includes("nicholai")) {
-				const attrs = getAttributes(db, fact.id);
-				expect(attrs.length).toBeGreaterThanOrEqual(1);
-				expect(attrs[0].aspect_id).toBeNull(); // stub awaiting classification
-				expect(attrs[0].kind).toBe("attribute");
-			}
+			const stubAttrs = getAttributes(db, fact.id).filter((a) => a.aspect_id === null);
+			expect(stubAttrs).toHaveLength(0);
 		}
-
-		// At least one structural_classify job should exist
-		const classifyJobs = allStructuralJobs.filter((j) => j.job_type === "structural_classify");
-		expect(classifyJobs.length).toBeGreaterThanOrEqual(1);
+		expect(allStructuralJobs).toHaveLength(0);
 
 		// ----- Stage 6: Hints jobs enqueued -----
 		// Each written fact gets a prospective_index job

@@ -3,11 +3,12 @@
  *
  * Polling worker that discovers connections between entities by
  * presenting the LLM with an entity's facts alongside the top
- * entities from the graph. Separate from structural-dependency
- * which only sees facts from a single memory at a time.
+ * entities from the graph. This is the only dependency worker still
+ * started under Dreaming; the per-fact structural-dependency worker
+ * was retired in #946 (Dreaming owns semantic writes).
  */
 
-import { DEPENDENCY_TYPES, type DependencyType } from "@signet/core";
+import { DEPENDENCY_DESCRIPTIONS as DEP_DESCRIPTIONS, DEPENDENCY_TYPES, type DependencyType } from "@signet/core";
 import type { DbAccessor, ReadDb } from "../db-accessor";
 import { upsertDependency } from "../knowledge-graph";
 import { logger } from "../logger";
@@ -15,7 +16,6 @@ import type { PipelineV2Config } from "../memory-config";
 import { stripFences, tryParseJson } from "./extraction";
 import { invalidateTraversalCache } from "./graph-traversal";
 import type { LlmProvider } from "./provider";
-import { DEP_DESCRIPTIONS } from "./structural-dependency";
 import type { WorkerProgressStats } from "./worker";
 
 // ---------------------------------------------------------------------------

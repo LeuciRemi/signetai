@@ -1,26 +1,17 @@
 # Pipeline prompt testing
 
-Live Ollama prompt checks for the two dependency prompts live here:
-
-- `structural-dependency.test.ts`
-- `dependency-synthesis.test.ts`
+Live Ollama prompt checks for the cross-entity dependency synthesis prompt
+live in `dependency-synthesis.test.ts`. The retired per-fact structural
+dependency worker (`structural-dependency.ts`) and its prompt test were
+removed under Dreaming (#946).
 
 Model selection uses `SIGNET_OLLAMA_TEST_MODEL`.
 
 Examples:
 
 ```bash
-# Root script aliases
-bun run test:prompt:structural
+# Root script alias
 bun run test:prompt:synthesis
-
-# Structural dependency prompt, default local baseline
-SIGNET_OLLAMA_TEST_MODEL=qwen3:4b \
-bun test platform/daemon/src/pipeline/structural-dependency.test.ts
-
-# Structural dependency prompt, Nemotron
-SIGNET_OLLAMA_TEST_MODEL=nemotron-3-nano:4b \
-bun test platform/daemon/src/pipeline/structural-dependency.test.ts
 
 # Cross-entity dependency synthesis prompt, default local baseline
 SIGNET_OLLAMA_TEST_MODEL=qwen3:4b \
