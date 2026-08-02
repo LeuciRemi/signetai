@@ -332,6 +332,36 @@ describe("dreaming", () => {
 			expect(prompt).toContain("The compaction preserves temporal lineage.");
 		});
 
+		it("renders project and harness provenance in episodic evidence headings", async () => {
+			// Regression (#946): harness provenance must reach the Dreaming prompt
+			// heading alongside project, so the model can reason over the
+			// originating context. These are display-only metadata labels; they do
+			// not gate reads or change agent isolation.
+			db.prepare(
+				`INSERT INTO session_summaries
+				 (id, agent_id, content, token_count, depth, kind, source_type, project, harness,
+				  earliest_at, latest_at, created_at)
+				 VALUES ('provenance-summary', ?, 'Provenance evidence.', 5, 0, 'session', 'summary',
+				         'Meridian', 'obsidian',
+				         datetime('now'), datetime('now'), datetime('now'))`,
+			).run(AGENT);
+			let prompt = "";
+			await runDreamingPass(
+				accessor,
+				async (input) => {
+					prompt = input;
+					return JSON.stringify({ operations: [], summary: "Inspected provenance headings" });
+				},
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(prompt).toContain(" — Meridian · obsidian");
+			expect(prompt).toContain("source_kind: summary");
+			expect(prompt).toContain("source_id: provenance-summary");
+		});
+
 		it("keeps evidence created during a pass eligible for the next pass", async () => {
 			db.prepare(
 				`INSERT INTO session_summaries

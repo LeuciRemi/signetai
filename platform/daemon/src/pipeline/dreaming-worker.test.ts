@@ -131,4 +131,142 @@ describe("dreaming worker agent scope", () => {
 			worker.stop();
 		}
 	});
+
+	it("keeps multi-agent check-cycle passes and semantic rows agent-isolated (#946)", async () => {
+		// Behavioral regression: one worker check cycle over two agents must
+		// produce a separate pass per agent, each consolidating only its own
+		// evidence into its own agent-scoped semantic rows. The agent_id is
+		// the hard boundary; no cross-agent evidence leaks into another
+		// agent's prompt or derived graph. This mirrors the private check()
+		// loop: getDreamingWorkerAgentIds -> one runPass(runAgentId, mode) per
+		// discovered agent, using a deterministic provider.
+		const ALPHA = "alpha";
+		const BETA = "beta";
+		const alphaEvidence = "Alpha is building the Apex platform.";
+		const betaEvidence = "Beta is building the Zenith platform.";
+
+		// Seed distinct episodic evidence for each agent.
+		db.prepare(
+			`INSERT INTO session_summaries
+			 (id, agent_id, content, token_count, depth, kind, source_type, earliest_at, latest_at, created_at)
+			 VALUES ('summary-alpha', ?, ?, 10, 0, 'session', 'summary',
+			         datetime('now'), datetime('now'), datetime('now'))`,
+		).run(ALPHA, alphaEvidence);
+		db.prepare(
+			`INSERT INTO session_summaries
+			 (id, agent_id, content, token_count, depth, kind, source_type, earliest_at, latest_at, created_at)
+			 VALUES ('summary-beta', ?, ?, 10, 0, 'session', 'summary',
+			         datetime('now'), datetime('now'), datetime('now'))`,
+		).run(BETA, betaEvidence);
+
+		// Deterministic provider: inspect the prompt to emit an operation that
+		// cites only the evidence present in THIS agent's prompt. Since each
+		// pass is bound to one agent_id, only that agent's summary appears.
+		const seenPrompts: string[] = [];
+		const deterministicProvider: LlmProvider = {
+			name: "deterministic-multi-agent",
+			async available() {
+				return true;
+			},
+			async generate(prompt: string) {
+				seenPrompts.push(prompt);
+				if (prompt.includes(alphaEvidence) && !prompt.includes(betaEvidence)) {
+					return JSON.stringify({
+						operations: [
+							{
+								operation: "create_entity",
+								payload: { name: "Apex", entity_type: "project" },
+								reason: "The evidence identifies the Apex project.",
+								confidence: 0.9,
+								evidence: [
+									{ source_kind: "summary", source_id: "summary-alpha", quote: alphaEvidence },
+								],
+							},
+						],
+						summary: "Consolidated alpha evidence",
+					});
+				}
+				if (prompt.includes(betaEvidence) && !prompt.includes(alphaEvidence)) {
+					return JSON.stringify({
+						operations: [
+							{
+								operation: "create_entity",
+								payload: { name: "Zenith", entity_type: "project" },
+								reason: "The evidence identifies the Zenith project.",
+								confidence: 0.9,
+								evidence: [
+									{ source_kind: "summary", source_id: "summary-beta", quote: betaEvidence },
+								],
+							},
+						],
+						summary: "Consolidated beta evidence",
+					});
+				}
+				return JSON.stringify({ operations: [], summary: "No recognized evidence" });
+			},
+		};
+		initInferenceProviderResolver(() => deterministicProvider);
+
+		// Mirror one check cycle: discover agents, run one pass per agent.
+		const worker = startDreamingWorker(
+			accessor,
+			defaultCfg({ tokenThreshold: 1, backfillOnFirstRun: true }),
+			agentsDir,
+			"default",
+		);
+		try {
+			for (const agentId of getDreamingWorkerAgentIds(accessor, "default")) {
+				// Only alpha and beta have episodic evidence worth consolidating.
+				if (agentId !== ALPHA && agentId !== BETA) continue;
+				await worker.trigger("incremental", agentId);
+			}
+
+			// Two passes recorded, one per agent.
+			const alphaPass = db
+				.prepare("SELECT agent_id, status, mode FROM dreaming_passes WHERE agent_id = ?")
+			.get(ALPHA) as { agent_id: string; status: string; mode: string };
+			const betaPass = db
+				.prepare("SELECT agent_id, status, mode FROM dreaming_passes WHERE agent_id = ?")
+			.get(BETA) as { agent_id: string; status: string; mode: string };
+			expect(alphaPass).toEqual({ agent_id: ALPHA, status: "completed", mode: "incremental" });
+			expect(betaPass).toEqual({ agent_id: BETA, status: "completed", mode: "incremental" });
+
+			// Each pass saw only its own agent's evidence (no cross-agent leak).
+			expect(seenPrompts).toHaveLength(2);
+			const alphaPrompt = seenPrompts.find((p) => p.includes(alphaEvidence));
+			const betaPrompt = seenPrompts.find((p) => p.includes(betaEvidence));
+			expect(alphaPrompt).toBeDefined();
+			expect(betaPrompt).toBeDefined();
+			expect(alphaPrompt).not.toContain(betaEvidence);
+			expect(betaPrompt).not.toContain(alphaEvidence);
+
+			// Semantic rows are agent-isolated: each agent only owns its entity.
+			const alphaEntities = (
+				db.prepare("SELECT canonical_name FROM entities WHERE agent_id = ? ORDER BY canonical_name").all(ALPHA) as Array<{
+				canonical_name: string;
+			}>
+			).map((r) => r.canonical_name);
+			const betaEntities = (
+				db.prepare("SELECT canonical_name FROM entities WHERE agent_id = ? ORDER BY canonical_name").all(BETA) as Array<{
+				canonical_name: string;
+			}>
+			).map((r) => r.canonical_name);
+			expect(alphaEntities).toEqual(["apex"]);
+			expect(betaEntities).toEqual(["zenith"]);
+
+			// No entity was written to the wrong agent.
+			expect(
+				(db.prepare("SELECT COUNT(*) AS n FROM entities WHERE agent_id = ? AND canonical_name = 'zenith'").get(ALPHA) as {
+					n: number;
+				}).n,
+			).toBe(0);
+			expect(
+				(db.prepare("SELECT COUNT(*) AS n FROM entities WHERE agent_id = ? AND canonical_name = 'apex'").get(BETA) as {
+					n: number;
+				}).n,
+			).toBe(0);
+		} finally {
+			worker.stop();
+		}
+	});
 });

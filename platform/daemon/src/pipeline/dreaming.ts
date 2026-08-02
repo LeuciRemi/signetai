@@ -554,7 +554,13 @@ function buildDreamingPrompt(
 	let unrenderableEvidence: EpisodicSourceRecord | null = null;
 	for (const source of evidence) {
 		const label = `${source.kind}:${source.sourceKind}`;
-		const heading = `\n### ${label} (${source.capturedAt})${source.project ? ` — ${source.project}` : ""}\nsource_kind: ${source.sourceKind}\nsource_id: ${source.sourceId}\n${source.sourcePath ? `source_path: ${source.sourcePath}\n` : ""}`;
+		// Surface project and harness provenance labels so the model can
+		// reason about the originating context. These are display-only metadata
+		// (the same provenance carried on EpisodicSourceRecord); they do not
+		// gate reads, change citation matching (which keys on source_kind /
+		// source_id / source_path / quote), or alter agent isolation.
+		const provenanceSuffix = [source.project, source.harness].filter(Boolean).join(" · ");
+		const heading = `\n### ${label} (${source.capturedAt})${provenanceSuffix ? ` — ${provenanceSuffix}` : ""}\nsource_kind: ${source.sourceKind}\nsource_id: ${source.sourceId}\n${source.sourcePath ? `source_path: ${source.sourcePath}\n` : ""}`;
 		// Use the canonical rendered source text (content + structured evidence)
 		// for both budget accounting and prompt rendering so a source whose
 		// structured metadata would overflow the budget is treated consistently
