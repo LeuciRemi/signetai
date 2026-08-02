@@ -370,4 +370,183 @@ describe("Obsidian source graph structure", () => {
 		expect(after.vaultA).toBe(0);
 		expect(after.vaultB).toBeGreaterThan(0);
 	});
+
+	it("purges Dreaming-derived semantic rows stamped with the source entry id on disconnect", () => {
+		// Regression for #946: a Dreaming pass stamps claim values and links with
+		// the configured Signet source entry id in source_id but the literal
+		// source_root 'dreaming' (not the vault root). The Obsidian disconnect
+		// purge must remove those derived rows alongside the vault-root topology,
+		// mirroring purgeSourceOwnedRows (used by the GitHub/Discord providers).
+		const root = join(dir, "dreaming-vault");
+		mkdirSync(root, { recursive: true });
+		const sourceId = "obsidian:dreaming-vault";
+
+		// Stand up user-owned semantic entities/aspects (no source provenance;
+		// Dreaming inserts entities without source_id) and attach a Dreaming-
+		// derived claim and link stamped with the source entry id + source_root
+		// 'dreaming'.
+		const db = getDbAccessor();
+		db.withWriteTx((write) => {
+			write
+				.prepare(
+					`INSERT INTO entities (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+					 VALUES ('derived-entity', 'Derived', 'derived', 'project', 'obsidian-graph-agent', 0,
+					 datetime('now'), datetime('now'))`,
+				)
+				.run();
+			write
+				.prepare(
+					`INSERT INTO entity_aspects (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
+					 VALUES ('derived-aspect', 'derived-entity', 'obsidian-graph-agent', 'facts', 'facts', 0.5,
+					 datetime('now'), datetime('now'))`,
+				)
+				.run();
+			write
+				.prepare(
+					`INSERT INTO entity_attributes
+					 (id, aspect_id, agent_id, kind, content, normalized_content, confidence, importance, status,
+					 group_key, claim_key, version, created_at, updated_at, source_id, source_kind, source_path, source_root)
+					 VALUES ('derived-claim', 'derived-aspect', 'obsidian-graph-agent', 'attribute',
+					 'dreaming-derived claim', 'dreaming-derived claim', 0.8, 0.5, 'active', 'general', 'target', 1,
+					 datetime('now'), datetime('now'), ?, 'source_obsidian_markdown', 'dreaming-vault/note.md', 'dreaming')`,
+				)
+				.run(sourceId);
+			write
+				.prepare(
+					`INSERT INTO entity_dependencies
+					 (id, source_entity_id, target_entity_id, agent_id, dependency_type, strength, confidence, reason,
+					 created_at, updated_at, source_id, source_kind, source_path, source_root)
+					 VALUES ('derived-link', 'derived-entity', 'derived-entity', 'obsidian-graph-agent', 'related_to',
+					 0.7, 0.6, 'dreaming-derived link', datetime('now'), datetime('now'), ?,
+					 'source_obsidian_markdown', 'dreaming-vault/note.md', 'dreaming')`,
+				)
+				.run(sourceId);
+		});
+
+		const purged = purgeObsidianSourceStructure({
+			agentId: "obsidian-graph-agent",
+			sourceId,
+			root,
+		});
+		expect(purged.attributes).toBeGreaterThan(0);
+		expect(purged.dependencies).toBeGreaterThan(0);
+
+		const remaining = getDbAccessor().withReadDb((read) => ({
+			claim: (
+				read.prepare("SELECT COUNT(*) AS count FROM entity_attributes WHERE id = ?").get("derived-claim") as {
+					count: number;
+				}
+			).count,
+			link: (
+				read.prepare("SELECT COUNT(*) AS count FROM entity_dependencies WHERE id = ?").get("derived-link") as {
+					count: number;
+				}
+			).count,
+		}));
+		expect(remaining.claim).toBe(0);
+		expect(remaining.link).toBe(0);
+	});
+
+	it("preserves vault-root topology purge and user-owned contrast rows on disconnect", () => {
+		// Disconnect must still purge the vault-root topology rows AND remove the
+		// dreaming-rooted derived rows for that source, while keeping unrelated
+		// user-owned rows and rows belonging to a different source.
+		const root = join(dir, "disconnect-vault");
+		mkdirSync(root, { recursive: true });
+		const doc = join(root, "Note.md");
+		writeFileSync(doc, "# Note\n\nA source topology claim that should be purged by disconnect.\n");
+		indexObsidianSourceStructure({
+			agentId: "obsidian-graph-agent",
+			sourceId: "obsidian:disconnect-vault",
+			sourceName: "Disconnect Vault",
+			root,
+			filePath: doc,
+			content: readFileSync(doc, "utf-8"),
+		});
+
+		const db = getDbAccessor();
+		// User-owned semantic claim on a separate entity with no source provenance
+		// (operator-created, not source-owned): must survive the disconnect purge.
+		db.withWriteTx((write) => {
+			write
+				.prepare(
+					`INSERT INTO entities (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+					 VALUES ('user-entity', 'UserOwned', 'userowned', 'project', 'obsidian-graph-agent', 0,
+					 datetime('now'), datetime('now'))`,
+				)
+				.run();
+			write
+				.prepare(
+					`INSERT INTO entity_aspects (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
+					 VALUES ('user-aspect', 'user-entity', 'obsidian-graph-agent', 'facts', 'facts', 0.5,
+					 datetime('now'), datetime('now'))`,
+				)
+				.run();
+			write
+				.prepare(
+					`INSERT INTO entity_attributes
+					 (id, aspect_id, agent_id, kind, content, normalized_content, confidence, importance, status,
+					 group_key, claim_key, version, created_at, updated_at)
+					 VALUES ('user-claim', 'user-aspect', 'obsidian-graph-agent', 'attribute',
+					 'user-owned claim survives disconnect', 'user-owned claim survives disconnect', 0.9, 0.6, 'active',
+					 'general', 'target', 1, datetime('now'), datetime('now'))`,
+				)
+				.run();
+			// A Dreaming-derived claim from a DIFFERENT source: must survive.
+			write
+				.prepare(
+					`INSERT INTO entities (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+					 VALUES ('other-entity', 'OtherSource', 'othersource', 'project', 'obsidian-graph-agent', 0,
+					 datetime('now'), datetime('now'))`,
+				)
+				.run();
+			write
+				.prepare(
+					`INSERT INTO entity_aspects (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
+					 VALUES ('other-aspect', 'other-entity', 'obsidian-graph-agent', 'facts', 'facts', 0.5,
+					 datetime('now'), datetime('now'))`,
+				)
+				.run();
+			write
+				.prepare(
+					`INSERT INTO entity_attributes
+					 (id, aspect_id, agent_id, kind, content, normalized_content, confidence, importance, status,
+					 group_key, claim_key, version, created_at, updated_at, source_id, source_root)
+					 VALUES ('other-derived-claim', 'other-aspect', 'obsidian-graph-agent', 'attribute',
+					 'other source dreaming claim survives', 'other source dreaming claim survives', 0.8, 0.5, 'active',
+					 'general', 'target', 1, datetime('now'), datetime('now'), 'obsidian:other-vault', 'dreaming')`,
+				)
+				.run();
+		});
+
+		const purged = purgeObsidianSourceStructure({
+			agentId: "obsidian-graph-agent",
+			sourceId: "obsidian:disconnect-vault",
+			root,
+		});
+		// Vault-root topology rows removed.
+		expect(purged.entities).toBeGreaterThan(0);
+		expect(purged.attributes).toBeGreaterThan(0);
+
+		const remaining = getDbAccessor().withReadDb((read) => ({
+			topologyEntities: (
+				read
+					.prepare("SELECT COUNT(*) AS count FROM entities WHERE agent_id = ? AND source_id = ?")
+					.get("obsidian-graph-agent", "obsidian:disconnect-vault") as { count: number }
+			).count,
+			userClaim: (
+				read.prepare("SELECT COUNT(*) AS count FROM entity_attributes WHERE id = ?").get("user-claim") as {
+					count: number;
+				}
+			).count,
+			otherDerived: (
+				read.prepare("SELECT COUNT(*) AS count FROM entity_attributes WHERE id = ?").get("other-derived-claim") as {
+					count: number;
+				}
+			).count,
+		}));
+		expect(remaining.topologyEntities).toBe(0);
+		expect(remaining.userClaim).toBe(1);
+		expect(remaining.otherDerived).toBe(1);
+	});
 });

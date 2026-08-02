@@ -678,7 +678,29 @@ export function purgeObsidianSourceStructure(
 		const communities = db
 			.prepare(`DELETE FROM entity_communities WHERE ${agentWhere}source_id = ? AND source_root = ?`)
 			.run(...params).changes;
-		return { entities, attributes: attrs, dependencies: deps, communities };
+		// Also remove Dreaming-derived semantic rows (claim values and links) that
+		// carry this configured Signet source entry id in source_id but the literal
+		// source_root 'dreaming' instead of the vault root. The Dreaming worker is
+		// the sole producer of that provenance and stamps the source entry id so
+		// derived rows are purgeable on disconnect. Entities/aspects are not
+		// source-stamped by Dreaming (it inserts them without source_id), so they
+		// remain user-owned semantic nodes; only the source-rooted claim/link rows
+		// are removed here. This keeps the disconnect purge consistent with
+		// purgeSourceOwnedRows (used by the GitHub/Discord providers), which deletes
+		// source-owned graph rows by source_id alone.
+		const derivedParams = input.agentId ? [input.agentId, input.sourceId] : [input.sourceId];
+		const derivedAttrs = db
+			.prepare(`DELETE FROM entity_attributes WHERE ${agentWhere}source_id = ? AND source_root = 'dreaming'`)
+			.run(...derivedParams).changes;
+		const derivedDeps = db
+			.prepare(`DELETE FROM entity_dependencies WHERE ${agentWhere}source_id = ? AND source_root = 'dreaming'`)
+			.run(...derivedParams).changes;
+		return {
+			entities,
+			attributes: attrs + derivedAttrs,
+			dependencies: deps + derivedDeps,
+			communities,
+		};
 	});
 }
 

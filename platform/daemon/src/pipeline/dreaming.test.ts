@@ -677,8 +677,10 @@ describe("dreaming", () => {
 				).n,
 			).toBe(1);
 
-			// Purge by the configured source entry id, mirroring
-			// purgeSourceOwnedRows' entity_attributes/entity_dependencies delete.
+			// Purge by the configured source entry id. This raw delete mirrors the
+			// source_id predicate both purge paths use: purgeSourceOwnedRows
+			// (GitHub/Discord providers) and purgeObsidianSourceStructure (Obsidian
+			// disconnect, which also matches the dreaming-rooted derived rows).
 			const purgedAttrs = db
 				.prepare("DELETE FROM entity_attributes WHERE agent_id = ? AND source_id = ?")
 				.run(AGENT, "obsidian:signet").changes;
@@ -797,8 +799,10 @@ describe("dreaming", () => {
 				).n,
 			).toBe(0);
 
-			// Purge by the configured source entry id, mirroring
-			// purgeSourceOwnedRows' entity_attributes delete.
+			// Purge by the configured source entry id. This raw delete mirrors the
+			// source_id predicate both purge paths use: purgeSourceOwnedRows
+			// (GitHub/Discord providers) and purgeObsidianSourceStructure (Obsidian
+			// disconnect, which also matches the dreaming-rooted derived rows).
 			const purgedAttrs = db
 				.prepare("DELETE FROM entity_attributes WHERE agent_id = ? AND source_id = ?")
 				.run(AGENT, "obsidian:vortex").changes;
