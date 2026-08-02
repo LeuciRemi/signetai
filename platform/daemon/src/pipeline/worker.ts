@@ -162,8 +162,6 @@ function zeroWriteStats(): AppliedWriteStats {
 	};
 }
 
-export { enqueueExtractionJob, enqueueExtractionJobInTx } from "./extraction-queue";
-
 // ---------------------------------------------------------------------------
 // Lease a job atomically
 // ---------------------------------------------------------------------------

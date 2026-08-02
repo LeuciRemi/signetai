@@ -19,7 +19,8 @@ import type { DbAccessor, ReadDb, WriteDb } from "../db-accessor";
 import { txForgetMemory } from "../transactions";
 import type { DecisionConfig } from "./decision";
 import { startHintsWorker } from "./prospective-index";
-import { enqueueExtractionJob, startWorker } from "./worker";
+import { enqueueExtractionJob } from "./extraction-queue";
+import { startWorker } from "./worker";
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -15,7 +15,8 @@ import { DEFAULT_PIPELINE_V2 } from "../memory-config";
 import type { PipelineV2Config } from "../memory-config";
 import type { DecisionConfig } from "./decision";
 import { type LlmProvider, RateLimitExceededError } from "./provider";
-import { enqueueExtractionJob, recoverMemoryJobs, startWorker } from "./worker";
+import { enqueueExtractionJob } from "./extraction-queue";
+import { recoverMemoryJobs, startWorker } from "./worker";
 
 // ---------------------------------------------------------------------------
 // Helpers
