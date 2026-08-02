@@ -142,6 +142,19 @@ describe("temporal summary API auth", () => {
 		expect(json.node?.id).toBe("node-a");
 	});
 
+	it("does not expand another agent's temporal node", async () => {
+		const res = await app.request("http://localhost/api/sessions/summaries/expand", {
+			method: "POST",
+			headers: jsonHeader(),
+			body: JSON.stringify({
+				id: "node-a",
+				agentId: "agent-b",
+			}),
+		});
+
+		expect(res.status).toBe(404);
+	});
+
 	it("stores compaction summary tags as comma-delimited text", async () => {
 		const res = await app.request("http://localhost/api/hooks/compaction-complete", {
 			method: "POST",
