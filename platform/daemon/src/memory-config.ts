@@ -205,13 +205,7 @@ export const DEFAULT_PIPELINE_V2: ResolvedPipelineV2Config = {
 	structural: {
 		enabled: false,
 		classifyBatchSize: 8,
-		dependencyBatchSize: 5,
 		pollIntervalMs: 10000,
-		synthesisEnabled: false,
-		synthesisIntervalMs: 60_000,
-		synthesisTopEntities: 20,
-		synthesisMaxFacts: 10,
-		synthesisMaxStallMs: 30 * 60_000,
 	},
 	feedback: {
 		enabled: true,
@@ -469,7 +463,6 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 	const synthesisRaw = raw.synthesis as Record<string, unknown> | undefined;
 	const proceduralRaw = raw.procedural as Record<string, unknown> | undefined;
 	const structuralRaw = raw.structural as Record<string, unknown> | undefined;
-	const dependencySynthesisRaw = raw.dependencySynthesis as Record<string, unknown> | undefined;
 	const feedbackRaw = raw.feedback as Record<string, unknown> | undefined;
 	const significanceRaw = raw.significance as Record<string, unknown> | undefined;
 	const writeGateRaw = raw.writeGate as Record<string, unknown> | undefined;
@@ -941,29 +934,7 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 		structural: {
 			enabled: resolveBool(structuralRaw?.enabled, undefined, d.structural.enabled),
 			classifyBatchSize: clampPositive(structuralRaw?.classifyBatchSize, 1, 20, d.structural.classifyBatchSize),
-			dependencyBatchSize: clampPositive(structuralRaw?.dependencyBatchSize, 1, 10, d.structural.dependencyBatchSize),
 			pollIntervalMs: clampPositive(structuralRaw?.pollIntervalMs, 2000, 120000, d.structural.pollIntervalMs),
-			synthesisEnabled: resolveBool(structuralRaw?.synthesisEnabled, undefined, d.structural.synthesisEnabled),
-			synthesisIntervalMs: clampPositive(
-				structuralRaw?.synthesisIntervalMs,
-				10000,
-				600000,
-				d.structural.synthesisIntervalMs,
-			),
-			synthesisTopEntities: clampPositive(
-				structuralRaw?.synthesisTopEntities,
-				5,
-				100,
-				d.structural.synthesisTopEntities,
-			),
-			synthesisMaxFacts: clampPositive(structuralRaw?.synthesisMaxFacts, 3, 50, d.structural.synthesisMaxFacts),
-			synthesisMaxStallMs: clampNonNegative(
-				structuralRaw?.synthesisMaxStallMs ??
-					dependencySynthesisRaw?.maxStallMs ??
-					dependencySynthesisRaw?.synthesisMaxStallMs,
-				24 * 60 * 60_000,
-				d.structural.synthesisMaxStallMs,
-			),
 		},
 
 		feedback: {

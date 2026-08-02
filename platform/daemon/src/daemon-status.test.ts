@@ -503,12 +503,16 @@ describe("structural worker retirement under Dreaming (#946)", () => {
 		const workers = body.workers ?? {};
 		expect(workers).not.toHaveProperty("structuralClassify");
 		expect(workers).not.toHaveProperty("structuralDependency");
-		// Preserved workers remain present.
+		// The cross-entity dependency-synthesis worker was retired under the
+		// full Dreaming cutover (#946): it wrote dependencies directly via
+		// upsertDependency, bypassing the audited create_link path. Dreaming
+		// is now the sole semantic dependency writer.
+		expect(workers).not.toHaveProperty("dependencySynthesis");
+		// Preserved non-semantic workers remain present.
 		expect(workers).toHaveProperty("document");
 		expect(workers).toHaveProperty("retention");
 		expect(workers).toHaveProperty("maintenance");
 		expect(workers).toHaveProperty("synthesis");
-		expect(workers).toHaveProperty("dependencySynthesis");
 		expect(workers).toHaveProperty("hints");
 		expect(workers).toHaveProperty("dreaming");
 	});
@@ -543,5 +547,67 @@ describe("structural worker retirement under Dreaming (#946)", () => {
 
 		await restartRuntime(DREAMING_ENABLED_STRUCTURAL_CONFIG);
 		expect(countStructuralJobs()).toBe(before);
+	});
+
+	it("does not start the dependency-synthesis worker and cannot produce direct dependency writes under Dreaming", async () => {
+		// The retired dependency-synthesis worker polled for entities whose
+		// last_synthesized_at lagged updated_at, called an LLM, and wrote
+		// entity_dependencies rows directly via upsertDependency — bypassing
+		// the audited create_link path. Under the full Dreaming cutover the
+		// worker must never start, so seeding stale entities must produce no
+		// dependency rows and never set last_synthesized_at.
+		await restartRuntime(DREAMING_ENABLED_STRUCTURAL_CONFIG);
+
+		// Seed a stale entity with facts and candidate mentions — exactly the
+		// inputs the retired worker would have picked up on its next tick.
+		const { getDbAccessor } = require("./db-accessor") as typeof import("./db-accessor");
+		getDbAccessor().withWriteTx((db) => {
+			const now = new Date().toISOString();
+			const stale = new Date(Date.now() - 3_600_000).toISOString();
+			db.prepare(
+				`INSERT INTO entities
+				 (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at, last_synthesized_at)
+				 VALUES ('dep-src', 'dep source', 'dep source', 'system', 'default', 1, ?, ?, NULL)`,
+			).run(now, stale);
+			db.prepare(
+				`INSERT INTO entities
+				 (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+				 VALUES ('dep-target', 'dep target', 'dep target', 'system', 'default', 9, ?, ?)`,
+			).run(now, now);
+			db.prepare(
+				`INSERT INTO entity_aspects (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
+				 VALUES ('asp-dep', 'dep-src', 'default', 'general', 'general', 0.5, ?, ?)`,
+			).run(now, now);
+			db.prepare(
+				`INSERT INTO entity_attributes
+				 (id, aspect_id, agent_id, kind, content, normalized_content, confidence, importance, status, created_at, updated_at)
+				 VALUES ('attr-dep', 'asp-dep', 'default', 'fact', 'dep source uses dep target', 'dep source uses dep target', 0.9, 0.5, 'active', ?, ?)`,
+			).run(now, now);
+		});
+
+		// Restart again so any worker that *did* start would observe the stale
+		// entity on its first tick, then wait well past a default poll cycle.
+		await restartRuntime(DREAMING_ENABLED_STRUCTURAL_CONFIG);
+		await new Promise((resolve) => setTimeout(resolve, 1500));
+
+		const res = await app.request("http://localhost/api/pipeline/status");
+		const body = (await res.json()) as { workers?: Record<string, unknown> };
+		expect(body.workers ?? {}).not.toHaveProperty("dependencySynthesis");
+
+		const { getDbAccessor: getAccessor2 } = require("./db-accessor") as typeof import("./db-accessor");
+		const deps = getAccessor2().withReadDb(
+			(db) => db.prepare("SELECT COUNT(*) as cnt FROM entity_dependencies").get() as { cnt: number },
+		);
+		expect(deps.cnt).toBe(0);
+
+		const synthesized = getAccessor2().withReadDb(
+			(db) =>
+				db.prepare("SELECT last_synthesized_at FROM entities WHERE id = 'dep-src'").get() as {
+					last_synthesized_at: string | null;
+				},
+		);
+		// The retired worker's exclusive side-effect (markSynthesized) must
+		// never fire — proving no dependency-synthesis tick ran.
+		expect(synthesized.last_synthesized_at).toBeNull();
 	});
 });

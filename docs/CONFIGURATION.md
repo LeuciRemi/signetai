@@ -930,25 +930,17 @@ from extracted facts and uses them to boost search relevance.
 
 ### Structural Analysis (`structural`)
 
-Structural workers classify extracted facts into entity aspects, extract
-direct entity dependencies from facts, and synthesize cross-entity
-dependency edges from the existing graph.
+Structural workers classify extracted facts into entity aspects. The
+cross-entity dependency-synthesis worker and its `synthesis*` /
+`dependencyBatchSize` knobs were retired under the Dreaming cutover
+(#946); Dreaming's audited `create_link` is now the sole semantic
+dependency writer, and legacy YAML values for those fields are ignored.
 
 | Field | Default | Range | Description |
 |-------|---------|-------|-------------|
-| `enabled` | `true` | — | Enable structural classification and dependency workers |
+| `enabled` | `true` | — | Enable structural classification workers |
 | `classifyBatchSize` | `8` | 1-20 | Max facts per entity classification call |
-| `dependencyBatchSize` | `5` | 1-10 | Max stale entities or dependency jobs per worker tick |
 | `pollIntervalMs` | `10000` | 2000-120000 ms | Structural job polling interval |
-| `synthesisEnabled` | `true` | — | Enable cross-entity dependency synthesis |
-| `synthesisIntervalMs` | `60000` | 10000-600000 ms | Dependency synthesis polling interval |
-| `synthesisTopEntities` | `20` | 5-100 | Candidate entities considered per synthesis call |
-| `synthesisMaxFacts` | `10` | 3-50 | Facts included for the focal entity |
-| `synthesisMaxStallMs` | `1800000` | 0-86400000 ms | Pause dependency synthesis when extraction has made no successful progress for this long; set `0` to disable the circuit breaker |
-
-The aliases `dependencySynthesis.maxStallMs` and
-`dependencySynthesis.synthesisMaxStallMs` are accepted for
-`structural.synthesisMaxStallMs`.
 
 
 ### Hints (`hints`)

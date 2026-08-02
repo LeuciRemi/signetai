@@ -78,7 +78,6 @@ export type LogCategory =
 	| "reconciler" // Skill filesystem reconciler
 	| "llm" // LLM provider calls
 	| "native-embedding" // Native ONNX embedding operations
-	| "dependency-synthesis" // Pipeline dependency synthesis stage
 	| "document-worker" // Pipeline document ingestion worker
 	| "dreaming-worker" // Background dreaming worker
 	| "model-registry" // LLM model registry management

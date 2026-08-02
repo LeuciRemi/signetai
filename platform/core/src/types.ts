@@ -457,13 +457,7 @@ export interface PipelineProceduralConfig {
 export interface PipelineStructuralConfig {
 	readonly enabled: boolean;
 	readonly classifyBatchSize: number;
-	readonly dependencyBatchSize: number;
 	readonly pollIntervalMs: number;
-	readonly synthesisEnabled: boolean;
-	readonly synthesisIntervalMs: number;
-	readonly synthesisTopEntities: number;
-	readonly synthesisMaxFacts: number;
-	readonly synthesisMaxStallMs: number;
 }
 
 export interface PipelineFeedbackConfig {

@@ -1,10 +1,11 @@
 /**
  * Pipeline barrel — startPipeline/stopPipeline orchestration.
  *
- * The legacy extraction/decision/escalation worker runtime and its threaded
- * variant were retired under the Dreaming cutover (#946). Dreaming owns
- * semantic writes; this barrel still starts the non-extraction workers
- * (document ingest, retention, maintenance, synthesis, dependency
+ * The legacy extraction/decision/escalation worker runtime, the per-fact
+ * structural classify/dependency workers, and the cross-entity
+ * dependency-synthesis worker were all retired under the Dreaming cutover
+ * (#946). Dreaming owns semantic writes; this barrel starts only the
+ * non-semantic workers (document ingest, retention, maintenance,
  * synthesis, prospective/hints) and exposes their handles.
  */
 
@@ -16,7 +17,6 @@ import { getLlmProvider } from "../llm";
 import { logger } from "../logger";
 import type { EmbeddingConfig, MemorySearchConfig, PipelineV2Config } from "../memory-config";
 import type { TelemetryCollector } from "../telemetry";
-import { type DependencySynthesisHandle, startDependencySynthesisWorker } from "./dependency-synthesis";
 import { type DocumentWorkerHandle, startDocumentWorker } from "./document-worker";
 import type { DreamingWorkerHandle } from "./dreaming-worker";
 import { type MaintenanceHandle, startMaintenanceWorker } from "./maintenance-worker";
@@ -150,7 +150,6 @@ export async function promoteSummaryWorkerIfAvailable(
 	return true;
 }
 let synthesisWorkerHandle: SynthesisWorkerHandle | null = null;
-let dependencySynthesisHandle: DependencySynthesisHandle | null = null;
 let hintsWorkerHandle: HintsWorkerHandle | null = null;
 let dreamingWorkerHandle: DreamingWorkerHandle | null = null;
 
@@ -172,7 +171,6 @@ export type PipelineWorkerStatus = {
 	readonly retention: WorkerStatusEntry;
 	readonly maintenance: WorkerStatusEntry;
 	readonly synthesis: WorkerStatusEntry;
-	readonly dependencySynthesis: WorkerStatusEntry;
 	readonly hints: WorkerStatusEntry;
 	readonly dreaming: WorkerStatusEntry;
 };
@@ -191,7 +189,6 @@ export function getPipelineWorkerStatus(): PipelineWorkerStatus {
 		retention: { running: retentionHandle !== null },
 		maintenance: { running: maintenanceHandle !== null },
 		synthesis: { running: synthesisWorkerHandle !== null },
-		dependencySynthesis: { running: dependencySynthesisHandle !== null },
 		hints: { running: hintsWorkerHandle !== null },
 		dreaming: { running: dreamingWorkerHandle !== null },
 	};
@@ -261,29 +258,6 @@ export function startPipeline(
 		synthesisWorkerHandle = startSynthesisWorker(pipelineCfg.synthesis);
 	}
 
-	// Dependency synthesis worker — cross-entity dependency inference that
-	// runs independently of the per-fact structural classify/dependency
-	// workers (which Dreaming supersedes for semantic writes). Gate on both
-	// structural.enabled and graph.enabled since it depends on the entity
-	// graph; respects mutationsFrozen.
-	if (
-		pipelineCfg.structural.enabled &&
-		pipelineCfg.graph.enabled &&
-		!pipelineCfg.mutationsFrozen &&
-		!dependencySynthesisHandle &&
-		pipelineCfg.structural.synthesisEnabled
-	) {
-		dependencySynthesisHandle = startDependencySynthesisWorker({
-			accessor,
-			agentId,
-			provider,
-			pipelineCfg,
-			// The legacy extraction worker that supplied live stats was retired
-			// under the Dreaming cutover (#946). The stall gate now relies on
-			// durable extraction progress read from the database.
-		});
-	}
-
 	// Prospective indexing worker — generates hypothetical future queries
 	// for memories to improve search recall.
 	if (!hintsWorkerHandle && pipelineCfg.hints?.enabled && !pipelineCfg.mutationsFrozen) {
@@ -312,10 +286,6 @@ export async function stopPipeline(): Promise<void> {
 			logger.warn("pipeline", "Synthesis worker drain timed out during shutdown");
 		}
 		synthesisWorkerHandle = null;
-	}
-	if (dependencySynthesisHandle) {
-		await dependencySynthesisHandle.stop();
-		dependencySynthesisHandle = null;
 	}
 	if (summaryWorkerHandle) {
 		await summaryWorkerHandle.stop();

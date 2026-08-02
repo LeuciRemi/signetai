@@ -255,13 +255,9 @@ so it cannot enqueue jobs nothing will lease. The `structural_classify.ts` and
 
 The `structural` pipeline-config block still gates behavior that remains live:
 
-- **Dependency synthesis** (`structural.enabled && graph.enabled &&
-  `synthesisEnabled`) — a cross-entity dependency inference worker
-  (`dependency-synthesis.ts`) that is separate from the retired per-fact path.
-  It polls for entities whose facts were updated since their last synthesis,
-  presents those facts alongside the top entities in the graph, and asks the LLM
-  to propose new `entity_dependencies` edges. See the "Dependency Synthesis"
-  section below.
+- **Structural backfill guard** (`structural.enabled`) — the
+  `structuralBackfill` repair action checks this flag. Under Dreaming it
+  no-ops regardless, since Dreaming owns semantic writes.
 
 The default pipeline does not use a background LLM to author graph structure;
 structured remember is the normal semantic write path.
@@ -373,9 +369,13 @@ Worker Model
 The legacy extraction/decision/escalation worker runtime and its threaded
 variant were retired under the Dreaming cutover (#946). Dreaming now owns
 semantic writes; the `memory_jobs` `extract` enqueue path is gated to skip
-when Dreaming is enabled. The non-extraction workers (document ingest,
-retention, maintenance, synthesis, dependency synthesis, prospective/hints)
-remain active. The description below is retained for historical reference.
+when Dreaming is enabled. The cross-entity dependency-synthesis worker
+(`dependency-synthesis.ts`) was likewise retired — it wrote
+`entity_dependencies` rows directly via `upsertDependency`, bypassing the
+audited `create_link` path; Dreaming's audited `create_link` is now the
+sole semantic dependency writer. The non-semantic workers (document ingest,
+retention, maintenance, synthesis, prospective/hints) remain active. The
+description below is retained for historical reference.
 
 The extraction pipeline ran as a polling worker loop. A single
 `startWorker` call started a `setTimeout`-chain tick loop that leased one
@@ -1159,13 +1159,10 @@ graph:
 structural:
   enabled: false
   classifyBatchSize: 8           # range 1–20 (legacy: no started worker reads this under Dreaming)
-  dependencyBatchSize: 5         # range 1–10 (legacy: no started worker reads this under Dreaming)
   pollIntervalMs: 10000          # ms, range 2000–120000 (legacy: no started structural worker under Dreaming)
-  synthesisEnabled: false
-  synthesisIntervalMs: 60000     # ms, range 10000–600000
-  synthesisTopEntities: 20       # range 5–100
-  synthesisMaxFacts: 10          # range 3–50
-  synthesisMaxStallMs: 1800000   # 30 min, set 0 to disable
+  # retired under #946 (dependency-synthesis worker removed): dependencyBatchSize,
+  # synthesisEnabled, synthesisIntervalMs, synthesisTopEntities, synthesisMaxFacts,
+  # synthesisMaxStallMs; legacy YAML values are ignored
 
 reranker:
   enabled: true
