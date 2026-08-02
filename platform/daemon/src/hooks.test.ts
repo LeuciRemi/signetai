@@ -2629,14 +2629,32 @@ describe("memory-lineage", () => {
 			summary:
 				"Compacted the Signet rolling lineage session, preserved PR#390 context, and linked the durable compaction narrative back to the canonical manifest for later drill-down.",
 		});
+		const laterCompaction = await writeCompactionArtifact({
+			agentId: "default",
+			sessionId: "sess-compaction",
+			sessionKey: "sess-compaction",
+			project: "/tmp/signetai",
+			harness: "test",
+			capturedAt: "2026-03-28T22:41:00.000Z",
+			startedAt: null,
+			endedAt: "2026-03-28T22:41:00.000Z",
+			summary: "A later compaction is a separate immutable event and must not replace the earlier lineage artifact.",
+		});
 
 		const transcriptAfter = readFileSync(join(TEST_DIR, transcript.transcriptPath), "utf8");
 		const manifest = readFileSync(join(TEST_DIR, compaction.manifestPath), "utf8");
 
 		expect(transcriptAfter).toBe(transcriptBefore);
+		expect(laterCompaction.compactionPath).not.toBe(compaction.compactionPath);
+		expect(readFileSync(join(TEST_DIR, compaction.compactionPath), "utf8")).toContain(
+			"Compacted the Signet rolling lineage session",
+		);
+		expect(readFileSync(join(TEST_DIR, laterCompaction.compactionPath), "utf8")).toContain(
+			"later compaction is a separate immutable event",
+		);
 		expect(manifest).toContain('compaction_path: "memory/');
 		expect(manifest).toContain('kind: "manifest"');
-		expect(manifest).toContain("revision: 3");
+		expect(manifest).toContain("revision: 4");
 	});
 
 	test.serial("projection uses artifact frontmatter sentence and rejects low-signal frontmatter", async () => {

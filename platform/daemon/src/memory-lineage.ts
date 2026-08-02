@@ -1433,7 +1433,11 @@ export async function writeCompactionArtifact(params: {
 	readonly provider?: LlmProvider | null;
 }): Promise<{ readonly manifestPath: string; readonly compactionPath: string }> {
 	const manifest = ensureCanonicalManifest(params);
-	const capturedAt = manifestValue(manifest.frontmatter, "captured_at") ?? params.capturedAt;
+	// A compaction is a new immutable event even when it belongs to an existing
+	// session. Its path must use this event's capture time, not the session
+	// manifest's original capture time, or a later compaction would attempt to
+	// overwrite the first one.
+	const capturedAt = params.capturedAt;
 	const sessionToken = deriveSessionToken(params.agentId, params.sessionId);
 	const body = normalizeMarkdownBody(params.summary);
 	const sentence = await resolveMemorySentence(body, params.project, params.harness, "compaction", params.provider);
