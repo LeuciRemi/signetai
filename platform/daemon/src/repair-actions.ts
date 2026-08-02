@@ -36,6 +36,7 @@ import { classifyEntityQuality } from "./entity-quality";
 import { logger } from "./logger";
 import type { EmbeddingConfig } from "./memory-config";
 import type { PipelineV2Config } from "./memory-config";
+import { dreamingOwnsExtraction } from "./pipeline/extraction-queue";
 import { recoverStaleLeases } from "./pipeline/stale-leases";
 import { insertHistoryEvent } from "./transactions";
 
@@ -2127,6 +2128,19 @@ export function structuralBackfill(
 			success: true,
 			affected: 0,
 			message: "structural backfill disabled; use structured remember or an explicit normalization pass",
+		};
+	}
+	// Dreaming cutover: when Dreaming owns semantic writes the legacy
+	// structural classify/dependency workers are not started (see daemon.ts
+	// and pipeline/index.ts). Refuse to backfill so this path cannot create
+	// pending structural_classify jobs that nothing will lease. Uses the
+	// same canonical guard as the extract enqueue path (#946).
+	if (dreamingOwnsExtraction()) {
+		return {
+			action,
+			success: true,
+			affected: 0,
+			message: "Dreaming owns semantic writes; structural backfill is retired",
 		};
 	}
 

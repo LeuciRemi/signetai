@@ -436,3 +436,143 @@ describe("legacy extraction cutover sweep (#946)", () => {
 		expect(job.error).toBe("Dreaming cutover: legacy extraction worker not started");
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Structural worker retirement (#946)
+//
+// When Dreaming owns semantic writes, the legacy structural classify and
+// structural dependency workers are not started and their status shape is
+// retired from /api/status. No producer may create pending structural jobs.
+// ---------------------------------------------------------------------------
+describe("structural worker retirement under Dreaming (#946)", () => {
+	const DREAMING_ENABLED_STRUCTURAL_CONFIG = `memory:
+  pipelineV2:
+    enabled: true
+    extraction:
+      provider: command
+      command:
+        bin: node
+    graph:
+      enabled: true
+    structural:
+      enabled: true
+  dreaming:
+    enabled: true
+`;
+
+	function writeConfig(cfg: string): void {
+		writeFileSync(join(dir, "agent.yaml"), cfg);
+	}
+
+	async function restartRuntime(cfg: string): Promise<void> {
+		const { loadMemoryConfig } = await import("./memory-config");
+		const state = await import("./routes/state.js");
+		writeConfig(cfg);
+		expect(state.restartPipelineRuntimeRef).toBeDefined();
+		await state.restartPipelineRuntimeRef?.(loadMemoryConfig(dir));
+	}
+
+	function seedPendingStructuralJob(memoryId: string, jobId: string, jobType: string): void {
+		const { getDbAccessor } = require("./db-accessor") as typeof import("./db-accessor");
+		const now = new Date().toISOString();
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				"INSERT INTO memories (id, content, extraction_status, agent_id, created_at, updated_at) VALUES (?, ?, 'complete', 'default', ?, ?)",
+			).run(memoryId, `seed ${memoryId}`, now, now);
+			db.prepare(
+				`INSERT INTO memory_jobs
+				 (id, memory_id, job_type, status, attempts, max_attempts, created_at, updated_at)
+				 VALUES (?, ?, ?, 'pending', 0, 3, ?, ?)`,
+			).run(jobId, memoryId, jobType, now, now);
+		});
+	}
+
+	function countStructuralJobs(): number {
+		const { getDbAccessor } = require("./db-accessor") as typeof import("./db-accessor");
+		return getDbAccessor().withReadDb(
+			(db) =>
+				db
+					.prepare(
+						"SELECT COUNT(*) as cnt FROM memory_jobs WHERE job_type IN ('structural_classify','structural_dependency')",
+					)
+					.get() as { cnt: number },
+		).cnt;
+	}
+
+	beforeEach(async () => {
+		const { closeDbAccessor, initDbAccessor } = await import("./db-accessor");
+		closeDbAccessor();
+		initDbAccessor(join(dir, "memory", "memories.db"), { agentsDir: dir });
+	});
+
+	beforeAll(() => {
+		// The canonical cutover guard (dreamingOwnsExtraction) reads
+		// resolveDefaultBasePath() at call time, which honors SIGNET_PATH.
+		// The earlier describe block's afterAll restores SIGNET_PATH to its
+		// pre-test value, so re-pin it to this suite's temp dir here.
+		if (process.env.SIGNET_PATH !== dir) process.env.SIGNET_PATH = dir;
+	});
+
+	afterAll(() => {
+		// Restore whatever the daemon process held before this suite; the
+		// top-level suite's afterAll handles the canonical restore.
+		if (prev === undefined) Reflect.deleteProperty(process.env, "SIGNET_PATH");
+		else process.env.SIGNET_PATH = prev;
+	});
+
+	it("does not expose legacy structural workers in the status shape and never starts them", async () => {
+		// structural.enabled AND graph.enabled would have started both structural
+		// workers under the legacy pipeline; under Dreaming they must be absent.
+		await restartRuntime(DREAMING_ENABLED_STRUCTURAL_CONFIG);
+
+		const res = await app.request("http://localhost/api/pipeline/status");
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as {
+			workers?: Record<string, { running?: boolean }>;
+		};
+		const workers = body.workers ?? {};
+		expect(workers).not.toHaveProperty("structuralClassify");
+		expect(workers).not.toHaveProperty("structuralDependency");
+		// Preserved workers remain present.
+		expect(workers).toHaveProperty("extraction");
+		expect(workers).toHaveProperty("document");
+		expect(workers).toHaveProperty("retention");
+		expect(workers).toHaveProperty("maintenance");
+		expect(workers).toHaveProperty("synthesis");
+		expect(workers).toHaveProperty("dependencySynthesis");
+		expect(workers).toHaveProperty("hints");
+		expect(workers).toHaveProperty("dreaming");
+	});
+
+	it("the structural-backfill repair path does not create pending structural jobs under Dreaming", async () => {
+		await restartRuntime(DREAMING_ENABLED_STRUCTURAL_CONFIG);
+
+		// Hit the repair endpoint that previously created structural_classify jobs.
+		const res = await app.request("http://localhost/api/repair/structural-backfill", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ batchSize: 50 }),
+		});
+		expect(res.status).toBe(200);
+		const result = (await res.json()) as { success?: boolean; affected?: number; message?: string };
+		expect(result.success).toBe(true);
+		expect(result.affected).toBe(0);
+		expect(result.message).toContain("Dreaming owns semantic writes");
+
+		// No pending structural jobs may exist after the call.
+		expect(countStructuralJobs()).toBe(0);
+	});
+
+	it("does not accumulate new pending structural jobs from pre-existing rows under Dreaming", async () => {
+		// A pre-existing pending structural job (left from before the cutover)
+		// should remain, but the runtime must not create additional pending
+		// structural jobs while Dreaming owns semantic writes.
+		await restartRuntime(DREAMING_ENABLED_STRUCTURAL_CONFIG);
+		seedPendingStructuralJob("mem-pre", "job-struct-pre", "structural_classify");
+		const before = countStructuralJobs();
+		expect(before).toBe(1);
+
+		await restartRuntime(DREAMING_ENABLED_STRUCTURAL_CONFIG);
+		expect(countStructuralJobs()).toBe(before);
+	});
+});

@@ -4,6 +4,9 @@
 
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { readMemoriesFtsSql } from "../../core/src/fts-schema";
 import { runMigrations } from "../../core/src/migrations";
 import { normalizeAndHashContent } from "./content-normalization";
@@ -441,6 +444,70 @@ describe("structuralBackfill", () => {
 			expect(result.message).toContain("structural backfill disabled");
 		} finally {
 			db.close();
+		}
+	});
+
+	it("refuses to enqueue structural jobs when Dreaming owns semantic writes (#946)", () => {
+		// Drive the canonical cutover guard (dreamingOwnsExtraction) off a
+		// temp SIGNET_PATH with Dreaming enabled, even when structural is
+		// enabled and eligible entity-linked memories exist.
+		const prevSignetPath = process.env.SIGNET_PATH;
+		const dreamingDir = mkdtempSync(join(tmpdir(), "signet-structural-dreaming-"));
+		writeFileSync(
+			join(dreamingDir, "agent.yaml"),
+			`memory:
+  pipelineV2:
+    enabled: true
+    structural:
+      enabled: true
+  dreaming:
+    enabled: true
+`,
+		);
+		process.env.SIGNET_PATH = dreamingDir;
+
+		const db = new Database(":memory:");
+		runMigrations(db as unknown as Parameters<typeof runMigrations>[0]);
+		const accessor = asAccessor(db);
+		const limiter = createRateLimiter();
+
+		try {
+			// Seed an entity + a memory with an entity mention (the input
+			// structuralBackfill would otherwise turn into a pending job).
+			const now = new Date().toISOString();
+			db.prepare(
+				"INSERT INTO memories (id, content, extraction_status, agent_id, created_at, updated_at) VALUES (?, ?, 'complete', 'default', ?, ?)",
+			).run("mem-1", "Nicholai works at Signet", now, now);
+			db.prepare(
+				"INSERT INTO entities (id, name, canonical_name, entity_type, agent_id, created_at, updated_at) VALUES (?, ?, ?, 'person', 'default', ?, ?)",
+			).run("ent-1", "Nicholai", "nicholai", now, now);
+			db.prepare(
+				"INSERT INTO memory_entity_mentions (memory_id, entity_id) VALUES (?, ?)",
+			).run("mem-1", "ent-1");
+
+			const structuralEnabledCfg: PipelineV2Config = {
+				...TEST_CFG,
+				structural: { ...TEST_CFG.structural, enabled: true },
+			};
+			const result = structuralBackfill(accessor, structuralEnabledCfg, CTX_OPERATOR, limiter);
+
+			expect(result.success).toBe(true);
+			expect(result.affected).toBe(0);
+			expect(result.message).toContain("Dreaming owns semantic writes");
+
+			// No entity_attributes stub and no pending structural_classify job
+			// should have been created by the backfill path.
+			const attrs = db.prepare("SELECT COUNT(*) as cnt FROM entity_attributes").get() as { cnt: number };
+			expect(attrs.cnt).toBe(0);
+			const jobs = db.prepare(
+				"SELECT COUNT(*) as cnt FROM memory_jobs WHERE job_type = 'structural_classify' AND status = 'pending'",
+			).get() as { cnt: number };
+			expect(jobs.cnt).toBe(0);
+		} finally {
+			db.close();
+			if (prevSignetPath === undefined) Reflect.deleteProperty(process.env, "SIGNET_PATH");
+			else process.env.SIGNET_PATH = prevSignetPath;
+			rmSync(dreamingDir, { recursive: true, force: true });
 		}
 	});
 });

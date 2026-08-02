@@ -26,8 +26,6 @@ import {
 	type RetentionHandle,
 	startRetentionWorker,
 } from "./retention-worker";
-import { type StructuralClassifyHandle, startStructuralClassifyWorker } from "./structural-classify";
-import { type StructuralDependencyHandle, startStructuralDependencyWorker } from "./structural-dependency";
 import {
 	type SummaryWorkerHandle,
 	type SummaryWorkerOptions,
@@ -154,8 +152,6 @@ export async function promoteSummaryWorkerIfAvailable(
 	return true;
 }
 let synthesisWorkerHandle: SynthesisWorkerHandle | null = null;
-let structuralClassifyHandle: StructuralClassifyHandle | null = null;
-let structuralDependencyHandle: StructuralDependencyHandle | null = null;
 let dependencySynthesisHandle: DependencySynthesisHandle | null = null;
 let hintsWorkerHandle: HintsWorkerHandle | null = null;
 let dreamingWorkerHandle: DreamingWorkerHandle | null = null;
@@ -181,8 +177,6 @@ export type PipelineWorkerStatus = {
 	readonly retention: WorkerStatusEntry;
 	readonly maintenance: WorkerStatusEntry;
 	readonly synthesis: WorkerStatusEntry;
-	readonly structuralClassify: WorkerStatusEntry;
-	readonly structuralDependency: WorkerStatusEntry;
 	readonly dependencySynthesis: WorkerStatusEntry;
 	readonly hints: WorkerStatusEntry;
 	readonly dreaming: WorkerStatusEntry;
@@ -206,8 +200,6 @@ export function getPipelineWorkerStatus(): PipelineWorkerStatus {
 		retention: { running: retentionHandle !== null },
 		maintenance: { running: maintenanceHandle !== null },
 		synthesis: { running: synthesisWorkerHandle !== null },
-		structuralClassify: { running: structuralClassifyHandle !== null },
-		structuralDependency: { running: structuralDependencyHandle !== null },
 		dependencySynthesis: { running: dependencySynthesisHandle !== null },
 		hints: { running: hintsWorkerHandle !== null },
 		dreaming: { running: dreamingWorkerHandle !== null },
@@ -336,44 +328,36 @@ export function startPipeline(
 		synthesisWorkerHandle = startSynthesisWorker(pipelineCfg.synthesis);
 	}
 
-	// Structural assignment workers (KA-2) — classify aspects and extract
-	// dependencies from entity-linked facts. Gate on both structural.enabled
-	// and graph.enabled since they depend on the entity graph.
-	if (pipelineCfg.structural.enabled && pipelineCfg.graph.enabled && !pipelineCfg.mutationsFrozen) {
-		if (!structuralClassifyHandle) {
-			structuralClassifyHandle = startStructuralClassifyWorker({
-				accessor,
-				provider,
-				pipelineCfg,
-			});
-		}
-		if (!structuralDependencyHandle) {
-			structuralDependencyHandle = startStructuralDependencyWorker({
-				accessor,
-				provider,
-				pipelineCfg,
-			});
-		}
-		if (!dependencySynthesisHandle && pipelineCfg.structural.synthesisEnabled) {
-			dependencySynthesisHandle = startDependencySynthesisWorker({
-				accessor,
-				agentId,
-				provider,
-				pipelineCfg,
-				getExtractionStats: () => {
-					const stats: WorkerStats | undefined = workerHandle?.stats;
-					if (!stats) return undefined;
-					const { lastProgressAt, pending } = stats;
-					return {
-						lastProgressAt,
-						pending,
-					} satisfies WorkerProgressStats;
-				},
-				// NOTE: The extraction worker is a singleton — its stats are
-				// global, not per-agent. The stall gate measures overall
-				// extraction health rather than agent-specific progress.
-			});
-		}
+	// Dependency synthesis worker — cross-entity dependency inference that
+	// runs independently of the per-fact structural classify/dependency
+	// workers (which Dreaming supersedes for semantic writes). Gate on both
+	// structural.enabled and graph.enabled since it depends on the entity
+	// graph; respects mutationsFrozen.
+	if (
+		pipelineCfg.structural.enabled &&
+		pipelineCfg.graph.enabled &&
+		!pipelineCfg.mutationsFrozen &&
+		!dependencySynthesisHandle &&
+		pipelineCfg.structural.synthesisEnabled
+	) {
+		dependencySynthesisHandle = startDependencySynthesisWorker({
+			accessor,
+			agentId,
+			provider,
+			pipelineCfg,
+			getExtractionStats: () => {
+				const stats: WorkerStats | undefined = workerHandle?.stats;
+				if (!stats) return undefined;
+				const { lastProgressAt, pending } = stats;
+				return {
+					lastProgressAt,
+					pending,
+				} satisfies WorkerProgressStats;
+			},
+			// NOTE: The extraction worker is a singleton — its stats are
+			// global, not per-agent. The stall gate measures overall
+			// extraction health rather than agent-specific progress.
+		});
 	}
 
 	// Prospective indexing worker — generates hypothetical future queries
@@ -413,14 +397,6 @@ export async function stopPipeline(): Promise<void> {
 	if (dependencySynthesisHandle) {
 		await dependencySynthesisHandle.stop();
 		dependencySynthesisHandle = null;
-	}
-	if (structuralDependencyHandle) {
-		await structuralDependencyHandle.stop();
-		structuralDependencyHandle = null;
-	}
-	if (structuralClassifyHandle) {
-		await structuralClassifyHandle.stop();
-		structuralClassifyHandle = null;
 	}
 	if (summaryWorkerHandle) {
 		await summaryWorkerHandle.stop();
