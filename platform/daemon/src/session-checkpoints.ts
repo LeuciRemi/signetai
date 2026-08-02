@@ -328,14 +328,9 @@ export function formatPeriodicDigest(state: ContinuityState, structuralSnapshot?
 		}
 	}
 
-	if (state.pendingQueries.length > 0 || state.pendingRemembers.length > 0) {
+	if (state.pendingQueries.length > 0) {
 		parts.push("", "### Memory Activity Since Last Checkpoint");
-		if (state.pendingQueries.length > 0) {
-			parts.push(`Queries: ${state.pendingQueries.join(", ")}`);
-		}
-		if (state.pendingRemembers.length > 0) {
-			parts.push(`Remembered: ${state.pendingRemembers.map((r) => r.slice(0, 120)).join("; ")}`);
-		}
+		parts.push(`Queries: ${state.pendingQueries.join(", ")}`);
 	}
 
 	return parts.join("\n");
@@ -368,14 +363,9 @@ export function formatPreCompactionDigest(
 		}
 	}
 
-	if (state.pendingQueries.length > 0 || state.pendingRemembers.length > 0) {
+	if (state.pendingQueries.length > 0) {
 		parts.push("", "### Memory Activity");
-		if (state.pendingQueries.length > 0) {
-			parts.push(`Queries: ${state.pendingQueries.join(", ")}`);
-		}
-		if (state.pendingRemembers.length > 0) {
-			parts.push(`Remembered: ${state.pendingRemembers.map((r) => r.slice(0, 120)).join("; ")}`);
-		}
+		parts.push(`Queries: ${state.pendingQueries.join(", ")}`);
 	}
 
 	return parts.join("\n");
@@ -400,14 +390,9 @@ export function formatSessionEndDigest(state: ContinuityState, structuralSnapsho
 		}
 	}
 
-	if (state.pendingQueries.length > 0 || state.pendingRemembers.length > 0) {
+	if (state.pendingQueries.length > 0) {
 		parts.push("", "### Memory Activity");
-		if (state.pendingQueries.length > 0) {
-			parts.push(`Queries: ${state.pendingQueries.join(", ")}`);
-		}
-		if (state.pendingRemembers.length > 0) {
-			parts.push(`Remembered: ${state.pendingRemembers.map((r) => r.slice(0, 120)).join("; ")}`);
-		}
+		parts.push(`Queries: ${state.pendingQueries.join(", ")}`);
 	}
 
 	return parts.join("\n");

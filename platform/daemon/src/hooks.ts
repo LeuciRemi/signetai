@@ -28,7 +28,6 @@ import {
 	consumeState,
 	initContinuity,
 	recordPrompt,
-	recordRemember,
 	setStructuralSnapshot,
 	shouldCheckpoint,
 } from "./continuity-state";
@@ -348,11 +347,6 @@ export interface RememberRequest {
 	agentId?: string;
 	idempotencyKey?: string;
 	runtimePath?: "plugin" | "legacy";
-}
-
-export interface RememberResponse {
-	saved: boolean;
-	id: string;
 }
 
 export interface RecallRequest {
@@ -1276,7 +1270,7 @@ ${guidelines}
 					digest,
 					promptCount: snap.promptCount,
 					memoryQueries: snap.pendingQueries,
-					recentRemembers: snap.pendingRemembers,
+					recentRemembers: [],
 					focalEntityIds: snap.structuralSnapshot?.focalEntityIds,
 					focalEntityNames: snap.structuralSnapshot?.focalEntityNames,
 					activeAspectIds: snap.structuralSnapshot?.activeAspectIds,
@@ -1504,7 +1498,7 @@ export async function handleUserPromptSubmit(
 						digest: deps.formatPeriodicDigest(snap),
 						promptCount: snap.promptCount,
 						memoryQueries: snap.pendingQueries,
-						recentRemembers: snap.pendingRemembers,
+						recentRemembers: [],
 						focalEntityIds: snap.structuralSnapshot?.focalEntityIds,
 						focalEntityNames: snap.structuralSnapshot?.focalEntityNames,
 						activeAspectIds: snap.structuralSnapshot?.activeAspectIds,
@@ -1760,7 +1754,7 @@ export async function handleSessionEnd(req: SessionEndRequest): Promise<SessionE
 					digest: formatSessionEndDigest(snap),
 					promptCount: snap.totalPromptCount,
 					memoryQueries: snap.pendingQueries,
-					recentRemembers: snap.pendingRemembers,
+					recentRemembers: [],
 					focalEntityIds: snap.structuralSnapshot?.focalEntityIds,
 					focalEntityNames: snap.structuralSnapshot?.focalEntityNames,
 					activeAspectIds: snap.structuralSnapshot?.activeAspectIds,
@@ -2184,7 +2178,7 @@ export function handleCheckpointExtract(req: CheckpointExtractRequest): Checkpoi
 					digest: formatPeriodicDigest(snap),
 					promptCount: snap.totalPromptCount,
 					memoryQueries: snap.pendingQueries,
-					recentRemembers: snap.pendingRemembers,
+					recentRemembers: [],
 					focalEntityIds: snap.structuralSnapshot?.focalEntityIds,
 					focalEntityNames: snap.structuralSnapshot?.focalEntityNames,
 					activeAspectIds: snap.structuralSnapshot?.activeAspectIds,
@@ -2263,98 +2257,6 @@ export function normalizeSessionTranscript(harness: string, raw: string): string
 }
 
 export { normalizeCodexTranscript, normalizeJsonConversationTranscript };
-
-// ============================================================================
-// Remember
-// ============================================================================
-
-export function handleRemember(req: RememberRequest): RememberResponse {
-	let content = req.content.trim();
-	let pinned = 0;
-	let importance = 0.8;
-
-	// Check for critical: prefix
-	if (content.toLowerCase().startsWith("critical:")) {
-		content = content.slice(9).trim();
-		pinned = 1;
-		importance = 1.0;
-	}
-
-	// Extract [tags] if present
-	let tags: string | null = null;
-	const tagMatch = content.match(/^\[([^\]]+)\]:\s*/);
-	if (tagMatch) {
-		tags = tagMatch[1];
-		content = content.slice(tagMatch[0].length);
-	}
-
-	const type = inferType(content);
-	const id = crypto.randomUUID();
-	const now = new Date().toISOString();
-
-	try {
-		const resultId = getDbAccessor().withWriteTx((db) => {
-			// Idempotency check inside write tx to eliminate races
-			if (req.idempotencyKey) {
-				try {
-					const existing = db.prepare("SELECT id FROM memories WHERE idempotency_key = ?").get(req.idempotencyKey) as
-						| { id: string }
-						| undefined;
-
-					if (existing) {
-						logger.info("hooks", "Idempotency hit, returning existing", {
-							id: existing.id,
-							key: req.idempotencyKey,
-						});
-						return existing.id;
-					}
-				} catch {
-					// Column might not exist yet (pre-migration 006)
-				}
-			}
-
-			db.prepare(
-				`INSERT INTO memories
-				 (id, content, type, importance, source_type, who, tags,
-				  pinned, project, idempotency_key, runtime_path,
-				  created_at, updated_at, updated_by)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			).run(
-				id,
-				content,
-				type,
-				importance,
-				"explicit",
-				req.who || req.harness,
-				tags,
-				pinned,
-				req.project || null,
-				req.idempotencyKey || null,
-				req.runtimePath || null,
-				now,
-				now,
-				req.who || req.harness || "hooks",
-			);
-
-			return id;
-		});
-
-		// Track for continuity checkpointing
-		recordRemember(req.sessionKey, content);
-
-		logger.info("hooks", "Memory saved", {
-			id: resultId,
-			type,
-			pinned: pinned === 1,
-			runtimePath: req.runtimePath,
-		});
-
-		return { saved: true, id: resultId };
-	} catch (e) {
-		logger.error("hooks", "Remember failed", e as Error);
-		return { saved: false, id: "" };
-	}
-}
 
 // ============================================================================
 // Memory Synthesis

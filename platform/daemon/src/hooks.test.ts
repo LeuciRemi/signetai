@@ -28,7 +28,6 @@ const {
 	handlePreCompaction,
 	handleSynthesisRequest,
 	handleUserPromptSubmit,
-	handleRemember,
 	handleSessionEnd,
 	handleCheckpointExtract,
 	effectiveScore,
@@ -1538,81 +1537,6 @@ describe("handleUserPromptSubmit", () => {
 		db.close();
 
 		expect(row?.content).toContain("review the release checklist");
-	});
-});
-
-// ============================================================================
-// handleRemember
-// ============================================================================
-
-describe("handleRemember", () => {
-	test.serial("saves valid content", async () => {
-		createMemoryDb([]);
-
-		const result = handleRemember({
-			harness: "test",
-			content: "User prefers dark mode",
-		});
-
-		expect(result.saved).toBe(true);
-		expect(result.id).toBeTruthy();
-		expect(result.id.length).toBeGreaterThan(0);
-	});
-
-	test.serial("handles critical: prefix", async () => {
-		createMemoryDb([]);
-
-		const result = handleRemember({
-			harness: "test",
-			content: "critical: Never deploy on Fridays",
-		});
-
-		expect(result.saved).toBe(true);
-
-		// Verify pinned in DB
-		const db = openTestDb();
-		const row = db.prepare("SELECT * FROM memories WHERE id = ?").get(result.id) as {
-			pinned: number;
-			importance: number;
-			content: string;
-		};
-		db.close();
-
-		expect(row.pinned).toBe(1);
-		expect(row.importance).toBe(1.0);
-		expect(row.content).toBe("Never deploy on Fridays");
-	});
-
-	test.serial("extracts [tags] from content", async () => {
-		createMemoryDb([]);
-
-		const result = handleRemember({
-			harness: "test",
-			content: "[auth,security]: Use JWT for API tokens",
-		});
-
-		expect(result.saved).toBe(true);
-
-		const db = openTestDb();
-		const row = db.prepare("SELECT * FROM memories WHERE id = ?").get(result.id) as {
-			tags: string;
-			content: string;
-		};
-		db.close();
-
-		expect(row.tags).toBe("auth,security");
-		expect(row.content).toBe("Use JWT for API tokens");
-	});
-
-	test.serial("fails gracefully on missing database", async () => {
-		// Don't create db
-		const result = handleRemember({
-			harness: "test",
-			content: "This should fail gracefully",
-		});
-
-		expect(result.saved).toBe(false);
-		expect(result.id).toBe("");
 	});
 });
 
