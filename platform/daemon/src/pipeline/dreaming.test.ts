@@ -470,6 +470,107 @@ describe("dreaming", () => {
 			expect(entity?.proposal_id).toBeString();
 		});
 
+		it("uses an artifact's explicit provenance fields for audited operations", async () => {
+			const evidence = "The roadmap names Meridian as the active project.";
+			seedArtifact(db, evidence);
+			const result = await runDreamingPass(
+				accessor,
+				async (prompt) => {
+					expect(prompt).toContain("source_kind: source_obsidian_markdown");
+					expect(prompt).toContain("source_id: artifact-session");
+					expect(prompt).toContain("source_path: sources/roadmap.md");
+					return JSON.stringify({
+						operations: [
+							{
+								operation: "create_entity",
+								payload: { name: "Meridian", entity_type: "project" },
+								reason: "The source artifact names a durable project.",
+								evidence: [
+									{
+										source_kind: "source_obsidian_markdown",
+										source_id: "artifact-session",
+										source_path: "sources/roadmap.md",
+										quote: evidence,
+									},
+								],
+							},
+						],
+						summary: "Created Meridian from the source artifact",
+					});
+				},
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(result.applied).toBe(1);
+			expect(
+				db.prepare("SELECT name FROM entities WHERE agent_id = ? AND canonical_name = 'meridian'").get(AGENT),
+			).toEqual({ name: "Meridian" });
+		});
+
+		it("advances evidence after discarding an invalid operation", async () => {
+			const evidence = "Atlas is the active research project.";
+			seedSummary(db, "invalid-operation", evidence, 6);
+			const result = await runDreamingPass(
+				accessor,
+				async () =>
+					JSON.stringify({
+						operations: [
+							{ operation: "invent_operation", payload: {}, reason: "Not supported", evidence: [] },
+							{
+								operation: "create_entity",
+								payload: { name: "Atlas", entity_type: "project" },
+								reason: "The summary identifies a durable project.",
+								evidence: [{ source_kind: "summary", source_id: "invalid-operation", quote: evidence }],
+							},
+						],
+						summary: "Created Atlas and discarded invalid output",
+					}),
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(result).toMatchObject({ applied: 1, failed: 1 });
+			expect(getDreamingState(accessor, AGENT).evidenceCursor?.id).toBe("invalid-operation");
+		});
+
+		it("keeps valid semantic operations when a later operation is rejected", async () => {
+			const evidence = "Cedar is an active project with a deprecated entity to archive.";
+			seedSummary(db, "rejected-operation", evidence, 9);
+			const result = await runDreamingPass(
+				accessor,
+				async () =>
+					JSON.stringify({
+						operations: [
+							{
+								operation: "create_entity",
+								payload: { name: "Cedar", entity_type: "project" },
+								reason: "The summary identifies a durable project.",
+								evidence: [{ source_kind: "summary", source_id: "rejected-operation", quote: evidence }],
+							},
+							{
+								operation: "archive_entity",
+								payload: { selector: "entity-that-does-not-exist" },
+								reason: "This intentionally verifies isolated operation rejection.",
+								evidence: [{ source_kind: "summary", source_id: "rejected-operation", quote: evidence }],
+							},
+						],
+						summary: "Created Cedar; rejected the nonexistent archive",
+					}),
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(result).toMatchObject({ applied: 1, failed: 1 });
+			expect(
+				db.prepare("SELECT name FROM entities WHERE agent_id = ? AND canonical_name = 'cedar'").get(AGENT),
+			).toEqual({ name: "Cedar" });
+			expect(getDreamingState(accessor, AGENT).evidenceCursor?.id).toBe("rejected-operation");
+		});
+
 		it("records failed pass on LLM error", async () => {
 			seedEntity(db, "ent-1", "Test", "concept");
 

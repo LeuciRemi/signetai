@@ -157,6 +157,38 @@ describe("ontology proposals", () => {
 		).toEqual({ count: 0 });
 	});
 
+	it("does not archive an aspect that has an active constraint without force", () => {
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "set_claim_value",
+			payload: {
+				entity: "Constraint Guard",
+				entity_type: "project",
+				aspect: "retention",
+				claim_key: "source_of_truth",
+				value: "Artifacts remain immutable evidence.",
+				kind: "constraint",
+			},
+		});
+
+		expect(() =>
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "archive_aspect",
+				payload: { entity: "Constraint Guard", selector: "retention" },
+			}),
+		).toThrow("Refusing to archive aspect with active constraint attributes without force");
+		const applied = applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "archive_aspect",
+			payload: { entity: "Constraint Guard", selector: "retention", force: true },
+		});
+		expect(applied.proposal.status).toBe("applied");
+	});
+
 	it("rejects a pending proposal without mutating graph state", () => {
 		const proposal = createOntologyProposal(getDbAccessor(), {
 			agentId: "default",

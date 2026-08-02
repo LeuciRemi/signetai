@@ -454,8 +454,7 @@ function buildDreamingPrompt(
 	let unrenderableEvidence: EpisodicSourceRecord | null = null;
 	for (const source of evidence) {
 		const label = `${source.kind}:${source.sourceKind}`;
-		const provenance = source.sourcePath ?? source.sourceId;
-		const heading = `\n### ${label} (${source.capturedAt})${source.project ? ` — ${source.project}` : ""}\nSource: ${provenance}\n`;
+		const heading = `\n### ${label} (${source.capturedAt})${source.project ? ` — ${source.project}` : ""}\nsource_kind: ${source.sourceKind}\nsource_id: ${source.sourceId}\n${source.sourcePath ? `source_path: ${source.sourcePath}\n` : ""}`;
 		if (usedChars + heading.length + source.content.length > evidenceBudget) {
 			unrenderableEvidence = lastEvidence === null ? source : null;
 			break;
@@ -523,7 +522,7 @@ Respond with ONLY a JSON object in this exact format (no markdown code fences, n
       "payload": { "create_entity": { "name": "...", "entity_type": "project" }, "add_claim_value": { "entity": "...", "aspect": "...", "claim_key": "...", "value": "..." }, "merge_entities": { "target_entity": "...", "source_entities": ["..."] } },
       "reason": "why this semantic change is warranted",
       "confidence": 0.0,
-      "evidence": [{ "source_kind": "copy exactly from an episodic_evidence heading", "source_id": "copy that source's provenance id", "source_path": "copy when present", "quote": "exact supporting quote from that source" }]
+      "evidence": [{ "source_kind": "copy source_kind exactly from an episodic_evidence heading", "source_id": "copy source_id exactly from that heading", "source_path": "copy source_path when present", "quote": "exact supporting quote from that source" }]
     }
   ],
   "summary": "Brief description of what you changed and why"
@@ -570,7 +569,7 @@ function evidenceMatchesSelectedSource(value: unknown, sources: readonly Episodi
 	return sources.some(
 		(source) =>
 			source.sourceKind === sourceKind &&
-			(source.sourceId === sourceId || source.id === sourceId) &&
+			source.sourceId === sourceId &&
 			(sourcePath === null || source.sourcePath === sourcePath) &&
 			source.content.includes(quote),
 	);
