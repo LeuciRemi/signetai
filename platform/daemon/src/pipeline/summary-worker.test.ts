@@ -123,14 +123,29 @@ describe("insertSummaryFacts", () => {
 	let db: Database;
 	let accessor: DbAccessor;
 
+	// The shared extraction-enqueue gate (`enqueueExtractionJobInTx`) reads
+	// canonical config via `resolveDefaultBasePath()` (`SIGNET_PATH` → `~/.agents`).
+	// Legacy-behavior tests in this block must not depend on host config, so point
+	// `SIGNET_PATH` at an isolated temp dir with Dreaming explicitly disabled.
+	// The `#946` cutover test overrides this inside its own body. The restore
+	// mirrors the neighboring pattern in this file and sibling test files.
+	let originalSignetPath: string | undefined;
+
 	beforeEach(() => {
 		db = new Database(":memory:");
 		runMigrations(db as unknown as Parameters<typeof runMigrations>[0]);
 		accessor = makeAccessor(db);
+		originalSignetPath = process.env.SIGNET_PATH;
+		process.env.SIGNET_PATH = makeAgentsDir("memory:\n  dreaming:\n    enabled: false\n");
 	});
 
 	afterEach(() => {
 		db.close();
+		if (originalSignetPath === undefined) {
+			Reflect.deleteProperty(process.env as Record<string, string | undefined>, "SIGNET_PATH");
+		} else {
+			process.env.SIGNET_PATH = originalSignetPath;
+		}
 	});
 
 	it("writes summary facts with updated_by metadata and default agent scope", () => {
@@ -293,6 +308,49 @@ describe("insertSummaryFacts", () => {
 			{ job_type: "extract", status: "pending", source_id: "sess-extract-queue" },
 			{ job_type: "extract", status: "pending", source_id: "sess-extract-queue" },
 		]);
+	});
+
+	it("does not queue extraction jobs when dreaming owns semantic writes (#946)", () => {
+		const dir = mkdtempSync(join(tmpdir(), "signet-summary-dream-"));
+		writeFileSync(join(dir, "agent.yaml"), "memory:\n  dreaming:\n    enabled: true\n");
+		const prevSignetPath = process.env.SIGNET_PATH;
+		process.env.SIGNET_PATH = dir;
+		try {
+			const saved = insertSummaryFacts(
+				accessor,
+				{
+					harness: "oh-my-pi",
+					project: "/mnt/work/dev/project",
+					session_key: "sess-dream-gate",
+					session_id: "sess-dream-gate",
+					id: "job-dream-gate",
+					agent_id: "test-agent",
+				},
+				[
+					{
+						content:
+							"Summary facts are still saved when dreaming is enabled but extraction jobs are not enqueued.",
+						type: "fact",
+					},
+				],
+			);
+
+			// The fact itself is still saved (Dreaming does not block summary fact storage).
+			expect(saved).toBe(1);
+
+			// But no legacy extract job is enqueued.
+			const jobCount = db
+				.prepare("SELECT COUNT(*) AS n FROM memory_jobs WHERE job_type = 'extract'")
+			.get() as { n: number };
+			expect(jobCount.n).toBe(0);
+		} finally {
+			if (prevSignetPath === undefined) {
+				Reflect.deleteProperty(process.env as Record<string, string | undefined>, "SIGNET_PATH");
+			} else {
+				process.env.SIGNET_PATH = prevSignetPath;
+			}
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it("treats content_hash collisions as deduplication instead of job failures", () => {

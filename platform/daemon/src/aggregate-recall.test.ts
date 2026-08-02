@@ -319,6 +319,50 @@ describe("aggregateRecall", () => {
 		expect(hint.hint).toBe("what happened");
 	});
 
+	it("does not enqueue an extract job when dreaming owns semantic writes (#946)", async () => {
+		writeFileSync(
+			join(dir, "agent.yaml"),
+			`name: AggregateRecallTest
+memory:
+  dreaming:
+    enabled: true
+`,
+		);
+
+		const router = new StaticRouter();
+		const result = await aggregateRecall(
+			{
+				query: "what happened",
+				aggregate: true,
+				aggregateBudget: "small",
+				agentId: "agent-a",
+				readPolicy: "isolated",
+			},
+			loadMemoryConfig(dir),
+			{
+				router,
+				embedFn: async () => null,
+				logger: quietLogger(),
+				now: () => new Date("2026-05-20T12:00:00.000Z"),
+				idFactory: () => "aggregate-dream",
+				hybridRecall: async () => response("what happened", [row("mem-1", "First evidence")]),
+			},
+		);
+
+		// The aggregate memory is still saved (Dreaming does not block recall saves).
+		expect(result.aggregate).toMatchObject({ savedMemoryId: "aggregate-dream", saved: true });
+
+		// But no legacy extract job is enqueued — Dreaming owns semantic writes.
+		const jobCount = getDbAccessor().withReadDb((db) =>
+			db
+				.prepare(
+					"SELECT COUNT(*) as cnt FROM memory_jobs WHERE memory_id = ? AND job_type = 'extract'",
+				)
+				.get("aggregate-dream"),
+		) as { cnt: number };
+		expect(jobCount.cnt).toBe(0);
+	});
+
 	it("synthesizes through a direct OpenAI-compatible API target without ACPX", async () => {
 		writeFileSync(
 			join(dir, "agent.yaml"),

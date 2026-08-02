@@ -1,4 +1,6 @@
+import { resolveDefaultBasePath } from "@signet/core";
 import type { DbAccessor, WriteDb } from "../db-accessor";
+import { loadMemoryConfig } from "../memory-config";
 
 export const FORGOTTEN_MEMORY_JOB_ERROR = "Source memory forgotten";
 export const FORGOTTEN_MEMORY_JOB_RESULT = JSON.stringify({ cancelled: "memory_forgotten" });
@@ -27,10 +29,34 @@ export function cancelExtractionJobForForgottenMemory(db: WriteDb, jobId: string
 }
 
 // ---------------------------------------------------------------------------
+// Dreaming cutover gate
+//
+// When `memory.dreaming.enabled` is true, Dreaming owns semantic writes and
+// the legacy extraction workers are not started (see daemon.ts). Without this
+// gate, write surfaces (remember endpoint, aggregate-recall, summary facts)
+// would still create `extract` jobs that nothing ever leases, producing a
+// permanent backlog. The check mirrors daemon.ts `dreamingOwnsSemanticWrites`.
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when Dreaming owns semantic writes and legacy `extract` jobs
+ * must not be created. Reads canonical config at resolution time.
+ *
+ * Exposed for tests that need to simulate the cutover without touching disk.
+ */
+export function dreamingOwnsExtraction(agentsDir: string = resolveDefaultBasePath()): boolean {
+	return loadMemoryConfig(agentsDir).dreaming.enabled;
+}
+
+// ---------------------------------------------------------------------------
 // Job enqueue (called by daemon remember endpoint and other write surfaces)
 // ---------------------------------------------------------------------------
 
 export function enqueueExtractionJobInTx(db: WriteDb, memoryId: string): void {
+	// Dreaming cutover: skip legacy extract job creation when Dreaming owns
+	// semantic writes — the workers that would lease these jobs are not running.
+	if (dreamingOwnsExtraction()) return;
+
 	// Skip if memory extraction is already complete (structured passthrough
 	// or prior pipeline run). This prevents re-processing memories that
 	// were ingested with pre-extracted data.
