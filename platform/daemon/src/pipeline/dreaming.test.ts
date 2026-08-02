@@ -517,6 +517,11 @@ describe("dreaming", () => {
 					expect(prompt).toContain("Startup rules are loaded normally.");
 					expect(prompt).toContain("Dreaming-specific reflection instructions.");
 					expect(prompt).toContain("create_entity|create_aspect|add_claim_value|set_claim_value");
+					expect(prompt).toContain(
+						"The payload field is the operation payload itself, never a map keyed by operation name.",
+					);
+					expect(prompt).toContain('"payload": { "name": "...", "entity_type": "project" }');
+					expect(prompt).not.toContain('"create_entity": { "name"');
 					expect(prompt).toContain('"evidence"');
 					expect(prompt).toContain("<dreaming_prompt>");
 					expect(prompt).not.toContain("Soul should not be loaded");

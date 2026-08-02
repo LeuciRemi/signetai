@@ -626,11 +626,13 @@ ${depText || "(no relationships yet)"}
 
 Respond with ONLY a JSON object in this exact format (no markdown code fences, no other text):
 
+The payload field is the operation payload itself, never a map keyed by operation name. For example, create_entity uses { "name": "...", "entity_type": "project" }; add_claim_value uses { "entity": "...", "aspect": "...", "claim_key": "...", "value": "..." }; and merge_entities uses { "target_entity": "...", "source_entities": ["..."] }.
+
 {
   "operations": [
     {
       "operation": "create_entity|create_aspect|add_claim_value|set_claim_value|supersede_claim_value|merge_entities|archive_entity|archive_aspect|archive_claim_value|create_link|update_link|archive_link",
-      "payload": { "create_entity": { "name": "...", "entity_type": "project" }, "add_claim_value": { "entity": "...", "aspect": "...", "claim_key": "...", "value": "..." }, "merge_entities": { "target_entity": "...", "source_entities": ["..."] } },
+      "payload": { "name": "...", "entity_type": "project" },
       "reason": "why this semantic change is warranted",
       "confidence": 0.0,
       "evidence": [{ "source_kind": "copy source_kind exactly from an episodic_evidence heading", "source_id": "copy source_id exactly from that heading", "source_path": "copy source_path when present", "quote": "exact supporting quote from that source" }]
