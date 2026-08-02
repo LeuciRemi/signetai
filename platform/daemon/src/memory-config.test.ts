@@ -11,7 +11,6 @@ import {
 	MIN_PROMPT_SUBMIT_EMBEDDING_TIMEOUT_MS,
 	loadMemoryConfig,
 	loadPipelineConfig,
-	shouldWarnGraphExtractionWritesDisabled,
 } from "./memory-config";
 
 const tmpDirs: string[] = [];
@@ -111,57 +110,6 @@ describe("loadMemoryConfig", () => {
 		const disabledDir = makeTempAgentsDir();
 		writeFileSync(join(disabledDir, "agent.yaml"), "search:\n  temporal_prior_enabled: false\n");
 		expect(loadMemoryConfig(disabledDir).search.temporal_prior_enabled).toBe(false);
-	});
-
-	it("enables graph extraction writes by default", () => {
-		const agentsDir = makeTempAgentsDir();
-		const cfg = loadMemoryConfig(agentsDir);
-
-		expect(cfg.pipelineV2.graph.enabled).toBe(true);
-		expect(cfg.pipelineV2.graph.extractionWritesEnabled).toBe(true);
-		expect(shouldWarnGraphExtractionWritesDisabled(cfg)).toBe(false);
-	});
-
-	it("warns only when graph reads are enabled but extraction writes are explicitly disabled", () => {
-		const agentsDir = makeTempAgentsDir();
-		const cfg = loadMemoryConfig(agentsDir);
-
-		expect(
-			shouldWarnGraphExtractionWritesDisabled({
-				...cfg,
-				pipelineV2: { ...cfg.pipelineV2, graph: { ...cfg.pipelineV2.graph, extractionWritesEnabled: false } },
-			}),
-		).toBe(true);
-		expect(shouldWarnGraphExtractionWritesDisabled(cfg)).toBe(false);
-		expect(
-			shouldWarnGraphExtractionWritesDisabled({
-				...cfg,
-				pipelineV2: {
-					...cfg.pipelineV2,
-					graph: { ...cfg.pipelineV2.graph, enabled: false, extractionWritesEnabled: false },
-				},
-			}),
-		).toBe(false);
-		expect(
-			shouldWarnGraphExtractionWritesDisabled({
-				...cfg,
-				pipelineV2: {
-					...cfg.pipelineV2,
-					paused: true,
-					graph: { ...cfg.pipelineV2.graph, extractionWritesEnabled: false },
-				},
-			}),
-		).toBe(false);
-		expect(
-			shouldWarnGraphExtractionWritesDisabled({
-				...cfg,
-				pipelineV2: {
-					...cfg.pipelineV2,
-					enabled: false,
-					graph: { ...cfg.pipelineV2.graph, extractionWritesEnabled: false },
-				},
-			}),
-		).toBe(false);
 	});
 
 	it("loads embedding prompt-submit timeout from agent.yaml", () => {
@@ -499,6 +447,14 @@ describe("loadMemoryConfig", () => {
 		expect(cfg.pipelineV2.extraction.provider).toBe("none");
 		expect(cfg.pipelineV2.extraction.model).toBe("");
 	});
+
+	it("rejects retired command extraction rather than silently falling back", () => {
+		expect(() =>
+			loadPipelineConfig({
+				memory: { pipelineV2: { extraction: { provider: "command" } } },
+			}),
+		).toThrow("command configuration is retired");
+	});
 });
 
 describe("loadPipelineConfig", () => {
@@ -820,177 +776,6 @@ describe("loadPipelineConfig", () => {
 		expect(result.extraction.model).toBe("gpt-5.3-codex");
 	});
 
-	it("accepts command extraction provider with argv-safe command config", () => {
-		const result = loadPipelineConfig({
-			memory: {
-				pipelineV2: {
-					extraction: {
-						provider: "command",
-						command: {
-							bin: "node",
-							args: ["script.mjs", "--transcript", "$TRANSCRIPT"],
-							cwd: "/tmp/signet",
-							env: {
-								SIGNET_MODE: "pipeline",
-								"NOT VALID": "skip-me",
-							},
-						},
-					},
-				},
-			},
-		});
-
-		expect(result.extraction.provider).toBe("command");
-		expect(result.extraction.command).toEqual({
-			bin: "node",
-			args: ["script.mjs", "--transcript", "$TRANSCRIPT"],
-			cwd: "/tmp/signet",
-			env: {
-				SIGNET_MODE: "pipeline",
-			},
-		});
-		// synthesis never accepts command provider; extraction command falls back to synthesis defaults
-		expect(result.synthesis.provider).toBe("ollama");
-		expect(result.synthesis.model).toBe("qwen3:4b");
-	});
-
-	it("falls back from command extraction when remote providers are locked", () => {
-		const result = loadPipelineConfig({
-			memory: {
-				pipelineV2: {
-					allowRemoteProviders: false,
-					extraction: {
-						provider: "command",
-						fallbackProvider: "ollama",
-					},
-				},
-			},
-		});
-
-		expect(result.extraction.provider).toBe("ollama");
-		expect(result.extraction.command).toBeUndefined();
-		expect(result.synthesis.provider).toBe("ollama");
-	});
-
-	it("parses legacy extraction.command string into argv", () => {
-		const result = loadPipelineConfig({
-			memory: {
-				pipelineV2: {
-					extractionProvider: "command",
-					extractionCommand: 'node ./extract.mjs --transcript "$TRANSCRIPT" --session "$SESSION_KEY"',
-				},
-			},
-		});
-
-		expect(result.extraction.provider).toBe("command");
-		expect(result.extraction.command).toEqual({
-			bin: "node",
-			args: ["./extract.mjs", "--transcript", "$TRANSCRIPT", "--session", "$SESSION_KEY"],
-		});
-	});
-
-	it("rejects synthesis.provider=command with a clear validation error", () => {
-		expect(() =>
-			loadPipelineConfig({
-				memory: {
-					pipelineV2: {
-						extraction: {
-							provider: "ollama",
-							model: "qwen3:4b",
-						},
-						synthesis: {
-							provider: "command",
-						},
-					},
-				},
-			}),
-		).toThrow("synthesis.provider='command' is not supported");
-	});
-
-	it("loadMemoryConfig fails fast when synthesis.provider=command is configured", () => {
-		const agentsDir = makeTempAgentsDir();
-		writeFileSync(
-			join(agentsDir, "agent.yaml"),
-			`memory:
-  pipelineV2:
-    extraction:
-      provider: ollama
-      model: qwen3:4b
-    synthesis:
-      provider: command
-`,
-			"utf8",
-		);
-
-		expect(() => loadMemoryConfig(agentsDir)).toThrow("synthesis.provider='command' is not supported");
-	});
-
-	it("rejects extraction.provider=command when extraction.command is missing", () => {
-		expect(() =>
-			loadPipelineConfig({
-				memory: {
-					pipelineV2: {
-						extraction: {
-							provider: "command",
-						},
-					},
-				},
-			}),
-		).toThrow("extraction.command is required when extraction.provider='command'");
-	});
-
-	it("rejects extraction.command object that omits bin", () => {
-		expect(() =>
-			loadPipelineConfig({
-				memory: {
-					pipelineV2: {
-						extraction: {
-							provider: "command",
-							command: {
-								command: "node",
-								args: ["script.mjs"],
-							},
-						},
-					},
-				},
-			}),
-		).toThrow("extraction.command is required when extraction.provider='command'");
-	});
-
-	it("rejects extraction.command args that contain non-strings", () => {
-		expect(() =>
-			loadPipelineConfig({
-				memory: {
-					pipelineV2: {
-						extraction: {
-							provider: "command",
-							command: {
-								bin: "node",
-								args: ["script.mjs", 123],
-							},
-						},
-					},
-				},
-			}),
-		).toThrow("extraction.command is required when extraction.provider='command'");
-	});
-
-	it("loadMemoryConfig fails fast when extraction.provider=command is missing command config", () => {
-		const agentsDir = makeTempAgentsDir();
-		writeFileSync(
-			join(agentsDir, "agent.yaml"),
-			`memory:
-  pipelineV2:
-    extraction:
-      provider: command
-`,
-			"utf8",
-		);
-
-		expect(() => loadMemoryConfig(agentsDir)).toThrow(
-			"extraction.command is required when extraction.provider='command'",
-		);
-	});
 
 	it("loads all flags correctly when all set to true (flat keys)", () => {
 		const result = loadPipelineConfig({
@@ -1000,7 +785,6 @@ describe("loadPipelineConfig", () => {
 					shadowMode: true,
 					allowUpdateDelete: true,
 					graphEnabled: true,
-					graphExtractionWritesEnabled: true,
 					autonomousEnabled: true,
 					mutationsFrozen: true,
 					autonomousFrozen: true,
@@ -1012,7 +796,6 @@ describe("loadPipelineConfig", () => {
 		expect(result.shadowMode).toBe(true);
 		expect(result.autonomous.allowUpdateDelete).toBe(true);
 		expect(result.graph.enabled).toBe(true);
-		expect(result.graph.extractionWritesEnabled).toBe(true);
 		expect(result.autonomous.enabled).toBe(true);
 		expect(result.mutationsFrozen).toBe(true);
 		expect(result.autonomous.frozen).toBe(true);
@@ -1034,7 +817,6 @@ describe("loadPipelineConfig", () => {
 		expect(result.shadowMode).toBe(DEFAULT_PIPELINE_V2.shadowMode);
 		expect(result.autonomous.allowUpdateDelete).toBe(DEFAULT_PIPELINE_V2.autonomous.allowUpdateDelete);
 		expect(result.graph.enabled).toBe(DEFAULT_PIPELINE_V2.graph.enabled);
-		expect(result.graph.extractionWritesEnabled).toBe(DEFAULT_PIPELINE_V2.graph.extractionWritesEnabled);
 		expect(result.autonomous.enabled).toBe(DEFAULT_PIPELINE_V2.autonomous.enabled);
 		expect(result.autonomous.frozen).toBe(DEFAULT_PIPELINE_V2.autonomous.frozen);
 	});
@@ -1233,7 +1015,6 @@ describe("loadPipelineConfig", () => {
 		const result = loadPipelineConfig({
 			memory: {
 				pipelineV2: {
-					graphExtractionWritesEnabled: true,
 					graphBoostWeight: 0.25,
 					graphBoostTimeoutMs: 300,
 					rerankerEnabled: true,
@@ -1244,7 +1025,6 @@ describe("loadPipelineConfig", () => {
 			},
 		});
 
-		expect(result.graph.extractionWritesEnabled).toBe(true);
 		expect(result.graph.boostWeight).toBe(0.25);
 		expect(result.graph.boostTimeoutMs).toBe(300);
 		expect(result.reranker.enabled).toBe(true);
@@ -1260,7 +1040,6 @@ describe("loadPipelineConfig", () => {
 		});
 
 		expect(result.graph.boostWeight).toBe(DEFAULT_PIPELINE_V2.graph.boostWeight);
-		expect(result.graph.extractionWritesEnabled).toBe(DEFAULT_PIPELINE_V2.graph.extractionWritesEnabled);
 		expect(result.graph.boostTimeoutMs).toBe(DEFAULT_PIPELINE_V2.graph.boostTimeoutMs);
 		expect(result.reranker.enabled).toBe(DEFAULT_PIPELINE_V2.reranker.enabled);
 		expect(result.reranker.model).toBe(DEFAULT_PIPELINE_V2.reranker.model);
@@ -1447,7 +1226,7 @@ describe("loadPipelineConfig", () => {
 						timeout: 30000,
 						minConfidence: 0.8,
 					},
-					graph: { enabled: true, extractionWritesEnabled: true, boostWeight: 0.3 },
+					graph: { enabled: true, boostWeight: 0.3 },
 					reranker: { enabled: true, model: "my-reranker", useExtractionModel: true, topN: 10 },
 					autonomous: {
 						enabled: true,
@@ -1466,7 +1245,6 @@ describe("loadPipelineConfig", () => {
 		expect(result.extraction.timeout).toBe(30000);
 		expect(result.extraction.minConfidence).toBe(0.8);
 		expect(result.graph.enabled).toBe(true);
-		expect(result.graph.extractionWritesEnabled).toBe(true);
 		expect(result.graph.boostWeight).toBe(0.3);
 		expect(result.reranker.enabled).toBe(true);
 		expect(result.reranker.model).toBe("my-reranker");

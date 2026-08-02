@@ -27,11 +27,10 @@ updated synchronously. An embedding is generated asynchronously. The
 write succeeds even if the embedding provider is unavailable — those
 memories remain searchable by keyword only.
 
-After the write, `enqueueExtractionJob` inserts a row into the
-`memory_jobs` table (`job_type = 'extract'`, `status = 'pending'`).
-The pipeline worker picks it up, runs extraction and decision, then
-optionally writes derived facts as new memory rows. All of this
-happens without touching the original memory's content.
+The saved row is immutable episodic evidence. Dreaming later selects it with
+related artifacts, transcripts, and summaries, then may derive audited semantic
+claims or links without rewriting the original evidence. No extraction job is
+created by the write path.
 
 Search (`POST /api/memory/recall`) runs hybrid BM25 + vector search,
 optionally augmented by the knowledge graph, and returns a scored,
@@ -578,11 +577,11 @@ delay = min(BASE_DELAY × 2^failures, MAX_DELAY) + random_jitter
 `BASE_DELAY` is 1000ms, `MAX_DELAY` is 30,000ms, jitter up to 500ms.
 Successful jobs reset the failure counter.
 
-### Enqueue Deduplication
+### Retired Extraction Queue
 
-`enqueueExtractionJob` checks for existing `pending` or `leased` jobs
-for the same `memory_id` before inserting. Duplicate enqueue calls
-for the same memory are silently dropped.
+The legacy extraction queue is retired. New evidence is selected directly by
+Dreaming; startup promotes each live historical extraction input into the
+episodic cursor before terminalizing its obsolete job.
 
 ### Controlled Writes in the Worker
 

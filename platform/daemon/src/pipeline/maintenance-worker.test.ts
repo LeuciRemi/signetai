@@ -67,10 +67,6 @@ const BASE_CFG: PipelineV2Config = {
 		requeueCooldownMs: 0, // no cooldown for tests
 		requeueHourlyBudget: 1000,
 	},
-	structural: {
-		...DEFAULT_PIPELINE_V2.structural,
-		enabled: false,
-	},
 };
 
 const now = new Date().toISOString();

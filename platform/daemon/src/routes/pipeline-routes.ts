@@ -203,7 +203,7 @@ export function registerPipelineRoutes(app: Hono): void {
 	app.get("/api/status", (c) => {
 		const config = loadMemoryConfig(AGENTS_DIR);
 		const extractionWorkload = getExtractionWorkloadState({
-			enabled: config.pipelineV2.enabled && !config.dreaming.enabled,
+			enabled: false,
 			paused: config.pipelineV2.paused,
 		});
 		const configuredLogFile = readEnvTrimmed("SIGNET_LOG_FILE");
@@ -455,7 +455,7 @@ export function registerPipelineRoutes(app: Hono): void {
 			providerResolution: {
 				...providerRuntimeResolution,
 				extraction: getExtractionWorkloadState({
-					enabled: pipelineV2.enabled && !cfg.dreaming.enabled,
+					enabled: false,
 					paused: pipelineV2.paused,
 				}),
 			},
@@ -534,7 +534,6 @@ export function registerPipelineRoutes(app: Hono): void {
 		const worker = getDreamingWorker();
 
 		return c.json({
-			enabled: cfg.dreaming.enabled,
 			worker: {
 				running: worker !== null,
 				active: worker?.activeAgentId === agentId,

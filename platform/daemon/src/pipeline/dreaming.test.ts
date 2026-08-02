@@ -30,7 +30,6 @@ const AGENT = "default";
 
 function defaultCfg(overrides?: Partial<DreamingConfig>): DreamingConfig {
 	return {
-		enabled: true,
 		tokenThreshold: 100_000,
 		maxInputTokens: 32_000,
 		maxOutputTokens: 16_000,
@@ -204,11 +203,6 @@ describe("dreaming", () => {
 	});
 
 	describe("threshold check", () => {
-		it("does not trigger when disabled", () => {
-			seedSummary(db, "disabled", "episodic source ".repeat(100), 100);
-			expect(shouldTriggerDreaming(accessor, defaultCfg({ enabled: false }), AGENT)).toBe(false);
-		});
-
 		it("does not trigger below threshold", () => {
 			seedSummary(db, "below-threshold", "episodic source ".repeat(10), 10);
 			expect(

@@ -155,7 +155,7 @@ function checkInference(): { ok: boolean; detail: InferenceCheck; reason: string
 		};
 	}
 	const extraction = getExtractionWorkloadState({
-		enabled: cfg.pipelineV2.enabled && !cfg.dreaming.enabled,
+		enabled: false,
 		paused: cfg.pipelineV2.paused,
 	});
 	const detail: InferenceCheck = {

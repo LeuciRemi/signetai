@@ -45,7 +45,6 @@ export { PIPELINE_FLAGS };
 export type { PipelineFlag, PipelineV2Config, DreamingConfig };
 
 export const DEFAULT_DREAMING: DreamingConfig = {
-	enabled: false,
 	tokenThreshold: 100_000,
 	timeout: 300_000,
 	maxInputTokens: 128_000,
@@ -88,7 +87,6 @@ export const DEFAULT_PIPELINE_V2: ResolvedPipelineV2Config = {
 		endpoint: undefined,
 		timeout: DEFAULT_PIPELINE_TIMEOUT_MS,
 		minConfidence: 0.7,
-		command: undefined,
 	},
 	worker: {
 		maxRetries: 3,
@@ -101,7 +99,6 @@ export const DEFAULT_PIPELINE_V2: ResolvedPipelineV2Config = {
 	},
 	graph: {
 		enabled: true,
-		extractionWritesEnabled: true,
 		boostWeight: 0.15,
 		boostTimeoutMs: 500,
 	},
@@ -202,11 +199,6 @@ export const DEFAULT_PIPELINE_V2: ResolvedPipelineV2Config = {
 		enrichMinDescription: 30,
 		reconcileIntervalMs: 60000,
 	},
-	structural: {
-		enabled: false,
-		classifyBatchSize: 8,
-		pollIntervalMs: 10000,
-	},
 	feedback: {
 		enabled: true,
 		ftsWeightDelta: 0.02,
@@ -270,15 +262,6 @@ export interface ResolvedMemoryConfig {
 	pipelineV2: ResolvedPipelineV2Config;
 	dreaming: DreamingConfig;
 	auth: AuthConfig;
-}
-
-export function shouldWarnGraphExtractionWritesDisabled(cfg: ResolvedMemoryConfig): boolean {
-	return (
-		cfg.pipelineV2.enabled &&
-		!cfg.pipelineV2.paused &&
-		cfg.pipelineV2.graph.enabled &&
-		cfg.pipelineV2.graph.extractionWritesEnabled !== true
-	);
 }
 
 class MemoryConfigValidationError extends Error {}
@@ -378,63 +361,6 @@ function parseClaudeCodeConfig(raw: unknown, fallback: PipelineV2Config["claudeC
 	};
 }
 
-function parseCommandArgv(raw: string): { bin: string; args: string[] } | null {
-	const tokens = raw.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g);
-	if (!tokens || tokens.length === 0) return null;
-	const argv = tokens.map((token) => token.replace(/^["']|["']$/g, "")).filter((token) => token.length > 0);
-	if (argv.length === 0) return null;
-	return {
-		bin: argv[0],
-		args: argv.slice(1),
-	};
-}
-
-function parseCommandConfig(raw: unknown): PipelineV2Config["extraction"]["command"] | undefined {
-	if (typeof raw === "string") {
-		const parsed = parseCommandArgv(raw);
-		if (!parsed) return undefined;
-		return {
-			bin: parsed.bin,
-			args: parsed.args,
-		};
-	}
-
-	if (!isRecord(raw)) {
-		return undefined;
-	}
-
-	const record = raw;
-	const candidateBin = typeof record.bin === "string" ? record.bin : "";
-	const bin = candidateBin.trim();
-	if (bin.length === 0) return undefined;
-
-	let args: string[] = [];
-	if (Array.isArray(record.args)) {
-		if (record.args.some((item) => typeof item !== "string")) {
-			return undefined;
-		}
-		args = [...record.args];
-	}
-	const cwd = typeof record.cwd === "string" && record.cwd.trim().length > 0 ? record.cwd.trim() : undefined;
-
-	let env: Record<string, string> | undefined;
-	if (typeof record.env === "object" && record.env !== null && !Array.isArray(record.env)) {
-		for (const [key, value] of Object.entries(record.env)) {
-			if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
-			if (typeof value !== "string") continue;
-			if (!env) env = {};
-			env[key] = value;
-		}
-	}
-
-	return {
-		bin,
-		args,
-		cwd,
-		env,
-	};
-}
-
 /**
  * Load pipeline config from YAML, supporting both nested and flat key formats.
  * Flat extraction keys (dashboard-written) take precedence over nested keys.
@@ -462,7 +388,6 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 	const embeddingTrackerRaw = raw.embeddingTracker as Record<string, unknown> | undefined;
 	const synthesisRaw = raw.synthesis as Record<string, unknown> | undefined;
 	const proceduralRaw = raw.procedural as Record<string, unknown> | undefined;
-	const structuralRaw = raw.structural as Record<string, unknown> | undefined;
 	const feedbackRaw = raw.feedback as Record<string, unknown> | undefined;
 	const significanceRaw = raw.significance as Record<string, unknown> | undefined;
 	const writeGateRaw = raw.writeGate as Record<string, unknown> | undefined;
@@ -486,13 +411,22 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 	const nestedProvider = extractionRaw?.provider;
 	const flatProvider = raw.extractionProvider;
 	const flatModel = raw.extractionModel;
+	if (nestedProvider === "command" || flatProvider === "command" || extractionRaw?.command !== undefined || raw.extractionCommand !== undefined) {
+		throw new PipelineConfigValidationError(
+			"memory.pipelineV2.extraction command configuration is retired; configure the canonical inference workload instead.",
+		);
+	}
+	if (synthesisRaw?.provider === "command") {
+		throw new PipelineConfigValidationError(
+			"memory.pipelineV2.synthesis.provider='command' is retired; configure the canonical inference workload instead.",
+		);
+	}
 
-	type ProviderKind = Parameters<typeof defaultPipelineModel>[0];
-	type SynthesisProviderKind = Exclude<ProviderKind, "command">;
+	type ProviderKind = Exclude<Parameters<typeof defaultPipelineModel>[0], "command">;
+	type SynthesisProviderKind = ProviderKind;
 	const isExtractionProvider = (value: unknown): value is ProviderKind =>
-		value === "command" || isPipelineProvider(value);
-	const isSynthesisProvider = (value: unknown): value is SynthesisProviderKind =>
-		isExtractionProvider(value) && value !== "command";
+		isPipelineProvider(value) && value !== "command";
+	const isSynthesisProvider = (value: unknown): value is SynthesisProviderKind => isExtractionProvider(value);
 
 	function resolveModel(provider: ProviderKind, raw: unknown, fallback?: string): string {
 		if (typeof raw === "string" && raw.trim().length > 0) {
@@ -549,40 +483,29 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 			{ topLevel: topLevelRemote, extraction: extractionRemote },
 		);
 	}
-	const effectiveProvider =
+	const effectiveProvider: ProviderKind =
 		!allowRemoteProviders && isRemotePipelineProviderForEndpoint(resolvedProvider, resolvedEndpoint)
-			? providerFallbackForLock(
+			? (providerFallbackForLock(
 					resolvedProvider,
 					resolvedFallbackProvider === "none" ? "llama-cpp" : resolvedFallbackProvider,
 					resolvedEndpoint,
-				)
+				) as ProviderKind)
 			: resolvedProvider;
 	const effectiveModel =
 		effectiveProvider === resolvedProvider ? resolvedModel : defaultPipelineModel(effectiveProvider);
 	const effectiveEndpoint = effectiveProvider === resolvedProvider ? resolvedEndpoint : undefined;
-	const resolvedCommandConfig = parseCommandConfig(extractionRaw?.command ?? raw.extractionCommand);
-	if (effectiveProvider === "command" && !resolvedCommandConfig) {
-		throw new PipelineConfigValidationError(
-			"memory.pipelineV2.extraction.command is required when extraction.provider='command'.",
-		);
-	}
-	if (synthesisRaw?.provider === "command") {
-		throw new PipelineConfigValidationError(
-			"memory.pipelineV2.synthesis.provider='command' is not supported. Use memory.pipelineV2.extraction.provider='command' instead.",
-		);
-	}
 
 	const synthesisRawProvider = synthesisRaw?.provider;
 	const synthesisProviderWon = isSynthesisProvider(synthesisRawProvider);
 	const resolveSynthesisProvider = (): SynthesisProviderKind => {
 		if (isSynthesisProvider(synthesisRawProvider)) return synthesisRawProvider;
-		return effectiveProvider === "command" ? d.synthesis.provider : effectiveProvider;
+		return effectiveProvider;
 	};
 	const requestedSynthesisProvider: SynthesisProviderKind = resolveSynthesisProvider();
 	const requestedSynthesisEndpoint =
 		parseOptionalUrl(synthesisRaw?.endpoint) ??
 		parseOptionalUrl(synthesisRaw?.base_url) ??
-		(synthesisProviderWon || effectiveProvider === "command" ? undefined : effectiveEndpoint);
+		(synthesisProviderWon ? undefined : effectiveEndpoint);
 	const resolveLockedSynthesisProvider = (): SynthesisProviderKind => {
 		if (
 			!allowRemoteProviders &&
@@ -605,15 +528,15 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 			? synthesisRaw.model
 			: synthesisProviderWon
 				? defaultPipelineModel(resolvedSynthesisProvider)
-				: effectiveProvider === "command"
-					? d.synthesis.model
+				: synthesisProviderWon
+					? defaultPipelineModel(resolvedSynthesisProvider)
 					: effectiveModel;
 	const resolvedSynthesisEndpoint = synthesisProviderChangedForLock ? undefined : requestedSynthesisEndpoint;
 	const resolvedSynthesisTimeout = clampPositive(
 		synthesisRaw?.timeout,
 		5000,
 		300000,
-		synthesisProviderWon || effectiveProvider === "command" ? d.synthesis.timeout : resolvedTimeout,
+		synthesisProviderWon ? d.synthesis.timeout : resolvedTimeout,
 	);
 	const resolvedSynthesisEnabled =
 		resolvedSynthesisProvider === "none" ? false : resolveBool(synthesisRaw?.enabled, undefined, d.synthesis.enabled);
@@ -656,7 +579,6 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 				extractionRaw?.minConfidence ?? raw.minFactConfidenceForWrite,
 				d.extraction.minConfidence,
 			),
-			command: effectiveProvider === "command" ? resolvedCommandConfig : undefined,
 			rateLimit: parseRateLimitConfig(extractionRaw?.rateLimit),
 			structuredOutput: (() => {
 				const candidate = extractionRaw?.structuredOutput;
@@ -678,11 +600,6 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 
 		graph: {
 			enabled: resolveBool(graphRaw?.enabled, raw.graphEnabled, d.graph.enabled),
-			extractionWritesEnabled: resolveBool(
-				graphRaw?.extractionWritesEnabled,
-				raw.graphExtractionWritesEnabled,
-				d.graph.extractionWritesEnabled ?? false,
-			),
 			boostWeight: clampFraction(graphRaw?.boostWeight ?? raw.graphBoostWeight, d.graph.boostWeight),
 			boostTimeoutMs: clampPositive(
 				graphRaw?.boostTimeoutMs ?? raw.graphBoostTimeoutMs,
@@ -931,12 +848,6 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 			),
 		},
 
-		structural: {
-			enabled: resolveBool(structuralRaw?.enabled, undefined, d.structural.enabled),
-			classifyBatchSize: clampPositive(structuralRaw?.classifyBatchSize, 1, 20, d.structural.classifyBatchSize),
-			pollIntervalMs: clampPositive(structuralRaw?.pollIntervalMs, 2000, 120000, d.structural.pollIntervalMs),
-		},
-
 		feedback: {
 			enabled: resolveBool(feedbackRaw?.enabled, undefined, d.feedback.enabled),
 			ftsWeightDelta: clampFraction(feedbackRaw?.ftsWeightDelta, d.feedback.ftsWeightDelta),
@@ -1023,7 +934,6 @@ export function loadDreamingConfig(yaml: Record<string, unknown>): DreamingConfi
 	if (!raw) return { ...DEFAULT_DREAMING };
 	const dd = DEFAULT_DREAMING;
 	return {
-		enabled: typeof raw.enabled === "boolean" ? raw.enabled : dd.enabled,
 		tokenThreshold: clampWarn("tokenThreshold", raw.tokenThreshold, 10_000, 1_000_000, dd.tokenThreshold),
 		timeout: clampWarn("timeout", raw.timeout, 30_000, 600_000, dd.timeout),
 		maxInputTokens: clampWarn("maxInputTokens", raw.maxInputTokens, 8_000, 1_000_000, dd.maxInputTokens),

@@ -242,8 +242,7 @@ export interface PipelineExtractionConfig {
 		| "codex"
 		| "anthropic"
 		| "openrouter"
-		| "openai-compatible"
-		| "command";
+		| "openai-compatible";
 	readonly fallbackProvider?: "llama-cpp" | "ollama" | "none";
 	readonly allowRemoteProviders?: boolean;
 	readonly model: string;
@@ -252,7 +251,6 @@ export interface PipelineExtractionConfig {
 	readonly timeout: number;
 	readonly minConfidence: number;
 	readonly structuredOutput?: boolean;
-	readonly command?: PipelineCommandConfig;
 	readonly rateLimit?: ProviderRateLimitConfig;
 }
 
@@ -271,7 +269,6 @@ export interface PipelineClaudeCodeConfig {
 
 export interface PipelineGraphConfig {
 	readonly enabled: boolean;
-	readonly extractionWritesEnabled?: boolean;
 	readonly boostWeight: number;
 	readonly boostTimeoutMs: number;
 }
@@ -393,7 +390,6 @@ export interface PipelineV2Config {
 	readonly embeddingTracker: PipelineEmbeddingTrackerConfig;
 	readonly synthesis: PipelineSynthesisConfig;
 	readonly procedural: PipelineProceduralConfig;
-	readonly structural: PipelineStructuralConfig;
 	readonly feedback: PipelineFeedbackConfig;
 	readonly significance?: PipelineSignificanceConfig;
 	readonly writeGate?: PipelineWriteGateConfig;
@@ -454,12 +450,6 @@ export interface PipelineProceduralConfig {
 	readonly reconcileIntervalMs: number;
 }
 
-export interface PipelineStructuralConfig {
-	readonly enabled: boolean;
-	readonly classifyBatchSize: number;
-	readonly pollIntervalMs: number;
-}
-
 export interface PipelineFeedbackConfig {
 	readonly enabled: boolean;
 	readonly ftsWeightDelta: number;
@@ -498,7 +488,6 @@ export interface PipelineReflectionsConfig {
 }
 
 export interface DreamingConfig {
-	readonly enabled: boolean;
 	readonly tokenThreshold: number;
 	readonly timeout: number;
 	readonly maxInputTokens: number;

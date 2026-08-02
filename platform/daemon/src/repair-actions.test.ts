@@ -115,10 +115,6 @@ const TEST_CFG: PipelineV2Config = {
 		maintenanceMode: "observe",
 	},
 	telemetryEnabled: false,
-	structural: {
-		...DEFAULT_PIPELINE_V2.structural,
-		enabled: false,
-	},
 };
 
 const TEST_EMBEDDING_CFG: EmbeddingConfig = {
@@ -430,7 +426,7 @@ describe("pruneGenericEntities", () => {
 });
 
 describe("structuralBackfill", () => {
-	it("does not enqueue LLM structural jobs while structural workers are disabled", () => {
+	it("is a permanent no-op after the semantic cutover", () => {
 		const db = new Database(":memory:");
 		runMigrations(db as unknown as Parameters<typeof runMigrations>[0]);
 		const accessor = asAccessor(db);
@@ -441,26 +437,19 @@ describe("structuralBackfill", () => {
 
 			expect(result.success).toBe(true);
 			expect(result.affected).toBe(0);
-			expect(result.message).toContain("structural backfill disabled");
+			expect(result.message).toContain("Dreaming owns semantic writes");
 		} finally {
 			db.close();
 		}
 	});
 
-	it("refuses to enqueue structural jobs when Dreaming owns semantic writes (#946)", () => {
-		// Drive the canonical cutover guard (dreamingOwnsExtraction) off a
-		// temp SIGNET_PATH with Dreaming enabled, even when structural is
-		// enabled and eligible entity-linked memories exist.
+	it("does not enqueue structural jobs for eligible legacy inputs", () => {
 		const prevSignetPath = process.env.SIGNET_PATH;
 		const dreamingDir = mkdtempSync(join(tmpdir(), "signet-structural-dreaming-"));
 		writeFileSync(
 			join(dreamingDir, "agent.yaml"),
 			`memory:
   pipelineV2:
-    enabled: true
-    structural:
-      enabled: true
-  dreaming:
     enabled: true
 `,
 		);
@@ -485,11 +474,7 @@ describe("structuralBackfill", () => {
 				"INSERT INTO memory_entity_mentions (memory_id, entity_id) VALUES (?, ?)",
 			).run("mem-1", "ent-1");
 
-			const structuralEnabledCfg: PipelineV2Config = {
-				...TEST_CFG,
-				structural: { ...TEST_CFG.structural, enabled: true },
-			};
-			const result = structuralBackfill(accessor, structuralEnabledCfg, CTX_OPERATOR, limiter);
+			const result = structuralBackfill(accessor, TEST_CFG, CTX_OPERATOR, limiter);
 
 			expect(result.success).toBe(true);
 			expect(result.affected).toBe(0);

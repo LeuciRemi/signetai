@@ -16,7 +16,6 @@ import {
 } from "./db-helpers";
 import { isActiveEmbeddingConfig, resolveActiveEmbeddingConfig } from "./embedding-index-state";
 import type { EmbeddingConfig } from "./memory-config";
-import { cancelExtractionJobsForForgottenMemory } from "./pipeline/extraction-queue";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -609,7 +608,16 @@ export function txForgetMemory(db: WriteDb, input: ForgetMemoryTxInput): ForgetM
 		     version = version + 1
 		 WHERE id = ?`,
 	).run(input.changedAt, input.changedAt, input.changedBy, input.memoryId);
-	cancelExtractionJobsForForgottenMemory(db, input.memoryId, input.changedAt);
+	// Forgetting withdraws the source from the episodic cursor. Any unfinished
+	// historical extraction job must become terminal with it; no worker may
+	// revive a deleted source after the Dreaming cutover.
+	db.prepare(
+		`UPDATE memory_jobs
+		 SET status = 'dead', result = ?, error = ?, failed_at = ?, updated_at = ?
+		 WHERE memory_id = ?
+		   AND job_type = 'extract'
+		   AND status IN ('pending', 'leased')`,
+	).run(JSON.stringify({ cancelled: "memory_forgotten" }), "Source memory forgotten", input.changedAt, input.changedAt, input.memoryId);
 	deleteAggregateMemorySourceLinks(db, input.memoryId);
 
 	insertHistoryEvent(db, {

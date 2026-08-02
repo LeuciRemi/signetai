@@ -2164,11 +2164,9 @@ memory:
 		expect(first).not.toBe(second);
 	});
 
-	test.serial("enqueues summary job when only dreaming is enabled (pipelineV2 disabled)", async () => {
+	test.serial("enqueues summary job when pipelineV2 is enabled", async () => {
 		writeAgentYaml(`memory:
   pipelineV2:
-    enabled: false
-  dreaming:
     enabled: true
 `);
 		createMemoryDb([]);
@@ -2187,11 +2185,9 @@ memory:
 		expect(typeof result.jobId).toBe("string");
 	});
 
-	test.serial("skips enqueueing when neither pipelineV2 nor dreaming is enabled", async () => {
+	test.serial("skips enqueueing when pipelineV2 is disabled", async () => {
 		writeAgentYaml(`memory:
   pipelineV2:
-    enabled: false
-  dreaming:
     enabled: false
 `);
 		createMemoryDb([]);
@@ -3468,11 +3464,9 @@ describe("handleCheckpointExtract", () => {
 		expect(result.queued).toBeUndefined();
 	});
 
-	test.serial("enqueues checkpoint when only dreaming is enabled", () => {
+	test.serial("enqueues checkpoint when pipelineV2 is enabled", () => {
 		writeAgentYaml(`memory:
   pipelineV2:
-    enabled: false
-  dreaming:
     enabled: true
 `);
 		createMemoryDb([]);
@@ -3487,11 +3481,9 @@ describe("handleCheckpointExtract", () => {
 		expect(typeof result.jobId).toBe("string");
 	});
 
-	test.serial("skips checkpoint when neither pipelineV2 nor dreaming is enabled", () => {
+	test.serial("skips checkpoint when pipelineV2 is disabled", () => {
 		writeAgentYaml(`memory:
   pipelineV2:
-    enabled: false
-  dreaming:
     enabled: false
 `);
 		createMemoryDb([]);
@@ -3513,12 +3505,10 @@ describe("handleCheckpointExtract", () => {
 
 describe("summary worker tick gate", () => {
 	test.serial(
-		"processes enqueued job when only dreaming is enabled",
+		"processes enqueued job when pipelineV2 is enabled",
 		async () => {
 			writeAgentYaml(`memory:
   pipelineV2:
-    enabled: false
-  dreaming:
     enabled: true
 `);
 			createMemoryDb([]);
@@ -3555,12 +3545,10 @@ describe("summary worker tick gate", () => {
 	);
 
 	test.serial(
-		"leaves jobs unchanged when direct worker startup has no route check",
+		"leaves jobs unchanged when synthesis is unavailable",
 		async () => {
 			writeAgentYaml(`memory:
   pipelineV2:
-    enabled: false
-  dreaming:
     enabled: true
 `);
 			createMemoryDb([]);
@@ -3583,183 +3571,6 @@ describe("summary worker tick gate", () => {
 			};
 			db.close();
 			expect(job).toEqual({ status: "pending", attempts: 0 });
-		},
-		15_000,
-	);
-
-	test.serial(
-		"does not activate retained command config when pipeline V2 is disabled",
-		async () => {
-			const marker = join(TEST_DIR, "disabled-pipeline-command-ran");
-			writeAgentYaml(`memory:
-  pipelineV2:
-    enabled: false
-    allowRemoteProviders: true
-    extraction:
-      provider: command
-      command:
-        bin: node
-        args:
-          - -e
-          - "require('node:fs').writeFileSync('${marker}', 'unexpected')"
-    synthesis:
-      enabled: false
-      provider: none
-  dreaming:
-    enabled: true
-`);
-			createMemoryDb([]);
-			const enq = handleCheckpointExtract({
-				harness: "test",
-				sessionKey: "ckpt-worker-disabled-command",
-				transcript: "x".repeat(600),
-			});
-			if (!enq.jobId) throw new Error("expected checkpoint enqueue to return a job id");
-
-			const { startSummaryWorker } = await import("./pipeline/summary-worker");
-			const handle = startSummaryWorker(getDbAccessor(), { isSynthesisAvailable: async () => false });
-			try {
-				await new Promise((resolve) => setTimeout(resolve, 5500));
-			} finally {
-				handle.stop();
-			}
-
-			const db = openTestDb();
-			const job = db.prepare("SELECT status, attempts FROM summary_jobs WHERE id = ?").get(enq.jobId) as {
-				status: string;
-				attempts: number;
-			};
-			db.close();
-			expect(existsSync(marker)).toBe(false);
-			expect(job).toEqual({ status: "pending", attempts: 0 });
-		},
-		15_000,
-	);
-
-	test.serial(
-		"uses synthesis instead of retained command config when pipeline V2 is disabled",
-		async () => {
-			const marker = join(TEST_DIR, "disabled-pipeline-available-command-ran");
-			writeAgentYaml(`memory:
-  pipelineV2:
-    enabled: false
-    allowRemoteProviders: true
-    extraction:
-      provider: command
-      command:
-        bin: node
-        args:
-          - -e
-          - "require('node:fs').writeFileSync('${marker}', 'unexpected')"
-  dreaming:
-    enabled: true
-`);
-			createMemoryDb([]);
-			const schemaDb = openTestDb();
-			schemaDb.exec("ALTER TABLE summary_jobs ADD COLUMN error TEXT");
-			schemaDb.close();
-			const enq = handleCheckpointExtract({
-				harness: "test",
-				sessionKey: "ckpt-worker-disabled-command-with-synthesis",
-				transcript: "x".repeat(600),
-			});
-			if (!enq.jobId) throw new Error("expected checkpoint enqueue to return a job id");
-
-			let resolverCalls = 0;
-			let generateCalls = 0;
-			const { initInferenceProviderResolver, closeInferenceProviderResolver } = await import("./llm");
-			initInferenceProviderResolver(() => {
-				resolverCalls += 1;
-				return {
-					name: "test-synthesis",
-					async available() {
-						return true;
-					},
-					async generate() {
-						generateCalls += 1;
-						throw new Error("expected synthesis attempt");
-					},
-				};
-			});
-			const { startSummaryWorker } = await import("./pipeline/summary-worker");
-			const handle = startSummaryWorker(getDbAccessor(), { isSynthesisAvailable: async () => true });
-			try {
-				await new Promise((resolve) => setTimeout(resolve, 5500));
-			} finally {
-				handle.stop();
-				closeInferenceProviderResolver();
-			}
-
-			const db = openTestDb();
-			const job = db.prepare("SELECT status, attempts FROM summary_jobs WHERE id = ?").get(enq.jobId) as {
-				status: string;
-				attempts: number;
-			};
-			db.close();
-			expect(existsSync(marker)).toBe(false);
-			expect(resolverCalls).toBe(1);
-			expect(generateCalls).toBe(1);
-			expect(job).toEqual({ status: "pending", attempts: 1 });
-		},
-		15_000,
-	);
-
-	test.serial(
-		"completes command-only extraction without resolving synthesis",
-		async () => {
-			const marker = join(TEST_DIR, "command-only-ran");
-			writeAgentYaml(`memory:
-  pipelineV2:
-    enabled: true
-    allowRemoteProviders: true
-    significance:
-      enabled: false
-    extraction:
-      provider: command
-      command:
-        bin: node
-        args:
-          - -e
-          - "require('node:fs').writeFileSync('${marker}', 'ok')"
-    synthesis:
-      enabled: false
-      provider: none
-`);
-			createMemoryDb([]);
-			const schemaDb = openTestDb();
-			schemaDb.exec("ALTER TABLE summary_jobs ADD COLUMN result TEXT");
-			schemaDb.close();
-			const enq = handleCheckpointExtract({
-				harness: "test",
-				sessionKey: "ckpt-worker-command-only",
-				transcript: "x".repeat(600),
-			});
-			if (!enq.jobId) throw new Error("expected checkpoint enqueue to return a job id");
-
-			let resolverCalls = 0;
-			const { initInferenceProviderResolver, closeInferenceProviderResolver } = await import("./llm");
-			initInferenceProviderResolver(() => {
-				resolverCalls += 1;
-				throw new Error("synthesis resolver must not be called");
-			});
-			const { startSummaryWorker } = await import("./pipeline/summary-worker");
-			const handle = startSummaryWorker(getDbAccessor(), { isSynthesisAvailable: async () => false });
-			try {
-				await new Promise((resolve) => setTimeout(resolve, 5500));
-			} finally {
-				handle.stop();
-				closeInferenceProviderResolver();
-			}
-
-			const db = openTestDb();
-			const job = db.prepare("SELECT status, attempts FROM summary_jobs WHERE id = ?").get(enq.jobId) as {
-				status: string;
-				attempts: number;
-			};
-			db.close();
-			expect(existsSync(marker)).toBe(true);
-			expect(resolverCalls).toBe(0);
-			expect(job).toEqual({ status: "completed", attempts: 1 });
 		},
 		15_000,
 	);

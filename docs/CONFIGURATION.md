@@ -778,41 +778,10 @@ There are two command paths with different contracts. Top-level
 prompt is sent on stdin, exposed as `SIGNET_PROMPT`, and the model response is
 read from stdout.
 
-Legacy `memory.pipelineV2.extraction.provider: command` keeps the old
-side-effecting extractor contract. The summary worker executes
-`memory.pipelineV2.extraction.command`, writes the transcript to a temporary
-file, substitutes that path into args/env, and expects the command to write
-memories to Signet state directly. Stdout and stderr are ignored except for
-process failure.
-
-Available legacy extraction command tokens:
-
-- `$TRANSCRIPT` (alias `$TRANSCRIPT_PATH`) — temp transcript file path
-- `$SESSION_KEY` — session key (or empty string)
-- `$PROJECT` — project path (or empty string)
-- `$AGENT_ID` — agent id for the queued job
-- `$SIGNET_PATH` — active Signet workspace path
-
-For safety, user-derived tokens (`$SESSION_KEY`, `$PROJECT`, `$TRANSCRIPT`) are
-intended for args/env substitution. Keep `bin` and `cwd` fixed, or use only
-trusted `$SIGNET_PATH` / `$AGENT_ID` there.
-
-Example:
-
-```yaml
-memory:
-  pipelineV2:
-    extraction:
-      provider: command
-      command:
-        bin: node
-        args:
-          - ./scripts/custom-extractor.mjs
-          - --transcript
-          - $TRANSCRIPT
-          - --session
-          - $SESSION_KEY
-```
+`memory.pipelineV2.extraction.provider: command` is retired. It is rejected at
+config load time; use the canonical `inference.workloads.memoryExtraction`
+target consumed by Dreaming instead. The retired path let a subprocess write
+memory state outside the daemon-owned audited apply path.
 
 
 ### Session synthesis (`synthesis`)
@@ -923,24 +892,8 @@ from extracted facts and uses them to boost search relevance.
 | Field | Default | Range | Description |
 |-------|---------|-------|-------------|
 | `enabled` | `true` | — | Enable knowledge graph building and querying |
-| `extractionWritesEnabled` | `true` | — | Persist entities and links produced by background extraction. Set `false` to keep graph traversal/read paths enabled without letting the async extractor author graph structure. Graph persistence failures are non-fatal to extraction jobs. |
 | `boostWeight` | `0.15` | 0.0-1.0 | Weight applied to graph-neighbor score boost |
 | `boostTimeoutMs` | `500` | 50-5000 ms | Timeout for graph lookup during search |
-
-
-### Structural Analysis (`structural`)
-
-Structural workers classify extracted facts into entity aspects. The
-cross-entity dependency-synthesis worker and its `synthesis*` /
-`dependencyBatchSize` knobs were retired under the Dreaming cutover
-(#946); Dreaming's audited `create_link` is now the sole semantic
-dependency writer, and legacy YAML values for those fields are ignored.
-
-| Field | Default | Range | Description |
-|-------|---------|-------|-------------|
-| `enabled` | `true` | — | Enable structural classification workers |
-| `classifyBatchSize` | `8` | 1-20 | Max facts per entity classification call |
-| `pollIntervalMs` | `10000` | 2000-120000 ms | Structural job polling interval |
 
 
 ### Hints (`hints`)

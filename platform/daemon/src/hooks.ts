@@ -1861,7 +1861,7 @@ export async function handleSessionEnd(req: SessionEndRequest): Promise<SessionE
 		truncated = true;
 	}
 
-	const pipelineEnabled = memoryCfg.pipelineV2.enabled || memoryCfg.pipelineV2.shadowMode || memoryCfg.dreaming.enabled;
+	const pipelineEnabled = memoryCfg.pipelineV2.enabled || memoryCfg.pipelineV2.shadowMode;
 	const hasSummaryLength = summaryTranscript.length >= 500;
 	let summaryStatus: "pending" | "skipped" | "not_requested" = pipelineEnabled ? "skipped" : "not_requested";
 	let jobId: string | undefined;
@@ -2078,7 +2078,7 @@ export function handleCheckpointExtract(req: CheckpointExtractRequest): Checkpoi
 
 	// Respect the pipeline master switch
 	const memoryCfg = loadMemoryConfig(getAgentsDir());
-	if (!memoryCfg.pipelineV2.enabled && !memoryCfg.pipelineV2.shadowMode && !memoryCfg.dreaming.enabled) {
+	if (!memoryCfg.pipelineV2.enabled && !memoryCfg.pipelineV2.shadowMode) {
 		logger.info("hooks", "Checkpoint extract skipped — pipeline disabled");
 		return { skipped: true };
 	}

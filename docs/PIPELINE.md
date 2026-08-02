@@ -245,22 +245,13 @@ graph rows.
 Structural Classification
 ---
 
-The per-fact structural classify and structural dependency workers were
-retired under Dreaming (#946). Dreaming owns semantic writes, so the extraction
-worker no longer creates stub `entity_attributes` rows or enqueues
-`structural_classify`/`structural_dependency` jobs, and no worker leases those
-job types. The `structuralBackfill` repair action likewise no-ops under Dreaming
-so it cannot enqueue jobs nothing will lease. The `structural_classify.ts` and
-`structural-dependency.ts` worker modules have been removed.
-
-The `structural` pipeline-config block still gates behavior that remains live:
-
-- **Structural backfill guard** (`structural.enabled`) — the
-  `structuralBackfill` repair action checks this flag. Under Dreaming it
-  no-ops regardless, since Dreaming owns semantic writes.
+The per-fact structural classify and structural dependency workers are retired.
+Dreaming owns all automatic semantic writes, so no runtime creates or leases
+`structural_classify`/`structural_dependency` jobs. `structuralBackfill` is a
+truthful no-op, and the obsolete `structural` configuration block is ignored.
 
 The default pipeline does not use a background LLM to author graph structure;
-structured remember is the normal semantic write path.
+Dreaming emits audited operations from episodic evidence.
 
 For details on the knowledge graph persistence stage, see
 [KNOWLEDGE-GRAPH.md](./KNOWLEDGE-GRAPH.md).
@@ -270,21 +261,10 @@ Knowledge Graph
 ---
 
 When `graph.enabled` is true, graph reads, traversal, and recall boosting are
-available. Background extraction only persists extracted entity triples when
-`graph.extractionWritesEnabled` is also true. That write gate defaults to
-`true` so new installs populate the graph from extraction. Set it to `false`
-to keep graph navigation on without letting the async extractor author semantic
-graph structure.
-
-The daemon logs a startup warning when graph reads are enabled while extraction
-writes are disabled. `/api/diagnostics` also reports
-`graph.extractionWritesEnabled` and degrades graph health once enough active
-memories exist but the graph still has no entities.
-
-If extraction graph writes are explicitly enabled, they happen in a
-**separate** transaction immediately after the main write transaction commits.
-Graph persistence failure is non-fatal: it logs a warning but never reverts the
-fact extraction results.
+available. Dreaming is the only automatic graph author: it reasons over
+episodic evidence and submits audited operations through the daemon-owned apply
+path. Graph configuration controls reads and traversal, not a second semantic
+writer.
 
 Entities are stored in the `entities` table with `name` (original casing),
 `canonical_name` (lowercase, whitespace-normalized), `entity_type`, and
@@ -367,9 +347,8 @@ Worker Model
 ---
 
 The legacy extraction/decision/escalation worker runtime and its threaded
-variant were retired under the Dreaming cutover (#946). Dreaming now owns
-semantic writes; the `memory_jobs` `extract` enqueue path is gated to skip
-when Dreaming is enabled. The cross-entity dependency-synthesis worker
+variant are retired. Dreaming now owns all automatic semantic writes; no
+runtime creates or leases `memory_jobs` `extract` work. The cross-entity dependency-synthesis worker
 (`dependency-synthesis.ts`) was likewise retired — it wrote
 `entity_dependencies` rows directly via `upsertDependency`, bypassing the
 audited `create_link` path; Dreaming's audited `create_link` is now the
@@ -395,14 +374,10 @@ during lease). If `attempts >= max_attempts` (default 3), the job is
 moved to status `dead`; otherwise it returns to `pending` for retry on the
 next tick. A dead job stays in the table for audit and cleanup purposes.
 
-Job deduplication is enforced at enqueue time: `enqueueExtractionJob` checks
-for any existing job for the same `memory_id` with status `pending` or
-`leased` before inserting a new one.
-
-A stale lease reaper runs on a fixed 60-second `setInterval`. Any job with
-`status = 'leased'` and `leased_at` older than `leaseTimeoutMs` (default
-300,000 ms / 5 minutes) is reset to `pending`. This handles worker crashes
-that leave jobs leased indefinitely.
+The retired extraction queue no longer accepts new work. Startup first promotes
+each live source behind an unfinished historical `extract` job into the
+episodic Dreaming cursor, then terminalizes the obsolete job so no evidence is
+abandoned or left leased forever.
 
 Backoff state tracks consecutive failures. On zero failures, the tick
 interval is `workerPollMs` (default 2,000 ms). Each failure doubles the
@@ -1096,17 +1071,11 @@ Extraction safety note:
 
 ```yaml
 extraction:
-  provider: llama-cpp            # "none" | "llama-cpp" | "ollama" | "claude-code" | "codex" | "opencode" | "anthropic" | "openrouter" | "openai-compatible" | "command"
+  provider: llama-cpp            # legacy routing seed; canonical inference.workloads.memoryExtraction takes precedence
   model: qwen3:4b
   timeout: 90000                 # ms, range 5000–300000
   minConfidence: 0.7             # fraction 0.0–1.0
   structuredOutput: true         # send JSON schema in format field; set false for providers that reject it (e.g. GitHub Copilot)
-  command:                       # required when legacy extraction.provider: command
-    bin: node
-    args: ["./extract.mjs", "--transcript", "$TRANSCRIPT", "--session", "$SESSION_KEY", "--agent", "$AGENT_ID"]
-    # tokens: $TRANSCRIPT (temp file path), $SESSION_KEY, $PROJECT, $AGENT_ID, $SIGNET_PATH
-    # command stdout/stderr are ignored; command writes memories to Signet state directly
-    # top-level inference.targets.*.executor: command is the separate stdout-based inference-provider path
 
 synthesis:
   enabled: true
@@ -1129,17 +1098,8 @@ worker:
 
 graph:
   enabled: true
-  extractionWritesEnabled: true  # default; persists extracted entities when graph tables are available
   boostWeight: 0.15              # fraction 0.0–1.0
   boostTimeoutMs: 500            # ms, range 50–5000
-
-structural:
-  enabled: false
-  classifyBatchSize: 8           # range 1–20 (legacy: no started worker reads this under Dreaming)
-  pollIntervalMs: 10000          # ms, range 2000–120000 (legacy: no started structural worker under Dreaming)
-  # retired under #946 (dependency-synthesis worker removed): dependencyBatchSize,
-  # synthesisEnabled, synthesisIntervalMs, synthesisTopEntities, synthesisMaxFacts,
-  # synthesisMaxStallMs; legacy YAML values are ignored
 
 reranker:
   enabled: true
@@ -1232,7 +1192,6 @@ memory:
     enabled: true
     graph:
       enabled: true
-      extractionWritesEnabled: true
     extraction:
       minConfidence: 0.75
 ```

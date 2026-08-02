@@ -235,7 +235,6 @@ would do before enabling writes.
 | `shadowMode` | Extract and propose, never write |
 | `mutationsFrozen` | Reads only; pipeline stays quiet |
 | `graph.enabled` | Enable graph reads, traversal, and recall boosting |
-| `graph.extractionWritesEnabled` | Let background extraction persist graph entity triples |
 | `autonomous.enabled` | Allow scheduled maintenance and repair |
 | `autonomous.frozen` | Hard stop on autonomous maintenance actions |
 | `hints.enabled` | Run prospective hint generation at write time |

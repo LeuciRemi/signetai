@@ -36,7 +36,6 @@ import {
 } from "./summary-worker";
 import { type SynthesisWorkerHandle, startSynthesisWorker } from "./synthesis-worker";
 
-export { enqueueExtractionJob } from "./extraction-queue";
 export { enqueueDocumentIngestJob } from "./document-worker";
 export {
 	startRetentionWorker,

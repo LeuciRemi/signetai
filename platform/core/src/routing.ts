@@ -714,7 +714,7 @@ function parseWorkloadBinding(raw: unknown): RoutingWorkloadBinding | undefined 
 export function compileLegacyRoutingConfig(opts: {
 	readonly extraction: Pick<
 		PipelineExtractionConfig,
-		"provider" | "model" | "endpoint" | "command" | "fallbackProvider"
+		"provider" | "model" | "endpoint" | "fallbackProvider"
 	>;
 	/** Accepted only for legacy callers; it never creates a route. */
 	readonly synthesis?: Pick<PipelineSynthesisConfig, "enabled" | "provider" | "model" | "endpoint">;
@@ -777,7 +777,6 @@ export function compileLegacyRoutingConfig(opts: {
 
 	if (
 		opts.extraction.provider !== "none" &&
-		opts.extraction.provider !== "command" &&
 		opts.extraction.provider !== "acpx"
 	) {
 		targets["legacy-extraction"] = {
@@ -785,7 +784,6 @@ export function compileLegacyRoutingConfig(opts: {
 			executor: opts.extraction.provider,
 			account: legacyAccountForProvider(opts.extraction.provider, opts.extraction.endpoint),
 			endpoint: opts.extraction.endpoint,
-			command: opts.extraction.command,
 			privacy: inferTargetPrivacy(opts.extraction.provider, opts.extraction.endpoint),
 			models: {
 				default: {

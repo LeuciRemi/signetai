@@ -28,7 +28,6 @@ interface DreamPass {
 }
 
 interface DreamStatus {
-	readonly enabled: boolean;
 	readonly worker: { readonly running: boolean; readonly active: boolean };
 	readonly state: DreamState;
 	readonly episodicTokensPending: number;
@@ -62,14 +61,12 @@ export function registerDreamCommands(program: Command, deps: DreamDeps): void {
 
 			console.log(chalk.bold("\n  Dreaming Status\n"));
 
-			const enabled = data.enabled ? chalk.green("enabled") : chalk.dim("disabled");
 			const worker = data.worker.running
 				? data.worker.active
 					? chalk.yellow("running pass")
 					: chalk.green("idle")
 				: chalk.dim("stopped");
 
-			console.log(`  ${chalk.dim("Enabled:")}    ${enabled}`);
 			console.log(`  ${chalk.dim("Worker:")}     ${worker}`);
 			console.log(
 				`  ${chalk.dim("Threshold:")}  ${data.episodicTokensPending} / ${data.config.tokenThreshold} episodic tokens`,

@@ -319,7 +319,6 @@ describe("inference config + decision engine", () => {
 				provider: "anthropic",
 				model: "claude-3-5-haiku-latest",
 				endpoint: undefined,
-				command: undefined,
 				fallbackProvider: "llama-cpp",
 			},
 			synthesis: {
@@ -377,7 +376,6 @@ describe("inference config + decision engine", () => {
 				provider: "anthropic",
 				model: "claude-3-5-haiku-latest",
 				endpoint: undefined,
-				command: undefined,
 				fallbackProvider: "none",
 			},
 			synthesis: {
@@ -400,7 +398,6 @@ describe("inference config + decision engine", () => {
 				provider: "openai-compatible",
 				model: "remote-extractor",
 				endpoint: "https://gateway.example.test/v1",
-				command: undefined,
 				fallbackProvider: "none",
 			},
 			synthesis: {
@@ -648,32 +645,12 @@ describe("inference config + decision engine", () => {
 		});
 	});
 
-	it("keeps legacy command and ACPX extraction as side-effect compatibility instead of router LLM extraction", () => {
-		const commandLegacy = compileLegacyRoutingConfig({
-			extraction: {
-				provider: "command",
-				model: "custom-command",
-				endpoint: undefined,
-				command: { bin: "node", args: ["extract.mjs"] },
-			},
-			synthesis: {
-				enabled: true,
-				provider: "ollama",
-				model: "qwen3:4b",
-				endpoint: "http://127.0.0.1:11434",
-			},
-		});
-
-		expect(commandLegacy.targets["legacy-extraction"]).toBeUndefined();
-		expect(commandLegacy.workloads?.memoryExtraction).toBeUndefined();
-		expect(commandLegacy.targets["legacy-synthesis"]).toBeUndefined();
-
+	it("keeps ACPX extraction as side-effect compatibility instead of router LLM extraction", () => {
 		const acpxLegacy = compileLegacyRoutingConfig({
 			extraction: {
 				provider: "acpx",
 				model: "gpt-5.4-mini",
 				endpoint: undefined,
-				command: undefined,
 			},
 			synthesis: {
 				enabled: true,
@@ -695,7 +672,6 @@ describe("inference config + decision engine", () => {
 				provider: "anthropic",
 				model: "claude-3-5-haiku-latest",
 				endpoint: undefined,
-				command: undefined,
 			},
 			synthesis: {
 				enabled: true,
@@ -718,7 +694,6 @@ describe("inference config + decision engine", () => {
 				provider: "openai-compatible",
 				model: "gpt-4o-mini",
 				endpoint: "https://api.openai.com/v1",
-				command: undefined,
 			},
 			synthesis: {
 				enabled: false,
@@ -740,7 +715,6 @@ describe("inference config + decision engine", () => {
 				provider: "openai-compatible",
 				model: "openai/gpt-oss-20b",
 				endpoint: "http://127.0.0.1:1234/v1",
-				command: undefined,
 			},
 			synthesis: {
 				enabled: true,

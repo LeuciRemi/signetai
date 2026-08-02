@@ -433,8 +433,8 @@ The isolated daemon does not run background extraction or synthesis workers for
 benchmark ingestion. Those stages stay disabled so the benchmark is not racing
 async background work or depending on local daemon timing. Graph and traversal
 are enabled only so recall can use the structured data that was explicitly sent
-to `/api/memory/remember`; `graph.extractionWritesEnabled` stays `false` so the
-async extractor cannot create benchmark graph structure. Recall treats active
+to `/api/memory/remember`; Dreaming is not run during benchmark ingestion, so
+no automatic semantic writer can create benchmark graph structure. Recall treats active
 structured rows as a first-class candidate source by searching entity names,
 aspects, group keys, claim keys, attribute kinds, and attribute content before
 SEC reranking. This is deliberately generic: bridges may connect broad query

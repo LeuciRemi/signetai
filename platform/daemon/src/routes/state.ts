@@ -441,7 +441,6 @@ export function getDiagnosticsOptions(): DiagnosticsOptions {
 		const cfg = loadMemoryConfig(getCurrentAgentsDir()).pipelineV2;
 		return {
 			graphEnabled: cfg.graph.enabled,
-			graphExtractionWritesEnabled: cfg.graph.extractionWritesEnabled,
 			traversalPrimary: cfg.traversal?.primary === true,
 		};
 	} catch (err) {

@@ -964,7 +964,6 @@ export function getDreamingEpisodicTokenBacklogInDb(db: ReadDb, agentId: string)
 }
 
 export function shouldTriggerDreaming(accessor: DbAccessor, cfg: DreamingConfig, agentId: string): boolean {
-	if (!cfg.enabled) return false;
 	const state = getDreamingState(accessor, agentId);
 	const episodicTokens = getDreamingEpisodicTokenBacklog(accessor, agentId);
 

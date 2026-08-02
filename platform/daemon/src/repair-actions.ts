@@ -36,7 +36,6 @@ import { classifyEntityQuality } from "./entity-quality";
 import { logger } from "./logger";
 import type { EmbeddingConfig } from "./memory-config";
 import type { PipelineV2Config } from "./memory-config";
-import { dreamingOwnsExtraction } from "./pipeline/extraction-queue";
 import { recoverStaleLeases } from "./pipeline/stale-leases";
 import { insertHistoryEvent } from "./transactions";
 
@@ -2109,11 +2108,7 @@ export function pruneGenericEntities(
 // structuralBackfill
 // ---------------------------------------------------------------------------
 
-/**
- * For memories that have entity links but no entity_attributes yet, create
- * stub attribute rows and enqueue structural_classify jobs so the
- * classification worker can annotate the clean entity set.
- */
+/** Retired semantic-write repair surface retained as a truthful no-op response. */
 export function structuralBackfill(
 	accessor: DbAccessor,
 	cfg: PipelineV2Config,
@@ -2122,123 +2117,15 @@ export function structuralBackfill(
 	options?: { batchSize?: number; dryRun?: boolean },
 ): RepairResult {
 	const action = "structuralBackfill";
-	if (!cfg.structural.enabled) {
-		return {
-			action,
-			success: true,
-			affected: 0,
-			message: "structural backfill disabled; use structured remember or an explicit normalization pass",
-		};
-	}
-	// Dreaming cutover: when Dreaming owns semantic writes the legacy
-	// structural classify/dependency workers are not started (see daemon.ts
-	// and pipeline/index.ts). Refuse to backfill so this path cannot create
-	// pending structural_classify jobs that nothing will lease. Uses the
-	// same canonical guard as the extract enqueue path (#946).
-	if (dreamingOwnsExtraction()) {
-		return {
-			action,
-			success: true,
-			affected: 0,
-			message: "Dreaming owns semantic writes; structural backfill is retired",
-		};
-	}
-
-	const gate = checkRepairGate(cfg, ctx, limiter, action, 60_000, 20);
-	if (!gate.allowed) {
-		return { action, success: false, affected: 0, message: gate.reason ?? "denied" };
-	}
-
-	const batchSize = options?.batchSize ?? 100;
-
-	const rows = accessor.withReadDb(
-		(db) =>
-			db
-				.prepare(
-					`SELECT m.id as memory_id, m.content,
-				        e.id as entity_id, e.entity_type, e.canonical_name, e.agent_id
-				 FROM memories m
-				 JOIN memory_entity_mentions mem ON mem.memory_id = m.id
-				 JOIN entities e ON e.id = mem.entity_id
-				 WHERE m.is_deleted = 0
-				   AND e.entity_type != 'chunk_group'
-				   AND NOT EXISTS (SELECT 1 FROM entity_attributes WHERE memory_id = m.id LIMIT 1)
-				 GROUP BY m.id
-				 LIMIT ?`,
-				)
-				.all(batchSize) as Array<{
-				memory_id: string;
-				content: string;
-				entity_id: string;
-				entity_type: string;
-				canonical_name: string;
-				agent_id: string;
-			}>,
-	);
-
-	if (rows.length === 0 || options?.dryRun) {
-		return {
-			action,
-			success: true,
-			affected: rows.length,
-			message: options?.dryRun
-				? `dry-run: would process ${rows.length} unassigned memories`
-				: "no unassigned memories with entity links found",
-		};
-	}
-
-	let attributesCreated = 0;
-	let classifyEnqueued = 0;
-
-	accessor.withWriteTx((db) => {
-		const now = new Date().toISOString();
-		for (const row of rows) {
-			const attrId = crypto.randomUUID();
-			db.prepare(
-				`INSERT INTO entity_attributes
-				 (id, aspect_id, agent_id, memory_id, kind, content, normalized_content,
-				  confidence, importance, status, created_at, updated_at)
-				 VALUES (?, NULL, ?, ?, 'attribute', ?, ?, 0.5, 0.5, 'active', ?, ?)`,
-			).run(attrId, row.agent_id, row.memory_id, row.content, row.content, now, now);
-			attributesCreated++;
-
-			const payload = JSON.stringify({
-				memory_id: row.memory_id,
-				entity_id: row.entity_id,
-				entity_name: row.canonical_name,
-				entity_type: row.entity_type,
-				fact_content: row.content,
-				attribute_id: attrId,
-				agent_id: row.agent_id,
-			});
-			const jobId = crypto.randomUUID();
-			db.prepare(
-				`INSERT INTO memory_jobs
-				 (id, memory_id, job_type, status, payload, attempts, max_attempts, created_at, updated_at)
-				 VALUES (?, ?, 'structural_classify', 'pending', ?, 0, 3, ?, ?)`,
-			).run(jobId, row.memory_id, payload, now, now);
-			classifyEnqueued++;
-		}
-		writeRepairAudit(
-			db,
-			action,
-			ctx,
-			attributesCreated,
-			`created ${attributesCreated} stubs, enqueued ${classifyEnqueued} classify jobs`,
-		);
-	});
-
-	limiter.record(action);
-	logger.info("pipeline", "repair: structural backfill", {
-		attributesCreated,
-		classifyEnqueued,
-		actor: ctx.actor,
-	});
+	// Dreaming owns semantic writes (#913 hard cutover). Structural backfill
+	// is retired because the workers that would lease structural_classify/
+	// structural_dependency jobs are permanently gone. Return success with
+	// zero affected so repair callers see a clean no-op rather than an error.
 	return {
 		action,
 		success: true,
-		affected: attributesCreated,
-		message: `created ${attributesCreated} stubs, enqueued ${classifyEnqueued} classify jobs`,
+		affected: 0,
+		message: "Dreaming owns semantic writes; structural backfill is retired",
 	};
 }
 

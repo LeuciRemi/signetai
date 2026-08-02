@@ -191,8 +191,7 @@ silent fallback or hard-blocked extraction after boot.
     "shadowMode": false,
     "mutationsFrozen": false,
     "graph": {
-      "enabled": true,
-      "extractionWritesEnabled": true
+      "enabled": true
     },
     "autonomous": {
       "enabled": true,

@@ -88,7 +88,6 @@ export type {
 	EntityAttribute,
 	EntityDependency,
 	TaskMeta,
-	PipelineStructuralConfig,
 	PipelineSignificanceConfig,
 	PipelineModelRegistryConfig,
 	PipelineHintsConfig,

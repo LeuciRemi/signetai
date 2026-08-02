@@ -127,17 +127,9 @@ describe("daemon status contract", () => {
 		expect(extraction).toHaveProperty("since");
 	});
 
-	it("reports the selected fallback executor in providerResolution.extraction.effective", async () => {
+	it("reports extraction as permanently disabled under the Dreaming cutover", async () => {
 		const originalOpenAiKey = process.env.OPENAI_API_KEY;
-		const originalFetch = globalThis.fetch;
 		Reflect.deleteProperty(process.env, "OPENAI_API_KEY");
-		globalThis.fetch = (async (input: RequestInfo | URL) => {
-			const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-			if (url === "http://127.0.0.1:8080/v1/models") {
-				return new Response(JSON.stringify({ data: [{ id: "qwen3:4b" }] }), { status: 200 });
-			}
-			return new Response("not found", { status: 404 });
-		}) as typeof fetch;
 
 		try {
 			const { closeDbAccessor, initDbAccessor } = await import("./db-accessor");
@@ -151,10 +143,8 @@ describe("daemon status contract", () => {
   pipelineV2:
     enabled: true
     extraction:
-      provider: openai-compatible
-      model: remote-model
-      endpoint: https://gateway.example.test/v1
-      fallbackProvider: llama-cpp
+      provider: ollama
+      model: qwen3:4b
     synthesis:
       enabled: false
 `,
@@ -168,20 +158,16 @@ describe("daemon status contract", () => {
 				providerResolution?: {
 					extraction?: {
 						effective?: unknown;
-						fallbackProvider?: unknown;
 						status?: unknown;
+						reason?: unknown;
 					};
 				};
 			};
-			expect(body.providerResolution?.extraction?.effective).toBe("llama-cpp");
-			// #960: the routing cutover dropped fallbackProvider from the status object.
-			// With a legacy fallbackProvider: llama-cpp config (migrated to a routing
-			// fallback target), the field must report the fallback executor — not be
-			// undefined, which made `signet status` print "fallback: unknown".
-			expect(body.providerResolution?.extraction?.fallbackProvider).toBe("llama-cpp");
-			expect(["active", "degraded"]).toContain(body.providerResolution?.extraction?.status);
+			// Dreaming owns all semantic writes; legacy extraction is permanently retired.
+			expect(body.providerResolution?.extraction?.effective).toBe("none");
+			expect(body.providerResolution?.extraction?.status).toBe("disabled");
+			expect(body.providerResolution?.extraction?.reason).toBe("Dreaming owns semantic writes");
 		} finally {
-			globalThis.fetch = originalFetch;
 			if (originalOpenAiKey === undefined) {
 				Reflect.deleteProperty(process.env, "OPENAI_API_KEY");
 			} else {
@@ -190,7 +176,7 @@ describe("daemon status contract", () => {
 		}
 	});
 
-	it("keeps legacy extraction disabled when Dreaming owns the semantic cutover", async () => {
+	it("keeps legacy extraction permanently disabled under the semantic cutover", async () => {
 		const { closeDbAccessor, initDbAccessor } = await import("./db-accessor");
 		const { loadMemoryConfig } = await import("./memory-config");
 		const { getLlmConcurrencyStatus } = await import("./pipeline/provider");
@@ -203,13 +189,10 @@ describe("daemon status contract", () => {
   pipelineV2:
     enabled: true
     extraction:
-      provider: command
-      command:
-        bin: node
+      provider: ollama
+      model: qwen3:4b
     worker:
       maxLlmConcurrency: 1
-  dreaming:
-    enabled: true
 `,
 		);
 
@@ -251,23 +234,12 @@ describe("daemon status contract", () => {
 });
 
 describe("legacy extraction cutover sweep (#946)", () => {
-	const DREAMING_DISABLED_CONFIG = `memory:
-  pipelineV2:
-    enabled: true
-    extraction:
-      provider: command
-      command:
-        bin: node
-`;
 	const DREAMING_ENABLED_CONFIG = `memory:
   pipelineV2:
     enabled: true
     extraction:
-      provider: command
-      command:
-        bin: node
-  dreaming:
-    enabled: true
+      provider: ollama
+      model: qwen3:4b
 `;
 
 	function writeConfig(cfg: string): void {
@@ -339,6 +311,15 @@ describe("legacy extraction cutover sweep (#946)", () => {
 		).extraction_status;
 	}
 
+	function getMemoryKind(memoryId: string): string | null {
+		const { getDbAccessor } = require("./db-accessor") as typeof import("./db-accessor");
+		return getDbAccessor().withReadDb(
+			(db) =>
+				(db.prepare("SELECT memory_kind FROM memories WHERE id = ?").get(memoryId) as { memory_kind: string | null })
+					.memory_kind,
+		);
+	}
+
 	function countMemoryJobs(): number {
 		const { getDbAccessor } = require("./db-accessor") as typeof import("./db-accessor");
 		return getDbAccessor().withReadDb(
@@ -353,32 +334,20 @@ describe("legacy extraction cutover sweep (#946)", () => {
 		initDbAccessor(join(dir, "memory", "memories.db"), { agentsDir: dir });
 	});
 
-	it("retires pre-existing pending legacy extract jobs when Dreaming is enabled", async () => {
-		await restartRuntime(DREAMING_DISABLED_CONFIG);
+	it("retires pre-existing pending legacy extract jobs on startup", async () => {
 		seedPendingLegacyJob("mem-cutover", "job-cutover");
 
-		// Startup/restart transition: enabling Dreaming sweeps the pending backlog.
+		// Startup sweeps the pending backlog because Dreaming always owns semantic writes.
 		await restartRuntime(DREAMING_ENABLED_CONFIG);
 
 		const job = getJob("job-cutover");
 		expect(job.status).toBe("dead");
 		expect(job.error).toBe("Dreaming cutover: legacy extraction worker not started");
-		expect(getMemoryStatus("mem-cutover")).toBe("failed");
+		expect(getMemoryStatus("mem-cutover")).toBe("retired");
+		expect(getMemoryKind("mem-cutover")).toBe("episodic");
 	});
 
-	it("does not retire pending legacy extract jobs when Dreaming is disabled", async () => {
-		seedPendingLegacyJob("mem-noop", "job-noop");
-
-		await restartRuntime(DREAMING_DISABLED_CONFIG);
-
-		const job = getJob("job-noop");
-		expect(job.status).toBe("pending");
-		expect(job.error).toBeNull();
-		expect(getMemoryStatus("mem-noop")).toBe("queued");
-	});
-
-	it("preserves leased (in-flight) legacy extract jobs during the sweep", async () => {
-		await restartRuntime(DREAMING_DISABLED_CONFIG);
+	it("terminalizes leased legacy extract jobs during the sweep", async () => {
 		seedPendingLegacyJob("mem-pend", "job-pend");
 		seedLeasedLegacyJob("mem-leased", "job-leased");
 
@@ -387,9 +356,9 @@ describe("legacy extraction cutover sweep (#946)", () => {
 		const pendingJob = getJob("job-pend");
 		expect(pendingJob.status).toBe("dead");
 		const leasedJob = getJob("job-leased");
-		expect(leasedJob.status).toBe("leased");
-		// Leased memory is not marked failed (in-flight work may still complete).
-		expect(getMemoryStatus("mem-leased")).toBe("queued");
+		expect(leasedJob.status).toBe("dead");
+		expect(getMemoryStatus("mem-leased")).toBe("retired");
+		expect(getMemoryKind("mem-leased")).toBe("episodic");
 	});
 
 	it("is idempotent across repeated Dreaming restarts", async () => {
@@ -419,15 +388,12 @@ describe("structural worker retirement under Dreaming (#946)", () => {
   pipelineV2:
     enabled: true
     extraction:
-      provider: command
-      command:
-        bin: node
+      provider: ollama
+      model: qwen3:4b
     graph:
       enabled: true
     structural:
       enabled: true
-  dreaming:
-    enabled: true
 `;
 
 	function writeConfig(cfg: string): void {
@@ -476,8 +442,6 @@ describe("structural worker retirement under Dreaming (#946)", () => {
 	});
 
 	beforeAll(() => {
-		// The canonical cutover guard (dreamingOwnsExtraction) reads
-		// resolveDefaultBasePath() at call time, which honors SIGNET_PATH.
 		// The earlier describe block's afterAll restores SIGNET_PATH to its
 		// pre-test value, so re-pin it to this suite's temp dir here.
 		if (process.env.SIGNET_PATH !== dir) process.env.SIGNET_PATH = dir;
