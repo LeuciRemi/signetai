@@ -3,21 +3,24 @@
  *
  * Handles creating and removing skill nodes in the knowledge graph
  * when skills are installed or uninstalled. Each skill gets:
- * - An entity row (entity_type = 'skill')
+ * - An entity row (entity_type = 'skill') — source/native topology
  * - A skill_meta row with installation metadata
  * - An embedding from enriched frontmatter
- * - Entity extraction from the SKILL.md body
+ *
+ * Skill nodes are source topology: the SKILL.md frontmatter is the
+ * authoritative source, and this module writes the skill entity and its
+ * metadata directly. It does NOT perform LLM-driven semantic extraction
+ * from the SKILL.md body — semantic entity writes are owned by the
+ * audited Dreaming apply path, so cross-skill relations are never
+ * authored here (see #946 semantic-writer cutover).
  */
 
 import { createHash } from "node:crypto";
-import type { DbAccessor, WriteDb } from "../db-accessor";
+import type { DbAccessor } from "../db-accessor";
 import { syncVecDeleteByEmbeddingIds, syncVecInsert, vectorToBlob } from "../db-helpers";
 import { isActiveEmbeddingConfig, resolveActiveEmbeddingConfig } from "../embedding-index-state";
 import { logger } from "../logger";
 import type { EmbeddingConfig, PipelineV2Config } from "../memory-config";
-import { extractFactsAndEntities } from "./extraction";
-import { txPersistEntities } from "./graph-transactions";
-import { invalidateTraversalCache } from "./graph-traversal";
 import type { LlmProvider } from "./provider";
 import { enrichSkillFrontmatter } from "./skill-enrichment";
 
@@ -49,7 +52,6 @@ export interface SkillInstallResult {
 	readonly entityId: string;
 	readonly enriched: boolean;
 	readonly embeddingCreated: boolean;
-	readonly entitiesExtracted: number;
 }
 
 export interface SkillUninstallInput {
@@ -113,7 +115,7 @@ function contentHash(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Install: create entity + skill_meta + embedding + extraction
+// Install: create entity + skill_meta + embedding
 // ---------------------------------------------------------------------------
 
 export async function installSkillNode(
@@ -321,41 +323,14 @@ export async function installSkillNode(
 		});
 	}
 
-	// Step 4: Extract entities from SKILL.md body for graph relations
-	let entitiesExtracted = 0;
-	if (config.graph.enabled && provider !== null && input.body.trim().length >= 20) {
-		try {
-			const extraction = await extractFactsAndEntities(input.body, provider);
-			if (extraction.entities.length > 0) {
-				accessor.withWriteTx((db) => {
-					const result = txPersistEntities(db, {
-						entities: extraction.entities,
-						sourceMemoryId: entityId,
-						extractedAt: now,
-						agentId,
-					});
-					entitiesExtracted = result.entitiesInserted + result.entitiesUpdated;
-				});
-				invalidateTraversalCache();
-			}
-		} catch (e) {
-			const msg = e instanceof Error ? e.message : String(e);
-			logger.warn("pipeline", "Skill body extraction failed", {
-				skill: fm.name,
-				error: msg,
-			});
-		}
-	}
-
 	logger.info("pipeline", "Skill node installed", {
 		skill: fm.name,
 		entityId,
 		enriched,
 		embeddingCreated,
-		entitiesExtracted,
 	});
 
-	return { entityId, enriched, embeddingCreated, entitiesExtracted };
+	return { entityId, enriched, embeddingCreated };
 }
 
 // ---------------------------------------------------------------------------

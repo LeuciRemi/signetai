@@ -112,11 +112,13 @@ performs the full install sequence:
    `"{name} — {description} — {triggers joined by ', '}"`, fetches the vector,
    replaces any existing `source_type = 'skill'` embedding for this entity, and
    syncs to the vec table
-4. **Extract entities from SKILL.md body** — if `config.graph.enabled` is true
-   and a provider is available and the body is at least 20 characters, calls
-   `extractFactsAndEntities` on the body content and persists the results via
-   `txPersistEntities`. This creates graph relations between the skill and any
-   entities mentioned in its instructions
+
+Skill nodes are source/native topology: the SKILL.md frontmatter is the
+authoritative source and `installSkillNode` writes the skill entity and its
+metadata directly. It does **not** perform LLM-driven semantic extraction from
+the SKILL.md body. Cross-skill semantic relations are owned by the audited
+Dreaming apply path, so skill install never authors extracted entities,
+relations, or mention links (see the #946 semantic-writer cutover).
 
 `uninstallSkillNode(input, accessor)` removes relations, mention links, embeddings
 (with vec sync), skill_meta, and the entity row — all in a single transaction.
