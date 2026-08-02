@@ -299,6 +299,53 @@ describe("dreaming evidence promotion", () => {
 		expect(result.operations.map((operation) => operation.sourceId)).toEqual(["mem-all-1", "mem-all-2", "mem-all-3"]);
 	});
 
+	it("keeps an all-source window for each episodic source class", async () => {
+		insertMemory("mem-window", "Nicholai prefers a full evidence window when we're pairing.");
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				`INSERT INTO memory_artifacts
+				 (agent_id, source_path, source_sha256, source_kind, session_id, session_key, session_token,
+				  project, harness, captured_at, content, updated_at, is_deleted)
+				 VALUES ('ant', 'memory/window.md', 'sha-window', 'artifact', 'window-artifact', NULL, 'token-window',
+				  '/tmp/signet', 'codex', '2026-05-16T12:00:00.000Z', 'artifact evidence', '2026-05-16T12:00:00.000Z', 0)`,
+			).run();
+			db.prepare(
+				`INSERT INTO session_transcripts
+				 (session_key, content, harness, project, agent_id, created_at, updated_at)
+				 VALUES ('window-transcript', 'transcript evidence', 'codex', '/tmp/signet', 'ant',
+				  '2026-05-16T12:01:00.000Z', '2026-05-16T12:01:00.000Z')`,
+			).run();
+		});
+
+		const result = await promoteDreamingEvidence(getDbAccessor(), {
+			agentId: "ant",
+			from: "all",
+			limit: 1,
+		});
+
+		expect(result.sources.map((source) => source.kind).sort()).toEqual(["artifact", "memory", "transcript"]);
+	});
+
+	it("resolves a summary by its bare id through the shared episodic selector", async () => {
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				`INSERT INTO session_summaries
+				 (id, project, depth, kind, content, token_count, earliest_at, latest_at, session_key, harness,
+				  agent_id, source_type, source_ref, meta_json, created_at)
+				 VALUES ('summary-bare', '/tmp/signet', 0, 'session', 'summary evidence', 2,
+				  '2026-05-16T12:00:00.000Z', '2026-05-16T12:00:00.000Z', 'session-bare', 'codex',
+				  'ant', 'summary', 'session-bare', '{}', '2026-05-16T12:00:00.000Z')`,
+			).run();
+		});
+
+		const result = await promoteDreamingEvidence(getDbAccessor(), {
+			agentId: "ant",
+			from: "summary-bare",
+		});
+
+		expect(result.sources).toMatchObject([{ kind: "summary", id: "summary-bare", sourceId: "session-bare" }]);
+	});
+
 	it("reads all evidence sources in agent scope and skips deleted or other-agent artifacts", async () => {
 		insertMemory("mem-all", "Nicholai prefers compact status updates when we're pairing.");
 		insertMemory("mem-other", "Nicholai prefers noisy updates when we're pairing.", "other");

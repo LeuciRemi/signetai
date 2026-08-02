@@ -1,0 +1,116 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { closeDbAccessor, getDbAccessor, initDbAccessor } from "./db-accessor";
+import { readEpisodicSource, readRecentEpisodicSources } from "./episodic-sources";
+
+describe("episodic source selection", () => {
+	let dir = "";
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "signet-episodic-sources-"));
+		mkdirSync(join(dir, "memory"), { recursive: true });
+		initDbAccessor(join(dir, "memory", "memories.db"));
+	});
+
+	afterEach(() => {
+		closeDbAccessor();
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("resolves artifacts, live transcripts, and compaction summaries without crossing agents", () => {
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				`INSERT INTO memory_artifacts
+				 (agent_id, source_path, source_sha256, source_kind, session_id, session_key, session_token,
+				  project, harness, captured_at, content, updated_at, is_deleted)
+				 VALUES ('ant', 'sources/note.md', 'sha', 'source_obsidian_markdown', 'session-a', 'session-a', 'token-a',
+				  '/repo', 'obsidian', '2026-08-01T10:00:00.000Z', 'artifact evidence', '2026-08-01T10:00:00.000Z', 0)`,
+			).run();
+			db.prepare(
+				`INSERT INTO session_transcripts
+				 (session_key, content, harness, project, agent_id, created_at, updated_at)
+				 VALUES ('live-a', 'live transcript evidence', 'pi', '/repo', 'ant', '2026-08-01T11:00:00.000Z', '2026-08-01T11:01:00.000Z')`,
+			).run();
+			db.prepare(
+				`INSERT INTO session_summaries
+				 (id, project, depth, kind, content, token_count, earliest_at, latest_at, session_key, harness,
+				  agent_id, source_type, source_ref, meta_json, created_at)
+				 VALUES ('compaction-a', '/repo', 0, 'session', 'compaction evidence', 3,
+				  '2026-08-01T12:00:00.000Z', '2026-08-01T12:00:00.000Z', 'session-a', 'pi',
+				  'ant', 'compaction', 'session-a', '{}', '2026-08-01T12:00:00.000Z')`,
+			).run();
+			db.prepare(
+				`INSERT INTO session_summaries
+				 (id, project, depth, kind, content, token_count, earliest_at, latest_at, session_key, harness,
+				  agent_id, source_type, source_ref, meta_json, created_at)
+				 VALUES ('chunk-a', '/repo', 0, 'session', 'derived chunk', 2,
+				  '2026-08-01T12:01:00.000Z', '2026-08-01T12:01:00.000Z', NULL, 'pi',
+				  'ant', 'chunk', 'session-a', '{}', '2026-08-01T12:01:00.000Z')`,
+			).run();
+			db.prepare(
+				`INSERT INTO session_transcripts
+				 (session_key, content, harness, project, agent_id, created_at, updated_at)
+				 VALUES ('live-a', 'other agent transcript', 'pi', '/other', 'other', '2026-08-01T11:00:00.000Z', '2026-08-01T11:01:00.000Z')`,
+			).run();
+		});
+
+		const read = (from: string) => getDbAccessor().withReadDb((db) => readEpisodicSource(db, { agentId: "ant", from }));
+
+		expect(read("source:sources/note.md")).toMatchObject({
+			kind: "artifact",
+			sourceKind: "source_obsidian_markdown",
+			sourcePath: "sources/note.md",
+			content: "artifact evidence",
+		});
+		expect(read("transcript:live-a")).toMatchObject({
+			kind: "transcript",
+			harness: "pi",
+			content: "live transcript evidence",
+		});
+		expect(read("summary:compaction-a")).toMatchObject({
+			kind: "summary",
+			sourceKind: "compaction",
+			sourceId: "session-a",
+			content: "compaction evidence",
+		});
+		expect(read("summary:chunk-a")).toBeNull();
+		expect(getDbAccessor().withReadDb((db) => readRecentEpisodicSources(db, "ant", 10))).toMatchObject([
+			{ kind: "summary", id: "compaction-a" },
+			{ kind: "transcript", id: "live-a" },
+			{ kind: "artifact", id: "sources/note.md" },
+		]);
+		expect(
+			getDbAccessor().withReadDb((db) =>
+				readRecentEpisodicSources(db, "ant", 10, undefined, "2026-08-01T10:30:00.000Z"),
+			),
+		).toMatchObject([
+			{ kind: "summary", id: "compaction-a" },
+			{ kind: "transcript", id: "live-a" },
+		]);
+	});
+
+	it("orders timezone-less artifact timestamps like SQLite's UTC cursor", () => {
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				`INSERT INTO memory_artifacts
+				 (agent_id, source_path, source_sha256, source_kind, session_id, session_token, captured_at, content, updated_at, is_deleted)
+				 VALUES ('ant', 'sources/older.md', 'sha', 'source_obsidian_markdown', 'session-a', 'token-a',
+				  '2026-07-31 23:00:00', 'older artifact', '2026-07-31 23:00:00', 0)`,
+			).run();
+			db.prepare(
+				`INSERT INTO session_summaries
+				 (id, agent_id, content, token_count, depth, kind, source_type, earliest_at, latest_at, created_at)
+				 VALUES ('newer-summary', 'ant', 'newer summary', 2, 0, 'session', 'summary',
+				  '2026-08-01T03:00:00.000Z', '2026-08-01T03:00:00.000Z', '2026-08-01T03:00:00.000Z')`,
+			).run();
+		});
+		expect(
+			getDbAccessor().withReadDb((db) => readRecentEpisodicSources(db, "ant", 10, undefined, null, "oldest")),
+		).toMatchObject([
+			{ kind: "artifact", id: "sources/older.md" },
+			{ kind: "summary", id: "newer-summary" },
+		]);
+	});
+});

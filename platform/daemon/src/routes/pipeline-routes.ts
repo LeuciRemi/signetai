@@ -6,13 +6,19 @@ import { resolveAgentId, resolveDaemonAgentId } from "../agent-id.js";
 import { requirePermission, requireRateLimit } from "../auth";
 import { getDbAccessor } from "../db-accessor.js";
 import { type QueueCounts, getQueueDiagnosticsSnapshot } from "../diagnostics-queue.js";
-import { getLlmProvider } from "../llm.js";
+import { DreamPromotionError, promoteDreamingEvidence } from "../dream-promotion.js";
+import { getInferenceProviderOrNull, getLlmProvider } from "../llm.js";
 import { loadMemoryConfig } from "../memory-config.js";
 import {
+	getDreamingEpisodicTokenBacklog,
+	getDreamingPasses,
+	getDreamingState,
+	getDreamingWorker,
 	getPipelineWorkerStatus,
 	nudgeExtractionWorker,
 } from "../pipeline";
 import { getFeedbackTelemetry } from "../pipeline/aspect-feedback.js";
+import { AlreadyRunningError } from "../pipeline/dreaming-worker.js";
 import { getTraversalStatus } from "../pipeline/graph-traversal.js";
 import {
 	getAvailableModels,
@@ -538,4 +544,99 @@ export function registerPipelineRoutes(app: Hono): void {
 		});
 	});
 
+	app.use("/api/dream/promote", pipelineAdminGuard);
+	app.use("/api/dream/*", async (c, next) => {
+		return requirePermission("admin", authConfig)(c, next);
+	});
+
+	app.get("/api/dream/status", (c) => {
+		const cfg = loadMemoryConfig(AGENTS_DIR);
+		const accessor = getDbAccessor();
+		const agentId = resolveDreamRequestAgentId(c);
+
+		const state = getDreamingState(accessor, agentId);
+		const episodicTokensPending = getDreamingEpisodicTokenBacklog(accessor, agentId);
+		const passes = getDreamingPasses(accessor, agentId, 10);
+		const worker = getDreamingWorker();
+
+		return c.json({
+			enabled: cfg.dreaming.enabled,
+			worker: {
+				running: worker !== null,
+				active: worker?.activeAgentId === agentId,
+				activeAgentId: worker?.activeAgentId ?? null,
+			},
+			state,
+			episodicTokensPending,
+			config: {
+				tokenThreshold: cfg.dreaming.tokenThreshold,
+				backfillOnFirstRun: cfg.dreaming.backfillOnFirstRun,
+				maxInputTokens: cfg.dreaming.maxInputTokens,
+				maxOutputTokens: cfg.dreaming.maxOutputTokens,
+				timeout: cfg.dreaming.timeout,
+			},
+			passes,
+		});
+	});
+
+	app.post("/api/dream/promote", async (c) => {
+		const raw: unknown = await c.req.json().catch(() => null);
+		if (raw === null) return c.json({ error: "Malformed JSON body" }, 400);
+		const body = asRecord(raw);
+		const agentId = resolveDreamRequestAgentId(c, body);
+		const from = readString(body, "from");
+		if (!from) return c.json({ error: "from is required" }, 400);
+		const useProvider = readBoolean(body, "use_provider") ?? false;
+		try {
+			return c.json(
+				await promoteDreamingEvidence(getDbAccessor(), {
+					agentId,
+					from,
+					apply: readBoolean(body, "apply") ?? false,
+					actor: readString(body, "actor") ?? c.req.header("x-signet-actor") ?? "dreaming-promote",
+					limit: readNumber(body, "limit"),
+					useProvider,
+					provider: useProvider ? getInferenceProviderOrNull("memoryExtraction") : null,
+					providerTimeoutMs: readNumber(body, "provider_timeout_ms"),
+					providerMaxTokens: readNumber(body, "provider_max_tokens"),
+				}),
+			);
+		} catch (err) {
+			if (err instanceof DreamPromotionError) return c.json({ error: err.message }, err.status);
+			const message = err instanceof Error ? err.message : String(err);
+			return c.json({ error: message }, 500);
+		}
+	});
+
+	app.post("/api/dream/trigger", async (c) => {
+		const worker = getDreamingWorker();
+		if (!worker) {
+			return c.json({ error: "Dreaming worker not running" }, 503);
+		}
+
+		const contentType = c.req.header("content-type") ?? "";
+		let mode: "compact" | "incremental" = "incremental";
+		let body: Record<string, unknown> = {};
+		if (contentType.includes("application/json")) {
+			const raw: unknown = await c.req.json().catch(() => null);
+			if (raw === null) {
+				return c.json({ error: "Malformed JSON body" }, 400);
+			}
+			body = asRecord(raw);
+			if (body.mode === "compact") {
+				mode = "compact";
+			}
+		}
+		const agentId = resolveDreamRequestAgentId(c, body);
+
+		let passId: string;
+		try {
+			passId = worker.triggerAsync(mode, agentId);
+		} catch (e) {
+			if (e instanceof AlreadyRunningError) return c.json({ error: e.message }, 409);
+			const msg = e instanceof Error ? e.message : String(e);
+			return c.json({ error: msg }, 500);
+		}
+		return c.json({ accepted: true, passId, status: "running", mode, agentId }, 202);
+	});
 }

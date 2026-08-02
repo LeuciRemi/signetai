@@ -66,10 +66,10 @@ import { registerConnectorCommands } from "./commands/connector.js";
 import { registerContextCommands } from "./commands/context.js";
 import { registerDaemonCommands } from "./commands/daemon.js";
 import { registerDesktopCommands } from "./commands/desktop.js";
+import { registerDreamCommands } from "./commands/dream.js";
 import { registerGitCommands } from "./commands/git.js";
 import { registerGraphiqCommands } from "./commands/graphiq.js";
 import { registerHookCommands } from "./commands/hook.js";
-import { registerIngestCommands } from "./commands/ingest.js";
 import { registerKnowledgeCommands } from "./commands/knowledge.js";
 import { registerMcpCommands } from "./commands/mcp.js";
 import { registerMemoryCommands } from "./commands/memory.js";
@@ -1183,11 +1183,11 @@ registerSessionCommands(program, {
 });
 
 // ============================================================================
-// signet ingest — Unified ingest queue (agentic two-phase HTTP client, #913)
+// signet dream - Dreaming memory consolidation
 // ============================================================================
 
-registerIngestCommands(program, {
-	fetchDaemonResult,
+registerDreamCommands(program, {
+	fetchFromDaemon,
 });
 
 // ============================================================================

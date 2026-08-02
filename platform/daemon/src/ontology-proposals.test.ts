@@ -141,6 +141,22 @@ describe("ontology proposals", () => {
 		expect(JSON.parse(row?.proposal_evidence ?? "[]")).toEqual([{ source: "transcript:test", message_ids: ["m1"] }]);
 	});
 
+	it("rejects generic entity labels before creating ontology entities", () => {
+		expect(() =>
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "create_entity",
+				payload: { name: "the", entity_type: "project" },
+			}),
+		).toThrow("Entity name rejected: generic_or_scaffolding_name");
+		expect(
+			getDbAccessor().withReadDb(
+				(db) => db.prepare("SELECT COUNT(*) AS count FROM entities WHERE agent_id = ?").get("ant") as { count: number },
+			),
+		).toEqual({ count: 0 });
+	});
+
 	it("rejects a pending proposal without mutating graph state", () => {
 		const proposal = createOntologyProposal(getDbAccessor(), {
 			agentId: "default",

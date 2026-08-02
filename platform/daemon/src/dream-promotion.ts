@@ -1,11 +1,17 @@
 import type { LlmProvider } from "@signet/core";
 import type { DbAccessor, ReadDb } from "./db-accessor";
+import {
+	type EpisodicSourceRecord,
+	readEpisodicSource,
+	readEpisodicSummary,
+	readRecentEpisodicSources,
+} from "./episodic-sources";
 import { type ApplyOntologyOperationBatchResult, applyOntologyOperationBatch } from "./ontology-proposals";
 import { extractBalancedJsonObject, stripFences, tryParseJson } from "./pipeline/extraction";
 
 // Dream promotion is the normal apply-first graph maintenance path:
 // preview by default, direct audited apply on request, provenance always attached.
-type SourceKind = "memory" | "artifact" | "transcript";
+type SourceKind = "memory" | EpisodicSourceRecord["kind"];
 
 type SourceRecord = {
 	readonly kind: SourceKind;
@@ -155,6 +161,10 @@ function sourceInfo(source: SourceRecord): DreamPromotionSourceInfo {
 	};
 }
 
+function asPromotionSource(source: EpisodicSourceRecord): SourceRecord {
+	return { ...source, confidence: null };
+}
+
 function sourceIdCandidates(value: string): string[] {
 	const trimmed = value.trim();
 	const stripped = trimmed.replace(/^(memory|artifact|source|transcript|session):/, "");
@@ -246,164 +256,24 @@ function readRecentMemorySources(db: ReadDb, agentId: string, limit: number): So
 }
 
 function readTranscriptSource(db: ReadDb, agentId: string, id: string): SourceRecord | null {
-	const ids = sourceIdCandidates(id);
-	const placeholders = ids.map(() => "?").join(", ");
-	const row = db
-		.prepare(
-			`SELECT session_key, content, harness, project, created_at, updated_at
-			 FROM session_transcripts
-			 WHERE agent_id = ? AND session_key IN (${placeholders})
-			 ORDER BY updated_at DESC, created_at DESC
-			 LIMIT 1`,
-		)
-		.get(agentId, ...ids) as
-		| {
-				readonly session_key: string;
-				readonly content: string;
-				readonly harness: string | null;
-				readonly project: string | null;
-				readonly created_at: string;
-				readonly updated_at: string | null;
-		  }
-		| undefined;
-	if (!row) return null;
-	return {
-		kind: "transcript",
-		id: row.session_key,
-		content: row.content,
-		sourceKind: "transcript",
-		sourceId: row.session_key,
-		sourcePath: null,
-		project: row.project,
-		harness: row.harness,
-		capturedAt: row.updated_at ?? row.created_at,
-		confidence: null,
-	};
+	const source = readEpisodicSource(db, {
+		agentId,
+		from: `transcript:${id.replace(/^(transcript|session):/, "")}`,
+	});
+	return source?.kind === "transcript" ? asPromotionSource(source) : null;
 }
 
 function readRecentTranscriptSources(db: ReadDb, agentId: string, limit: number): SourceRecord[] {
-	return db
-		.prepare(
-			`SELECT session_key, content, harness, project, created_at, updated_at
-			 FROM session_transcripts
-			 WHERE agent_id = ?
-			 ORDER BY updated_at DESC, created_at DESC
-			 LIMIT ?`,
-		)
-		.all(agentId, limit)
-		.map((row) => {
-			const transcript = row as {
-				readonly session_key: string;
-				readonly content: string;
-				readonly harness: string | null;
-				readonly project: string | null;
-				readonly created_at: string;
-				readonly updated_at: string | null;
-			};
-			return {
-				kind: "transcript",
-				id: transcript.session_key,
-				content: transcript.content,
-				sourceKind: "transcript",
-				sourceId: transcript.session_key,
-				sourcePath: null,
-				project: transcript.project,
-				harness: transcript.harness,
-				capturedAt: transcript.updated_at ?? transcript.created_at,
-				confidence: null,
-			} satisfies SourceRecord;
-		});
+	return readRecentEpisodicSources(db, agentId, limit, ["transcript"]).map(asPromotionSource);
 }
 
 function readArtifactSource(db: ReadDb, agentId: string, id: string): SourceRecord | null {
-	const ids = sourceIdCandidates(id);
-	const placeholders = ids.map(() => "?").join(", ");
-	const row = db
-		.prepare(
-			`SELECT source_path, source_kind, source_node_id, session_id, session_key, session_token,
-			        project, harness, content, captured_at, updated_at
-			 FROM memory_artifacts
-			 WHERE agent_id = ?
-			   AND COALESCE(is_deleted, 0) = 0
-			   AND (
-			     source_path = ?
-			     OR source_node_id IN (${placeholders})
-			     OR session_id IN (${placeholders})
-			     OR session_key IN (${placeholders})
-			     OR session_token IN (${placeholders})
-			   )
-			 ORDER BY captured_at DESC
-			 LIMIT 1`,
-		)
-		.get(agentId, id, ...ids, ...ids, ...ids, ...ids) as
-		| {
-				readonly source_path: string;
-				readonly source_kind: string;
-				readonly source_node_id: string | null;
-				readonly session_id: string;
-				readonly session_key: string | null;
-				readonly session_token: string;
-				readonly project: string | null;
-				readonly harness: string | null;
-				readonly content: string;
-				readonly captured_at: string;
-				readonly updated_at: string;
-		  }
-		| undefined;
-	if (!row) return null;
-	return {
-		kind: "artifact",
-		id: row.source_path,
-		content: row.content,
-		sourceKind: row.source_kind,
-		sourceId: row.source_node_id ?? row.session_key ?? row.session_id ?? row.session_token,
-		sourcePath: row.source_path,
-		project: row.project,
-		harness: row.harness,
-		capturedAt: row.captured_at ?? row.updated_at,
-		confidence: null,
-	};
+	const source = readEpisodicSource(db, { agentId, from: `artifact:${id}` });
+	return source?.kind === "artifact" ? asPromotionSource(source) : null;
 }
 
 function readRecentArtifactSources(db: ReadDb, agentId: string, limit: number): SourceRecord[] {
-	return db
-		.prepare(
-			`SELECT source_path, source_kind, source_node_id, session_id, session_key, session_token,
-			        project, harness, content, captured_at, updated_at
-			 FROM memory_artifacts
-			 WHERE agent_id = ?
-			   AND COALESCE(is_deleted, 0) = 0
-			 ORDER BY captured_at DESC, updated_at DESC
-			 LIMIT ?`,
-		)
-		.all(agentId, limit)
-		.map((row) => {
-			const artifact = row as {
-				readonly source_path: string;
-				readonly source_kind: string;
-				readonly source_node_id: string | null;
-				readonly session_id: string;
-				readonly session_key: string | null;
-				readonly session_token: string;
-				readonly project: string | null;
-				readonly harness: string | null;
-				readonly content: string;
-				readonly captured_at: string;
-				readonly updated_at: string;
-			};
-			return {
-				kind: "artifact",
-				id: artifact.source_path,
-				content: artifact.content,
-				sourceKind: artifact.source_kind,
-				sourceId: artifact.source_node_id ?? artifact.session_key ?? artifact.session_id ?? artifact.session_token,
-				sourcePath: artifact.source_path,
-				project: artifact.project,
-				harness: artifact.harness,
-				capturedAt: artifact.captured_at ?? artifact.updated_at,
-				confidence: null,
-			} satisfies SourceRecord;
-		});
+	return readRecentEpisodicSources(db, agentId, limit, ["artifact"]).map(asPromotionSource);
 }
 
 function readSources(
@@ -417,16 +287,23 @@ function readSources(
 		if (from === "all") {
 			return [
 				...readRecentMemorySources(db, params.agentId, limit),
-				...readRecentArtifactSources(db, params.agentId, limit),
-				...readRecentTranscriptSources(db, params.agentId, limit),
+				...readRecentEpisodicSources(db, params.agentId, limit, ["artifact"]).map(asPromotionSource),
+				...readRecentEpisodicSources(db, params.agentId, limit, ["transcript"]).map(asPromotionSource),
+				...readRecentEpisodicSources(db, params.agentId, limit, ["summary"]).map(asPromotionSource),
 			].sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
 		}
 		if (from === "memories:recent") return readRecentMemorySources(db, params.agentId, limit);
 		if (from === "artifacts:recent") return readRecentArtifactSources(db, params.agentId, limit);
 		if (from === "transcripts:recent") return readRecentTranscriptSources(db, params.agentId, limit);
+		if (from === "summaries:recent")
+			return readRecentEpisodicSources(db, params.agentId, limit, ["summary"]).map(asPromotionSource);
 		if (from.startsWith("memory:")) {
 			const memory = readMemorySource(db, params.agentId, from);
 			if (memory) return [memory];
+		}
+		if (from.startsWith("summary:")) {
+			const summary = readEpisodicSource(db, { agentId: params.agentId, from });
+			if (summary?.kind === "summary") return [asPromotionSource(summary)];
 		}
 		if (from.startsWith("transcript:") || from.startsWith("session:")) {
 			const transcript = readTranscriptSource(db, params.agentId, from);
@@ -439,6 +316,8 @@ function readSources(
 		if (memory) return [memory];
 		const transcript = readTranscriptSource(db, params.agentId, from);
 		if (transcript) return [transcript];
+		const summary = readEpisodicSummary(db, params.agentId, from);
+		if (summary) return [asPromotionSource(summary)];
 		throw new DreamPromotionError("Dream promotion source not found", 404);
 	});
 }

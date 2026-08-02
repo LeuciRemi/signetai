@@ -69,9 +69,11 @@ import {
 	ensureRetentionWorker,
 	ensureSummaryRecovery,
 	ensureSummaryWorker,
+	setDreamingWorker,
 	startPipeline,
 	stopPipeline,
 } from "./pipeline";
+import { type DreamingWorkerHandle, startDreamingWorker } from "./pipeline/dreaming-worker";
 import type { WorkerInit } from "./pipeline/extraction-thread-protocol";
 import { invalidateTraversalCache } from "./pipeline/graph-traversal";
 import { stopModelRegistry } from "./pipeline/model-registry";
@@ -164,7 +166,6 @@ import { registerOntologyRoutes } from "./routes/ontology-routes.js";
 import { mountOsAgentRoutes } from "./routes/os-agent.js";
 import { mountOsChatRoutes } from "./routes/os-chat.js";
 import { registerPipelineRoutes } from "./routes/pipeline-routes.js";
-import { registerIngestRoutes } from "./routes/ingest-routes.js";
 import { registerPluginRoutes } from "./routes/plugins-routes.js";
 import { registerQueueDiagnosticsRoutes } from "./routes/queue-diagnostics.js";
 import { registerReflectionRoutes } from "./routes/reflection-routes.js";
@@ -185,6 +186,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 let httpServer: import("node:net").Server | null = null;
+let dreamingWorkerHandle: DreamingWorkerHandle | null = null;
 let embeddingTrackerHandle: EmbeddingTrackerHandle | null = null;
 let embeddingIndexMigrationHandle: EmbeddingIndexMigrationHandle | null = null;
 let skillReconcilerHandle: ReturnType<typeof startReconciler> | null = null;
@@ -229,33 +231,6 @@ registerSecretRoutes(app);
 registerSessionRoutes(app, { gitConfig, stopGitSyncTimer, startGitSyncTimer, getGitStatus, gitPull, gitPush, gitSync });
 registerSourcesRoutes(app);
 registerPipelineRoutes(app);
-// Unified ingest / agentic Dreaming two-phase protocol (#913). Config is
-// resolved per-request so a config change does not require a restart, mirroring
-// the dream routes. The daemon is the single writer; the skill/CLI are clients.
-registerIngestRoutes(app, () => {
-	const cfg = loadMemoryConfig(AGENTS_DIR);
-	const pipeline = cfg.pipelineV2;
-	const wg = pipeline.writeGate;
-	const dg = pipeline.durability;
-	return {
-		accessor: getDbAccessor(),
-		agentsDir: AGENTS_DIR,
-		getEmbedder: () => ({ embed: (text: string) => fetchEmbedding(text, cfg.embedding) }),
-		applyConfigBase: {
-			actor: "ingest",
-			minImportanceForWrite: 0.3,
-			writeGate: wg
-				? { enabled: wg.enabled, threshold: wg.threshold, continuityDiscount: wg.continuityDiscount ?? 0 }
-				: { enabled: false, threshold: 0.4, continuityDiscount: 0.15 },
-			durability: dg ? { enabled: dg.enabled } : { enabled: true },
-			sourceType: "ingest",
-			extractionModel: pipeline.extraction.model ?? null,
-			embeddingModel: cfg.embedding.model,
-		},
-		planningLeaseTimeoutMs: pipeline.ingest?.planningLeaseTimeoutMs ?? 600_000,
-		contextWindow: undefined, // model-registry resolution is a follow-up; 128k fallback applies
-	};
-});
 registerReflectionRoutes(app);
 registerTelemetryRoutes(app);
 registerDatabaseDiagnosticsRoutes(app);
@@ -1188,6 +1163,16 @@ async function stopPipelineRuntime(): Promise<void> {
 		setEmbeddingTrackerHandle(null);
 	}
 
+	if (dreamingWorkerHandle) {
+		dreamingWorkerHandle.stop();
+		if (dreamingWorkerHandle.activePass) {
+			const timeout = new Promise<void>((resolve) => setTimeout(resolve, 30_000));
+			await Promise.race([dreamingWorkerHandle.activePass.catch(() => undefined), timeout]);
+		}
+		dreamingWorkerHandle = null;
+		setDreamingWorker(null);
+	}
+
 	if (schedulerHandle) {
 		try {
 			await schedulerHandle.stop();
@@ -1553,6 +1538,18 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 			},
 		});
 	}
+
+	if (memoryCfg.dreaming.enabled && !pipelinePaused && !memoryCfg.pipelineV2.mutationsFrozen) {
+		try {
+			dreamingWorkerHandle = startDreamingWorker(getDbAccessor(), memoryCfg.dreaming, AGENTS_DIR, defaultAgentId);
+			setDreamingWorker(dreamingWorkerHandle);
+		} catch (err) {
+			logger.warn("dreaming", "Failed to start dreaming worker (non-fatal)", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
 	if (memoryCfg.pipelineV2.graph.enabled && memoryCfg.pipelineV2.structural.enabled && !pipelinePaused) {
 		const backfillCtx: RepairContext = {
 			reason: "post-upgrade structural backfill",

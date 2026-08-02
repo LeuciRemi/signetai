@@ -16,7 +16,7 @@ import {
 } from "./db-helpers";
 import { isActiveEmbeddingConfig, resolveActiveEmbeddingConfig } from "./embedding-index-state";
 import type { EmbeddingConfig } from "./memory-config";
-import { cancelJobsForForgottenMemory } from "./pipeline/extraction-queue";
+import { cancelExtractionJobsForForgottenMemory } from "./pipeline/extraction-queue";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -582,7 +582,7 @@ export function txForgetMemory(db: WriteDb, input: ForgetMemoryTxInput): ForgetM
 		     version = version + 1
 		 WHERE id = ?`,
 	).run(input.changedAt, input.changedAt, input.changedBy, input.memoryId);
-	cancelJobsForForgottenMemory(db, input.memoryId, input.changedAt);
+	cancelExtractionJobsForForgottenMemory(db, input.memoryId, input.changedAt);
 	deleteAggregateMemorySourceLinks(db, input.memoryId);
 
 	insertHistoryEvent(db, {

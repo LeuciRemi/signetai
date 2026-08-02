@@ -367,6 +367,7 @@ Requires `admin` permission.
 {
   "enabled": true,
   "worker": { "running": true, "active": false, "activeAgentId": null },
+  "episodicTokensPending": 42000,
   "state": {
     "tokensSinceLastPass": 42000,
     "lastPassAt": "2026-04-01T12:00:00.000Z",

@@ -22,6 +22,7 @@ import type {
 } from "@signet/core";
 import type { DbAccessor, ReadDb, WriteDb } from "./db-accessor";
 import { requireDependencyReason } from "./dependency-history";
+import { getDreamingEpisodicTokenBacklogInDb } from "./pipeline/dreaming";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -2053,6 +2054,23 @@ export interface ConstellationProposal {
 	readonly preview: string | null;
 }
 
+export interface ConstellationDreamingSummary {
+	readonly episodicTokensPending: number;
+	readonly consecutiveFailures: number;
+	readonly lastPassAt: string | null;
+	readonly lastPassId: string | null;
+	readonly lastPassMode: string | null;
+	readonly latestPass: {
+		readonly id: string;
+		readonly mode: string;
+		readonly status: string;
+		readonly completedAt: string | null;
+		readonly mutationsApplied: number | null;
+		readonly mutationsSkipped: number | null;
+		readonly mutationsFailed: number | null;
+	} | null;
+}
+
 export interface ConstellationProposalSummary {
 	readonly pending: number;
 	readonly appliedRecent: number;
@@ -2064,6 +2082,7 @@ export interface ConstellationGraph {
 	readonly dependencies: readonly ConstellationDependency[];
 	readonly proposals: readonly ConstellationProposal[];
 	readonly metadata: {
+		readonly dreaming: ConstellationDreamingSummary;
 		readonly proposals: ConstellationProposalSummary;
 	};
 }
@@ -2139,6 +2158,68 @@ function resolveProposalTargetEntity(
 	return { id: entitiesByName.get(toCanonicalName(name)) ?? null, name };
 }
 
+function getConstellationDreamingSummary(db: ReadDb, agentId: string): ConstellationDreamingSummary {
+	let state:
+		| {
+				consecutive_failures: number;
+				last_pass_at: string | null;
+				last_pass_id: string | null;
+				last_pass_mode: string | null;
+		  }
+		| undefined;
+	let latestPass:
+		| {
+				id: string;
+				mode: string;
+				status: string;
+				completed_at: string | null;
+				mutations_applied: number | null;
+				mutations_skipped: number | null;
+				mutations_failed: number | null;
+		  }
+		| undefined;
+	try {
+		state = db
+		.prepare(
+			`SELECT consecutive_failures, last_pass_at, last_pass_id, last_pass_mode
+			 FROM dreaming_state WHERE agent_id = ?`,
+		)
+		.get(agentId) as typeof state;
+		latestPass = db
+		.prepare(
+			`SELECT id, mode, status, completed_at, mutations_applied, mutations_skipped, mutations_failed
+			 FROM dreaming_passes
+			 WHERE agent_id = ?
+			 ORDER BY created_at DESC
+			 LIMIT 1`,
+		)
+		.get(agentId) as typeof latestPass;
+	} catch {
+		// Dreaming metadata is optional until the workspace migration completes.
+		state = undefined;
+		latestPass = undefined;
+	}
+
+	return {
+		episodicTokensPending: getDreamingEpisodicTokenBacklogInDb(db, agentId),
+		consecutiveFailures: Math.max(0, state?.consecutive_failures ?? 0),
+		lastPassAt: state?.last_pass_at ?? null,
+		lastPassId: state?.last_pass_id ?? null,
+		lastPassMode: state?.last_pass_mode ?? null,
+		latestPass: latestPass
+			? {
+					id: latestPass.id,
+					mode: latestPass.mode,
+					status: latestPass.status,
+					completedAt: latestPass.completed_at,
+					mutationsApplied: latestPass.mutations_applied,
+					mutationsSkipped: latestPass.mutations_skipped,
+					mutationsFailed: latestPass.mutations_failed,
+				}
+			: null,
+	};
+}
+
 function getConstellationProposalSummary(db: ReadDb, agentId: string): ConstellationProposalSummary {
 	const pending = db
 		.prepare("SELECT COUNT(*) AS n FROM ontology_proposals WHERE agent_id = ? AND status = 'pending'")
@@ -2200,6 +2281,7 @@ export function getKnowledgeGraphForConstellation(
 				dependencies: [],
 				proposals: [],
 				metadata: {
+					dreaming: getConstellationDreamingSummary(db, agentId),
 					proposals: getConstellationProposalSummary(db, agentId),
 				},
 			};
@@ -2386,6 +2468,7 @@ export function getKnowledgeGraphForConstellation(
 			dependencies,
 			proposals,
 			metadata: {
+				dreaming: getConstellationDreamingSummary(db, agentId),
 				proposals: getConstellationProposalSummary(db, agentId),
 			},
 		};

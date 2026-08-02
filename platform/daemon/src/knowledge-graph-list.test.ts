@@ -393,8 +393,36 @@ describe("listKnowledgeEntities (issue #515)", () => {
 				 VALUES (?, 'default', 'add_claim_value', 'applied', ?, 0.82, 'already applied', '[]',
 				         datetime('now'), datetime('now'), datetime('now'))`,
 			).run("proposal-recent-applied", JSON.stringify({ entity: "Hub" }));
+			db.exec(`
+				CREATE TABLE IF NOT EXISTS dreaming_state (
+					agent_id TEXT PRIMARY KEY,
+					tokens_since_last_pass INTEGER NOT NULL DEFAULT 0,
+					consecutive_failures INTEGER NOT NULL DEFAULT 0,
+					last_pass_at TEXT,
+					last_pass_id TEXT,
+					last_pass_mode TEXT
+				);
+				CREATE TABLE IF NOT EXISTS dreaming_passes (
+					id TEXT PRIMARY KEY,
+					agent_id TEXT NOT NULL,
+					mode TEXT NOT NULL,
+					status TEXT NOT NULL,
+					started_at TEXT NOT NULL,
+					completed_at TEXT,
+					mutations_applied INTEGER,
+					mutations_skipped INTEGER,
+					mutations_failed INTEGER,
+					created_at TEXT NOT NULL
+				);
+			`);
 			db.prepare(
-				`INSERT INTO dreaming_state
+			`INSERT INTO memory_artifacts
+				 (agent_id, source_path, source_sha256, source_kind, session_id, session_token, captured_at, content, updated_at, is_deleted)
+				 VALUES ('default', 'sessions/dashboard.md', 'dashboard-sha', 'transcript', 'dashboard-session', 'dashboard-token',
+				         '2026-05-16T13:01:00Z', 'dashboard episodic evidence', '2026-05-16T13:01:00Z', 0)`,
+			).run();
+			db.prepare(
+			`INSERT INTO dreaming_state
 				 (agent_id, tokens_since_last_pass, consecutive_failures, last_pass_at, last_pass_id, last_pass_mode)
 				 VALUES ('default', 2400, 0, '2026-05-16T13:00:00Z', 'dream-alpha', 'incremental')`,
 			).run();
@@ -427,7 +455,7 @@ describe("listKnowledgeEntities (issue #515)", () => {
 		expect(graph.proposals[0]?.targetAspectName).toBe("alpha");
 		expect(graph.metadata.proposals.pending).toBe(1);
 		expect(graph.metadata.proposals.appliedRecent).toBe(1);
-		expect(graph.metadata.dreaming.tokensSinceLastPass).toBe(2400);
+		expect(graph.metadata.dreaming.episodicTokensPending).toBeGreaterThan(0);
 		expect(graph.metadata.dreaming.latestPass?.mutationsApplied).toBe(3);
 	});
 

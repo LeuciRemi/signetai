@@ -3271,7 +3271,7 @@ export interface ConstellationProposal {
 }
 
 export interface ConstellationDreamingSummary {
-	tokensSinceLastPass: number;
+	episodicTokensPending: number;
 	consecutiveFailures: number;
 	lastPassAt: string | null;
 	lastPassId: string | null;
