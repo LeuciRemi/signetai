@@ -326,6 +326,103 @@ describe("dreaming", () => {
 			expect(prompt).toContain("The compaction preserves temporal lineage.");
 		});
 
+		it("advances through mixed episodic evidence before later compaction without feeding rollups back", async () => {
+			seedArtifact(db, "ARTIFACT_EVIDENCE");
+			db.prepare(
+				"UPDATE memory_artifacts SET captured_at = ? WHERE agent_id = ? AND source_path = 'sources/roadmap.md'",
+			).run("2026-08-01T00:00:00.000Z", AGENT);
+			seedEpisodicMemory(db, "temporal-memory", "MEMORY_EVIDENCE");
+			db.prepare("UPDATE memories SET created_at = ? WHERE id = ?").run("2026-08-01T00:00:01.000Z", "temporal-memory");
+			seedTranscript(db, "TRANSCRIPT_EVIDENCE");
+			db.prepare(
+				"UPDATE session_transcripts SET created_at = ?, updated_at = ? WHERE session_key = 'episodic-session'",
+			).run("2026-08-01T00:00:02.000Z", "2026-08-01T00:00:02.000Z");
+			seedEpisodicMemory(db, "tied-memory", "TIED_MEMORY_EVIDENCE");
+			db.prepare("UPDATE memories SET created_at = ? WHERE id = ?").run("2026-08-01T00:00:03.000Z", "tied-memory");
+			db.prepare(
+				`INSERT INTO session_summaries
+				 (id, agent_id, content, token_count, depth, kind, source_type, earliest_at, latest_at, created_at)
+				 VALUES ('primary-summary', ?, 'PRIMARY_SUMMARY_EVIDENCE', 5, 0, 'session', 'summary', ?, ?, ?)`,
+			).run(AGENT, "2026-08-01T00:00:03.000Z", "2026-08-01T00:00:03.000Z", "2026-08-01T00:00:03.000Z");
+
+			let firstPrompt = "";
+			await runDreamingPass(
+				accessor,
+				async (input) => {
+					firstPrompt = input;
+					return JSON.stringify({ operations: [], summary: "Processed the initial temporal evidence" });
+				},
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			for (const [earlier, later] of [
+				["ARTIFACT_EVIDENCE", "MEMORY_EVIDENCE"],
+				["MEMORY_EVIDENCE", "TRANSCRIPT_EVIDENCE"],
+				["TRANSCRIPT_EVIDENCE", "TIED_MEMORY_EVIDENCE"],
+				["TIED_MEMORY_EVIDENCE", "PRIMARY_SUMMARY_EVIDENCE"],
+			] as const) {
+				expect(firstPrompt.indexOf(earlier)).toBeLessThan(firstPrompt.indexOf(later));
+			}
+			expect(getDreamingState(accessor, AGENT).evidenceCursor).toEqual({
+				capturedAt: "2026-08-01T00:00:03.000Z",
+				kind: "summary",
+				id: "primary-summary",
+			});
+
+			db.prepare(
+				`INSERT INTO session_summaries
+				 (id, agent_id, content, token_count, depth, kind, source_type, earliest_at, latest_at, created_at)
+				 VALUES
+				 ('later-summary', ?, 'LATER_SUMMARY_EVIDENCE', 5, 0, 'session', 'summary', ?, ?, ?),
+				 ('later-compaction', ?, 'COMPACTION_EVIDENCE', 5, 0, 'session', 'compaction', ?, ?, ?),
+				 ('derived-rollup', ?, 'ROLLUP_MUST_NOT_REENTER', 5, 1, 'arc', 'condensation', ?, ?, ?)`,
+			).run(
+				AGENT,
+				"2026-08-01T00:00:04.000Z",
+				"2026-08-01T00:00:04.000Z",
+				"2026-08-01T00:00:04.000Z",
+				AGENT,
+				"2026-08-01T00:00:05.000Z",
+				"2026-08-01T00:00:05.000Z",
+				"2026-08-01T00:00:05.000Z",
+				AGENT,
+				"2026-08-01T00:00:06.000Z",
+				"2026-08-01T00:00:06.000Z",
+				"2026-08-01T00:00:06.000Z",
+			);
+
+			let secondPrompt = "";
+			await runDreamingPass(
+				accessor,
+				async (input) => {
+					secondPrompt = input;
+					return JSON.stringify({ operations: [], summary: "Processed later summary and compaction evidence" });
+				},
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			for (const processedEvidence of [
+				"ARTIFACT_EVIDENCE",
+				"MEMORY_EVIDENCE",
+				"TRANSCRIPT_EVIDENCE",
+				"TIED_MEMORY_EVIDENCE",
+				"PRIMARY_SUMMARY_EVIDENCE",
+			]) {
+				expect(secondPrompt).not.toContain(processedEvidence);
+			}
+			expect(secondPrompt.indexOf("LATER_SUMMARY_EVIDENCE")).toBeLessThan(secondPrompt.indexOf("COMPACTION_EVIDENCE"));
+			expect(secondPrompt).not.toContain("ROLLUP_MUST_NOT_REENTER");
+			expect(getDreamingState(accessor, AGENT).evidenceCursor).toEqual({
+				capturedAt: "2026-08-01T00:00:05.000Z",
+				kind: "summary",
+				id: "later-compaction",
+			});
+		});
+
 		it("renders project and harness provenance in episodic evidence headings", async () => {
 			// Regression (#946): harness provenance must reach the Dreaming prompt
 			// heading alongside project, so the model can reason over the
