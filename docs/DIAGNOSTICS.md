@@ -34,8 +34,9 @@ All domain functions are read-only. They accept a `ReadDb` handle or a
 
 ### queue
 
-Reflects the state of `memory_jobs` — the work queue for the extraction
-pipeline.
+Reflects the state of `memory_jobs` and `summary_jobs`, the live durable
+work queues for document/index maintenance and session summaries. Retired
+`extract` jobs are excluded from queue counts and readiness checks.
 
 Signals measured:
 
@@ -148,8 +149,8 @@ The seven domain scores are combined into a single weighted average:
 
 The result is clamped to [0, 1] and assigned the same status thresholds as
 individual domains. Queue and provider carry the most weight because
-extraction failures cascade — a stuck queue or an unavailable LLM will stall
-memory ingestion entirely.
+queue failures cascade — a stuck queue or an unavailable LLM will stall
+pipeline work entirely.
 
 
 API Endpoints

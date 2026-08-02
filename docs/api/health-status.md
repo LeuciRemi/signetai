@@ -205,8 +205,7 @@ silent fallback or hard-blocked extraction after boot.
   "pipeline": {
     "queue": {
       "memory": { "pending": 0, "leased": 0, "completed": 0, "failed": 0, "dead": 0, "oldestAgeSec": 0, "oldestDeadAgeSec": 0, "lastError": null },
-      "summary": { "pending": 0, "leased": 0, "completed": 0, "failed": 0, "dead": 0, "oldestAgeSec": 0, "oldestDeadAgeSec": 0, "lastError": null },
-      "extraction": { "pending": 0, "leased": 0, "completed": 0, "failed": 0, "dead": 0, "oldestAgeSec": 0, "oldestDeadAgeSec": 0, "lastError": null }
+      "summary": { "pending": 0, "leased": 0, "completed": 0, "failed": 0, "dead": 0, "oldestAgeSec": 0, "oldestDeadAgeSec": 0, "lastError": null }
     }
   },
   "providerResolution": {
@@ -273,7 +272,7 @@ extraction provider is unavailable or routed to a fallback target.
 When extraction is blocked, `providerResolution.extraction.blockedBy` contains
 the first routing candidate's policy and runtime gate reasons in evaluation
 order. The array is empty for non-blocked states.
-`pipeline.queue` exposes per-queue counts (memory / summary / extraction);
+`pipeline.queue` exposes per-queue counts (memory / summary);
 the retired worker's load/overload telemetry is no longer reported.
 `transcripts.capture` exposes compact durable transcript-capture queue counts;
 use `GET /api/diagnostics/transcripts` for detailed artifact/audit diagnostics.
@@ -282,7 +281,7 @@ Use `GET /api/inference/status` for the shared inference control plane status.
 
 ### GET /api/diagnostics/queue
 
-Per-queue counts (memory / summary / extraction), oldest-dead job
+Per-queue counts (memory / summary), oldest-dead job
 references, and threshold metadata. Backend path uses the same shared
 threshold constants that `GET /api/status` and `/health/ready` consume.
 
@@ -295,19 +294,16 @@ Admin permission required.
   "timestamp": "2026-07-19T00:00:00.000Z",
   "queues": {
     "memory":     { "pending": 0, "leased": 0, "completed": 1, "failed": 0, "dead": 1667, "oldestAgeSec": 0, "oldestDeadAgeSec": 5.4e6, "lastError": null },
-    "summary":    { "pending": 0, "leased": 0, "completed": 92,  "failed": 0, "dead": 1667, "oldestAgeSec": 0, "oldestDeadAgeSec": 5.4e6, "lastError": "boom" },
-    "extraction": { "pending": 0, "leased": 0, "completed": 1,  "failed": 0, "dead": 0,    "oldestAgeSec": 0, "oldestDeadAgeSec": 0,    "lastError": null }
+    "summary":    { "pending": 0, "leased": 0, "completed": 92,  "failed": 0, "dead": 1667, "oldestAgeSec": 0, "oldestDeadAgeSec": 5.4e6, "lastError": "boom" }
   },
   "oldestDeadSummaryJob":    { "id": "...", "harness": "codex", "sessionKey": "...", "createdAt": "...", "attempts": 3, "error": "boom" },
   "oldestDeadMemoryJob":     { "...": "..." },
-  "oldestDeadExtractionJob": { "...": "..." },
   "thresholds": {
     "summaryDeadWarn": 50, "summaryDeadFail": 500,
     "summaryOldestPendingWarnSec": 300, "summaryOldestPendingFailSec": 1800,
     "summaryOldestDeadWarnSec": 86400,
     "memoryDeadWarn": 50, "memoryDeadFail": 500,
-    "memoryOldestPendingWarnSec": 300, "memoryOldestPendingFailSec": 1800,
-    "extractionDeadWarn": 10, "extractionDeadFail": 100
+    "memoryOldestPendingWarnSec": 300, "memoryOldestPendingFailSec": 1800
   }
 }
 ```

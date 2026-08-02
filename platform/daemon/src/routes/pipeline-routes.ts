@@ -60,7 +60,6 @@ import { STATUS_CACHE_TTL, cachedEmbeddingStatus, resolveScopedAgentId, statusCa
 interface PipelineQueueBlock {
 	readonly memory: QueueCounts;
 	readonly summary: QueueCounts;
-	readonly extraction: QueueCounts;
 	readonly oldestDeadSummaryJob: ReturnType<typeof getQueueDiagnosticsSnapshot>["oldestDeadSummaryJob"];
 }
 
@@ -83,7 +82,6 @@ function pipelineQueueBlock(): PipelineQueueBlock {
 			return {
 				memory: snapshot.memory,
 				summary: snapshot.summary,
-				extraction: snapshot.extraction,
 				oldestDeadSummaryJob: snapshot.oldestDeadSummaryJob,
 			};
 		});
@@ -91,7 +89,6 @@ function pipelineQueueBlock(): PipelineQueueBlock {
 		return {
 			memory: { ...EMPTY_QUEUE_COUNTS_SHAPE },
 			summary: { ...EMPTY_QUEUE_COUNTS_SHAPE },
-			extraction: { ...EMPTY_QUEUE_COUNTS_SHAPE },
 			oldestDeadSummaryJob: null,
 		};
 	}

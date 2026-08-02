@@ -215,14 +215,6 @@ export const DEFAULT_PIPELINE_V2: ResolvedPipelineV2Config = {
 		minEntityOverlap: 1,
 		noveltyThreshold: 0.15,
 	},
-	writeGate: {
-		enabled: true,
-		threshold: 0.4,
-		continuityDiscount: 0.15,
-	},
-	durability: {
-		enabled: true,
-	},
 	modelRegistry: {
 		enabled: true,
 		refreshIntervalMs: 3600_000,
@@ -390,8 +382,6 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 	const proceduralRaw = raw.procedural as Record<string, unknown> | undefined;
 	const feedbackRaw = raw.feedback as Record<string, unknown> | undefined;
 	const significanceRaw = raw.significance as Record<string, unknown> | undefined;
-	const writeGateRaw = raw.writeGate as Record<string, unknown> | undefined;
-	const durabilityRaw = raw.durability as Record<string, unknown> | undefined;
 	const modelRegistryRaw = raw.modelRegistry as Record<string, unknown> | undefined;
 	const hintsRaw = raw.hints as Record<string, unknown> | undefined;
 	const reflectionsRaw = raw.reflections as Record<string, unknown> | undefined;
@@ -411,7 +401,12 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 	const nestedProvider = extractionRaw?.provider;
 	const flatProvider = raw.extractionProvider;
 	const flatModel = raw.extractionModel;
-	if (nestedProvider === "command" || flatProvider === "command" || extractionRaw?.command !== undefined || raw.extractionCommand !== undefined) {
+	if (
+		nestedProvider === "command" ||
+		flatProvider === "command" ||
+		extractionRaw?.command !== undefined ||
+		raw.extractionCommand !== undefined
+	) {
 		throw new PipelineConfigValidationError(
 			"memory.pipelineV2.extraction command configuration is retired; configure the canonical inference workload instead.",
 		);
@@ -419,6 +414,17 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 	if (synthesisRaw?.provider === "command") {
 		throw new PipelineConfigValidationError(
 			"memory.pipelineV2.synthesis.provider='command' is retired; configure the canonical inference workload instead.",
+		);
+	}
+	if (
+		raw.writeGate !== undefined ||
+		raw.durability !== undefined ||
+		raw.writeGateEnabled !== undefined ||
+		raw.writeGateThreshold !== undefined ||
+		raw.writeGateContinuityDiscount !== undefined
+	) {
+		throw new PipelineConfigValidationError(
+			"memory.pipelineV2.writeGate and durability configuration is retired; Dreaming is the sole semantic writer.",
 		);
 	}
 
@@ -870,18 +876,6 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 			minEntityOverlap: clampPositive(significanceRaw?.minEntityOverlap, 0, 100, d.significance?.minEntityOverlap ?? 1),
 			noveltyThreshold: clampFraction(significanceRaw?.noveltyThreshold, d.significance?.noveltyThreshold ?? 0.15),
 		},
-		writeGate: {
-			enabled: resolveBool(writeGateRaw?.enabled, raw.writeGateEnabled, d.writeGate?.enabled ?? true),
-			threshold: clampFraction(writeGateRaw?.threshold ?? raw.writeGateThreshold, d.writeGate?.threshold ?? 0.4),
-			continuityDiscount: clampFraction(
-				writeGateRaw?.continuityDiscount ?? raw.writeGateContinuityDiscount,
-				d.writeGate?.continuityDiscount ?? 0.15,
-			),
-		},
-		durability: {
-			enabled: resolveBool(durabilityRaw?.enabled, undefined, d.durability?.enabled ?? true),
-		},
-
 		modelRegistry: {
 			enabled: resolveBool(modelRegistryRaw?.enabled, undefined, d.modelRegistry.enabled),
 			refreshIntervalMs: clampPositive(

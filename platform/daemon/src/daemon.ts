@@ -39,6 +39,7 @@ import {
 	migrateConfig,
 	migrateInferenceProviders,
 	migrateLegacyRoutingToRegistry,
+	migrateRetiredExtractionWriterConfig,
 	migrateSessionSynthesisRoute,
 } from "./config-migration";
 import { listConnectors } from "./connectors/registry";
@@ -1619,6 +1620,20 @@ async function main() {
 	mkdirSync(DAEMON_DIR, { recursive: true });
 	mkdirSync(LOG_DIR, { recursive: true });
 
+	// Config migrations must precede every initialization path that resolves
+	// memory config, including DB setup below.
+	try {
+		migrateConfig(AGENTS_DIR);
+		migrateInferenceProviders(AGENTS_DIR);
+		migrateLegacyRoutingToRegistry(AGENTS_DIR);
+		migrateSessionSynthesisRoute(AGENTS_DIR);
+		migrateRetiredExtractionWriterConfig(AGENTS_DIR);
+	} catch (err) {
+		logger.warn("config-migration", "Config migration failed; continuing startup", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+	}
+
 	await initDbAccessorAsync(MEMORY_DB, { agentsDir: AGENTS_DIR });
 	startSessionCleanup();
 	logFdSnapshot("post-db-init");
@@ -1699,17 +1714,6 @@ async function main() {
 
 	writeFileSync(PID_FILE, process.pid.toString());
 	logger.info("daemon", "Process ID", { pid: process.pid });
-
-	try {
-		migrateConfig(AGENTS_DIR);
-		migrateInferenceProviders(AGENTS_DIR);
-		migrateLegacyRoutingToRegistry(AGENTS_DIR);
-		migrateSessionSynthesisRoute(AGENTS_DIR);
-	} catch (err) {
-		logger.warn("config-migration", "Config migration failed; continuing startup", {
-			error: err instanceof Error ? err.message : String(err),
-		});
-	}
 
 	if (ensureWorkspaceGitignore()) {
 		scheduleAutoCommit(join(AGENTS_DIR, ".gitignore"));

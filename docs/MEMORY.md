@@ -546,26 +546,17 @@ Successful jobs reset the failure counter.
 
 ### Retired Extraction Queue
 
-The legacy extraction queue is retired. New evidence is selected directly by
-Dreaming; startup promotes each live historical extraction input into the
-episodic cursor before terminalizing its obsolete job.
-
-### Controlled Writes in the Worker
-
-When not in shadow mode, the worker prefetches embeddings for all
-`add` proposals before entering the write transaction. This keeps the
-critical write path synchronous and avoids holding a write lock while
-waiting on network I/O to the embedding provider. Embedding failures
-are non-fatal — the fact is written without an embedding vector and
-remains keyword-searchable.
+The legacy extraction queue is retired. Dreaming selects new evidence
+directly. At startup, each live historical extraction source is promoted to
+the durable episodic cursor before its obsolete job is terminalized.
 
 
 Memory Types
 ------------
 
-Every memory has a `type` field that classifies its semantic role.
-The pipeline extractor assigns types; explicit saves use type
-inference from content patterns or accept an explicit `type` parameter.
+Every semantic memory has a `type` field that classifies its role. Dreaming
+derives those rows from episodic evidence; the original evidence remains
+immutable and provenance-bearing.
 
 | Type | Meaning | Example |
 |------|---------|---------|

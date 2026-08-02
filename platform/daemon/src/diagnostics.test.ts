@@ -81,7 +81,15 @@ function insertMemory(
 		);
 }
 
-function insertJob(raw: Database, id: string, memId: string, status: string, createdAt = now, updatedAt = now): void {
+function insertJob(
+	raw: Database,
+	id: string,
+	memId: string,
+	status: string,
+	createdAt = now,
+	updatedAt = now,
+	jobType = "document_ingest",
+): void {
 	raw
 		.prepare(
 			`INSERT INTO memory_jobs
@@ -89,7 +97,7 @@ function insertJob(raw: Database, id: string, memId: string, status: string, cre
 				 created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
-		.run(id, memId, "extract", status, 0, 3, createdAt, updatedAt);
+		.run(id, memId, jobType, status, 0, 3, createdAt, updatedAt);
 }
 
 function insertHistory(raw: Database, id: string, memId: string, event: string, createdAt = now): void {
@@ -154,6 +162,17 @@ describe("getQueueHealth", () => {
 		const result = getQueueHealth(asReadDb(db));
 		expect(result.deadRate).toBe(0);
 		expect(result.status).toBe("healthy");
+	});
+
+	test("excludes retired extraction jobs from live queue health", () => {
+		insertMemory(db, "mem-retired-extract");
+		insertJob(db, "job-retired-extract", "mem-retired-extract", "dead", now, now, "extract");
+
+		const result = getQueueHealth(asReadDb(db));
+		expect(result.depth).toBe(0);
+		expect(result.deadRate).toBe(0);
+		expect(result.status).toBe("healthy");
+		expect(getQueueDiagnosticsSnapshot(asReadDb(db), { fresh: true }).memory.dead).toBe(0);
 	});
 });
 

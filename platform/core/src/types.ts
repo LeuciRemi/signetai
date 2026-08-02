@@ -352,16 +352,6 @@ export interface PipelineSubagentsConfig {
 	readonly tailChars: number;
 }
 
-export interface PipelineWriteGateConfig {
-	readonly enabled: boolean;
-	readonly threshold: number;
-	readonly continuityDiscount: number;
-}
-
-export interface PipelineDurabilityConfig {
-	readonly enabled: boolean;
-}
-
 export interface PipelineV2Config {
 	// Master switches (flat)
 	readonly enabled: boolean;
@@ -392,8 +382,6 @@ export interface PipelineV2Config {
 	readonly procedural: PipelineProceduralConfig;
 	readonly feedback: PipelineFeedbackConfig;
 	readonly significance?: PipelineSignificanceConfig;
-	readonly writeGate?: PipelineWriteGateConfig;
-	readonly durability?: PipelineDurabilityConfig;
 	readonly modelRegistry: PipelineModelRegistryConfig;
 	readonly hints?: PipelineHintsConfig;
 	readonly reflections: PipelineReflectionsConfig;

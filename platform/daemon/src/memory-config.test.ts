@@ -776,7 +776,6 @@ describe("loadPipelineConfig", () => {
 		expect(result.extraction.model).toBe("gpt-5.3-codex");
 	});
 
-
 	it("loads all flags correctly when all set to true (flat keys)", () => {
 		const result = loadPipelineConfig({
 			memory: {
@@ -979,36 +978,16 @@ describe("loadPipelineConfig", () => {
 		});
 	});
 
-	it("loads adaptive write-gate config from flat keys", () => {
-		const result = loadPipelineConfig({
-			memory: {
-				pipelineV2: {
-					writeGateEnabled: true,
-					writeGateThreshold: 0.45,
-					writeGateContinuityDiscount: 0.2,
-				},
-			},
-		});
-
-		expect(result.writeGate?.enabled).toBe(true);
-		expect(result.writeGate?.threshold).toBe(0.45);
-		expect(result.writeGate?.continuityDiscount).toBe(0.2);
-	});
-
-	it("clamps adaptive write-gate numeric values", () => {
-		const result = loadPipelineConfig({
-			memory: {
-				pipelineV2: {
-					writeGate: {
-						threshold: 3,
-						continuityDiscount: -1,
-					},
-				},
-			},
-		});
-
-		expect(result.writeGate?.threshold).toBe(1);
-		expect(result.writeGate?.continuityDiscount).toBe(0);
+	it("rejects retired write-gate and durability configuration", () => {
+		for (const pipelineV2 of [
+			{ writeGate: { threshold: 0.45 } },
+			{ durability: { enabled: true } },
+			{ writeGateEnabled: true },
+		]) {
+			expect(() => loadPipelineConfig({ memory: { pipelineV2 } })).toThrow(
+				"writeGate and durability configuration is retired",
+			);
+		}
 	});
 
 	it("loads graph boost and reranker fields (flat keys)", () => {

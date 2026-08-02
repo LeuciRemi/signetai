@@ -2438,6 +2438,12 @@ function buildDeadRequeueSql(
 
 	const where: string[] = ["status = 'dead'"];
 	const params: unknown[] = [];
+	if (table === "memory_jobs") {
+		// The extraction worker is gone. Startup already promoted each legacy
+		// extract source to Dreaming before terminalizing its job, so requeueing
+		// it would create work with no consumer.
+		where.push("job_type <> 'extract'");
+	}
 
 	if (options.ids && options.ids.length > 0) {
 		const placeholders = options.ids.map(() => "?").join(", ");
@@ -2476,7 +2482,8 @@ interface CancelPruneBuilt {
 /**
  * Build a parameterized SELECT for `cancelObsoleteJobs` and
  * `pruneTerminalJobs`. Captures the full row as JSON so the action can
- * copy it to the audit/archive table inside the same write tx.
+ * copy it to the audit/archive table inside the same write tx. Unlike
+ * requeue, terminal cleanup deliberately includes retired `extract` rows.
  */
 function buildCancelPruneSql(
 	db: ReadDb,

@@ -510,10 +510,10 @@ recommendations (i.e., health is good).
 
 ### Queue Health and Repair (issue #901)
 
-Two tables hold a backlog that the legacy `QueueHealth` aggregate never
-exposed: `summary_jobs` (the durable summary queue) and the `extraction`
-slice of `memory_jobs` (filtered by `job_type = 'extraction'`). Operators
-saw a green health score with thousands of dead rows beneath it.
+Two live tables hold backlog that the legacy `QueueHealth` aggregate never
+exposed: `memory_jobs` and `summary_jobs` (the durable summary queue).
+Operators can inspect and repair both queues without treating retired
+extraction jobs as active work.
 
 `/api/diagnostics/queue` returns a structured per-queue report:
 
@@ -522,19 +522,16 @@ saw a green health score with thousands of dead rows beneath it.
   "timestamp": "...",
   "queues": {
     "memory":     { "pending": 0, "leased": 0, "completed": 0, "failed": 0, "dead": 0, "oldestAgeSec": 0, "oldestDeadAgeSec": 0, "lastError": null },
-    "summary":    { "...": "..." },
-    "extraction": { "...": "..." }
+    "summary":    { "...": "..." }
   },
   "oldestDeadSummaryJob":    { "id": "...", "harness": "...", "sessionKey": "...", "createdAt": "...", "attempts": 0, "error": null },
   "oldestDeadMemoryJob":     { "...": "..." },
-  "oldestDeadExtractionJob": { "...": "..." },
   "thresholds": { "summaryDeadWarn": 50, "summaryDeadFail": 500, "summaryOldestPendingWarnSec": 300, "..." }
 }
 ```
 
-`signet status` renders the same queues as a `Pipeline queues` block
-below the extraction section, with each queue's `dead` and
-`oldest dead` highlighted when `dead > 0`.
+`signet status` renders the same live queues as a `Pipeline queues` block,
+with each queue's `dead` and `oldest dead` highlighted when `dead > 0`.
 
 Three repair commands cover the issue's "Suggested fix":
 
@@ -546,6 +543,8 @@ Three repair commands cover the issue's "Suggested fix":
 
 All three default to **dry-run** and require `--apply` to mutate. The
 preview includes the first 100 matching ids and the total match count.
+Requeue excludes retired `extract` jobs because Dreaming already consumed
+their sources; cancel and prune retain those terminal rows for audit cleanup.
 Provenance migrations: `089-job-cancellations`, `090-job-archive`.
 
 

@@ -152,13 +152,14 @@ function insertJob(
 	leasedAt?: string,
 	attempts = 0,
 	maxAttempts = 3,
+	jobType = "document_ingest",
 ): void {
 	const now = new Date().toISOString();
 	db.prepare(
 		`INSERT INTO memory_jobs
 		 (id, memory_id, job_type, status, attempts, max_attempts, leased_at, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-	).run(id, memId, "extract", status, attempts, maxAttempts, leasedAt ?? null, now, now);
+	).run(id, memId, jobType, status, attempts, maxAttempts, leasedAt ?? null, now, now);
 }
 
 function ensureVecTable(db: Database): void {
@@ -470,9 +471,7 @@ describe("structuralBackfill", () => {
 			db.prepare(
 				"INSERT INTO entities (id, name, canonical_name, entity_type, agent_id, created_at, updated_at) VALUES (?, ?, ?, 'person', 'default', ?, ?)",
 			).run("ent-1", "Nicholai", "nicholai", now, now);
-			db.prepare(
-				"INSERT INTO memory_entity_mentions (memory_id, entity_id) VALUES (?, ?)",
-			).run("mem-1", "ent-1");
+			db.prepare("INSERT INTO memory_entity_mentions (memory_id, entity_id) VALUES (?, ?)").run("mem-1", "ent-1");
 
 			const result = structuralBackfill(accessor, TEST_CFG, CTX_OPERATOR, limiter);
 
@@ -484,9 +483,11 @@ describe("structuralBackfill", () => {
 			// should have been created by the backfill path.
 			const attrs = db.prepare("SELECT COUNT(*) as cnt FROM entity_attributes").get() as { cnt: number };
 			expect(attrs.cnt).toBe(0);
-			const jobs = db.prepare(
-				"SELECT COUNT(*) as cnt FROM memory_jobs WHERE job_type = 'structural_classify' AND status = 'pending'",
-			).get() as { cnt: number };
+			const jobs = db
+				.prepare(
+					"SELECT COUNT(*) as cnt FROM memory_jobs WHERE job_type = 'structural_classify' AND status = 'pending'",
+				)
+				.get() as { cnt: number };
 			expect(jobs.cnt).toBe(0);
 		} finally {
 			db.close();
@@ -546,6 +547,17 @@ describe("requeueDeadJobs", () => {
 
 		const remaining = db.prepare("SELECT COUNT(*) as n FROM memory_jobs WHERE status = 'dead'").get() as { n: number };
 		expect(remaining.n).toBe(2);
+	});
+
+	it("does not resurrect retired extraction jobs", () => {
+		insertMemory(db, "mem-retired");
+		insertJob(db, "job-retired", "mem-retired", "dead", undefined, 3, 3, "extract");
+
+		const result = requeueDeadJobs(accessor, TEST_CFG, CTX_OPERATOR, createRateLimiter());
+
+		expect(result.success).toBe(true);
+		expect(result.affected).toBe(0);
+		expect(db.prepare("SELECT status FROM memory_jobs WHERE id = 'job-retired'").get()).toEqual({ status: "dead" });
 	});
 });
 

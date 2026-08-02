@@ -48,7 +48,7 @@ function seedDb(db: Database): void {
 	db.prepare(
 		`INSERT INTO memory_jobs (id, memory_id, job_type, status, attempts, max_attempts,
 			created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-	).run("dead-mem-1", memRow.id, "extract", "dead", 3, 3, oldIso, oldIso);
+	).run("dead-mem-1", memRow.id, "document_ingest", "dead", 3, 3, oldIso, oldIso);
 
 	db.prepare(
 		`INSERT INTO summary_jobs (id, session_key, harness, project, transcript, status,
@@ -117,6 +117,7 @@ describe("/api/diagnostics/queue", () => {
 		};
 		expect(body.queues.memory.dead).toBe(1);
 		expect(body.queues.summary.dead).toBe(2);
+		expect(body.queues).not.toHaveProperty("extraction");
 		expect(body.oldestDeadSummaryJob?.id).toBe("dead-sum-1");
 		expect(body.thresholds.summaryDeadWarn).toBe(50);
 	});
