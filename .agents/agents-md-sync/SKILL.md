@@ -1,14 +1,14 @@
 ---
 name: agents-md-sync
-description: "Prune and route AGENTS.md guidance for durable, high-signal context."
+description: "Prune and route AGENTS.md trees for durable, high-signal context."
 ---
 
 # Maintain agent guidance
 
-Use this skill when root or scoped `AGENTS.md` files may have drifted, grown,
-or started constraining agents unnecessarily. The goal is not to document the
-whole repository. It is to keep always-loaded context small, durable, and
-useful.
+Use this skill when the root or nested `AGENTS.md` tree may have drifted,
+grown, or started constraining agents unnecessarily. The goal is not to
+document the whole repository. It is to keep inherited context small,
+durable, and useful at every scope.
 
 ## Place context deliberately
 
@@ -25,9 +25,20 @@ Before adding guidance, classify it:
 Prefer the narrowest destination. Do not repeat the same instruction at
 multiple levels.
 
+## Seed scopes sparingly
+
+A stable, major subtree may have a stub `AGENTS.md` before it has local
+guidance. A stub provides an obvious extension point and states only that the
+area currently adds no instructions beyond its parent. Do not copy root rules
+into it.
+
+Seed area boundaries, not every package. Replace a stub only when guidance
+passes the same admission test as any other scoped instruction.
+
 ## Audit procedure
 
-1. Read the affected guide fully and inspect its Git diff and relevant
+1. Inventory the root and nested guidance tree. Read the affected guide, its
+   parents, and its children fully; inspect their Git diff and relevant
    history. Use commit history to find likely drift, not as a requirement to
    summarize every intervening commit.
 2. Check concrete claims against their owning source, manifest, tests, or
@@ -37,10 +48,11 @@ multiple levels.
    than the underlying risk requires.
 4. Remove obsolete context. Move local guidance to a scoped guide and
    workflows to skills. Link to detailed references rather than compressing
-   their contents into root.
-5. Add new root guidance only when a recurring or high-cost failure cannot be
-   prevented more precisely by code, tests, schemas, tooling, or scoped
-   context.
+   their contents into a parent guide. Leave intentional stubs free of local
+   rules.
+5. Add new guidance only when a recurring or high-cost failure cannot be
+   prevented more precisely by code, tests, schemas, or tooling. Place it at
+   the narrowest stable scope.
 6. Read the result as one instruction set. Resolve overlap and conflicts, and
    prefer clear outcomes over prescribed agent process.
 
@@ -59,9 +71,10 @@ multiple levels.
 
 ## Finish
 
-Check the changed guides, their links, and their scope boundaries. Confirm
-that removing a detail did not remove a genuine high-risk gotcha, that moved
-guidance is discoverable from its parent, and that:
+Check the changed guides, their links, inheritance, and scope boundaries.
+Confirm that removing a detail did not remove a genuine high-risk gotcha,
+that moved guidance is discoverable from its parent, and that stubs have not
+accumulated generic rules. Then verify:
 
 ```bash
 test -L CLAUDE.md && test "$(readlink CLAUDE.md)" = "AGENTS.md"

@@ -28,12 +28,13 @@ surrounding code determine ordinary implementation choices.
 
 | Area | Path | Read when relevant |
 |---|---|---|
-| Core data, DB, search | `platform/core` | `docs/ARCHITECTURE.md`, `docs/SOURCES.md` |
+| Core data, DB, search | `platform/core` | `platform/core/AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/SOURCES.md` |
 | Daemon, API, pipeline | `platform/daemon` | `platform/daemon/AGENTS.md`, `docs/API.md`, `docs/AUTH.md`, `docs/PIPELINE.md` |
 | Harness integrations | `integrations` | `integrations/AGENTS.md`, `docs/HOOKS.md`, matching repo under `references/` |
-| CLI and apps | `surfaces` | area source and tests; `docs/DASHBOARD.md` for dashboard work |
-| Reusable packages | `libs`, `plugins`, `dist/signetai` | package manifest and consumers |
-| Marketing and docs site | `web` | local package scripts and content source |
+| CLI and apps | `surfaces` | `surfaces/AGENTS.md`; area source and tests; `docs/DASHBOARD.md` for dashboard work |
+| Reusable packages | `libs`, `plugins`, `dist/signetai` | area `AGENTS.md`, package manifest, and consumers |
+| Benchmarks | `memorybench` | `memorybench/AGENTS.md` and its focused READMEs |
+| Marketing and docs site | `web` | `web/AGENTS.md`, local package scripts, and content source |
 | Repo structure and risk | repository root | `repo.map.yaml`, root `package.json` |
 
 Do not mirror package lists, build chains, routes, or schemas into guidance
