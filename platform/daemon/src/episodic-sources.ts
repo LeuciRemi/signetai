@@ -127,6 +127,8 @@ export function readEpisodicMemory(db: ReadDb, agentId: string, id: string): Epi
 			 WHERE agent_id = ?
 			   AND memory_kind = 'episodic'
 			   AND COALESCE(is_deleted, 0) = 0
+			   AND visibility != 'archived'
+			   AND scope IS NULL
 			   AND id IN (${placeholders})
 			 LIMIT 1`,
 		)
@@ -335,6 +337,8 @@ export function readRecentEpisodicSources(
 				 WHERE agent_id = ?
 				   AND memory_kind = 'episodic'
 				   AND COALESCE(is_deleted, 0) = 0
+				   AND visibility != 'archived'
+				   AND scope IS NULL
 				   AND ${memoryCursor.sql}
 				 ORDER BY julianday(created_at) ${direction}, id ${direction}
 				 LIMIT ?`,

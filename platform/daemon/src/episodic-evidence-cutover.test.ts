@@ -22,7 +22,7 @@ function insertEpisodicMemory(
 		content: string;
 		contentHash: string;
 		agentId?: string;
-		visibility?: "global" | "private";
+		visibility?: "global" | "private" | "archived";
 		project?: string | null;
 		scope?: string | null;
 		sourceType?: string;
@@ -109,6 +109,34 @@ describe("episodic-evidence cutover: episodic-sources selector", () => {
 			content: "user prefers vim",
 			sourceKind: "manual",
 		});
+	});
+
+	it("keeps private evidence but excludes archived and scoped episodic memories", () => {
+		insertEpisodicMemory(db, {
+			id: "private-episodic",
+			content: "private evidence remains available to its agent",
+			contentHash: "hash-private-episodic",
+			visibility: "private",
+		});
+		insertEpisodicMemory(db, {
+			id: "archived-episodic",
+			content: "archived evidence must not be consolidated",
+			contentHash: "hash-archived-episodic",
+			visibility: "archived",
+		});
+		insertEpisodicMemory(db, {
+			id: "scoped-episodic",
+			content: "benchmark evidence must not enter the agent graph",
+			contentHash: "hash-scoped-episodic",
+			scope: "bench:run-1",
+		});
+
+		const readDb = db as unknown as Parameters<typeof readRecentEpisodicSources>[0];
+		expect(readRecentEpisodicSources(readDb, "default", 10).map((record) => record.id)).toEqual([
+			"private-episodic",
+		]);
+		expect(readEpisodicMemory(readDb, "default", "archived-episodic")).toBeNull();
+		expect(readEpisodicMemory(readDb, "default", "scoped-episodic")).toBeNull();
 	});
 
 	it("resolves a single episodic memory by id with memory: prefix", () => {
