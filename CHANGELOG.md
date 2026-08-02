@@ -6,8 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
-### 2026-08-01
-- Refactoring: deprecate and remove the Rust daemon rewrite (`platform/daemon-rs`), its CLI runtime switch (`SIGNET_DAEMON_RUNTIME`), the nativeShadowEnabled shadow proxy, and the route-parity harness; the TypeScript/Bun daemon is the sole runtime. Rust accelerators (`@signet/native`) are unaffected.
+### 2026-08-02
+- Refactoring: remove nativeShadowEnabled shadow proxy; remove SIGNET_DAEMON_RUNTIME rust switch and binary download.
+- Docs: address review feedback on the daemon-rs removal; remove daemon-rs references and record deprecation.
 
 ### 2026-07-30
 - Features: migrate embeddings without recall downtime; run OAuth via pi-ai SDK directly; drop llama.cpp embeddings; add 'Disable background inference' option to the menu; dashboard-matching provider connect for memory extraction; provider-connect toolkit for dashboard-matching extraction UX; show full brand banner on interactive signet setup; connect obsidian vault sources during setup; remote-instance config (daemon.url); multi-agent roster loop + phase-2 findings; dreaming toggle (memory.dreaming.enabled); distinct synthesis provider route; reviewable summary screen before apply; headless plan path (--file/--json), --dry-run, non-TTY guard.
@@ -33,12 +34,22 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: sync legacy extraction label with routing target (#1017); stop baking stale SIGNET_PATH into managed extensions; align assetPathsOverride key names with EmbeddingHandleOptions (#1018); validate routing config references on load (#1005); never report 100% embedding coverage while gaps remain (#906); await native smoke child teardown; rework agents — dense cards, session count, tactile chips; compact agent cards — spec bar, prompt tags, focus telemetry; dissolve dreaming card head, normalize code spans; surface extraction route blockers; replace emoji mutation symbols with typographic glyphs; unbox dreaming view, git-style mutation symbols, normalize prose; remove pass history ledger, rename Dreaming→Dreams with moon icon; dreaming brief leads with narrative summary, ledger demoted; quiet dreaming entity text, minimal buffer gauge, single summary line; unbox dreaming mutations, add buffer bar and entity pills; clean legacy config and honor repair dry runs; infer compatible privacy from endpoint.
 - Refactoring: share lenient JSON parsing; centralize MCP command resolution.
 
-### 2026-07-23
-- Features: surface and repair dead summary-job backlog (#901); recover missed native transcripts; inference settings density + hierarchy refactor; select connected providers as backends + compact rows.
-- Bug fixes: expose macOS physical memory; harden native WASM inference; quiesce background inference on pause; harden sterile OpenCode inference; provider wall completeness, optional keys, OAuth window; support agent-managed models; parse JSON after model preambles; bound llama.cpp inputs; remove invalid hook ownership markers; stop native embedding smoke child within bun's afterEach budget; integrate pi-ai OAuth providers; make maintenance supersession sweep non-fatal without a provider; enable Astro ClientRouter for client-side navigation.
-- Docs: update roadmap to reflect current priorities (dashboard, desktop, config UX).
-
 ## Release Ledger
+
+## [0.157.2] - 2026-08-02
+
+Release summary: 2 refactors and 2 docs updates.
+Tag range: `archive/daemon-rs..v0.157.2`.
+
+### Refactoring
+
+- **daemon**: remove nativeShadowEnabled shadow proxy
+- **cli**: remove SIGNET_DAEMON_RUNTIME rust switch and binary download
+
+### Docs
+
+- address review feedback on the daemon-rs removal
+- remove daemon-rs references and record deprecation
 
 ## [0.157.1] - 2026-07-30
 
