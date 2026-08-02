@@ -1417,6 +1417,87 @@ function applyArchiveLink(
 	return { dependencyId: id, archived: true };
 }
 
+function applyPinEntity(
+	db: WriteDb,
+	agentId: string,
+	proposal: ProposalRow,
+	payload: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+	const selector = readPayloadSelector(payload, "selector", "entity", "entity_id", "id");
+	if (selector === null) throw new OntologyProposalError("payload.entity is required", 400);
+	const entity = resolveEntityStrict(db, agentId, selector);
+	const ts = now();
+	db.prepare(
+		`UPDATE entities
+		 SET pinned = 1, pinned_at = ?, proposal_id = ?, proposal_evidence = ?, updated_at = ?
+		 WHERE id = ? AND agent_id = ?`,
+	).run(ts, proposal.id, JSON.stringify(proposalAuditEvidence(proposal)), ts, entity.id, agentId);
+	return { entityId: entity.id, pinned: true, pinnedAt: ts };
+}
+
+function applyUnpinEntity(
+	db: WriteDb,
+	agentId: string,
+	proposal: ProposalRow,
+	payload: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+	const selector = readPayloadSelector(payload, "selector", "entity", "entity_id", "id");
+	if (selector === null) throw new OntologyProposalError("payload.entity is required", 400);
+	const entity = resolveEntityStrict(db, agentId, selector);
+	db.prepare(
+		`UPDATE entities
+		 SET pinned = 0, pinned_at = NULL, proposal_id = ?, proposal_evidence = ?, updated_at = datetime('now')
+		 WHERE id = ? AND agent_id = ?`,
+	).run(proposal.id, JSON.stringify(proposalAuditEvidence(proposal)), entity.id, agentId);
+	return { entityId: entity.id, pinned: false };
+}
+
+function applyCreateEntityAlias(
+	db: WriteDb,
+	agentId: string,
+	proposal: ProposalRow,
+	payload: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+	const entitySelector = readPayloadSelector(payload, "entity", "entity_id");
+	const alias = readString(payload, "alias");
+	if (entitySelector === null) throw new OntologyProposalError("payload.entity is required", 400);
+	if (alias === null) throw new OntologyProposalError("payload.alias is required", 400);
+	const canonicalAlias = canonical(alias);
+	if (canonicalAlias.length === 0) throw new OntologyProposalError("payload.alias is required", 400);
+	const entity = resolveEntityStrict(db, agentId, entitySelector);
+	const confidence = clamp01(readNumber(payload, "confidence") ?? 1);
+	const source = readString(payload, "source");
+	const id = crypto.randomUUID();
+	db.prepare(
+		`INSERT INTO entity_aliases
+		 (id, entity_id, agent_id, alias, canonical_alias, confidence, source, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))`,
+	).run(id, entity.id, agentId, alias.trim(), canonicalAlias, confidence, source ?? null);
+	return { aliasId: id, entityId: entity.id, alias: alias.trim(), canonicalAlias };
+}
+
+function applyArchiveEntityAlias(
+	db: WriteDb,
+	agentId: string,
+	proposal: ProposalRow,
+	payload: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+	const entitySelector = readPayloadSelector(payload, "entity", "entity_id");
+	const aliasId = readString(payload, "alias_id");
+	if (entitySelector === null) throw new OntologyProposalError("payload.entity is required", 400);
+	if (aliasId === null) throw new OntologyProposalError("payload.alias_id is required", 400);
+	const entity = resolveEntityStrict(db, agentId, entitySelector);
+	const result = db
+		.prepare(
+			`UPDATE entity_aliases
+			 SET status = 'archived', updated_at = datetime('now')
+			 WHERE id = ? AND entity_id = ? AND agent_id = ? AND status = 'active'`,
+		)
+		.run(aliasId, entity.id, agentId);
+	if (result.changes === 0) throw new OntologyProposalError("Alias not found", 404);
+	return { aliasId, entityId: entity.id, archived: true };
+}
+
 function applyOperation(db: WriteDb, proposal: ProposalRow, actor: string): Readonly<Record<string, unknown>> {
 	const payload = parseJsonRecord(proposal.payload);
 	if (proposal.operation === "create_entity") return applyCreateEntity(db, proposal.agent_id, proposal, payload);
@@ -1441,6 +1522,12 @@ function applyOperation(db: WriteDb, proposal: ProposalRow, actor: string): Read
 	if (proposal.operation === "create_link") return applyCreateLink(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "update_link") return applyUpdateLink(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "archive_link") return applyArchiveLink(db, proposal.agent_id, proposal, payload, actor);
+	if (proposal.operation === "pin_entity") return applyPinEntity(db, proposal.agent_id, proposal, payload);
+	if (proposal.operation === "unpin_entity") return applyUnpinEntity(db, proposal.agent_id, proposal, payload);
+	if (proposal.operation === "create_entity_alias")
+		return applyCreateEntityAlias(db, proposal.agent_id, proposal, payload);
+	if (proposal.operation === "archive_entity_alias")
+		return applyArchiveEntityAlias(db, proposal.agent_id, proposal, payload);
 	throw new OntologyProposalError(`Unsupported ontology proposal operation: ${proposal.operation}`, 400);
 }
 

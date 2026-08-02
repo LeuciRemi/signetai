@@ -3,14 +3,8 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeDbAccessor, getDbAccessor, initDbAccessor } from "./db-accessor";
-import {
-	getEntityHealth,
-	getPinnedEntities,
-	pinEntity,
-	propagateMemoryStatus,
-	unpinEntity,
-	upsertAspect,
-} from "./knowledge-graph";
+import { getEntityHealth, getPinnedEntities, propagateMemoryStatus, upsertAspect } from "./knowledge-graph";
+import { applyOntologyOperation } from "./ontology-proposals";
 import { applyFtsOverlapFeedback, decayAspectWeights } from "./pipeline/aspect-feedback";
 import { resolveFocalEntities } from "./pipeline/graph-traversal";
 
@@ -71,7 +65,12 @@ describe("knowledge feedback", () => {
 		insertEntity("entity-pinned", "Pinned Project", "project");
 		insertEntity("entity-project", "other-project", "project");
 
-		pinEntity(getDbAccessor(), "entity-pinned", "default");
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "default",
+			actor: "test",
+			operation: "pin_entity",
+			payload: { id: "entity-pinned" },
+		});
 
 		const pinned = getPinnedEntities(getDbAccessor(), "default");
 		expect(pinned).toHaveLength(1);
@@ -87,7 +86,12 @@ describe("knowledge feedback", () => {
 		expect(resolved.entityIds).toContain("entity-project");
 		expect(resolved.source).toBe("project");
 
-		unpinEntity(getDbAccessor(), "entity-pinned", "default");
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "default",
+			actor: "test",
+			operation: "unpin_entity",
+			payload: { id: "entity-pinned" },
+		});
 		expect(getPinnedEntities(getDbAccessor(), "default")).toHaveLength(0);
 	});
 
@@ -96,7 +100,12 @@ describe("knowledge feedback", () => {
 		initDbAccessor(dbPath);
 
 		insertEntity("entity-pinned", "Pinned Project", "project");
-		pinEntity(getDbAccessor(), "entity-pinned", "default");
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "default",
+			actor: "test",
+			operation: "pin_entity",
+			payload: { id: "entity-pinned" },
+		});
 
 		const resolved = getDbAccessor().withReadDb((db) =>
 			resolveFocalEntities(db, "default", {

@@ -14,8 +14,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeDbAccessor, getDbAccessor, initDbAccessor } from "./db-accessor";
 import {
-	archiveEntityAlias,
-	createEntityAlias,
 	getDependenciesFrom,
 	getDependenciesTo,
 	getKnowledgeEntityDetail,
@@ -24,6 +22,7 @@ import {
 	listEntityAliases,
 	listKnowledgeEntities,
 } from "./knowledge-graph";
+import { applyOntologyOperation } from "./ontology-proposals";
 
 function makeDbPath(): string {
 	const dir = join(tmpdir(), `signet-kg-list-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -322,27 +321,32 @@ describe("listKnowledgeEntities (issue #515)", () => {
 
 		seedEntity("e-signet", "Signet");
 		seedEntity("e-other", "Other");
-		const alias = createEntityAlias(getDbAccessor(), {
+		const created = applyOntologyOperation(getDbAccessor(), {
 			agentId: "default",
-			entityId: "e-signet",
-			alias: "SignetAI",
-			source: "test",
+			actor: "test",
+			operation: "create_entity_alias",
+			payload: { entity_id: "e-signet", alias: "SignetAI", source: "test" },
 		});
+		const aliasId = created.result?.aliasId as string;
+		expect(aliasId).toBeTruthy();
 
-		const wrongEntity = archiveEntityAlias(getDbAccessor(), {
-			agentId: "default",
-			entityId: "e-other",
-			aliasId: alias.id,
-		});
-		expect(wrongEntity).toBeNull();
+		expect(() =>
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "default",
+				actor: "test",
+				operation: "archive_entity_alias",
+				payload: { entity_id: "e-other", alias_id: aliasId },
+			}),
+		).toThrow();
 		expect(listEntityAliases(getDbAccessor(), { agentId: "default", entityId: "e-signet" })).toHaveLength(1);
 
-		const archived = archiveEntityAlias(getDbAccessor(), {
+		const archived = applyOntologyOperation(getDbAccessor(), {
 			agentId: "default",
-			entityId: "e-signet",
-			aliasId: alias.id,
+			actor: "test",
+			operation: "archive_entity_alias",
+			payload: { entity_id: "e-signet", alias_id: aliasId },
 		});
-		expect(archived?.status).toBe("archived");
+		expect(archived.result?.archived).toBe(true);
 		expect(listEntityAliases(getDbAccessor(), { agentId: "default", entityId: "e-signet" })).toHaveLength(0);
 	});
 
@@ -416,13 +420,13 @@ describe("listKnowledgeEntities (issue #515)", () => {
 				);
 			`);
 			db.prepare(
-			`INSERT INTO memory_artifacts
+				`INSERT INTO memory_artifacts
 				 (agent_id, source_path, source_sha256, source_kind, session_id, session_token, captured_at, content, updated_at, is_deleted)
 				 VALUES ('default', 'sessions/dashboard.md', 'dashboard-sha', 'transcript', 'dashboard-session', 'dashboard-token',
 				         '2026-05-16T13:01:00Z', 'dashboard episodic evidence', '2026-05-16T13:01:00Z', 0)`,
 			).run();
 			db.prepare(
-			`INSERT INTO dreaming_state
+				`INSERT INTO dreaming_state
 				 (agent_id, tokens_since_last_pass, consecutive_failures, last_pass_at, last_pass_id, last_pass_mode)
 				 VALUES ('default', 2400, 0, '2026-05-16T13:00:00Z', 'dream-alpha', 'incremental')`,
 			).run();

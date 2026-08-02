@@ -549,28 +549,6 @@ export function deleteDependency(accessor: DbAccessor, id: string, agentId: stri
 // Entity pinning
 // ---------------------------------------------------------------------------
 
-export function pinEntity(accessor: DbAccessor, entityId: string, agentId: string): void {
-	const ts = now();
-	accessor.withWriteTx((db) => {
-		db.prepare(
-			`UPDATE entities
-			 SET pinned = 1, pinned_at = ?, updated_at = ?
-			 WHERE id = ? AND agent_id = ?`,
-		).run(ts, ts, entityId, agentId);
-	});
-}
-
-export function unpinEntity(accessor: DbAccessor, entityId: string, agentId: string): void {
-	const ts = now();
-	accessor.withWriteTx((db) => {
-		db.prepare(
-			`UPDATE entities
-			 SET pinned = 0, pinned_at = NULL, updated_at = ?
-			 WHERE id = ? AND agent_id = ?`,
-		).run(ts, entityId, agentId);
-	});
-}
-
 export function getPinnedEntities(accessor: DbAccessor, agentId: string): ReadonlyArray<PinnedEntitySummary> {
 	return accessor.withReadDb((db) => {
 		const rows = db
@@ -1019,67 +997,6 @@ export function listEntityAliases(
 			)
 			.all(...args) as Array<Record<string, unknown>>;
 		return rows.map(rowToEntityAlias);
-	});
-}
-
-export function createEntityAlias(
-	accessor: DbAccessor,
-	params: {
-		readonly agentId: string;
-		readonly entityId: string;
-		readonly alias: string;
-		readonly confidence?: number;
-		readonly source?: string | null;
-	},
-): EntityAlias {
-	const alias = params.alias.trim();
-	const canonical = toCanonicalName(alias);
-	if (canonical.length === 0) {
-		throw new Error("alias is required");
-	}
-	const confidence =
-		typeof params.confidence === "number" && Number.isFinite(params.confidence)
-			? Math.min(Math.max(params.confidence, 0), 1)
-			: 1;
-	const ts = now();
-	const id = crypto.randomUUID();
-	return accessor.withWriteTx((db) => {
-		const entity = db
-			.prepare("SELECT id FROM entities WHERE id = ? AND agent_id = ? AND COALESCE(status, 'active') = 'active'")
-			.get(params.entityId, params.agentId) as { id: string } | undefined;
-		if (!entity) throw new Error("Entity not found");
-		db.prepare(
-			`INSERT INTO entity_aliases
-			 (id, entity_id, agent_id, alias, canonical_alias, confidence, source, status, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
-		).run(id, params.entityId, params.agentId, alias, canonical, confidence, params.source ?? null, ts, ts);
-		const row = db.prepare("SELECT * FROM entity_aliases WHERE id = ? AND agent_id = ?").get(id, params.agentId) as
-			| Record<string, unknown>
-			| undefined;
-		if (!row) throw new Error("Alias not found after insert");
-		return rowToEntityAlias(row);
-	});
-}
-
-export function archiveEntityAlias(
-	accessor: DbAccessor,
-	params: {
-		readonly agentId: string;
-		readonly entityId: string;
-		readonly aliasId: string;
-	},
-): EntityAlias | null {
-	const ts = now();
-	return accessor.withWriteTx((db) => {
-		db.prepare(
-			`UPDATE entity_aliases
-			 SET status = 'archived', updated_at = ?
-			 WHERE id = ? AND entity_id = ? AND agent_id = ?`,
-		).run(ts, params.aliasId, params.entityId, params.agentId);
-		const row = db
-			.prepare("SELECT * FROM entity_aliases WHERE id = ? AND entity_id = ? AND agent_id = ?")
-			.get(params.aliasId, params.entityId, params.agentId) as Record<string, unknown> | undefined;
-		return row ? rowToEntityAlias(row) : null;
 	});
 }
 
