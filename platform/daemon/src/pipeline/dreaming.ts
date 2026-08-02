@@ -114,6 +114,15 @@ interface DependencyRow {
 	readonly reason: string | null;
 }
 
+/** Source-native navigation rows are episodic topology, not semantic memory. */
+function semanticEntityFilter(alias = ""): string {
+	const column = (name: "entity_type" | "source_root"): string => (alias ? `${alias}.${name}` : name);
+	return `NOT (
+		${column("entity_type")} IN ('source_document', 'source_folder', 'source_document_reference')
+		OR (${column("entity_type")} = 'source' AND ${column("source_root")} IS NOT NULL)
+	)`;
+}
+
 export type LlmGenerateFn = (prompt: string, opts?: { timeoutMs?: number; maxTokens?: number }) => Promise<string>;
 
 // ---------------------------------------------------------------------------
@@ -290,7 +299,7 @@ function fetchEntityGraph(
 	const entities = db
 		.prepare(
 			`SELECT id, name, entity_type AS entityType, description
-			 FROM entities WHERE agent_id = ?
+			 FROM entities WHERE agent_id = ? AND ${semanticEntityFilter()}
 			 ORDER BY mentions DESC, updated_at DESC
 			 LIMIT ?`,
 		)
@@ -300,7 +309,8 @@ function fetchEntityGraph(
 		.prepare(
 			`SELECT ea.id, ea.entity_id AS entityId, ea.name, ea.weight
 			 FROM entity_aspects ea
-			 WHERE ea.agent_id = ?
+			 JOIN entities e ON e.id = ea.entity_id AND e.agent_id = ea.agent_id
+			 WHERE ea.agent_id = ? AND ${semanticEntityFilter("e")}
 			 ORDER BY ea.weight DESC
 			 LIMIT ?`,
 		)
@@ -311,7 +321,9 @@ function fetchEntityGraph(
 			`SELECT ea.id, ea.aspect_id AS aspectId, ea.kind, ea.content,
 			        ea.status, ea.importance
 			 FROM entity_attributes ea
-			 WHERE ea.agent_id = ? AND ea.status = 'active'
+			 JOIN entity_aspects asp ON asp.id = ea.aspect_id AND asp.agent_id = ea.agent_id
+			 JOIN entities e ON e.id = asp.entity_id AND e.agent_id = ea.agent_id
+			 WHERE ea.agent_id = ? AND ea.status = 'active' AND ${semanticEntityFilter("e")}
 			 ORDER BY ea.importance DESC
 			 LIMIT ?`,
 		)
@@ -319,13 +331,18 @@ function fetchEntityGraph(
 
 	const dependencies = db
 		.prepare(
-			`SELECT id, source_entity_id AS sourceEntityId,
-			        target_entity_id AS targetEntityId,
-			        dependency_type AS dependencyType,
-			        strength, confidence, reason
+			`SELECT entity_dependencies.id, entity_dependencies.source_entity_id AS sourceEntityId,
+			        entity_dependencies.target_entity_id AS targetEntityId,
+			        entity_dependencies.dependency_type AS dependencyType,
+			        entity_dependencies.strength, entity_dependencies.confidence, entity_dependencies.reason
 			 FROM entity_dependencies
-			 WHERE agent_id = ?
-			 ORDER BY strength DESC, confidence DESC, updated_at DESC, id ASC
+			 JOIN entities source ON source.id = entity_dependencies.source_entity_id AND source.agent_id = entity_dependencies.agent_id
+			 JOIN entities target ON target.id = entity_dependencies.target_entity_id AND target.agent_id = entity_dependencies.agent_id
+			 WHERE entity_dependencies.agent_id = ?
+			   AND ${semanticEntityFilter("source")}
+			   AND ${semanticEntityFilter("target")}
+			 ORDER BY entity_dependencies.strength DESC, entity_dependencies.confidence DESC,
+			          entity_dependencies.updated_at DESC, entity_dependencies.id ASC
 			 LIMIT ?`,
 		)
 		.all(agentId, maxDeps) as DependencyRow[];

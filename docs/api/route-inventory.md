@@ -113,7 +113,6 @@ silently disappear from the API reference.
 | GET | `/api/os/agent-sessions` | platform/daemon/src/routes/os-agent.ts |
 | POST | `/api/os/chat` | platform/daemon/src/routes/os-chat.ts |
 | GET | `/api/home/greeting` | platform/daemon/src/routes/pipeline-routes.ts |
-| POST | `/api/dream/promote` | platform/daemon/src/routes/pipeline-routes.ts |
 | GET | `/api/reflections/today` | platform/daemon/src/routes/reflection-routes.ts |
 | GET | `/api/reflections` | platform/daemon/src/routes/reflection-routes.ts |
 | POST | `/api/reflections/generate` | platform/daemon/src/routes/reflection-routes.ts |

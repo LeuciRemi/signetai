@@ -220,7 +220,7 @@ describe("daemon status contract", () => {
 		}
 	});
 
-	it("applies worker maxLlmConcurrency before summary-only runtime starts", async () => {
+	it("keeps legacy extraction disabled when Dreaming owns the semantic cutover", async () => {
 		const { closeDbAccessor, initDbAccessor } = await import("./db-accessor");
 		const { loadMemoryConfig } = await import("./memory-config");
 		const { getLlmConcurrencyStatus } = await import("./pipeline/provider");
@@ -231,7 +231,11 @@ describe("daemon status contract", () => {
 			join(dir, "agent.yaml"),
 			`memory:
   pipelineV2:
-    enabled: false
+    enabled: true
+    extraction:
+      provider: command
+      command:
+        bin: node
     worker:
       maxLlmConcurrency: 1
   dreaming:
@@ -260,6 +264,7 @@ describe("daemon status contract", () => {
 		expect(res.status).toBe(200);
 		expect(body.providerResolution?.extraction).toMatchObject({
 			status: "disabled",
+			effective: "none",
 			enabled: false,
 			paused: false,
 			workerRunning: false,

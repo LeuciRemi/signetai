@@ -6,8 +6,7 @@ import { resolveAgentId, resolveDaemonAgentId } from "../agent-id.js";
 import { requirePermission, requireRateLimit } from "../auth";
 import { getDbAccessor } from "../db-accessor.js";
 import { type QueueCounts, getQueueDiagnosticsSnapshot } from "../diagnostics-queue.js";
-import { DreamPromotionError, promoteDreamingEvidence } from "../dream-promotion.js";
-import { getInferenceProviderOrNull, getLlmProvider } from "../llm.js";
+import { getLlmProvider } from "../llm.js";
 import { loadMemoryConfig } from "../memory-config.js";
 import {
 	getDreamingEpisodicTokenBacklog,
@@ -207,7 +206,7 @@ export function registerPipelineRoutes(app: Hono): void {
 		const workerStatus = getPipelineWorkerStatus();
 		const extractionWorker = workerStatus.extraction;
 		const extractionWorkload = getExtractionWorkloadState({
-			enabled: config.pipelineV2.enabled,
+			enabled: config.pipelineV2.enabled && !config.dreaming.enabled,
 			paused: config.pipelineV2.paused,
 			workerRunning: extractionWorker.running,
 		});
@@ -469,7 +468,7 @@ export function registerPipelineRoutes(app: Hono): void {
 			providerResolution: {
 				...providerRuntimeResolution,
 				extraction: getExtractionWorkloadState({
-					enabled: pipelineV2.enabled,
+					enabled: pipelineV2.enabled && !cfg.dreaming.enabled,
 					paused: pipelineV2.paused,
 					workerRunning: workers.extraction.running,
 				}),
@@ -544,7 +543,6 @@ export function registerPipelineRoutes(app: Hono): void {
 		});
 	});
 
-	app.use("/api/dream/promote", pipelineAdminGuard);
 	app.use("/api/dream/*", async (c, next) => {
 		return requirePermission("admin", authConfig)(c, next);
 	});
@@ -577,35 +575,6 @@ export function registerPipelineRoutes(app: Hono): void {
 			},
 			passes,
 		});
-	});
-
-	app.post("/api/dream/promote", async (c) => {
-		const raw: unknown = await c.req.json().catch(() => null);
-		if (raw === null) return c.json({ error: "Malformed JSON body" }, 400);
-		const body = asRecord(raw);
-		const agentId = resolveDreamRequestAgentId(c, body);
-		const from = readString(body, "from");
-		if (!from) return c.json({ error: "from is required" }, 400);
-		const useProvider = readBoolean(body, "use_provider") ?? false;
-		try {
-			return c.json(
-				await promoteDreamingEvidence(getDbAccessor(), {
-					agentId,
-					from,
-					apply: readBoolean(body, "apply") ?? false,
-					actor: readString(body, "actor") ?? c.req.header("x-signet-actor") ?? "dreaming-promote",
-					limit: readNumber(body, "limit"),
-					useProvider,
-					provider: useProvider ? getInferenceProviderOrNull("memoryExtraction") : null,
-					providerTimeoutMs: readNumber(body, "provider_timeout_ms"),
-					providerMaxTokens: readNumber(body, "provider_max_tokens"),
-				}),
-			);
-		} catch (err) {
-			if (err instanceof DreamPromotionError) return c.json({ error: err.message }, err.status);
-			const message = err instanceof Error ? err.message : String(err);
-			return c.json({ error: message }, 500);
-		}
 	});
 
 	app.post("/api/dream/trigger", async (c) => {

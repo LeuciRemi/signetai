@@ -29,8 +29,10 @@ import {
 	runSummaryCommandProvider,
 	scoreContinuity,
 	shouldRunSignificanceGateForJob,
+	shouldWriteSummaryFacts,
 	startSummaryRecovery,
 	startSummaryWorker,
+	usesLegacyCommandExtraction,
 } from "./summary-worker";
 
 describe("canProcessSummaryJobs", () => {
@@ -46,6 +48,33 @@ describe("canProcessSummaryJobs", () => {
 	it("does not let command extraction bypass a pipeline pause", () => {
 		expect(canProcessSummaryJobs(true, false, true)).toBe(false);
 		expect(canProcessSummaryJobs(true, true, true)).toBe(false);
+	});
+});
+
+describe("shouldWriteSummaryFacts", () => {
+	it("keeps legacy fact extraction off during the Dreaming cutover", () => {
+		expect(shouldWriteSummaryFacts(false, true, true)).toBe(false);
+		expect(shouldWriteSummaryFacts(false, false, true)).toBe(true);
+		expect(shouldWriteSummaryFacts(true, false, true)).toBe(false);
+		expect(shouldWriteSummaryFacts(false, false, false)).toBe(false);
+	});
+});
+
+describe("usesLegacyCommandExtraction", () => {
+	it("does not run command extraction during the Dreaming cutover", () => {
+		const config = loadMemoryConfig(
+			makeAgentsDir(`memory:
+  pipelineV2:
+    enabled: true
+    extraction:
+      provider: command
+      command:
+        bin: node
+  dreaming:
+    enabled: true
+`),
+		);
+		expect(usesLegacyCommandExtraction(config)).toBe(false);
 	});
 });
 

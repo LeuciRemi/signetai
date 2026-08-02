@@ -146,7 +146,6 @@ POST /api/ontology/proposals/repair/duplicates
 POST /api/ontology/proposals/:id/apply
 POST /api/ontology/proposals/:id/reject
 POST /api/ontology/operations/batch
-POST /api/dream/promote
 ```
 
 Read routes require recall permission. Mutation routes require modify
@@ -157,17 +156,6 @@ scope when absent.
 entities for duplicate `canonical_name` values, picks the strongest existing
 entity as the merge target, and returns candidate `merge_entities` operations.
 It writes pending proposals only when `write_proposals` is true.
-
-`/api/dream/promote` is a direct applied maintenance path for the dreaming
-skill. It reads memories, memory artifacts, and transcripts as evidence and
-emits `set_claim_value` operations. The default non-provider path only
-mechanically promotes natural-language statements from confidence-bearing memory
-rows; artifacts and transcripts can provide structured operation JSON for
-preview, but raw source JSON cannot self-attest confidence for direct apply.
-Plain prose in artifacts or transcripts requires provider extraction or the
-proposal review path. The default mode is dry-run. When `apply` is true, the
-route uses the same audited operation handlers and stores applied lineage, but it
-does not create pending proposal work items.
 
 ## CLI contract
 
@@ -194,8 +182,6 @@ signet ontology repair --duplicates --dry-run
 signet ontology repair --duplicates --write-proposals
 signet ontology apply <id>
 signet ontology reject <id> --reason "weak evidence"
-signet dream promote --from all
-signet dream promote --from all --apply
 ```
 
 The CLI is a thin wrapper over the daemon API. It should not apply ontology

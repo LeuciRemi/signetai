@@ -36,11 +36,7 @@ import { upsertSessionTranscript } from "../session-transcripts";
 import { upsertThreadHead } from "../thread-heads";
 import { isDurableBoundary, normalizeBoundaryReason } from "./boundary-reason";
 import { enqueueExtractionJobInTx } from "./extraction-queue";
-import {
-	RateLimitExceededError,
-	SemaphoreTimeoutError,
-	awaitSubprocessWithDeadline,
-} from "./provider";
+import { RateLimitExceededError, SemaphoreTimeoutError, awaitSubprocessWithDeadline } from "./provider";
 import { type SignificanceConfig, assessSignificance } from "./significance-gate";
 import { countTokens } from "./tokenizer";
 
@@ -656,6 +652,18 @@ function markSummaryArtifactFailed(job: SummaryJobRow, errorMessage: string): vo
 	updateSummaryArtifactStatus(job, "failed", errorMessage);
 }
 
+export function shouldWriteSummaryFacts(commandMode: boolean, dreamingEnabled: boolean, durable: boolean): boolean {
+	return !commandMode && !dreamingEnabled && durable;
+}
+
+export function usesLegacyCommandExtraction(memoryCfg: ResolvedMemoryConfig): boolean {
+	return (
+		memoryCfg.pipelineV2.enabled &&
+		!memoryCfg.dreaming.enabled &&
+		memoryCfg.pipelineV2.extraction.provider === "command"
+	);
+}
+
 async function processJob(
 	accessor: DbAccessor,
 	provider: LlmProvider | null,
@@ -663,7 +671,7 @@ async function processJob(
 	memoryCfg: ResolvedMemoryConfig,
 	signal?: AbortSignal,
 ): Promise<void> {
-	const commandMode = memoryCfg.pipelineV2.enabled && memoryCfg.pipelineV2.extraction.provider === "command";
+	const commandMode = usesLegacyCommandExtraction(memoryCfg);
 	const commandStageStatus: CommandStageStatus = commandMode ? getCommandStageStatus(accessor, job.id) : "none";
 
 	if (
@@ -735,6 +743,7 @@ async function processJob(
 	// duplicate facts from overlapping transcript ranges.
 	const boundaryReason = normalizeBoundaryReason(job.boundary_reason);
 	const durable = isDurableBoundary(boundaryReason);
+	const writeFacts = shouldWriteSummaryFacts(commandMode, memoryCfg.dreaming.enabled, durable);
 
 	if (
 		!commandMode &&
@@ -756,7 +765,12 @@ async function processJob(
 			project: job.project,
 		});
 		markSummaryArtifactSkipped(job);
-	} else if (!durable) {
+	} else if (memoryCfg.dreaming.enabled) {
+		logger.info("summary-worker", "Dreaming cutover: skipping legacy summary-fact extraction", {
+			sessionKey: job.session_key,
+			project: job.project,
+		});
+	} else if (!writeFacts) {
 		// Non-durable boundary (compaction/checkpoint): skip durable fact
 		// extraction to prevent duplicate facts from overlapping ranges.
 		// The LLM summary was still computed for DAG continuity above.
@@ -1634,7 +1648,7 @@ export function startSummaryWorker(accessor: DbAccessor, options: SummaryWorkerO
 			const isWorkloadAvailable = async (): Promise<boolean> => {
 				const latest = loadMemoryConfig(AGENTS_DIR);
 				return canProcessSummaryJobs(
-					latest.pipelineV2.enabled && latest.pipelineV2.extraction.provider === "command",
+					usesLegacyCommandExtraction(latest),
 					await isSynthesisAvailable(),
 					latest.pipelineV2.paused,
 				);
@@ -1650,7 +1664,7 @@ export function startSummaryWorker(accessor: DbAccessor, options: SummaryWorkerO
 			leasedJob = job;
 			activeAbort = new AbortController();
 			const memoryCfg = loadMemoryConfig(AGENTS_DIR);
-			const commandMode = memoryCfg.pipelineV2.enabled && memoryCfg.pipelineV2.extraction.provider === "command";
+			const commandMode = usesLegacyCommandExtraction(memoryCfg);
 			let synthesisAvailable = false;
 			try {
 				synthesisAvailable = await isSynthesisAvailable();
@@ -1698,10 +1712,7 @@ export function startSummaryWorker(accessor: DbAccessor, options: SummaryWorkerO
 		} catch (e) {
 			const terminal = isTerminalSummaryJobError(e instanceof Error ? e : String(e));
 			const errorMessage = e instanceof Error ? e.message : String(e);
-			if (
-				leasedJob &&
-				(stopped && /aborted|cancelled|canceled/i.test(errorMessage))
-			) {
+			if (leasedJob && stopped && /aborted|cancelled|canceled/i.test(errorMessage)) {
 				restoreUnprocessedSummaryLease(accessor, leasedJob);
 				return;
 			}

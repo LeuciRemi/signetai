@@ -1266,10 +1266,15 @@ function syncAgentRoster(agentsDir: string): void {
 
 async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?: TelemetryCollector): Promise<void> {
 	const pipelinePaused = memoryCfg.pipelineV2.paused;
+	const dreamingOwnsSemanticWrites = memoryCfg.dreaming.enabled;
+	const legacyPipelineEnabled = memoryCfg.pipelineV2.enabled && !dreamingOwnsSemanticWrites;
+	if (memoryCfg.pipelineV2.enabled && dreamingOwnsSemanticWrites) {
+		logger.info("dreaming", "Dreaming cutover owns semantic writes; legacy extraction workers are not started");
+	}
 	const activeEmbeddingCfg = getDbAccessor().withReadDb((db) => resolveActiveEmbeddingConfig(db, memoryCfg.embedding));
 	configureLlmConcurrency(memoryCfg.pipelineV2.worker.maxLlmConcurrency);
 	clearStructuralBackfillTimer();
-	if (shouldWarnGraphExtractionWritesDisabled(memoryCfg)) {
+	if (!dreamingOwnsSemanticWrites && shouldWarnGraphExtractionWritesDisabled(memoryCfg)) {
 		logger.warn("pipeline", "Graph extraction writes are disabled while graph reads are enabled", {
 			graphEnabled: memoryCfg.pipelineV2.graph.enabled,
 			extractionWritesEnabled: memoryCfg.pipelineV2.graph.extractionWritesEnabled,
@@ -1315,7 +1320,7 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 	const statusValue = routerStatus.ok ? routerStatus.value : null;
 	const explicitInference = statusValue?.source === "explicit";
 	const commandExtractionConfigured = memoryCfg.pipelineV2.extraction.provider === "command";
-	const commandExtractionMode = memoryCfg.pipelineV2.enabled && commandExtractionConfigured;
+	const commandExtractionMode = legacyPipelineEnabled && commandExtractionConfigured;
 	const extractionWorkloadConfigured = commandExtractionConfigured || (await router.hasWorkload("memory_extraction"));
 	const synthesisWorkloadConfigured = await router.hasWorkload("session_synthesis");
 	const extractionDecision =
@@ -1326,7 +1331,7 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 		!pipelinePaused && synthesisWorkloadConfigured
 			? await router.explain({ agentId: defaultAgentId, operation: "session_synthesis" })
 			: null;
-	const extractionAvailable = commandExtractionConfigured || Boolean(extractionDecision?.ok);
+	const extractionAvailable = legacyPipelineEnabled && (commandExtractionConfigured || Boolean(extractionDecision?.ok));
 	const synthesisAvailable = Boolean(synthesisDecision?.ok);
 	const extractionBinding = statusValue?.workloadBindings.memoryExtraction;
 	const extractionSelectedRef = extractionDecision?.ok ? extractionDecision.value.targetRef : undefined;
@@ -1337,7 +1342,7 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 		extractionSelectedRef && extractionBinding?.includes("/") && extractionSelectedRef !== extractionBinding,
 	);
 	const extractionDegraded = extractionFallbackApplied || extractionSelectedRuntime?.health === "degraded";
-	const extractionStatus = !memoryCfg.pipelineV2.enabled
+	const extractionStatus = !legacyPipelineEnabled
 		? "disabled"
 		: pipelinePaused
 			? "paused"
@@ -1389,8 +1394,10 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 		status: extractionStatus,
 		degraded: extractionDegraded,
 		fallbackApplied: extractionFallbackApplied,
-		reason: !memoryCfg.pipelineV2.enabled
-			? "Pipeline disabled"
+		reason: !legacyPipelineEnabled
+			? dreamingOwnsSemanticWrites
+				? "Dreaming cutover owns semantic writes"
+				: "Pipeline disabled"
 			: pipelinePaused
 				? "Pipeline paused"
 				: extractionStatus === "disabled"
@@ -1433,7 +1440,7 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 	// without synthesis; all other queued work requires an effective route.
 	const isSummarySynthesisAvailable = async (): Promise<boolean> =>
 		(await router.explain({ agentId: defaultAgentId, operation: "session_synthesis" }, true)).ok;
-	const hasSummaryConsumers = memoryCfg.pipelineV2.enabled || memoryCfg.dreaming.enabled;
+	const hasSummaryConsumers = legacyPipelineEnabled || dreamingOwnsSemanticWrites;
 	const summarySynthesisAvailable = hasSummaryConsumers ? await isSummarySynthesisAvailable() : false;
 	if (hasSummaryConsumers && !pipelinePaused && (commandExtractionMode || summarySynthesisAvailable)) {
 		ensureSummaryWorker(getDbAccessor(), {
@@ -1444,16 +1451,17 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 			workerOptions: { isSynthesisAvailable: isSummarySynthesisAvailable },
 			shouldStartWorker: async () => {
 				const liveCfg = loadMemoryConfig(AGENTS_DIR);
-				if ((!liveCfg.pipelineV2.enabled && !liveCfg.dreaming.enabled) || liveCfg.pipelineV2.paused) return false;
+				const liveLegacyPipelineEnabled = liveCfg.pipelineV2.enabled && !liveCfg.dreaming.enabled;
+				if ((!liveLegacyPipelineEnabled && !liveCfg.dreaming.enabled) || liveCfg.pipelineV2.paused) return false;
 				return (
-					(liveCfg.pipelineV2.enabled && liveCfg.pipelineV2.extraction.provider === "command") ||
+					(liveLegacyPipelineEnabled && liveCfg.pipelineV2.extraction.provider === "command") ||
 					(await isSummarySynthesisAvailable())
 				);
 			},
 		});
 	}
 
-	if (memoryCfg.pipelineV2.enabled && !pipelinePaused && extractionAvailable) {
+	if (legacyPipelineEnabled && !pipelinePaused && extractionAvailable) {
 		const workerInit: WorkerInit | undefined = memoryCfg.pipelineV2.worker.threadedExtraction
 			? {
 					dbPath: MEMORY_DB,
@@ -1550,7 +1558,12 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 		}
 	}
 
-	if (memoryCfg.pipelineV2.graph.enabled && memoryCfg.pipelineV2.structural.enabled && !pipelinePaused) {
+	if (
+		legacyPipelineEnabled &&
+		memoryCfg.pipelineV2.graph.enabled &&
+		memoryCfg.pipelineV2.structural.enabled &&
+		!pipelinePaused
+	) {
 		const backfillCtx: RepairContext = {
 			reason: "post-upgrade structural backfill",
 			actor: "daemon",

@@ -219,6 +219,28 @@ describe("dreaming", () => {
 			expect(passes[0]?.status).toBe("completed");
 		});
 
+		it("keeps source-native topology out of semantic Dreaming context", async () => {
+			seedEntity(db, "semantic", "Semantic Project", "project");
+			seedEntity(db, "source-document", "Source Navigation Document", "source_document");
+			seedAspect(db, "source-aspect", "source-document", "Source Topology");
+			seedAttribute(db, "source-attribute", "source-aspect", "This belongs only to source-native navigation.");
+			let prompt = "";
+			await runDreamingPass(
+				accessor,
+				async (input) => {
+					prompt = input;
+					return JSON.stringify({ operations: [], summary: "Reviewed semantic graph only" });
+				},
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"compact",
+			);
+			expect(prompt).toContain("Semantic Project");
+			expect(prompt).not.toContain("Source Navigation Document");
+			expect(prompt).not.toContain("This belongs only to source-native navigation.");
+		});
+
 		it("reasons over artifacts, transcripts, and temporal summaries as episodic evidence", async () => {
 			seedArtifact(db, "The source artifact records the roadmap decision.");
 			seedTranscript(db, "The live transcript records the implementation discussion.");
