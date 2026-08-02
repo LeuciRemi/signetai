@@ -619,6 +619,10 @@ describe("dreaming", () => {
 					);
 					expect(prompt).toContain('"payload": { "name": "...", "entity_type": "project" }');
 					expect(prompt).not.toContain('"create_entity": { "name"');
+					expect(prompt).toContain(
+						'create_link: { "source_entity": "...", "target_entity": "...", "link_type": "depends_on" }',
+					);
+					expect(prompt).not.toContain("archive_claim_value|create_link|update_link|archive_link");
 					expect(prompt).toContain('"evidence"');
 					expect(prompt).toContain("<dreaming_prompt>");
 					expect(prompt).not.toContain("Soul should not be loaded");
@@ -1113,7 +1117,12 @@ describe("dreaming", () => {
 				async () =>
 					JSON.stringify({
 						operations: [
-							{ operation: "invent_operation", payload: {}, reason: "Not supported", evidence: [] },
+							{
+								operation: "archive_link",
+								payload: { id: "not-present-in-the-graph-snapshot" },
+								reason: "Dreaming must not emit ID-dependent operations without an ID in its graph context.",
+								evidence: [{ source_kind: "summary", source_id: "invalid-operation", quote: evidence }],
+							},
 							{
 								operation: "create_entity",
 								payload: { name: "Atlas", entity_type: "project" },
