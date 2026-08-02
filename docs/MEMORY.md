@@ -49,29 +49,12 @@ after every `remember` call when `pipelineV2.enabled = true` in
 
 ### Extraction
 
-The extraction stage (`platform/daemon/src/pipeline/extraction.ts`)
-sends the raw memory content to an LLM (default: `qwen3:4b` via
-Ollama) with a structured prompt. The model returns a JSON object with
-two arrays: `facts` and `entities`.
-
-Each fact has a `content` string (10–2000 chars), a `type` (see
-Memory Types below), and a `confidence` score from 0 to 1. The
-extractor caps output at 20 facts and 50 entities. Input longer than
-12,000 characters is truncated with a `[truncated]` marker.
-
-The LLM output is validated strictly. Missing fields, invalid types,
-or unparseable JSON produce warnings but do not fail the job — the
-stage returns whatever valid facts it could extract. Chain-of-thought
-blocks (`<think>...</think>`) are stripped before parsing, which
-handles models like qwen3 that emit reasoning preambles.
-
-```
-Extracted fact shape:
-  { content: string, type: MemoryType, confidence: number }
-
-Extracted entity shape:
-  { source: string, relationship: string, target: string, confidence: number }
-```
+Direct LLM fact/entity extraction from raw memory content was retired under
+the Dreaming cutover (#946). `platform/daemon/src/pipeline/extraction.ts`
+now holds only shared JSON recovery and parsing helpers consumed across the
+pipeline (reranker, skill enrichment, contradiction, dreaming) and by the
+ontology modules. Semantic graph authorship flows through the audited
+Dreaming apply path, not a per-memory extraction stage.
 
 ### Decision Engine
 

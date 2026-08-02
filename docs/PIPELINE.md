@@ -1057,29 +1057,6 @@ artifact and backfills the session manifest. Mid-session
 nodes into `session_summaries`.
 
 
-Decision Auto-Protection
----
-
-The shared decision detector (`isDecisionContent`) runs a 14-pattern regex
-battery on memory content. Structured graph writes use this detector when a
-caller does not specify a stronger kind, so decision language can become a
-`kind='constraint'` without requiring a background LLM.
-
-The patterns cover common decision-indicating phrases:
-
-- "chose/chosen to use X over Y", "decided to/on/against"
-- "switched from/to", "migrated from/to/away"
-- "picked X over Y", "went with", "sticking with"
-- "committed to", "settled on", "will use/go with/stick with"
-- "prefers X over/instead/rather", "adopted"
-- "architecture decision", "design decision"
-
-The detection function returns true if any pattern matches. This is a
-write-time classification, no LLM call is involved. The regex battery is fast
-and deterministic, consistent with the pipeline rule that default background
-work should be mechanical and predictable.
-
-
 Configuration Reference
 ---
 

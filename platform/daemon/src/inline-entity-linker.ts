@@ -12,32 +12,6 @@ import type { ReadDb, WriteDb } from "./db-accessor";
 import { countChanges } from "./db-helpers";
 
 // ---------------------------------------------------------------------------
-// Decision pattern detection
-// ---------------------------------------------------------------------------
-
-const DECISION_PATTERNS: readonly RegExp[] = [
-	/\b(?:chose|chosen)\s+(?:to\s+)?(?:use\s+)?(?:over|instead)/i,
-	/\bdecided\s+(?:to\s+|on\s+|against\s+)/i,
-	/\bswitched\s+(?:from|to)\b/i,
-	/\bmigrated?\s+(?:from|to|away)\b/i,
-	/\bpicked\s+.+\s+over\b/i,
-	/\bwent\s+with\b/i,
-	/\bsticking\s+with\b/i,
-	/\bcommitted\s+to\b/i,
-	/\bsettled\s+on\b/i,
-	/\bwill\s+(?:use|go\s+with|stick\s+with)\b/i,
-	/\bprefer(?:s|red)?\s+.+\s+(?:over|instead|rather)\b/i,
-	/\badopted\b/i,
-	/\barchitecture\s+decision\b/i,
-	/\bdesign\s+decision\b/i,
-];
-
-/** Check whether content text contains decision-indicating language. */
-export function isDecisionContent(content: string): boolean {
-	return DECISION_PATTERNS.some((re) => re.test(content));
-}
-
-// ---------------------------------------------------------------------------
 // Name extraction
 // ---------------------------------------------------------------------------
 
