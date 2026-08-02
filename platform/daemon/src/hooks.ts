@@ -5,7 +5,7 @@
  * - onSessionStart: provide context/memories to inject
  * - onPreCompaction: provide summary instructions, receive summary
  * - onUserPromptSubmit: inject relevant memories per prompt
- * - onSessionEnd: extract memories from transcript via LLM
+ * - onSessionEnd: retain transcript and queue summary lineage for Dreaming
  * - onRemember: explicit memory save
  * - onRecall: explicit memory query
  */
@@ -1848,7 +1848,7 @@ export async function handleSessionEnd(req: SessionEndRequest): Promise<SessionE
 	// Safety cap against degenerate inputs (corrupt files, etc).
 	// The summary worker handles long transcripts via chunked
 	// map-reduce summarization, so this is a last-resort guard for
-	// extraction only — not for transcript retention.
+	// summary input only — not for transcript retention.
 	const MAX_TRANSCRIPT_CHARS = 100_000;
 	let summaryTranscript = retainedTranscript;
 	let truncated = false;
@@ -1867,8 +1867,8 @@ export async function handleSessionEnd(req: SessionEndRequest): Promise<SessionE
 	let jobId: string | undefined;
 
 	// Queue for async processing by the summary worker instead of
-	// blocking on LLM inference. The worker produces both a dated
-	// markdown summary and atomic fact rows.
+	// blocking on LLM inference. The worker produces immutable summary lineage;
+	// Dreaming later derives any semantic state from that evidence.
 	const noiseSession = isNoiseSession({
 		project: req.cwd ?? null,
 		sessionKey: sessionKey ?? null,
@@ -1877,7 +1877,7 @@ export async function handleSessionEnd(req: SessionEndRequest): Promise<SessionE
 	});
 
 	if (!pipelineEnabled) {
-		logger.info("hooks", "Session end extraction skipped — pipeline disabled");
+		logger.info("hooks", "Session end summary skipped — pipeline disabled");
 	} else if (noiseSession) {
 		logger.debug("hooks", "Session end summary skipped for noise session", {
 			harness: req.harness,
