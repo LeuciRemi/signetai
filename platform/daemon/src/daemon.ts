@@ -75,7 +75,6 @@ import {
 } from "./pipeline";
 import { type DreamingWorkerHandle, startDreamingWorker } from "./pipeline/dreaming-worker";
 import { deadLetterPendingExtractionJobs } from "./pipeline/extraction-fallback";
-import type { WorkerInit } from "./pipeline/extraction-thread-protocol";
 import { invalidateTraversalCache } from "./pipeline/graph-traversal";
 import { stopModelRegistry } from "./pipeline/model-registry";
 import { configureLlmConcurrency } from "./pipeline/provider";
@@ -1478,32 +1477,7 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 		});
 	}
 
-	if (legacyPipelineEnabled && !pipelinePaused && extractionAvailable) {
-		const workerInit: WorkerInit | undefined = memoryCfg.pipelineV2.worker.threadedExtraction
-			? {
-					dbPath: MEMORY_DB,
-					vecExtensionPath: getVectorRuntimeStatus().extensionPath ?? "",
-					agentsDir: AGENTS_DIR,
-					agentId: defaultAgentId,
-					embeddingConfig: {
-						provider: activeEmbeddingCfg.provider,
-						model: activeEmbeddingCfg.model,
-						dimensions: activeEmbeddingCfg.dimensions ?? 768,
-						base_url: activeEmbeddingCfg.base_url,
-						api_key: activeEmbeddingCfg.api_key,
-					},
-					pipelineConfig: memoryCfg.pipelineV2 as unknown as Record<string, unknown>,
-					searchConfig: memoryCfg.search as unknown as Record<string, unknown>,
-					// Resolve native asset paths on the main thread, where
-					// globalThis.__SIGNET_NATIVE_RUNTIME_ASSETS__ is registered.
-					// The extraction worker thread has an isolated globalThis
-					// and cannot resolve these itself (#922). Null in source mode.
-					nativeEmbeddingWorkerPath: resolveEmbeddedWorkerPath("embedding-worker"),
-					nativeWasmDir: materializeEmbeddedWasmAssets(),
-					nativeTransformersRuntimePath: resolveEmbeddedWorkerPath("embedding-worker-transformers-runtime"),
-				}
-			: undefined;
-
+	if (memoryCfg.pipelineV2.enabled && !pipelinePaused) {
 		startPipeline(
 			getDbAccessor(),
 			memoryCfg.pipelineV2,
@@ -1514,14 +1488,11 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 			providerTracker,
 			analyticsCollector,
 			telemetry,
-			workerInit,
 		);
 
 		// Configure the main thread's own native embedding handle with the
-		// same pre-resolved asset paths. This is not strictly necessary on
-		// the main thread (it has the asset globals), but it ensures
-		// consistency and makes the main thread path identical to the
-		// extraction-thread path (#922).
+		// pre-resolved asset paths. This ensures consistency with any
+		// background embedding consumers (tracker, index migration).
 		const { configureNativeEmbeddingAssets } = await import("./native-embedding");
 		configureNativeEmbeddingAssets({
 			embeddingWorkerPath: resolveEmbeddedWorkerPath("embedding-worker"),

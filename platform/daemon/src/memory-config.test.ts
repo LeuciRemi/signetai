@@ -1197,7 +1197,6 @@ describe("loadPipelineConfig", () => {
 		const result = loadPipelineConfig({
 			memory: {
 				pipelineV2: {
-					workerPollMs: 0,
 					workerMaxRetries: -5,
 					extractionTimeout: 999999,
 					leaseTimeoutMs: 1,
@@ -1206,8 +1205,6 @@ describe("loadPipelineConfig", () => {
 			},
 		});
 
-		// workerPollMs: min 100
-		expect(result.worker.pollMs).toBe(100);
 		// workerMaxRetries: min 1
 		expect(result.worker.maxRetries).toBe(1);
 		// extractionTimeout: max 300000
@@ -1222,7 +1219,6 @@ describe("loadPipelineConfig", () => {
 		const result = loadPipelineConfig({
 			memory: {
 				pipelineV2: {
-					workerPollMs: "fast",
 					workerMaxRetries: null,
 					extractionTimeout: undefined,
 					leaseTimeoutMs: true,
@@ -1231,7 +1227,6 @@ describe("loadPipelineConfig", () => {
 			},
 		});
 
-		expect(result.worker.pollMs).toBe(DEFAULT_PIPELINE_V2.worker.pollMs);
 		expect(result.worker.maxRetries).toBe(DEFAULT_PIPELINE_V2.worker.maxRetries);
 		expect(result.extraction.timeout).toBe(DEFAULT_PIPELINE_V2.extraction.timeout);
 		expect(result.worker.leaseTimeoutMs).toBe(DEFAULT_PIPELINE_V2.worker.leaseTimeoutMs);
@@ -1242,7 +1237,6 @@ describe("loadPipelineConfig", () => {
 		const result = loadPipelineConfig({
 			memory: {
 				pipelineV2: {
-					workerPollMs: 5000,
 					workerMaxRetries: 5,
 					extractionTimeout: 60000,
 					leaseTimeoutMs: 120000,
@@ -1251,7 +1245,6 @@ describe("loadPipelineConfig", () => {
 			},
 		});
 
-		expect(result.worker.pollMs).toBe(5000);
 		expect(result.worker.maxRetries).toBe(5);
 		expect(result.extraction.timeout).toBe(60000);
 		expect(result.worker.leaseTimeoutMs).toBe(120000);
@@ -1407,61 +1400,39 @@ describe("loadPipelineConfig", () => {
 		expect(result.repair.requeueHourlyBudget).toBe(100);
 	});
 
-	it("loads worker load-shedding config fields", () => {
+	it("retired extraction-worker config fields are absent from the resolved config (#946)", () => {
 		const result = loadPipelineConfig({
 			memory: {
 				pipelineV2: {
 					worker: {
+						pollMs: 5000,
 						maxLoadPerCpu: 0.6,
 						overloadBackoffMs: 45000,
+						threadedExtraction: false,
+					},
+					extraction: {
+						escalation: {
+							maxNewEntitiesPerChunk: 7,
+							maxNewAttributesPerEntity: 9,
+							level2MaxEntities: 3,
+						},
 					},
 				},
 			},
 		});
 
-		expect(result.worker.maxLoadPerCpu).toBe(0.6);
-		expect(result.worker.overloadBackoffMs).toBe(45000);
-	});
-
-	it("loads worker load-shedding config fields from flat keys", () => {
-		const result = loadPipelineConfig({
-			memory: {
-				pipelineV2: {
-					workerMaxLoadPerCpu: 0.55,
-					workerOverloadBackoffMs: 42000,
-				},
-			},
-		});
-
-		expect(result.worker.maxLoadPerCpu).toBe(0.55);
-		expect(result.worker.overloadBackoffMs).toBe(42000);
-	});
-
-	it("prefers nested worker load-shedding config over flat keys", () => {
-		const result = loadPipelineConfig({
-			memory: {
-				pipelineV2: {
-					worker: {
-						maxLoadPerCpu: 0.7,
-						overloadBackoffMs: 38000,
-					},
-					workerMaxLoadPerCpu: 0.5,
-					workerOverloadBackoffMs: 60000,
-				},
-			},
-		});
-
-		expect(result.worker.maxLoadPerCpu).toBe(0.7);
-		expect(result.worker.overloadBackoffMs).toBe(38000);
-	});
-
-	it("uses worker load-shedding defaults when absent", () => {
-		const result = loadPipelineConfig({
-			memory: { pipelineV2: { enabled: true } },
-		});
-
-		expect(result.worker.maxLoadPerCpu).toBe(DEFAULT_PIPELINE_V2.worker.maxLoadPerCpu);
-		expect(result.worker.overloadBackoffMs).toBe(DEFAULT_PIPELINE_V2.worker.overloadBackoffMs);
+		// The standalone extraction worker was retired under the Dreaming cutover;
+		// its poll/load/thread/escalation knobs must not survive into the resolved
+		// config as inert compatibility settings.
+		expect(result.worker).not.toHaveProperty("pollMs");
+		expect(result.worker).not.toHaveProperty("maxLoadPerCpu");
+		expect(result.worker).not.toHaveProperty("overloadBackoffMs");
+		expect(result.worker).not.toHaveProperty("threadedExtraction");
+		expect(result.extraction).not.toHaveProperty("escalation");
+		// Retained worker knobs stay present.
+		expect(result.worker.maxRetries).toBe(DEFAULT_PIPELINE_V2.worker.maxRetries);
+		expect(result.worker.leaseTimeoutMs).toBe(DEFAULT_PIPELINE_V2.worker.leaseTimeoutMs);
+		expect(result.worker.maxLlmConcurrency).toBe(DEFAULT_PIPELINE_V2.worker.maxLlmConcurrency);
 	});
 
 	it("loads canonical worker maxLlmConcurrency with bounded defaults and env override", () => {
@@ -1488,15 +1459,9 @@ describe("loadPipelineConfig", () => {
 		}
 	});
 
-	it("defaults threadedExtraction to true when absent", () => {
-		const result = loadPipelineConfig({
-			memory: { pipelineV2: { enabled: true } },
-		});
-
-		expect(result.worker.threadedExtraction).toBe(true);
-	});
-
-	it("respects explicit threadedExtraction: false opt-out", () => {
+	// #946: threadedExtraction was a standalone-extraction-worker knob and is
+	// retired along with the worker. The parser must ignore legacy YAML values.
+	it("ignores retired threadedExtraction config", () => {
 		const result = loadPipelineConfig({
 			memory: {
 				pipelineV2: {
@@ -1506,7 +1471,7 @@ describe("loadPipelineConfig", () => {
 			},
 		});
 
-		expect(result.worker.threadedExtraction).toBe(false);
+		expect(result.worker).not.toHaveProperty("threadedExtraction");
 	});
 
 	it("uses defaults for maintenance config when absent", () => {

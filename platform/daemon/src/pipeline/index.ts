@@ -1,5 +1,11 @@
 /**
  * Pipeline barrel — startPipeline/stopPipeline orchestration.
+ *
+ * The legacy extraction/decision/escalation worker runtime and its threaded
+ * variant were retired under the Dreaming cutover (#946). Dreaming owns
+ * semantic writes; this barrel still starts the non-extraction workers
+ * (document ingest, retention, maintenance, synthesis, dependency
+ * synthesis, prospective/hints) and exposes their handles.
  */
 
 import type { AnalyticsCollector } from "../analytics";
@@ -10,13 +16,9 @@ import { getLlmProvider } from "../llm";
 import { logger } from "../logger";
 import type { EmbeddingConfig, MemorySearchConfig, PipelineV2Config } from "../memory-config";
 import type { TelemetryCollector } from "../telemetry";
-import type { DecisionConfig } from "./decision";
 import { type DependencySynthesisHandle, startDependencySynthesisWorker } from "./dependency-synthesis";
 import { type DocumentWorkerHandle, startDocumentWorker } from "./document-worker";
 import type { DreamingWorkerHandle } from "./dreaming-worker";
-import { startExtractionThread } from "./extraction-thread-handle";
-import type { ExtractionThreadOpts } from "./extraction-thread-handle";
-import type { WorkerInit } from "./extraction-thread-protocol";
 import { type MaintenanceHandle, startMaintenanceWorker } from "./maintenance-worker";
 import { type HintsWorkerHandle, startHintsWorker } from "./prospective-index";
 import { configureLlmConcurrency, getLlmConcurrencyStatus } from "./provider";
@@ -33,16 +35,13 @@ import {
 	startSummaryWorker,
 } from "./summary-worker";
 import { type SynthesisWorkerHandle, startSynthesisWorker } from "./synthesis-worker";
-import { type WorkerHandle, type WorkerProgressStats, type WorkerStats, startWorker } from "./worker";
 
 export { enqueueExtractionJob } from "./extraction-queue";
-export type { WorkerStats } from "./worker";
 export { enqueueDocumentIngestJob } from "./document-worker";
 export {
 	startRetentionWorker,
 	DEFAULT_RETENTION,
 } from "./retention-worker";
-export type { WorkerHandle } from "./worker";
 export type { DocumentWorkerHandle } from "./document-worker";
 export type { LlmProvider } from "./provider";
 export { getLlmProvider } from "../llm";
@@ -130,7 +129,6 @@ export function ensureSummaryRecovery(
 // Singleton state
 // ---------------------------------------------------------------------------
 
-let workerHandle: WorkerHandle | null = null;
 let retentionHandle: RetentionHandle | null = null;
 let maintenanceHandle: MaintenanceHandle | null = null;
 let documentWorkerHandle: DocumentWorkerHandle | null = null;
@@ -155,11 +153,9 @@ let synthesisWorkerHandle: SynthesisWorkerHandle | null = null;
 let dependencySynthesisHandle: DependencySynthesisHandle | null = null;
 let hintsWorkerHandle: HintsWorkerHandle | null = null;
 let dreamingWorkerHandle: DreamingWorkerHandle | null = null;
-let pendingStartup: Promise<void> | null = null;
 
 type WorkerStatusEntry = {
 	readonly running: boolean;
-	readonly stats?: WorkerStats;
 };
 
 type LlmConcurrencyStatus = ReturnType<typeof getLlmConcurrencyStatus>;
@@ -171,7 +167,6 @@ export type PipelineWorkerStatus = {
 		/** Backward-compatible alias for callers that read provider status from stats. */
 		readonly stats: LlmConcurrencyStatus;
 	};
-	readonly extraction: WorkerStatusEntry;
 	readonly summary: WorkerStatusEntry;
 	readonly document: WorkerStatusEntry;
 	readonly retention: WorkerStatusEntry;
@@ -191,10 +186,6 @@ export function getPipelineWorkerStatus(): PipelineWorkerStatus {
 			concurrency: llmConcurrency,
 			stats: llmConcurrency,
 		},
-		extraction: {
-			running: workerHandle !== null,
-			stats: workerHandle?.stats,
-		},
 		summary: { running: summaryWorkerHandle !== null },
 		document: { running: documentWorkerHandle !== null },
 		retention: { running: retentionHandle !== null },
@@ -204,13 +195,6 @@ export function getPipelineWorkerStatus(): PipelineWorkerStatus {
 		hints: { running: hintsWorkerHandle !== null },
 		dreaming: { running: dreamingWorkerHandle !== null },
 	};
-}
-
-/** Force the extraction worker to repoll immediately. */
-export function nudgeExtractionWorker(): boolean {
-	if (!workerHandle) return false;
-	workerHandle.nudge();
-	return true;
 }
 
 export function ensureRetentionWorker(accessor: DbAccessor, cfg: RetentionConfig = DEFAULT_RETENTION): void {
@@ -231,19 +215,14 @@ export function startPipeline(
 	pipelineCfg: PipelineV2Config,
 	embeddingCfg: EmbeddingConfig,
 	fetchEmbedding: (text: string, cfg: EmbeddingConfig, role?: EmbeddingRole) => Promise<number[] | null>,
-	searchCfg: MemorySearchConfig,
+	_searchCfg: MemorySearchConfig,
 	agentId: string,
 	providerTracker?: ProviderTracker,
-	analytics?: AnalyticsCollector,
-	telemetry?: TelemetryCollector,
-	workerInit?: WorkerInit,
+	_analytics?: AnalyticsCollector,
+	_telemetry?: TelemetryCollector,
 ): void {
-	if (workerHandle) {
+	if (retentionHandle || documentWorkerHandle || synthesisWorkerHandle) {
 		logger.warn("pipeline", "Pipeline already running, skipping start");
-		return;
-	}
-	if (pendingStartup) {
-		logger.warn("pipeline", "Pipeline startup already in progress, skipping start");
 		return;
 	}
 	if (!pipelineCfg.enabled) {
@@ -256,53 +235,7 @@ export function startPipeline(
 	}
 	configureLlmConcurrency(pipelineCfg.worker.maxLlmConcurrency);
 
-	if (pipelineCfg.extraction.provider === "command") {
-		ensureRetentionWorker(accessor, DEFAULT_RETENTION);
-		if (!documentWorkerHandle) {
-			documentWorkerHandle = startDocumentWorker({
-				accessor,
-				embeddingCfg,
-				fetchEmbedding,
-				pipelineCfg,
-			});
-		}
-		if (!synthesisWorkerHandle && pipelineCfg.synthesis.enabled) {
-			synthesisWorkerHandle = startSynthesisWorker(pipelineCfg.synthesis);
-		}
-		logger.info("pipeline", "Pipeline started in command extraction compatibility mode", {
-			mode: "command-extraction",
-		});
-		return;
-	}
-
 	const provider = getLlmProvider();
-
-	const decisionCfg: DecisionConfig = {
-		embedding: embeddingCfg,
-		search: searchCfg,
-		timeoutMs: pipelineCfg.extraction.timeout,
-		fetchEmbedding,
-	};
-
-	if (pipelineCfg.worker.threadedExtraction && workerInit) {
-		pendingStartup = startExtractionThread({ init: workerInit, provider, analytics, telemetry })
-			.then((handle) => {
-				workerHandle = handle;
-				logger.info("pipeline", "Extraction worker thread started");
-			})
-			.catch((err) => {
-				logger.error("pipeline", "Failed to start extraction worker thread, falling back to main thread", err);
-				workerHandle = startWorker(accessor, provider, pipelineCfg, decisionCfg, analytics, telemetry);
-			})
-			.finally(() => {
-				pendingStartup = null;
-			});
-	} else {
-		if (pipelineCfg.worker.threadedExtraction && !workerInit) {
-			logger.warn("pipeline", "threadedExtraction enabled but no WorkerInit provided, falling back to main thread");
-		}
-		workerHandle = startWorker(accessor, provider, pipelineCfg, decisionCfg, analytics, telemetry);
-	}
 
 	// Retention worker also managed here when pipeline is active;
 	// standalone retention is started separately in main() for non-pipeline users.
@@ -313,7 +246,7 @@ export function startPipeline(
 		maintenanceHandle = startMaintenanceWorker(accessor, pipelineCfg, providerTracker, retentionHandle);
 	}
 
-	// Document ingest worker runs alongside the extraction pipeline
+	// Document ingest worker runs alongside the pipeline
 	if (!documentWorkerHandle) {
 		documentWorkerHandle = startDocumentWorker({
 			accessor,
@@ -345,18 +278,9 @@ export function startPipeline(
 			agentId,
 			provider,
 			pipelineCfg,
-			getExtractionStats: () => {
-				const stats: WorkerStats | undefined = workerHandle?.stats;
-				if (!stats) return undefined;
-				const { lastProgressAt, pending } = stats;
-				return {
-					lastProgressAt,
-					pending,
-				} satisfies WorkerProgressStats;
-			},
-			// NOTE: The extraction worker is a singleton — its stats are
-			// global, not per-agent. The stall gate measures overall
-			// extraction health rather than agent-specific progress.
+			// The legacy extraction worker that supplied live stats was retired
+			// under the Dreaming cutover (#946). The stall gate now relies on
+			// durable extraction progress read from the database.
 		});
 	}
 
@@ -377,11 +301,6 @@ export function startPipeline(
 }
 
 export async function stopPipeline(): Promise<void> {
-	// Wait for any pending threaded extraction startup to complete
-	// before checking workerHandle — prevents orphan threads.
-	if (pendingStartup) {
-		await pendingStartup;
-	}
 	if (hintsWorkerHandle) {
 		await hintsWorkerHandle.stop();
 		hintsWorkerHandle = null;
@@ -418,8 +337,5 @@ export async function stopPipeline(): Promise<void> {
 		retentionHandle.stop();
 		retentionHandle = null;
 	}
-	if (!workerHandle) return;
-	await workerHandle.stop();
-	workerHandle = null;
 	logger.info("pipeline", "Pipeline stopped");
 }

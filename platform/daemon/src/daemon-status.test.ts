@@ -64,34 +64,6 @@ describe("daemon status contract", () => {
 		provider.configureLlmConcurrency(2);
 	});
 
-	it("exposes extraction worker load-shedding fields on /api/status", async () => {
-		const res = await app.request("http://localhost/api/status");
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as {
-			pipeline?: {
-				extraction?: {
-					running?: unknown;
-					overloaded?: unknown;
-					loadPerCpu?: unknown;
-					maxLoadPerCpu?: unknown;
-					overloadBackoffMs?: unknown;
-					overloadSince?: unknown;
-					nextTickInMs?: unknown;
-				};
-			};
-		};
-		const extraction = body.pipeline?.extraction;
-		expect(typeof extraction?.running).toBe("boolean");
-		expect(typeof extraction?.overloaded).toBe("boolean");
-		expect(extraction).toHaveProperty("maxLoadPerCpu");
-		expect(extraction).toHaveProperty("overloadBackoffMs");
-		expect(extraction?.maxLoadPerCpu === null || typeof extraction?.maxLoadPerCpu === "number").toBe(true);
-		expect(extraction?.overloadBackoffMs === null || typeof extraction?.overloadBackoffMs === "number").toBe(true);
-		expect(extraction).toHaveProperty("loadPerCpu");
-		expect(extraction).toHaveProperty("overloadSince");
-		expect(extraction).toHaveProperty("nextTickInMs");
-	});
-
 	it("exposes process memory metrics on /api/status", async () => {
 		const res = await app.request("http://localhost/api/status");
 		expect(res.status).toBe(200);
@@ -185,8 +157,6 @@ describe("daemon status contract", () => {
       fallbackProvider: llama-cpp
     synthesis:
       enabled: false
-    worker:
-      threadedExtraction: false
 `,
 			);
 			expect(state.restartPipelineRuntimeRef).toBeDefined();
@@ -534,7 +504,6 @@ describe("structural worker retirement under Dreaming (#946)", () => {
 		expect(workers).not.toHaveProperty("structuralClassify");
 		expect(workers).not.toHaveProperty("structuralDependency");
 		// Preserved workers remain present.
-		expect(workers).toHaveProperty("extraction");
 		expect(workers).toHaveProperty("document");
 		expect(workers).toHaveProperty("retention");
 		expect(workers).toHaveProperty("maintenance");

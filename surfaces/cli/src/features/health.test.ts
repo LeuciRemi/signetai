@@ -410,7 +410,6 @@ describe("status report openclaw runtime", () => {
 						bindHost: "127.0.0.1",
 						networkMode: "local",
 						extraction: null,
-						extractionWorker: null,
 						transcripts: null,
 						probe: {
 							status: "healthy",
@@ -573,7 +572,6 @@ describe("doctor physical memory diagnostics", () => {
 							peakPhysicalFootprint: 7782,
 						},
 						extraction: null,
-						extractionWorker: null,
 						transcripts: null,
 						probe: {
 							status: "healthy",
@@ -629,7 +627,6 @@ describe("getExtractionStatusNotice", () => {
 				reason: "Claude Code CLI not found during extraction startup preflight",
 				since: "2026-03-26T00:00:00.000Z",
 			},
-			extractionWorker: null,
 		});
 
 		expect(notice).toEqual({
@@ -659,7 +656,6 @@ describe("getExtractionStatusNotice", () => {
 				blockedBy: ["missing credential for extraction", "account state missing"],
 				since: "2026-03-26T00:00:00.000Z",
 			},
-			extractionWorker: null,
 		});
 
 		expect(notice?.level).toBe("error");
@@ -669,35 +665,7 @@ describe("getExtractionStatusNotice", () => {
 		);
 	});
 
-	it("returns a warning when extraction worker is load-shedding", () => {
-		const notice = getExtractionStatusNotice({
-			running: true,
-			pid: 1,
-			uptime: 10,
-			version: "0.0.1",
-			host: "127.0.0.1",
-			bindHost: "127.0.0.1",
-			networkMode: "local",
-			extraction: null,
-			extractionWorker: {
-				running: true,
-				overloaded: true,
-				loadPerCpu: 1.82,
-				maxLoadPerCpu: 0.8,
-				overloadBackoffMs: 30000,
-				overloadSince: "2026-03-26T00:00:00.000Z",
-				nextTickInMs: 28000,
-			},
-		});
-
-		expect(notice).toEqual({
-			level: "warn",
-			title: "Pipeline load-shedding",
-			detail: "load/core 1.82 > threshold 0.80 — next tick in 28s",
-		});
-	});
-
-	it("prioritizes blocked extraction over load-shedding warning", () => {
+	it("returns an error when extraction is blocked", () => {
 		const notice = getExtractionStatusNotice({
 			running: true,
 			pid: 1,
@@ -715,19 +683,76 @@ describe("getExtractionStatusNotice", () => {
 				reason: "Claude Code CLI not found during extraction startup preflight; fallbackProvider is none",
 				since: "2026-03-26T00:00:00.000Z",
 			},
-			extractionWorker: {
-				running: true,
-				overloaded: true,
-				loadPerCpu: 1.82,
-				maxLoadPerCpu: 0.8,
-				overloadBackoffMs: 30000,
-				overloadSince: "2026-03-26T00:00:00.000Z",
-				nextTickInMs: 28000,
-			},
 		});
 
 		expect(notice?.level).toBe("error");
 		expect(notice?.title).toBe("Extraction blocked");
+	});
+
+	// Regression (#946): the standalone extraction worker was retired, so the
+	// daemon reports an active route as ready even though workerRunning is false.
+	// This must NOT produce a misleading "Extraction worker stopped" notice.
+	it("does not warn when an active route is ready despite the retired worker", () => {
+		const notice = getExtractionStatusNotice({
+			running: true,
+			pid: 1,
+			uptime: 10,
+			version: "0.0.1",
+			host: "127.0.0.1",
+			bindHost: "127.0.0.1",
+			networkMode: "local",
+			extraction: {
+				configured: "command",
+				resolved: "command",
+				effective: "command",
+				fallbackProvider: "none",
+				status: "active",
+				degraded: false,
+				reason: null,
+				blockedBy: [],
+				since: null,
+				enabled: true,
+				paused: false,
+				workerRunning: false,
+				ready: true,
+				blockedReason: null,
+				hasWorkloadState: true,
+			},
+		});
+
+		expect(notice).toBeNull();
+	});
+
+	it("warns that the pipeline is disabled under the Dreaming cutover", () => {
+		const notice = getExtractionStatusNotice({
+			running: true,
+			pid: 1,
+			uptime: 10,
+			version: "0.0.1",
+			host: "127.0.0.1",
+			bindHost: "127.0.0.1",
+			networkMode: "local",
+			extraction: {
+				configured: "command",
+				resolved: "command",
+				effective: "none",
+				fallbackProvider: "none",
+				status: "disabled",
+				degraded: false,
+				reason: "Dreaming cutover owns semantic writes",
+				blockedBy: [],
+				since: null,
+				enabled: false,
+				paused: false,
+				workerRunning: false,
+				ready: false,
+				blockedReason: null,
+				hasWorkloadState: true,
+			},
+		});
+
+		expect(notice?.level).toBe("warn");
+		expect(notice?.title).toBe("Pipeline disabled");
 	});
 });
 
@@ -755,7 +780,6 @@ describe("showStatus readiness labeling", () => {
 				bindHost: "127.0.0.1",
 				networkMode: "local",
 				extraction: null,
-				extractionWorker: null,
 				transcripts: null,
 				probe,
 				openclaw: null,

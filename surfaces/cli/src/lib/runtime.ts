@@ -78,15 +78,6 @@ interface DaemonInstance {
 		readonly blockedReason: string | null;
 		readonly hasWorkloadState: boolean;
 	} | null;
-	readonly extractionWorker: {
-		readonly running: boolean;
-		readonly overloaded: boolean;
-		readonly loadPerCpu: number | null;
-		readonly maxLoadPerCpu: number | null;
-		readonly overloadBackoffMs: number | null;
-		readonly overloadSince: string | null;
-		readonly nextTickInMs: number | null;
-	} | null;
 	readonly transcripts: {
 		readonly pending: number;
 		readonly failed: number;
@@ -374,17 +365,7 @@ async function getDaemonInstances(): Promise<DaemonInstance[]> {
 								blockedReason?: string | null;
 							};
 						};
-						pipeline?: {
-							extraction?: {
-								running?: boolean;
-								overloaded?: boolean;
-								loadPerCpu?: number | null;
-								maxLoadPerCpu?: number | null;
-								overloadBackoffMs?: number | null;
-								overloadSince?: string | null;
-								nextTickInMs?: number | null;
-							};
-						};
+						pipeline?: Record<string, unknown>;
 						transcripts?: {
 							capture?: {
 								pending?: number;
@@ -394,7 +375,6 @@ async function getDaemonInstances(): Promise<DaemonInstance[]> {
 						};
 					};
 					const extraction = data.providerResolution?.extraction;
-					const extractionWorker = data.pipeline?.extraction;
 					const transcripts = data.transcripts?.capture;
 					const resources = data.resources;
 					const openclawReport = await fetchJsonOrNull<unknown>(baseUrl, "/api/diagnostics/openclaw");
@@ -440,20 +420,6 @@ async function getDaemonInstances(): Promise<DaemonInstance[]> {
 									hasWorkloadState: typeof extraction.ready === "boolean",
 								}
 							: null,
-						extractionWorker: extractionWorker
-							? {
-									running: extractionWorker.running === true,
-									overloaded: extractionWorker.overloaded === true,
-									loadPerCpu: typeof extractionWorker.loadPerCpu === "number" ? extractionWorker.loadPerCpu : null,
-									maxLoadPerCpu:
-										typeof extractionWorker.maxLoadPerCpu === "number" ? extractionWorker.maxLoadPerCpu : null,
-									overloadBackoffMs:
-										typeof extractionWorker.overloadBackoffMs === "number" ? extractionWorker.overloadBackoffMs : null,
-									overloadSince: extractionWorker.overloadSince ?? null,
-									nextTickInMs:
-										typeof extractionWorker.nextTickInMs === "number" ? extractionWorker.nextTickInMs : null,
-								}
-							: null,
 						transcripts: transcripts
 							? {
 									pending: typeof transcripts.pending === "number" ? transcripts.pending : 0,
@@ -479,7 +445,6 @@ async function getDaemonInstances(): Promise<DaemonInstance[]> {
 				networkMode: null,
 				resources: null,
 				extraction: null,
-				extractionWorker: null,
 				transcripts: null,
 				probe: reachableDaemonProbe(
 					baseUrl,
@@ -641,7 +606,6 @@ export async function getDaemonStatus(): Promise<{
 	networkMode: string | null;
 	resources: DaemonResourceUsage | null;
 	extraction: DaemonInstance["extraction"];
-	extractionWorker: DaemonInstance["extractionWorker"];
 	transcripts: DaemonInstance["transcripts"];
 	probe: DaemonHealthProbe;
 	openclaw: DaemonOpenClawHealthSummary | null;
@@ -660,7 +624,6 @@ export async function getDaemonStatus(): Promise<{
 			networkMode: preferred.networkMode,
 			resources: preferred.resources,
 			extraction: preferred.extraction,
-			extractionWorker: preferred.extractionWorker,
 			transcripts: preferred.transcripts,
 			probe: {
 				...preferred.probe,
@@ -681,7 +644,6 @@ export async function getDaemonStatus(): Promise<{
 		networkMode: null,
 		resources: null,
 		extraction: null,
-		extractionWorker: null,
 		transcripts: null,
 		probe,
 		openclaw: null,

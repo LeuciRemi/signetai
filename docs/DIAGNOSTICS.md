@@ -237,7 +237,9 @@ affected count, and message.
 ### POST /api/repair/requeue-dead
 
 Resets up to 50 dead-letter jobs back to `pending` with `attempts = 0`,
-allowing the extraction worker to retry them.
+allowing them to be retried. (Under the Dreaming cutover, the standalone
+extraction worker is retired; requeued legacy `extract` jobs are handled
+by the cutover sweep rather than a live worker.)
 
 - Cooldown: `repairRequeueCooldownMs` (default: 1 minute)
 - Hourly budget: `repairRequeueHourlyBudget` (default: 50)

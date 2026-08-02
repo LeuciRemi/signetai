@@ -16,11 +16,23 @@ import type { PipelineV2Config } from "../memory-config";
 import { stripFences, tryParseJson } from "./extraction";
 import { invalidateTraversalCache } from "./graph-traversal";
 import type { LlmProvider } from "./provider";
-import type { WorkerProgressStats } from "./worker";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/**
+ * Minimal extraction-progress snapshot consumed by the stall gate.
+ *
+ * The legacy extraction worker that published these stats was retired under
+ * the Dreaming cutover (#946). The stall gate now relies on durable progress
+ * read from the database; the live stats hook is retained for callers that
+ * still supply it but is always undefined in production.
+ */
+export interface WorkerProgressStats {
+	readonly lastProgressAt: number;
+	readonly pending: number;
+}
 
 export interface DependencySynthesisHandle {
 	stop(): Promise<void>;

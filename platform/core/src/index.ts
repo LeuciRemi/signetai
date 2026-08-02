@@ -49,7 +49,6 @@ export type {
 	DecisionAction,
 	PipelineFlag,
 	PipelineV2Config,
-	PipelineEscalationConfig,
 	PipelineExtractionConfig,
 	PipelineWorkerConfig,
 	PipelineClaudeCodeConfig,

@@ -14,7 +14,6 @@ import {
 	getDreamingState,
 	getDreamingWorker,
 	getPipelineWorkerStatus,
-	nudgeExtractionWorker,
 } from "../pipeline";
 import { getFeedbackTelemetry } from "../pipeline/aspect-feedback.js";
 import { AlreadyRunningError } from "../pipeline/dreaming-worker.js";
@@ -203,12 +202,9 @@ export function registerPipelineRoutes(app: Hono): void {
 
 	app.get("/api/status", (c) => {
 		const config = loadMemoryConfig(AGENTS_DIR);
-		const workerStatus = getPipelineWorkerStatus();
-		const extractionWorker = workerStatus.extraction;
 		const extractionWorkload = getExtractionWorkloadState({
 			enabled: config.pipelineV2.enabled && !config.dreaming.enabled,
 			paused: config.pipelineV2.paused,
-			workerRunning: extractionWorker.running,
 		});
 		const configuredLogFile = readEnvTrimmed("SIGNET_LOG_FILE");
 		const configuredLogDir = readEnvTrimmed("SIGNET_LOG_DIR") ?? LOG_DIR;
@@ -276,15 +272,6 @@ export function registerPipelineRoutes(app: Hono): void {
 			resources: getResourceSnapshot(),
 			pipelineV2: config.pipelineV2,
 			pipeline: {
-				extraction: {
-					running: extractionWorker.running,
-					overloaded: extractionWorker.stats?.overloaded ?? false,
-					loadPerCpu: extractionWorker.stats?.loadPerCpu ?? null,
-					maxLoadPerCpu: extractionWorker.stats?.maxLoadPerCpu ?? null,
-					overloadBackoffMs: extractionWorker.stats?.overloadBackoffMs ?? null,
-					overloadSince: extractionWorker.stats?.overloadSince ?? null,
-					nextTickInMs: extractionWorker.stats?.nextTickInMs ?? null,
-				},
 				queue: pipelineQueueBlock(),
 			},
 			providerResolution: { ...providerRuntimeResolution, extraction: extractionWorkload },
@@ -470,7 +457,6 @@ export function registerPipelineRoutes(app: Hono): void {
 				extraction: getExtractionWorkloadState({
 					enabled: pipelineV2.enabled && !cfg.dreaming.enabled,
 					paused: pipelineV2.paused,
-					workerRunning: workers.extraction.running,
 				}),
 			},
 			queues: dbData.queues,
@@ -488,9 +474,6 @@ export function registerPipelineRoutes(app: Hono): void {
 
 	app.use("/api/pipeline/pause", pipelineAdminGuard);
 	app.use("/api/pipeline/resume", pipelineAdminGuard);
-	app.use("/api/pipeline/nudge", async (c, next) => {
-		return requirePermission("admin", authConfig)(c, next);
-	});
 
 	app.post("/api/pipeline/pause", (c) => {
 		return togglePipelinePause(c, true);
@@ -498,13 +481,6 @@ export function registerPipelineRoutes(app: Hono): void {
 
 	app.post("/api/pipeline/resume", (c) => {
 		return togglePipelinePause(c, false);
-	});
-
-	app.post("/api/pipeline/nudge", (c) => {
-		if (!nudgeExtractionWorker()) {
-			return c.json({ error: "Extraction worker not running" }, 503);
-		}
-		return c.json({ nudged: true });
 	});
 
 	app.get("/api/pipeline/models", (c) => {

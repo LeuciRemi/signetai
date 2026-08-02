@@ -372,10 +372,17 @@ increment of `graphBoostWeight`.
 Worker Model
 ---
 
-The extraction pipeline runs as a polling worker loop. A single
-`startWorker` call starts a `setTimeout`-chain tick loop that leases one
-job per tick from the `memory_jobs` table, processes it, and reschedules
-itself. The use of `setTimeout` chains rather than `setInterval` allows
+The legacy extraction/decision/escalation worker runtime and its threaded
+variant were retired under the Dreaming cutover (#946). Dreaming now owns
+semantic writes; the `memory_jobs` `extract` enqueue path is gated to skip
+when Dreaming is enabled. The non-extraction workers (document ingest,
+retention, maintenance, synthesis, dependency synthesis, prospective/hints)
+remain active. The description below is retained for historical reference.
+
+The extraction pipeline ran as a polling worker loop. A single
+`startWorker` call started a `setTimeout`-chain tick loop that leased one
+job per tick from the `memory_jobs` table, processed it, and rescheduled
+itself. The use of `setTimeout` chains rather than `setInterval` allowed
 dynamic delay adjustment via exponential backoff on failure.
 
 Job leasing is atomic. The tick calls `accessor.withWriteTx` to both select
@@ -409,8 +416,8 @@ Document Ingest
 ---
 
 The document worker processes `document_ingest` jobs from the same
-`memory_jobs` table. It runs as a fixed-interval polling loop separate from
-the extraction worker, defaulting to 10,000 ms between ticks.
+`memory_jobs` table. It runs as a fixed-interval polling loop,
+defaulting to 10,000 ms between ticks.
 
 A document ingest job carries a `document_id` rather than a `memory_id`.
 The referenced row in the `documents` table carries the source content and
@@ -447,9 +454,8 @@ The chunk-to-document relationship is recorded in `document_memories` with
 the chunk index. This table allows the document's chunks to be enumerated
 or deleted as a unit.
 
-The document worker uses the same `workerMaxRetries` limit as the
-extraction worker. On exhaustion, the document row status is set to
-`failed` with the error string recorded.
+The document worker honors the `workerMaxRetries` limit. On exhaustion, the
+document row status is set to `failed` with the error string recorded.
 
 
 Retention Worker
@@ -1138,12 +1144,10 @@ claudeCode:
   cooldownMs: 300000             # ms, range 1000–3600000
 
 worker:
-  pollMs: 2000                   # ms, range 100–60000
   maxRetries: 3                  # range 1–10
   leaseTimeoutMs: 300000         # ms, range 10000–600000
-  maxLoadPerCpu: 0.8             # load-per-CPU threshold, range 0.1–8.0
-  overloadBackoffMs: 30000       # ms, range 1000–300000
   maxLlmConcurrency: 2           # shared cap for live LLM calls, range 1–16; SIGNET_MAX_LLM_CONCURRENCY overrides YAML when set
+  # retired under #946 (standalone extraction worker removed): pollMs, maxLoadPerCpu, overloadBackoffMs, threadedExtraction
 
 graph:
   enabled: true

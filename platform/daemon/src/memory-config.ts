@@ -89,20 +89,11 @@ export const DEFAULT_PIPELINE_V2: ResolvedPipelineV2Config = {
 		timeout: DEFAULT_PIPELINE_TIMEOUT_MS,
 		minConfidence: 0.7,
 		command: undefined,
-		escalation: {
-			maxNewEntitiesPerChunk: 10,
-			maxNewAttributesPerEntity: 20,
-			level2MaxEntities: 5,
-		},
 	},
 	worker: {
-		pollMs: 2000,
 		maxRetries: 3,
 		leaseTimeoutMs: 300000,
-		maxLoadPerCpu: 0.8,
-		overloadBackoffMs: 30000,
 		maxLlmConcurrency: 2,
-		threadedExtraction: true,
 	},
 	claudeCode: {
 		allowApiKeyEnv: false,
@@ -466,7 +457,6 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 
 	// Read nested sub-objects (may be undefined for old flat configs)
 	const extractionRaw = raw.extraction as Record<string, unknown> | undefined;
-	const escalationRaw = extractionRaw?.escalation as Record<string, unknown> | undefined;
 	const workerRaw = raw.worker as Record<string, unknown> | undefined;
 	const claudeCodeRaw = raw.claudeCode as Record<string, unknown> | undefined;
 	const graphRaw = raw.graph as Record<string, unknown> | undefined;
@@ -678,26 +668,6 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 				d.extraction.minConfidence,
 			),
 			command: effectiveProvider === "command" ? resolvedCommandConfig : undefined,
-			escalation: {
-				maxNewEntitiesPerChunk: clampPositive(
-					escalationRaw?.maxNewEntitiesPerChunk,
-					1,
-					100,
-					d.extraction.escalation?.maxNewEntitiesPerChunk ?? 10,
-				),
-				maxNewAttributesPerEntity: clampPositive(
-					escalationRaw?.maxNewAttributesPerEntity,
-					1,
-					200,
-					d.extraction.escalation?.maxNewAttributesPerEntity ?? 20,
-				),
-				level2MaxEntities: clampPositive(
-					escalationRaw?.level2MaxEntities,
-					1,
-					50,
-					d.extraction.escalation?.level2MaxEntities ?? 5,
-				),
-			},
 			rateLimit: parseRateLimitConfig(extractionRaw?.rateLimit),
 			structuredOutput: (() => {
 				const candidate = extractionRaw?.structuredOutput;
@@ -706,7 +676,6 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 		},
 
 		worker: {
-			pollMs: clampPositive(workerRaw?.pollMs ?? raw.workerPollMs, 100, 60000, d.worker.pollMs),
 			maxRetries: clampPositive(workerRaw?.maxRetries ?? raw.workerMaxRetries, 1, 10, d.worker.maxRetries),
 			leaseTimeoutMs: clampPositive(
 				workerRaw?.leaseTimeoutMs ?? raw.leaseTimeoutMs,
@@ -714,15 +683,7 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 				600000,
 				d.worker.leaseTimeoutMs,
 			),
-			maxLoadPerCpu: clampPositive(workerRaw?.maxLoadPerCpu ?? raw.workerMaxLoadPerCpu, 0.1, 8, d.worker.maxLoadPerCpu),
-			overloadBackoffMs: clampPositive(
-				workerRaw?.overloadBackoffMs ?? raw.workerOverloadBackoffMs,
-				1000,
-				300000,
-				d.worker.overloadBackoffMs,
-			),
 			maxLlmConcurrency: resolveMaxLlmConcurrency(workerRaw?.maxLlmConcurrency, d.worker.maxLlmConcurrency),
-			threadedExtraction: workerRaw?.threadedExtraction !== false,
 		},
 		claudeCode: parseClaudeCodeConfig(claudeCodeRaw, d.claudeCode),
 

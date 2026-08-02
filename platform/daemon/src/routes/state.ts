@@ -273,11 +273,18 @@ export type ExtractionWorkloadState = ProviderRuntimeResolution["extraction"] & 
 /**
  * Canonical extraction workload state shared by status, health, diagnostics,
  * and CLI consumers. A resolved provider alone never means that jobs run.
+ *
+ * The standalone extraction worker was retired under the Dreaming cutover
+ * (#946); there is no live worker process to report. `workerRunning` is
+ * therefore a fixed `false`, and `ready` reflects route resolution alone
+ * (an `active` or `degraded` route is ready to service command-mode
+ * extraction). Treating the retired worker's absence as a not-ready anomaly
+ * made `signet status` print a misleading "Extraction worker stopped"
+ * notice for every legacy (non-Dreaming) route.
  */
 export function getExtractionWorkloadState(input: {
 	readonly enabled: boolean;
 	readonly paused: boolean;
-	readonly workerRunning: boolean;
 }): ExtractionWorkloadState {
 	const base = providerRuntimeResolution.extraction;
 	const status = !input.enabled ? "disabled" : input.paused ? "paused" : base.status;
@@ -287,8 +294,8 @@ export function getExtractionWorkloadState(input: {
 		status,
 		enabled: input.enabled,
 		paused: input.paused,
-		workerRunning: input.workerRunning,
-		ready: (status === "active" || status === "degraded") && input.workerRunning,
+		workerRunning: false,
+		ready: status === "active" || status === "degraded",
 		blockedReason,
 	};
 }

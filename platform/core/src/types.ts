@@ -210,12 +210,6 @@ export type PipelineFlag = (typeof PIPELINE_FLAGS)[number];
 
 // -- Pipeline v2 sub-config interfaces --
 
-export interface PipelineEscalationConfig {
-	readonly maxNewEntitiesPerChunk: number;
-	readonly maxNewAttributesPerEntity: number;
-	readonly level2MaxEntities: number;
-}
-
 export interface PipelineCommandConfig {
 	readonly bin: string;
 	readonly args: ReadonlyArray<string>;
@@ -259,19 +253,13 @@ export interface PipelineExtractionConfig {
 	readonly minConfidence: number;
 	readonly structuredOutput?: boolean;
 	readonly command?: PipelineCommandConfig;
-	readonly escalation?: PipelineEscalationConfig;
 	readonly rateLimit?: ProviderRateLimitConfig;
 }
 
 export interface PipelineWorkerConfig {
-	readonly pollMs: number;
 	readonly maxRetries: number;
 	readonly leaseTimeoutMs: number;
-	readonly maxLoadPerCpu: number;
-	readonly overloadBackoffMs: number;
 	readonly maxLlmConcurrency: number;
-	/** Run extraction pipeline in a dedicated worker thread (default: false). */
-	readonly threadedExtraction: boolean;
 }
 
 export interface PipelineClaudeCodeConfig {

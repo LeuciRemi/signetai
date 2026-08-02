@@ -654,7 +654,7 @@ enabled for `default`, `memoryExtraction`, `widgetGeneration`, or `repair`, thos
 shared inference control plane. Legacy extraction and synthesis fields are treated as load-time compatibility input, not separate runtime providers.
 
 The config uses a nested structure with grouped sub-objects. Legacy flat
-keys (e.g. `extractionModel`, `workerPollMs`) are still supported for
+keys (e.g. `extractionModel`, `leaseTimeoutMs`) are still supported for
 backward compatibility, but nested keys take precedence when both are
 present.
 
@@ -903,17 +903,16 @@ control.
 
 | Field | Default | Range | Description |
 |-------|---------|-------|-------------|
-| `pollMs` | `2000` | 100-60000 ms | How often the worker polls for pending jobs |
 | `maxRetries` | `3` | 1-10 | Max retry attempts before a job goes to dead-letter |
 | `leaseTimeoutMs` | `300000` | 10000-600000 ms | Time before an uncompleted job lease expires |
-| `maxLoadPerCpu` | `0.8` | 0.1-8.0 | Load-per-CPU threshold above which extraction polling is deferred |
-| `overloadBackoffMs` | `30000` | 1000-300000 ms | Delay between poll attempts while host load stays above threshold |
 | `maxLlmConcurrency` | `2` | 1-16 | Shared cap for live LLM calls across extraction, synthesis, reranking, inference streaming, and daemon route provider calls such as skills, ontology consolidation, and diagnostics greetings. `SIGNET_MAX_LLM_CONCURRENCY` overrides YAML when set, matching the TypeScript daemon behavior for wired provider paths. |
 
 A job that exceeds `maxRetries` moves to dead-letter status and is
 eventually purged by the retention worker.
-Legacy flat keys `workerMaxLoadPerCpu` and `workerOverloadBackoffMs` are
-still accepted for backward compatibility.
+The standalone extraction worker was retired under the Dreaming cutover
+(#946); its former `pollMs`, `maxLoadPerCpu`, `overloadBackoffMs`, and
+`threadedExtraction` knobs are no longer read from configuration (legacy
+YAML values are ignored).
 
 
 ### Knowledge Graph (`graph`)
