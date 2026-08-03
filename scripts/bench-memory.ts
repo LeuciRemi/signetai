@@ -215,6 +215,11 @@ function isLocalEndpoint(value: string): boolean {
 	return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
+function readPositiveIntEnv(name: string, fallback: number): number {
+	const parsed = Number.parseInt(process.env[name] ?? "", 10);
+	return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function writeIsolatedWorkspace(
 	dir: string,
 	profile: ParsedArgs["profile"],
@@ -223,6 +228,7 @@ function writeIsolatedWorkspace(
 	dreamingEndpoint?: string,
 	dreamingCredentialRef?: string,
 	dreamingProviderFamily = "openai-compatible",
+	dreamingTimeoutMs = 600_000,
 ): void {
 	mkdirSync(join(dir, "memory"), { recursive: true });
 	mkdirSync(join(dir, ".daemon", "logs"), { recursive: true });
@@ -243,7 +249,7 @@ function writeIsolatedWorkspace(
     tokenThreshold: 1000000
     maxInputTokens: 64000
     maxOutputTokens: 8000
-    timeout: 600000
+    timeout: ${dreamingTimeoutMs}
 
 inference:
   defaultPolicy: memorybench-dreaming
@@ -278,7 +284,7 @@ inference:
     tokenThreshold: 1000000
     maxInputTokens: 64000
     maxOutputTokens: 8000
-    timeout: 600000
+    timeout: ${dreamingTimeoutMs}
 
 inference:
   defaultPolicy: memorybench-dreaming
@@ -306,7 +312,7 @@ inference:
     tokenThreshold: 1000000
     maxInputTokens: 64000
     maxOutputTokens: 8000
-    timeout: 600000
+    timeout: ${dreamingTimeoutMs}
 
 inference:
   defaultPolicy: memorybench-dreaming
@@ -466,6 +472,7 @@ async function main(): Promise<void> {
 		dreamingEndpoint,
 		dreamingCredentialRef || (dreamingApiKey ? "SIGNET_BENCH_DREAMING_API_KEY" : undefined),
 		dreamingProviderFamily,
+		readPositiveIntEnv("SIGNET_BENCH_DREAMING_TIMEOUT_MS", 600_000),
 	);
 
 	const usesDefaultSample = defaultedDevSample(parsed.passthrough, parsed.full);
