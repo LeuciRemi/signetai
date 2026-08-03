@@ -148,9 +148,18 @@ describe("POST /api/repair/relink-entities", () => {
 	});
 });
 
-describe("retired structural repair route", () => {
+describe("retired semantic repair routes", () => {
 	it("does not expose structural-backfill after the Dreaming cutover", async () => {
 		const response = await makeApp().request("/api/repair/structural-backfill", {
+			method: "POST",
+			headers: requestHeaders(),
+		});
+
+		expect(response.status).toBe(404);
+	});
+
+	it("does not expose the legacy LLM entity reclassification route", async () => {
+		const response = await makeApp().request("/api/repair/reclassify-entities", {
 			method: "POST",
 			headers: requestHeaders(),
 		});

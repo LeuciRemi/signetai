@@ -646,14 +646,6 @@ export class SignetClientP2 {
 
 	/**
 	 * @example
-	 * const result = await client.reclassifyEntities();
-	 */
-	async reclassifyEntities(): Promise<RepairActionResponse> {
-		return this.transport.post<RepairActionResponse>("/api/repair/reclassify-entities", {});
-	}
-
-	/**
-	 * @example
 	 * const result = await client.pruneChunkGroups();
 	 */
 	async pruneChunkGroups(): Promise<RepairActionResponse> {

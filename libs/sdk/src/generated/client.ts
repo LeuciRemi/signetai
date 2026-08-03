@@ -453,10 +453,6 @@ export class GeneratedClient {
 		return this.transport.post<unknown>("/api/repair/deduplicate", opts);
 	}
 
-	async postApiRepairReclassifyEntities(opts?: Record<string, unknown>): Promise<unknown> {
-		return this.transport.post<unknown>("/api/repair/reclassify-entities", opts);
-	}
-
 	async postApiRepairPruneChunkGroups(opts?: Record<string, unknown>): Promise<unknown> {
 		return this.transport.post<unknown>("/api/repair/prune-chunk-groups", opts);
 	}
