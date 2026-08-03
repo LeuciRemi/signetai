@@ -419,7 +419,8 @@ The default `signet` provider uses the public Signet daemon HTTP API:
 - search: `POST /api/memory/recall` with `expand: true`
 - health: `GET /health`
 
-During ingest, the provider performs MemoryBench-side structured extraction
+The default `rules` profile is retained as a historical structured-ingest
+baseline. During ingest it performs MemoryBench-side structured extraction
 from each session, then calls the full remember endpoint with:
 
 - extracted memory content
@@ -429,13 +430,19 @@ from each session, then calls the full remember endpoint with:
 - source metadata and per-question scope
 - the lossless source transcript
 
-The isolated daemon does not run background extraction or synthesis workers for
-benchmark ingestion. Those stages stay disabled so the benchmark is not racing
-async background work or depending on local daemon timing. Graph and traversal
-are enabled only so recall can use the structured data that was explicitly sent
-to `/api/memory/remember`; Dreaming is not run during benchmark ingestion, so
-no automatic semantic writer can create benchmark graph structure. Recall treats active
-structured rows as a first-class candidate source by searching entity names,
+The `dreaming` profile is the cutover-quality path: it saves only lossless raw
+episodic sessions, waits until the full selected corpus is durable, then
+triggers exactly one bounded daemon Dreaming pass before retrieval. Its agent
+model is explicit (`SIGNET_BENCH_DREAMING_MODEL`) and travels through the same
+daemon router as production. It is the profile used for absolute Dreaming
+quality measurements; `rules` is not a substitute for it.
+
+The isolated daemon does not run legacy extraction or structural workers for
+benchmark ingestion. Graph and traversal are enabled only so recall can use
+the semantic state created by the selected profile. In the baseline that state
+comes from the explicit structured payload; in `dreaming`, it comes only from
+the post-ingest Dreaming pass. Recall treats active structured rows as a
+first-class candidate source by searching entity names,
 aspects, group keys, claim keys, attribute kinds, and attribute content before
 SEC reranking. This is deliberately generic: bridges may connect broad query
 classes like music, service, brand, or currentness to nearby vocabulary, but the
@@ -448,9 +455,8 @@ requested. Those snippets are returned by the recall API and capped so they
 cannot outrank real memory evidence; the benchmark harness does not append raw
 transcripts on its own.
 
-The isolated daemon also disables structural backfill/classification. Benchmark
-graph state must come from the explicit structured remember payload, not from
-daemon repair jobs that infer entities after the fact.
+The isolated daemon also disables structural backfill/classification. No daemon
+repair job may infer benchmark graph state after the fact.
 
 ## Structured remembering contract
 
@@ -515,7 +521,7 @@ changes to MemoryBench scoring logic.
 SIGNET_BENCH_FULL=1                 Run the full benchmark by default.
 SIGNET_BENCH_SKIP_BUILD=1           Skip `bun run build`.
 SIGNET_BENCH_KEEP_WORKSPACE=1       Keep the isolated workspace after the run.
-SIGNET_BENCH_PROFILE=<profile>      rules or supermemory-parity, default rules.
+SIGNET_BENCH_PROFILE=<profile>      rules, dreaming, or supermemory-parity; default rules.
 SIGNET_BENCH_RUN_ID=<id>            Override the MemoryBench run id.
 SIGNET_BENCH_JUDGE=<model>          Default judge model, default gpt-4o.
 SIGNET_BENCH_ANSWERING_MODEL=<m>    Default answering model, default gpt-4o.
@@ -530,6 +536,8 @@ SIGNET_BENCH_SESSION_CONCURRENCY=<n> Per-question session ingest concurrency, de
 SIGNET_BENCH_INGEST_OPENROUTER=1    Use OpenRouter defaults for bench:ingest.
 SIGNET_BENCH_OPENROUTER_MODEL=<m>   OpenRouter extraction model, default inception/mercury-2.
 SIGNET_BENCH_OPENROUTER_BASE_URL=<u> OpenRouter-compatible base URL override.
+SIGNET_BENCH_DREAMING_MODEL=<id>    Required OpenRouter model id for the dreaming profile.
+SIGNET_BENCH_DREAMING_WAIT_SECS=<n> Max time to await its bounded Dreaming pass, default 720.
 MEMORYBENCH_EXTRACTION_MODEL=<m>    Structured extraction model, default gpt-4o.
 MEMORYBENCH_EXTRACTION_MAX_TOKENS=<n> Markdown extraction cap, default 1200.
 MEMORYBENCH_STRUCTURED_EXTRACTION_MAX_TOKENS=<n> Structured JSON extraction cap, default 1800.

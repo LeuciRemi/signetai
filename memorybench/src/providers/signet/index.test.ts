@@ -4,11 +4,57 @@ import {
   formatSupermemoryParityContent,
   hasUsableMemoryContent,
   resolveSignetSearchLimit,
+  SignetDreamingProvider,
   scopeStructuredBenchmarkParticipants,
 } from "./index"
 import type { UnifiedSession } from "../../types/unified"
 
 describe("Signet benchmark profiles", () => {
+  class CapturingDreamingProvider extends SignetDreamingProvider {
+    calls: Array<{ path: string; init: RequestInit }> = []
+
+    protected override async request<T>(path: string, init: RequestInit): Promise<T> {
+      this.calls.push({ path, init })
+      if (path === "/api/memory/remember") return { id: "episodic-1", embedded: true } as T
+      if (path === "/api/dream/trigger") return { passId: "pass-1" } as T
+      if (path === "/api/dream/status") {
+        return { worker: { running: true }, passes: [{ id: "pass-1", status: "completed" }] } as T
+      }
+      throw new Error(`Unexpected path ${path}`)
+    }
+  }
+
+  it("keeps benchmark input episodic until one post-ingest Dreaming pass", async () => {
+    const provider = new CapturingDreamingProvider()
+    const session: UnifiedSession = {
+      sessionId: "session-1",
+      messages: [{ role: "user", content: "I moved deployment to edge runtime." }],
+    }
+    const previousPoll = process.env.SIGNET_BENCH_DREAMING_POLL_SECS
+    process.env.SIGNET_BENCH_DREAMING_POLL_SECS = "0"
+    try {
+      await provider.ingest([session], { containerTag: "question-1-run" })
+      await provider.finalizeIngest({ runId: "run", dataSourceRunId: "source" })
+    } finally {
+      if (previousPoll === undefined) delete process.env.SIGNET_BENCH_DREAMING_POLL_SECS
+      else process.env.SIGNET_BENCH_DREAMING_POLL_SECS = previousPoll
+    }
+
+    expect(provider.name).toBe("signet-dreaming")
+    const remember = provider.calls.find((call) => call.path === "/api/memory/remember")
+    expect(JSON.parse(String(remember?.init.body))).toMatchObject({
+      content: "user: I moved deployment to edge runtime.",
+      tags: "memorybench,question-1-run,session-1,dreaming,raw-session",
+    })
+    expect(JSON.parse(String(remember?.init.body))).not.toHaveProperty("structured")
+    expect(provider.calls.map((call) => call.path)).toEqual([
+      "/api/memory/remember",
+      "/api/dream/status",
+      "/api/dream/trigger",
+      "/api/dream/status",
+    ])
+  })
+
   it("formats raw sessions like the Supermemory adapter for parity runs", () => {
     const session: UnifiedSession = {
       sessionId: "session-1",

@@ -31,7 +31,7 @@ interface ParsedArgs {
 	ingestOpenRouter: boolean;
 	keepWorkspace: boolean;
 	port?: number;
-	profile: "rules" | "supermemory-parity";
+	profile: "rules" | "dreaming" | "supermemory-parity";
 	reset: boolean;
 	workspace?: string;
 }
@@ -44,8 +44,12 @@ function parseArgs(raw: string[]): ParsedArgs {
 	let ingestOpenRouter = process.env.SIGNET_BENCH_INGEST_OPENROUTER === "1";
 	let keepWorkspace = process.env.SIGNET_BENCH_KEEP_WORKSPACE === "1";
 	let port: number | undefined;
-	let profile: "rules" | "supermemory-parity" =
-		process.env.SIGNET_BENCH_PROFILE === "supermemory-parity" ? "supermemory-parity" : "rules";
+	let profile: "rules" | "dreaming" | "supermemory-parity" =
+		process.env.SIGNET_BENCH_PROFILE === "supermemory-parity"
+			? "supermemory-parity"
+			: process.env.SIGNET_BENCH_PROFILE === "dreaming"
+				? "dreaming"
+				: "rules";
 	let reset = process.env.SIGNET_BENCH_RESUME !== "1";
 	let workspace: string | undefined;
 
@@ -75,8 +79,8 @@ function parseArgs(raw: string[]): ParsedArgs {
 			port = parsed;
 		} else if (arg === "--profile") {
 			const next = raw[++i];
-			if (next !== "rules" && next !== "supermemory-parity") {
-				throw new Error("--profile must be either rules or supermemory-parity");
+			if (next !== "rules" && next !== "dreaming" && next !== "supermemory-parity") {
+				throw new Error("--profile must be rules, dreaming, or supermemory-parity");
 			}
 			profile = next;
 		} else if (arg === "--reset") {
@@ -184,7 +188,14 @@ async function waitForHealth(baseUrl: string, timeoutMs: number): Promise<void> 
 	throw new Error(`Timed out waiting for isolated Signet daemon: ${lastError}`);
 }
 
-function writeIsolatedWorkspace(dir: string): void {
+function quoteYaml(value: string): string {
+	if (!/^[A-Za-z0-9._:/+-]+$/.test(value)) {
+		throw new Error("Dreaming model must be a model id without whitespace or control characters");
+	}
+	return JSON.stringify(value);
+}
+
+function writeIsolatedWorkspace(dir: string, profile: ParsedArgs["profile"], dreamingModel?: string): void {
 	mkdirSync(join(dir, "memory"), { recursive: true });
 	mkdirSync(join(dir, ".daemon", "logs"), { recursive: true });
 	writeFileSync(join(dir, "AGENTS.md"), "# MemoryBench Agent\n\nIsolated benchmark workspace.\n");
@@ -194,9 +205,44 @@ function writeIsolatedWorkspace(dir: string): void {
 	writeFileSync(join(dir, "MEMORY.md"), "# MemoryBench Working Memory\n\nNo production memory is mounted here.\n");
 
 	const embeddingProvider = process.env.SIGNET_BENCH_EMBEDDING_PROVIDER || "native";
+	const dreamingConfig =
+		profile === "dreaming"
+			? `
+  dreaming:
+    enabled: true
+    tokenThreshold: 1000000
+    maxInputTokens: 64000
+    maxOutputTokens: 8000
+    timeout: 300000
+
+inference:
+  defaultPolicy: memorybench-dreaming
+  accounts:
+    memorybench-openrouter:
+      kind: api
+      providerFamily: openrouter
+      credentialRef: OPENROUTER_API_KEY
+  targets:
+    memorybench-dreaming:
+      executor: openrouter
+      account: memorybench-openrouter
+      models:
+        default:
+          model: ${quoteYaml(dreamingModel ?? "")}
+          toolUse: true
+  policies:
+    memorybench-dreaming:
+      mode: strict
+      defaultTargets:
+        - memorybench-dreaming/default
+  workloads:
+    memoryExtraction:
+      policy: memorybench-dreaming
+`
+			: "";
 	writeFileSync(
 		join(dir, "agent.yaml"),
-		`configVersion: 2\n\nagent:\n  name: memorybench\n\nauth:\n  mode: local\n\nembedding:\n  provider: ${embeddingProvider}\n  model: ${process.env.SIGNET_BENCH_EMBEDDING_MODEL || "nomic-embed-text-v1.5"}\n  dimensions: ${process.env.SIGNET_BENCH_EMBEDDING_DIMENSIONS || "768"}\n\nsearch:\n  alpha: 0.7\n  top_k: 20\n  min_score: 0.1\n  rehearsal_enabled: false\n\nmemory:\n  pipelineV2:\n    enabled: false\n    graph:\n      enabled: true\n      extractionWritesEnabled: false\n    traversal:\n      enabled: true\n    structural:\n      enabled: false\n      synthesisEnabled: false\n      supersessionSweepEnabled: false\n    reranker:\n      enabled: false\n    autonomous:\n      enabled: false\n    synthesis:\n      enabled: false\n    procedural:\n      enabled: false\n    predictor:\n      enabled: false\n    hints:\n      enabled: true\n    guardrails:\n      maxContentChars: 100000\n      chunkTargetChars: 50000\n      recallTruncateChars: 20000\n`,
+		`configVersion: 2\n\nagent:\n  name: memorybench\n\nauth:\n  mode: local\n\nembedding:\n  provider: ${embeddingProvider}\n  model: ${process.env.SIGNET_BENCH_EMBEDDING_MODEL || "nomic-embed-text-v1.5"}\n  dimensions: ${process.env.SIGNET_BENCH_EMBEDDING_DIMENSIONS || "768"}\n\nsearch:\n  alpha: 0.7\n  top_k: 20\n  min_score: 0.1\n  rehearsal_enabled: false\n\nmemory:\n  pipelineV2:\n    enabled: false\n    graph:\n      enabled: true\n      extractionWritesEnabled: false\n    traversal:\n      enabled: true\n    structural:\n      enabled: false\n      synthesisEnabled: false\n      supersessionSweepEnabled: false\n    reranker:\n      enabled: false\n    autonomous:\n      enabled: false\n    synthesis:\n      enabled: false\n    procedural:\n      enabled: false\n    predictor:\n      enabled: false\n    hints:\n      enabled: true\n    guardrails:\n      maxContentChars: 100000\n      chunkTargetChars: 50000\n      recallTruncateChars: 20000\n${dreamingConfig}`,
 	);
 }
 
@@ -235,7 +281,8 @@ function buildMemoryBenchArgs(raw: string[], full: boolean, profile: ParsedArgs[
 		process.env.SIGNET_BENCH_RUN_ID ||
 		`signet-${profile}-longmemeval-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "Z")}`;
 
-	const provider = profile === "supermemory-parity" ? "signet-supermemory-parity" : "signet";
+	const provider =
+		profile === "supermemory-parity" ? "signet-supermemory-parity" : profile === "dreaming" ? "signet-dreaming" : "signet";
 	const continuation = isContinuationCommand(command, args);
 	const defaults: string[] = [];
 
@@ -285,7 +332,14 @@ async function main(): Promise<void> {
 	const workspace = parsed.workspace ?? (await mkdtemp(join(tmpdir(), "signet-memorybench-")));
 	const home = join(workspace, "home");
 	mkdirSync(home, { recursive: true });
-	writeIsolatedWorkspace(workspace);
+	const dreamingModel = process.env.SIGNET_BENCH_DREAMING_MODEL?.trim();
+	if (parsed.profile === "dreaming" && !dreamingModel) {
+		throw new Error("Dreaming benchmark requires SIGNET_BENCH_DREAMING_MODEL (an OpenRouter model id)");
+	}
+	if (parsed.profile === "dreaming" && !process.env.OPENROUTER_API_KEY?.trim()) {
+		throw new Error("Dreaming benchmark requires OPENROUTER_API_KEY for the daemon inference route");
+	}
+	writeIsolatedWorkspace(workspace, parsed.profile, dreamingModel);
 
 	const usesDefaultSample = defaultedDevSample(parsed.passthrough, parsed.full);
 	const memorybenchArgs = buildMemoryBenchArgs(parsed.passthrough, parsed.full, parsed.profile, parsed.reset);

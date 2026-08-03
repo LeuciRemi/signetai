@@ -134,7 +134,18 @@ export function startDreamingWorker(
 							: {}),
 					},
 				);
-				if (!result.ok) throw new Error(result.error.message);
+				if (!result.ok) {
+					const attempts = Array.isArray(result.error.details?.attempts)
+						? result.error.details.attempts
+							.map((attempt) => {
+								if (!attempt || typeof attempt !== "object") return "unknown target";
+								const value = attempt as { targetRef?: unknown; error?: unknown };
+								return `${typeof value.targetRef === "string" ? value.targetRef : "unknown"}: ${typeof value.error === "string" ? value.error : "failed"}`;
+							})
+							.join("; ")
+						: "";
+					throw new Error(attempts ? `${result.error.message} (${attempts})` : result.error.message);
+				}
 				return { summary: `Dreaming agent completed through ${result.value.decision.targetRef}` };
 			},
 		};
