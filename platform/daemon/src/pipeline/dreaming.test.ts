@@ -321,8 +321,11 @@ describe("dreaming", () => {
 		it("keeps source-native topology out of semantic Dreaming context", async () => {
 			seedEntity(db, "semantic", "Semantic Project", "project");
 			seedEntity(db, "source-document", "Source Navigation Document", "source_document");
+			seedEntity(db, "skill-node", "Source Native Skill", "skill");
 			seedAspect(db, "source-aspect", "source-document", "Source Topology");
+			seedAspect(db, "skill-aspect", "skill-node", "Skill Topology");
 			seedAttribute(db, "source-attribute", "source-aspect", "This belongs only to source-native navigation.");
+			seedAttribute(db, "skill-attribute", "skill-aspect", "This belongs only to source-native skill topology.");
 			let prompt = "";
 			await runDreamingPass(
 				accessor,
@@ -338,6 +341,8 @@ describe("dreaming", () => {
 			expect(prompt).toContain("Semantic Project");
 			expect(prompt).not.toContain("Source Navigation Document");
 			expect(prompt).not.toContain("This belongs only to source-native navigation.");
+			expect(prompt).not.toContain("Source Native Skill");
+			expect(prompt).not.toContain("This belongs only to source-native skill topology.");
 		});
 
 		it("reasons over artifacts, transcripts, and temporal summaries as episodic evidence", async () => {

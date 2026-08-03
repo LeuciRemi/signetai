@@ -141,7 +141,7 @@ interface DependencyRow {
 function semanticEntityFilter(alias = ""): string {
 	const column = (name: "entity_type" | "source_root"): string => (alias ? `${alias}.${name}` : name);
 	return `NOT (
-		${column("entity_type")} IN ('source_document', 'source_folder', 'source_document_reference')
+		${column("entity_type")} IN ('source_document', 'source_folder', 'source_document_reference', 'skill')
 		OR (${column("entity_type")} = 'source' AND ${column("source_root")} IS NOT NULL)
 	)`;
 }
