@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-03
-- Bug fixes: close hook stdin after read timeout.
+- Bug fixes: prefer native install over wrapper; close hook stdin after read timeout.
 - Docs: refresh roadmap and vision for August 2026; add tests, regression tests, and evals policy.
 
 ### 2026-08-02
@@ -35,6 +35,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Refactoring: consolidate workspace path resolution (#956).
 
 ## Release Ledger
+
+## [0.157.5] - 2026-08-03
+
+Release summary: 1 bug fix.
+Tag range: `v0.157.4..v0.157.5`.
+
+### Bug Fixes
+
+- **update**: prefer native install over wrapper
 
 ## [0.157.4] - 2026-08-03
 
