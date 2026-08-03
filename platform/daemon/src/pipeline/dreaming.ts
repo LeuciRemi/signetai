@@ -20,10 +20,8 @@ import {
 import type { DbAccessor, ReadDb, WriteDb } from "../db-accessor";
 import { type EpisodicCursor, type EpisodicSourceRecord, readRecentEpisodicSources } from "../episodic-sources";
 import { logger } from "../logger";
-import { type OntologyOperationInput, applyOntologyOperationBatchInTx } from "../ontology-proposals";
 import { createDreamingAgentTools } from "./dreaming-agent-tools";
-import { extractBalancedJsonObjects } from "./extraction";
-import { createDreamingAgentEvidence, renderDreamingEvidence, renderDreamingEvidenceMeta } from "./dreaming-evidence";
+import { createDreamingAgentEvidence, renderDreamingEvidence } from "./dreaming-evidence";
 import type { ApplyDreamingOperationsResult, DreamingOperationRequest } from "./dreaming-operations";
 import { countTokens } from "./tokenizer";
 
@@ -32,18 +30,6 @@ import { countTokens } from "./tokenizer";
 // ---------------------------------------------------------------------------
 
 export type DreamingMode = "incremental" | "compact";
-
-type DreamingOperation = OntologyOperationInput;
-
-export interface DreamingResult {
-	readonly operations: readonly DreamingOperation[];
-	readonly summary: string;
-	readonly tokensConsumed: number;
-	/** Operations discarded because they failed structural or evidence validation. */
-	readonly invalidOperations: number;
-	/** Evidence cited by discarded operations, retained for explicit requeue. */
-	readonly rejectedEvidence: readonly EpisodicSourceRecord[];
-}
 
 export interface DreamingState {
 	readonly consecutiveFailures: number;
@@ -77,23 +63,6 @@ function parseEpisodicCursor(value: string | null): EpisodicCursor | null {
 /** Exported for cursor round-trip tests. */
 export function _testParseEpisodicCursor(value: string | null): EpisodicCursor | null {
 	return parseEpisodicCursor(value);
-}
-
-/** Exported for structured-evidence rendering tests. */
-export function _testRenderEvidenceMeta(evidenceMeta: string | null): string {
-	return renderDreamingEvidenceMeta(evidenceMeta);
-}
-
-/**
- * The canonical rendered text a source contributes to the Dreaming prompt:
- * the immutable `content` followed by the rendered structured evidence
- * metadata (when present). This single form is what the LLM sees, what the
- * evidence budget accounts for, and what quote validation accepts a citation
- * against — so structured evidence is genuinely citable and unrelated or
- * unrendered text is rejected.
- */
-export function _testRenderSourceText(source: EpisodicSourceRecord): string {
-	return renderDreamingEvidence(source);
 }
 
 interface DreamingPassRow {
@@ -162,8 +131,6 @@ function semanticEntityFilter(alias = ""): string {
 	)`;
 }
 
-export type LlmGenerateFn = (prompt: string, opts?: { timeoutMs?: number; maxTokens?: number }) => Promise<string>;
-
 /** Routed bounded-agent executor. The daemon creates the tools and owns all writes. */
 export interface DreamingAgentExecutor {
 	run(input: {
@@ -174,11 +141,18 @@ export interface DreamingAgentExecutor {
 	}): Promise<{ readonly summary?: string }>;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readNonEmptyString(value: unknown): string | null {
+	return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
 /**
  * Keep evidence cited by an agent operation that the daemon rejects. The
- * static path has always preserved this audit/requeue trail; agentic calls
- * need the same behavior even when citation validation fails before the
- * operation service can return per-item results.
+ * agentic calls preserve this audit/requeue trail even when citation
+ * validation fails before the operation service can return per-item results.
  */
 function rejectedAgentEvidence(
 	result: ApplyDreamingOperationsResult,
@@ -743,155 +717,12 @@ Do not emit archive_claim_value, update_link, or archive_link: they require stab
 }
 
 // ---------------------------------------------------------------------------
-// Audited semantic operation validation
-// ---------------------------------------------------------------------------
-
-const DREAMING_OPERATIONS = new Set([
-	"create_entity",
-	"create_aspect",
-	"add_claim_value",
-	"set_claim_value",
-	"supersede_claim_value",
-	"merge_entities",
-	"archive_entity",
-	"archive_aspect",
-	"create_link",
-]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function readNonEmptyString(value: unknown): string | null {
-	return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function matchEvidenceToSource(value: unknown, sources: readonly EpisodicSourceRecord[]): EpisodicSourceRecord | null {
-	if (!isRecord(value)) return null;
-	const sourceKind = readNonEmptyString(value.source_kind);
-	const sourceId = readNonEmptyString(value.source_id);
-	const sourcePath = readNonEmptyString(value.source_path);
-	const quote = readNonEmptyString(value.quote);
-	if (!sourceKind || !sourceId || !quote) return null;
-	return (
-		sources.find(
-			(source) =>
-				source.sourceKind === sourceKind &&
-				source.sourceId === sourceId &&
-				(sourcePath === null || source.sourcePath === sourcePath) &&
-				// Validate the citation against the canonical rendered source text
-				// (content + rendered structured evidence), not raw content alone.
-				// A quote is only accepted when it appears in exactly what the LLM
-				// saw, so structured evidence is genuinely citable while unrelated
-				// or unrendered text is rejected.
-				renderDreamingEvidence(source).includes(quote),
-		) ?? null
-	);
-}
-
-function matchedEvidenceSources(
-	value: unknown,
-	sources: readonly EpisodicSourceRecord[],
-): readonly EpisodicSourceRecord[] {
-	if (!isRecord(value) || !Array.isArray(value.evidence)) return [];
-	return value.evidence
-		.map((item) => matchEvidenceToSource(item, sources))
-		.filter((source): source is EpisodicSourceRecord => source !== null);
-}
-
-function normalizeDreamingOperation(raw: unknown, sources: readonly EpisodicSourceRecord[]): DreamingOperation | null {
-	if (!isRecord(raw)) return null;
-	const operation = readNonEmptyString(raw.operation);
-	const payload = raw.payload;
-	const reason = readNonEmptyString(raw.reason) ?? readNonEmptyString(raw.rationale);
-	const evidence = Array.isArray(raw.evidence) ? raw.evidence : [];
-	if (!operation || !DREAMING_OPERATIONS.has(operation) || !isRecord(payload) || !reason || evidence.length === 0)
-		return null;
-	const matchedSources = matchedEvidenceSources(raw, sources);
-	if (matchedSources.length !== evidence.length) return null;
-	const confidence = raw.confidence;
-	if (
-		confidence !== undefined &&
-		(typeof confidence !== "number" || !Number.isFinite(confidence) || confidence < 0 || confidence > 1)
-	) {
-		return null;
-	}
-	// Prefer a matched source that owns a configured Signet source entry id,
-	// independent of the order the LLM cited the evidence in. Derived semantic
-	// rows are purgeable by source on disconnect only when stamped with the
-	// source entry id, so selecting it by evidence position would stamp a
-	// non-purgeable episodic id whenever a transcript/summary is cited first
-	// and a Signet-source artifact second. Fall back to the first matched
-	// source when none owns a source entry id, retaining the normal episodic
-	// provenance behavior. sourceKind, sourceId, and sourcePath must all come
-	// from this single selected provenance source so derived rows carry one
-	// consistent provenance tuple rather than mixing the source entry id from
-	// a later matched artifact with the kind/path of an earlier transcript.
-	const provenanceSource = matchedSources.find((source) => source.sourceEntryId !== null) ?? matchedSources[0];
-	return {
-		operation,
-		payload,
-		reason,
-		evidence,
-		confidence: confidence as number | undefined,
-		risk: readNonEmptyString(raw.risk),
-		sourceKind: provenanceSource.sourceKind,
-		sourceId: provenanceSource.sourceEntryId ?? provenanceSource.sourceId,
-		sourcePath: provenanceSource.sourcePath,
-		sourceRoot: "dreaming",
-	};
-}
-
-function parseDreamingResult(raw: string, sources: readonly EpisodicSourceRecord[]): DreamingResult {
-	const cleaned = raw.trim();
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(cleaned);
-	} catch (rawParseError) {
-		for (const candidate of extractBalancedJsonObjects(cleaned)) {
-			try {
-				parsed = JSON.parse(candidate);
-				break;
-			} catch {
-				// Keep scanning: prose may contain braces before the response object.
-			}
-		}
-		if (parsed === undefined) throw rawParseError;
-	}
-	const result = isRecord(parsed) ? parsed : {};
-	if (!Array.isArray(result.operations)) throw new Error("Dreaming response operations must be an array");
-	const all = result.operations;
-	const normalized = all.map((operation) => ({
-		operation: normalizeDreamingOperation(operation, sources),
-		evidence: matchedEvidenceSources(operation, sources),
-	}));
-	const operations = normalized
-		.map(({ operation }) => operation)
-		.filter((operation): operation is DreamingOperation => operation !== null);
-	const invalidOperations = all.length - operations.length;
-	const rejectedEvidence = normalized.flatMap(({ operation, evidence }) => (operation === null ? evidence : []));
-	if (invalidOperations > 0) {
-		logger.warn("dreaming", "LLM response contained invalid semantic operations — discarded", {
-			count: invalidOperations,
-		});
-	}
-	return {
-		operations,
-		summary: readNonEmptyString(result.summary) ?? "No summary provided",
-		tokensConsumed: countTokens(raw),
-		invalidOperations,
-		rejectedEvidence,
-	};
-}
-
-// ---------------------------------------------------------------------------
 // Main dreaming orchestrator
 // ---------------------------------------------------------------------------
 
 /**
- * Bounded tool-loop variant of a Dreaming pass. It deliberately shares the
- * existing cursor, exclusion, and completion bookkeeping with the static pass
- * below while moving semantic decisions into daemon-owned tools.
+ * Bounded tool-loop Dreaming pass. The daemon owns evidence selection,
+ * exclusion/cursor bookkeeping, tool construction, and audited writes.
  */
 export async function runDreamingAgentPass(
 	accessor: DbAccessor,
@@ -1002,181 +833,6 @@ export async function runDreamingAgentPass(
 		logger.error("dreaming", "Agentic dreaming pass failed", undefined, { error: message });
 		failDreamingPass(accessor, passId, message);
 		throw error;
-	}
-}
-
-export async function runDreamingPass(
-	accessor: DbAccessor,
-	generate: LlmGenerateFn,
-	cfg: DreamingConfig,
-	agentsDir: string,
-	agentId: string,
-	mode: DreamingMode,
-	existingPassId?: string,
-): Promise<{ passId: string; applied: number; skipped: number; failed: number; summary: string }> {
-	const passId = existingPassId ?? createDreamingPass(accessor, agentId, mode);
-	const passStartedAt = new Date().toISOString();
-
-	try {
-		// Fetch data
-		const state = getDreamingState(accessor, agentId);
-		// Derive row limits from token budget — ~40% for graph, ~20 tokens per entity,
-		// ~10 per aspect, ~25 per attribute, ~20 per dependency
-		const graphTokenBudget = Math.floor(cfg.maxInputTokens * 0.4);
-		const graphLimits = {
-			entities: Math.max(100, Math.floor(graphTokenBudget / 20)),
-			aspects: Math.max(200, Math.floor(graphTokenBudget / 10)),
-			attributes: Math.max(500, Math.floor(graphTokenBudget / 25)),
-			dependencies: Math.max(200, Math.floor(graphTokenBudget / 20)),
-		};
-
-		const { evidence, graph } = accessor.withReadDb((db) => {
-			const evidence = fetchEpisodicEvidence(
-				db,
-				agentId,
-				mode === "compact" || state.evidenceCursor ? null : state.lastPassAt,
-				200,
-				state.evidenceCursor,
-			);
-			const graph = fetchEntityGraph(db, agentId, graphLimits);
-			return { evidence, graph };
-		});
-
-		warnIfTruncated(graph, graphLimits);
-
-		if (mode === "incremental" && evidence.length === 0 && graph.entities.length === 0) {
-			const evidenceCursor = state.evidenceCursor;
-			accessor.withWriteTx((db) => {
-				db.prepare(
-					`UPDATE dreaming_passes
-					 SET status = 'completed',
-					     completed_at = datetime('now'),
-					     tokens_consumed = 0,
-					     mutations_applied = 0,
-					     mutations_skipped = 0,
-					     mutations_failed = 0,
-					     summary = ?
-					 WHERE id = ?`,
-				).run("No new episodic evidence or semantic entities to process", passId);
-				resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, state.lastPassAt);
-			});
-			return {
-				passId,
-				applied: 0,
-				skipped: 0,
-				failed: 0,
-				summary: "No new episodic evidence or semantic entities to process",
-			};
-		}
-
-		// Build prompt and call LLM
-		const { prompt, lastCursorEvidence, renderedEvidence, oversizedEvidence } = buildDreamingPrompt(
-			mode,
-			evidence,
-			graph,
-			agentsDir,
-			cfg.maxInputTokens,
-		);
-		const evidenceCursor: EpisodicCursor = lastCursorEvidence
-			? { capturedAt: lastCursorEvidence.capturedAt, kind: lastCursorEvidence.kind, id: lastCursorEvidence.id }
-			: (state.evidenceCursor ?? { capturedAt: passStartedAt, kind: null, id: "" });
-		if (renderedEvidence.length === 0 && oversizedEvidence.length > 0) {
-			const summary = `Skipped ${oversizedEvidence.length} oversized episodic source${oversizedEvidence.length === 1 ? "" : "s"}; requeue after increasing the Dreaming input budget.`;
-			accessor.withWriteTx((db) => {
-				recordDreamingEvidenceExclusionsInTx(db, agentId, passId, oversizedEvidence, "oversized_prompt_budget");
-				db.prepare(
-					`UPDATE dreaming_passes
-					 SET status = 'completed', completed_at = datetime('now'),
-					     tokens_consumed = 0, mutations_applied = 0,
-					     mutations_skipped = ?, mutations_failed = 0, summary = ?
-					 WHERE id = ?`,
-				).run(oversizedEvidence.length, summary, passId);
-				resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, passStartedAt);
-			});
-			logger.warn("dreaming", summary, {
-				agentId,
-				sources: oversizedEvidence.map((source) => `${source.kind}:${source.id}`),
-			});
-			return { passId, applied: 0, skipped: oversizedEvidence.length, failed: 0, summary };
-		}
-
-		logger.info("dreaming", "Starting dreaming pass", {
-			mode,
-			episodicSources: evidence.length,
-			entities: graph.entities.length,
-			promptChars: prompt.length,
-		});
-
-		const raw = await generate(prompt, {
-			timeoutMs: cfg.timeout,
-			maxTokens: cfg.maxOutputTokens,
-		});
-
-		// Parse response — count actual tokens for both prompt and output
-		const result = parseDreamingResult(raw, renderedEvidence);
-		const promptTokens = countTokens(prompt);
-		const totalTokens = promptTokens + result.tokensConsumed;
-
-		logger.info("dreaming", "Dreaming pass produced semantic operations", {
-			count: result.operations.length,
-			promptTokens,
-			outputTokens: result.tokensConsumed,
-			summary: result.summary.slice(0, 200),
-		});
-
-		// Apply audited semantic operations and advance the cursor atomically.
-		const { applied, skipped, failed } = accessor.withWriteTx((db) => {
-			let applied = 0;
-			let failed = result.invalidOperations;
-			const errors: string[] = [];
-			const rejectedEvidence = [...result.rejectedEvidence];
-			for (const operation of result.operations) {
-				db.exec("SAVEPOINT dreaming_operation");
-				try {
-					applyOntologyOperationBatchInTx(db, { agentId, actor: "dreaming", operations: [operation] });
-					db.exec("RELEASE SAVEPOINT dreaming_operation");
-					applied++;
-				} catch (error) {
-					db.exec("ROLLBACK TO SAVEPOINT dreaming_operation");
-					db.exec("RELEASE SAVEPOINT dreaming_operation");
-					failed++;
-					errors.push(error instanceof Error ? error.message : String(error));
-					rejectedEvidence.push(...matchedEvidenceSources({ evidence: operation.evidence }, renderedEvidence));
-				}
-			}
-			db.prepare(
-				`UPDATE dreaming_passes
-				 SET status = 'completed',
-				     completed_at = datetime('now'),
-				     tokens_consumed = ?,
-				     mutations_applied = ?,
-				     mutations_skipped = ?,
-				     mutations_failed = ?,
-				     summary = ?
-				 WHERE id = ?`,
-			).run(totalTokens, applied, oversizedEvidence.length, failed, result.summary, passId);
-			recordDreamingEvidenceExclusionsInTx(db, agentId, passId, oversizedEvidence, "oversized_prompt_budget");
-			recordDreamingEvidenceExclusionsInTx(db, agentId, passId, rejectedEvidence, "semantic_operation_rejected");
-			resolveRequeuedEvidenceInTx(db, agentId, renderedEvidence);
-			resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, passStartedAt);
-			if (errors.length > 0)
-				logger.warn("dreaming", "Some semantic operations were rejected", { errors: errors.slice(0, 10) });
-			return { applied, skipped: oversizedEvidence.length, failed };
-		});
-
-		logger.info("dreaming", "Dreaming pass complete", {
-			applied,
-			skipped,
-			failed,
-			summary: result.summary.slice(0, 200),
-		});
-
-		return { passId, applied, skipped, failed, summary: result.summary };
-	} catch (e) {
-		const msg = e instanceof Error ? e.message : String(e);
-		logger.error("dreaming", "Dreaming pass failed", undefined, { error: msg });
-		failDreamingPass(accessor, passId, msg);
-		throw e;
 	}
 }
 
