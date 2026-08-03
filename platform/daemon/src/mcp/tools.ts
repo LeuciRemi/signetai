@@ -157,6 +157,7 @@ const BASE_TOOL_NAMES = new Set<string>([
 	"knowledge_list_claims",
 	"knowledge_list_attributes",
 	"knowledge_hygiene_report",
+	"apply_ontology_ops",
 	"entity_list",
 	"entity_get",
 	"entity_aspects",
@@ -2257,6 +2258,42 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 			annotations: { readOnlyHint: true },
 		},
 		hygieneReport,
+	);
+
+	// The daemon validates every citation against scoped episodic evidence and
+	// applies each item through the audited Dreaming operation seam. ACPX gets
+	// this over stdio MCP; it never receives a SQLite handle.
+	server.registerTool(
+		"apply_ontology_ops",
+		{
+			title: "Apply Dreaming ontology operations",
+			description:
+				"Apply cited ontology operations. Each evidence item must include source_ref, source_kind, source_id, and an exact quote from scoped episodic evidence.",
+			inputSchema: z.object({
+				operations: z
+					.array(
+						z.object({
+							operation: z.string(),
+							payload: z.object({}).catchall(z.unknown()),
+							reason: z.string().optional(),
+							evidence: z.array(z.unknown()).optional(),
+							confidence: z.number().optional(),
+							risk: z.string().nullable().optional(),
+						}),
+					)
+					.min(1)
+					.max(100),
+				agent_id: z.string().optional(),
+			}),
+		},
+		async ({ operations, agent_id }) => {
+			const result = await fetchDaemon<unknown>(baseUrl, "/api/dream/operations", {
+				method: "POST",
+				body: { operations, ...(agent_id ? { agent_id } : {}) },
+			});
+			if (!result.ok) return errorResult(`Dreaming ontology operations failed: ${result.error}`);
+			return textResult(result.data);
+		},
 	);
 
 	server.registerTool(

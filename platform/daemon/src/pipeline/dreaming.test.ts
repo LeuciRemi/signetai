@@ -20,6 +20,7 @@ import {
 	getDreamingState,
 	recordDreamingFailure,
 	requestDreamingEvidenceRequeue,
+	runDreamingAgentPass,
 	runDreamingPass,
 	shouldTriggerDreaming,
 } from "./dreaming";
@@ -255,6 +256,53 @@ describe("dreaming", () => {
 	});
 
 	describe("pass lifecycle", () => {
+		it("runs bounded agentic Dreaming through the daemon-owned tool surface", async () => {
+			const evidence = "Aster is the project that owns the edge deployment.";
+			seedSummary(db, "agentic-summary", evidence, 12);
+			const result = await runDreamingAgentPass(
+				accessor,
+				{
+					async run(input) {
+						expect(input.prompt).toContain("Use the supplied daemon tools");
+						const apply = input.tools.find((tool) => tool.name === "apply_ontology_ops");
+						if (!apply) throw new Error("Missing apply_ontology_ops");
+						await apply.execute(
+							"call",
+							{
+								operations: [
+									{
+										operation: "create_entity",
+										payload: { name: "Aster", entity_type: "project" },
+										reason: "The evidence names a durable project.",
+										evidence: [
+											{
+												source_ref: "summary:agentic-summary",
+												source_kind: "summary",
+												source_id: "agentic-summary",
+												quote: evidence,
+											},
+										],
+									},
+								],
+							},
+							undefined,
+							undefined,
+							{} as never,
+						);
+						return { summary: "Created Aster through agent tools" };
+					},
+				},
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(result).toMatchObject({ applied: 1, failed: 0, summary: "Created Aster through agent tools" });
+			expect(
+				db.prepare("SELECT proposal_id FROM entities WHERE agent_id = ? AND name = 'Aster'").get(AGENT),
+			).toMatchObject({ proposal_id: expect.any(String) });
+		});
+
 		it("completes pass with no data gracefully", async () => {
 			const generate = async () => JSON.stringify({ operations: [], summary: "Nothing to do" });
 

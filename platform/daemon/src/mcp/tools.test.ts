@@ -249,6 +249,7 @@ describe("createMcpServer", () => {
 		expect(names).toContain("knowledge_list_claims");
 		expect(names).toContain("knowledge_list_attributes");
 		expect(names).toContain("knowledge_hygiene_report");
+		expect(names).toContain("apply_ontology_ops");
 		expect(names).toContain("entity_list");
 		expect(names).toContain("entity_get");
 		expect(names).toContain("entity_aspects");
@@ -280,7 +281,7 @@ describe("createMcpServer", () => {
 		for (const alias of GRAPHIQ_COMPAT_ALIASES) {
 			expect(names).toContain(alias);
 		}
-		expect(names.length).toBe(57);
+		expect(names.length).toBe(58);
 	});
 
 	it("registers generic code tools when GraphIQ has an active project", async () => {
@@ -500,6 +501,33 @@ describe("createMcpServer", () => {
 		expect(cap.url).toBe("http://localhost:3850/api/knowledge/hygiene?limit=3&memory_limit=4&agent_id=default");
 		expect(result.isError).toBeUndefined();
 		expect(result.content[0]?.text).toContain("The");
+	});
+
+	it("routes cited Dreaming operations through the daemon apply seam", async () => {
+		const cap: { url?: string; body?: string } = {};
+		mockFetch(200, { ok: true, items: [] }, cap);
+
+		const result = await callTool(server, "apply_ontology_ops", {
+			agent_id: "agent-a",
+			operations: [
+				{
+					operation: "create_entity",
+					payload: { name: "Aster" },
+					evidence: [
+						{
+							source_ref: "summary:s-1",
+							source_kind: "summary",
+							source_id: "s-1",
+							quote: "Aster is a project.",
+						},
+					],
+				},
+			],
+		});
+
+		expect(cap.url).toBe("http://localhost:3850/api/dream/operations");
+		expect(JSON.parse(cap.body ?? "{}")).toMatchObject({ agent_id: "agent-a", operations: [{ operation: "create_entity" }] });
+		expect(result.isError).toBeUndefined();
 	});
 
 	describe("memory_search", () => {

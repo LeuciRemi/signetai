@@ -21,8 +21,9 @@ import type { DbAccessor, ReadDb, WriteDb } from "../db-accessor";
 import { type EpisodicCursor, type EpisodicSourceRecord, readRecentEpisodicSources } from "../episodic-sources";
 import { logger } from "../logger";
 import { type OntologyOperationInput, applyOntologyOperationBatchInTx } from "../ontology-proposals";
+import { createDreamingAgentTools } from "./dreaming-agent-tools";
 import { extractBalancedJsonObjects } from "./extraction";
-import { renderDreamingEvidence, renderDreamingEvidenceMeta } from "./dreaming-evidence";
+import { createDreamingAgentEvidence, renderDreamingEvidence, renderDreamingEvidenceMeta } from "./dreaming-evidence";
 import { countTokens } from "./tokenizer";
 
 // ---------------------------------------------------------------------------
@@ -161,6 +162,16 @@ function semanticEntityFilter(alias = ""): string {
 }
 
 export type LlmGenerateFn = (prompt: string, opts?: { timeoutMs?: number; maxTokens?: number }) => Promise<string>;
+
+/** Routed bounded-agent executor. The daemon creates the tools and owns all writes. */
+export interface DreamingAgentExecutor {
+	run(input: {
+		readonly prompt: string;
+		readonly tools: ReturnType<typeof createDreamingAgentTools>;
+		readonly timeoutMs: number;
+		readonly maxTokens: number;
+	}): Promise<{ readonly summary?: string }>;
+}
 
 // ---------------------------------------------------------------------------
 // Dreaming state DB helpers
@@ -511,6 +522,7 @@ function buildDreamingPrompt(
 	graph: ReturnType<typeof fetchEntityGraph>,
 	agentsDir: string,
 	maxTokens: number,
+	agentic = false,
 ): {
 	readonly prompt: string;
 	readonly lastEvidence: EpisodicSourceRecord | null;
@@ -662,7 +674,10 @@ ${graphText}
 ${depText || "(no relationships yet)"}
 </knowledge_graph>
 
-Respond with ONLY a JSON object in this exact format (no markdown code fences, no other text):
+${
+	agentic
+		? `Use the supplied daemon tools to inspect semantic context before changing it. Search for entities before creating duplicates, inspect claim siblings before superseding them, and inspect links before updating them. Use apply_ontology_ops for every semantic write. Every operation must cite an exact quote plus source_ref from the episodic evidence you received or searched. Do not attempt direct database access.`
+		: `Respond with ONLY a JSON object in this exact format (no markdown code fences, no other text):
 
 The payload field is the operation payload itself, never a map keyed by operation name. Use these direct payload shapes:
 - create_entity: { "name": "...", "entity_type": "project" }
@@ -686,6 +701,7 @@ Do not emit archive_claim_value, update_link, or archive_link: they require stab
     }
   ],
   "summary": "Brief description of what you changed and why"
+}`
 }`,
 		lastEvidence,
 		lastCursorEvidence,
@@ -839,6 +855,120 @@ function parseDreamingResult(raw: string, sources: readonly EpisodicSourceRecord
 // ---------------------------------------------------------------------------
 // Main dreaming orchestrator
 // ---------------------------------------------------------------------------
+
+/**
+ * Bounded tool-loop variant of a Dreaming pass. It deliberately shares the
+ * existing cursor, exclusion, and completion bookkeeping with the static pass
+ * below while moving semantic decisions into daemon-owned tools.
+ */
+export async function runDreamingAgentPass(
+	accessor: DbAccessor,
+	executor: DreamingAgentExecutor,
+	cfg: DreamingConfig,
+	agentsDir: string,
+	agentId: string,
+	mode: DreamingMode,
+	existingPassId?: string,
+): Promise<{ passId: string; applied: number; skipped: number; failed: number; summary: string }> {
+	const passId = existingPassId ?? createDreamingPass(accessor, agentId, mode);
+	const passStartedAt = new Date().toISOString();
+	try {
+		const state = getDreamingState(accessor, agentId);
+		const graphTokenBudget = Math.floor(cfg.maxInputTokens * 0.4);
+		const graphLimits = {
+			entities: Math.max(100, Math.floor(graphTokenBudget / 20)),
+			aspects: Math.max(200, Math.floor(graphTokenBudget / 10)),
+			attributes: Math.max(500, Math.floor(graphTokenBudget / 25)),
+			dependencies: Math.max(200, Math.floor(graphTokenBudget / 20)),
+		};
+		const { evidence, graph } = accessor.withReadDb((db) => ({
+			evidence: fetchEpisodicEvidence(
+				db,
+				agentId,
+				mode === "compact" || state.evidenceCursor ? null : state.lastPassAt,
+				200,
+				state.evidenceCursor,
+			),
+			graph: fetchEntityGraph(db, agentId, graphLimits),
+		}));
+		warnIfTruncated(graph, graphLimits);
+		if (mode === "incremental" && evidence.length === 0 && graph.entities.length === 0) {
+			const summary = "No new episodic evidence or semantic entities to process";
+			accessor.withWriteTx((db) => {
+				db.prepare(
+					`UPDATE dreaming_passes SET status = 'completed', completed_at = datetime('now'),
+					 tokens_consumed = 0, mutations_applied = 0, mutations_skipped = 0,
+					 mutations_failed = 0, summary = ? WHERE id = ?`,
+				).run(summary, passId);
+				resetDreamingTokens(db, agentId, passId, mode, state.evidenceCursor, state.lastPassAt);
+			});
+			return { passId, applied: 0, skipped: 0, failed: 0, summary };
+		}
+
+		const { prompt, lastCursorEvidence, renderedEvidence, oversizedEvidence } = buildDreamingPrompt(
+			mode,
+			evidence,
+			graph,
+			agentsDir,
+			cfg.maxInputTokens,
+			true,
+		);
+		const evidenceCursor: EpisodicCursor = lastCursorEvidence
+			? { capturedAt: lastCursorEvidence.capturedAt, kind: lastCursorEvidence.kind, id: lastCursorEvidence.id }
+			: (state.evidenceCursor ?? { capturedAt: passStartedAt, kind: null, id: "" });
+		if (renderedEvidence.length === 0 && oversizedEvidence.length > 0) {
+			const summary = `Skipped ${oversizedEvidence.length} oversized episodic source${oversizedEvidence.length === 1 ? "" : "s"}; requeue after increasing the Dreaming input budget.`;
+			accessor.withWriteTx((db) => {
+				recordDreamingEvidenceExclusionsInTx(db, agentId, passId, oversizedEvidence, "oversized_prompt_budget");
+				db.prepare(
+					`UPDATE dreaming_passes SET status = 'completed', completed_at = datetime('now'),
+					 tokens_consumed = 0, mutations_applied = 0, mutations_skipped = ?,
+					 mutations_failed = 0, summary = ? WHERE id = ?`,
+				).run(oversizedEvidence.length, summary, passId);
+				resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, passStartedAt);
+			});
+			return { passId, applied: 0, skipped: oversizedEvidence.length, failed: 0, summary };
+		}
+
+		let applied = 0;
+		let failed = 0;
+		const tools = createDreamingAgentTools({
+			accessor,
+			agentId,
+			actor: "dreaming",
+			evidence: createDreamingAgentEvidence(renderedEvidence),
+			onOperationsApplied(result) {
+				applied += result.items.filter((item) => item.ok).length;
+				failed += result.items.filter((item) => !item.ok).length;
+				if (!result.ok && result.items.length === 0) failed++;
+			},
+		});
+		logger.info("dreaming", "Starting agentic dreaming pass", {
+			mode,
+			episodicSources: evidence.length,
+			promptChars: prompt.length,
+		});
+		const outcome = await executor.run({ prompt, tools, timeoutMs: cfg.timeout, maxTokens: cfg.maxOutputTokens });
+		const summary = outcome.summary?.trim() || "Agentic Dreaming pass completed";
+		const tokensConsumed = countTokens(prompt);
+		accessor.withWriteTx((db) => {
+			db.prepare(
+				`UPDATE dreaming_passes SET status = 'completed', completed_at = datetime('now'),
+				 tokens_consumed = ?, mutations_applied = ?, mutations_skipped = ?,
+				 mutations_failed = ?, summary = ? WHERE id = ?`,
+			).run(tokensConsumed, applied, oversizedEvidence.length, failed, summary, passId);
+			recordDreamingEvidenceExclusionsInTx(db, agentId, passId, oversizedEvidence, "oversized_prompt_budget");
+			resolveRequeuedEvidenceInTx(db, agentId, renderedEvidence);
+			resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, passStartedAt);
+		});
+		return { passId, applied, skipped: oversizedEvidence.length, failed, summary };
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		logger.error("dreaming", "Agentic dreaming pass failed", undefined, { error: message });
+		failDreamingPass(accessor, passId, message);
+		throw error;
+	}
+}
 
 export async function runDreamingPass(
 	accessor: DbAccessor,

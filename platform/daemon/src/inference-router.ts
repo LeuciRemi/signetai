@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type {
 	AcpxModelSelection,
 	LlmGenerateResult,
@@ -36,6 +37,7 @@ import {
 	type StreamCapableLlmProvider,
 	generateWithTracking,
 } from "./pipeline/provider";
+import { isPiAgentSessionProvider } from "./pipeline/pi-provider";
 import { getSecret } from "./secrets";
 
 const SNAPSHOT_TTL_MS = 15_000;
@@ -63,6 +65,12 @@ export interface InferenceExecutionAttempt {
 export interface InferenceExecutionResult {
 	readonly text: string;
 	readonly usage: LlmUsage | null;
+	readonly decision: RouteDecision;
+	readonly attempts: readonly InferenceExecutionAttempt[];
+}
+
+/** Successful bounded-agent run using one router-selected target. */
+export interface InferenceAgentExecutionResult {
 	readonly decision: RouteDecision;
 	readonly attempts: readonly InferenceExecutionAttempt[];
 }
@@ -754,7 +762,7 @@ export class InferenceRouter {
 		},
 	): Promise<RouterResult<InferenceExecutionResult>> {
 		const background = this.beginBackgroundExecution(request.operation);
-		if (background === null) {
+		if (!background) {
 			return {
 				ok: false,
 				error: { code: "execution-failed", message: "Background inference is paused." },
@@ -770,6 +778,77 @@ export class InferenceRouter {
 			return await this.executeRouted(request, prompt, { ...opts, signal });
 		} finally {
 			this.finishBackgroundExecution(background?.id);
+		}
+	}
+
+	/**
+	 * Run a daemon-owned bounded tool session through the same routing policy as
+	 * ordinary inference. Only Pi-backed targets can execute in-process tools;
+	 * ACPX gets its equivalent MCP binding rather than a fake text fallback.
+	 */
+	async runAgent(
+		request: RouteRequest,
+		prompt: string,
+		tools: readonly ToolDefinition[],
+		opts?: { readonly timeoutMs?: number; readonly maxTokens?: number; readonly refresh?: boolean },
+	): Promise<RouterResult<InferenceAgentExecutionResult>> {
+		const background = this.beginBackgroundExecution(request.operation);
+		if (!background) {
+			return { ok: false, error: { code: "execution-failed", message: "Background inference is paused." } };
+		}
+		const backgroundExecutionId = background.id;
+		try {
+			const loaded = await this.loadConfig();
+			if (!loaded.ok) return loaded;
+			const decision = await this.explain(request, opts?.refresh ?? false);
+			if (!decision.ok) return decision;
+			const attempts: InferenceExecutionAttempt[] = [];
+			for (const targetRef of [decision.value.targetRef, ...decision.value.fallbackTargetRefs]) {
+				const parsed = parseRoutingTargetRef(targetRef);
+				if (!parsed.ok) {
+					attempts.push({ targetRef, ok: false, durationMs: 0, error: parsed.error.message });
+					continue;
+				}
+				const startedAt = Date.now();
+				try {
+					const provider = await this.createProvider(loaded.value, parsed.value.targetId, parsed.value.modelId);
+					if (!isPiAgentSessionProvider(provider)) {
+						attempts.push({
+							targetRef,
+							ok: false,
+							durationMs: Date.now() - startedAt,
+							error: "target requires the ACPX MCP agent binding",
+						});
+						continue;
+					}
+					const session = await provider.createAgentSession(tools, { maxTokens: opts?.maxTokens });
+					let timer: ReturnType<typeof setTimeout> | null = null;
+					if ((opts?.timeoutMs ?? provider.agentSessionTimeoutMs) > 0) {
+						timer = setTimeout(() => void session.abort(), opts?.timeoutMs ?? provider.agentSessionTimeoutMs);
+					}
+					try {
+						await session.prompt(prompt);
+						const failure = session.getFailureMessage();
+						if (failure) throw new Error(failure);
+					} finally {
+						if (timer) clearTimeout(timer);
+						session.dispose();
+					}
+					this.clearObservedRuntimeState(loaded.value, targetRef);
+					attempts.push({ targetRef, ok: true, durationMs: Date.now() - startedAt, usage: null });
+					return { ok: true, value: { decision: decision.value, attempts } };
+				} catch (error) {
+					const message = formatExecutionError(error);
+					this.observeExecutionFailure(loaded.value, targetRef, message);
+					attempts.push({ targetRef, ok: false, durationMs: Date.now() - startedAt, error: message });
+				}
+			}
+			return {
+				ok: false,
+				error: { code: "execution-failed", message: "All routed agent targets failed.", details: { attempts } },
+			};
+		} finally {
+			this.finishBackgroundExecution(backgroundExecutionId);
 		}
 	}
 
