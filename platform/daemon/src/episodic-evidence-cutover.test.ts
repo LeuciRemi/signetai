@@ -8,7 +8,7 @@ import {
 	readEpisodicSource,
 	readRecentEpisodicSources,
 } from "./episodic-sources";
-import { _testRenderEvidenceMeta } from "./pipeline/dreaming";
+import { renderDreamingEvidenceMeta } from "./pipeline/dreaming-evidence";
 import { txForgetMemory, txIngestEnvelope, txModifyMemory } from "./transactions";
 
 function asWriteDb(db: Database): WriteDb {
@@ -484,16 +484,16 @@ describe("episodic-evidence cutover: structured payload persistence", () => {
 			entities: [{ source: "vim", relationship: "preferred-by", target: "user" }],
 			aspects: [{ entityName: "vim", aspect: "editor", attributes: [{ content: "modal" }] }],
 		});
-		const rendered = _testRenderEvidenceMeta(evidenceMeta);
+		const rendered = renderDreamingEvidenceMeta(evidenceMeta);
 		expect(rendered).toContain("structured_evidence:");
 		expect(rendered).toContain("vim [preferred-by] user");
 		expect(rendered).toContain("vim/editor");
 	});
 
 	it("renderEvidenceMeta returns empty for null or malformed JSON", () => {
-		expect(_testRenderEvidenceMeta(null)).toBe("");
-		expect(_testRenderEvidenceMeta("not json")).toBe("");
-		expect(_testRenderEvidenceMeta("[]")).toBe("");
+		expect(renderDreamingEvidenceMeta(null)).toBe("");
+		expect(renderDreamingEvidenceMeta("not json")).toBe("");
+		expect(renderDreamingEvidenceMeta("[]")).toBe("");
 	});
 
 	it("structured remember save creates zero direct graph rows", () => {
