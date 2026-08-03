@@ -532,9 +532,6 @@ export {
 	type SignetUpdateTarget,
 } from "./signet-installation";
 
-// Document ingestion
-export { ingestPath } from "./ingest/index";
-
 // Memory provenance
 export { DAEMON_DERIVED_MEMORY_SOURCE_TYPES, isDaemonDerivedMemorySourceType } from "./memory-provenance";
 

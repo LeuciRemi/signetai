@@ -101,6 +101,7 @@ import { up as embeddingStagingStore } from "./092-embedding-staging-store";
 import { up as dreamingEvidenceCursor } from "./093-dreaming-evidence-cursor";
 import { up as memoryKind } from "./094-memory-kind";
 import { up as compactionRecallProjections } from "./095-compaction-recall-projections";
+import { up as retireLegacyIngestion } from "./096-retire-legacy-ingestion";
 
 // -- Public interface consumed by Database.init() --
 
@@ -218,7 +219,6 @@ export const MIGRATIONS: readonly Migration[] = [
 		name: "ingestion-tracking",
 		up: ingestionTracking,
 		artifacts: {
-			tables: ["ingestion_jobs"],
 			columns: [
 				{ table: "memories", column: "source_path" },
 				{ table: "memories", column: "source_section" },
@@ -903,6 +903,11 @@ export const MIGRATIONS: readonly Migration[] = [
 		version: 95,
 		name: "compaction-recall-projections",
 		up: compactionRecallProjections,
+	},
+	{
+		version: 96,
+		name: "retire-legacy-ingestion",
+		up: retireLegacyIngestion,
 	},
 ];
 

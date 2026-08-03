@@ -17,6 +17,7 @@ import { up as documentScopeColumns } from "./080-document-scope-columns";
 import { up as memoryLifecycleRepair } from "./083-memory-lifecycle-repair";
 import { up as memoryKind } from "./094-memory-kind";
 import { up as compactionRecallProjections } from "./095-compaction-recall-projections";
+import { up as retireLegacyIngestion } from "./096-retire-legacy-ingestion";
 import { MIGRATIONS, hasPendingMigrations, runMigrations } from "./index";
 
 function createFreshDb(): Database {
@@ -237,8 +238,8 @@ describe("migration framework", () => {
 		expect(tableNames).toContain("scheduled_tasks");
 		expect(tableNames).toContain("task_runs");
 
-		// v13 tables
-		expect(tableNames).toContain("ingestion_jobs");
+		// v96 retires the unscoped legacy ingestion ledger.
+		expect(tableNames).not.toContain("ingestion_jobs");
 
 		// v14 tables
 		expect(tableNames).toContain("telemetry_events");
@@ -1670,5 +1671,26 @@ describe("migration framework", () => {
 		const byId = new Map(rows.map((row) => [row.id, row.memory_kind]));
 		expect(byId.get("compaction-projection")).toBeNull();
 		expect(byId.get("user-evidence")).toBe("episodic");
+	});
+
+	test("migration 096 drops only the retired ingestion ledger", () => {
+		db = createFreshDb();
+		db.exec(`
+			CREATE TABLE memories (id TEXT PRIMARY KEY, content TEXT, memory_kind TEXT);
+			CREATE TABLE ingestion_jobs (id TEXT PRIMARY KEY, file_hash TEXT);
+			INSERT INTO memories (id, content, memory_kind) VALUES ('legacy-ingestion', 'preserved recall row', NULL);
+			INSERT INTO ingestion_jobs (id, file_hash) VALUES ('ingestion-job', 'old-hash');
+		`);
+
+		retireLegacyIngestion(db as unknown as Parameters<typeof retireLegacyIngestion>[0]);
+		retireLegacyIngestion(db as unknown as Parameters<typeof retireLegacyIngestion>[0]);
+
+		expect(
+			db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ingestion_jobs'").get(),
+		).toBeNull();
+		expect(db.prepare("SELECT content, memory_kind FROM memories WHERE id = 'legacy-ingestion'").get()).toEqual({
+			content: "preserved recall row",
+			memory_kind: null,
+		});
 	});
 });
