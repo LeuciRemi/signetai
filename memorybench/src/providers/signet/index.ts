@@ -471,10 +471,22 @@ export class SignetProvider implements Provider {
     const deadline = Date.now() + readPositiveInt("SIGNET_BENCH_DREAMING_WAIT_SECS", 720) * 1000
     const pollMs = Math.min(readPositiveInt("SIGNET_BENCH_DREAMING_POLL_SECS", 1), 5) * 1000
     while (Date.now() < deadline) {
-      const accepted = await this.request<DreamingTriggerResponse>("/api/dream/trigger", {
-        method: "POST",
-        body: JSON.stringify({ mode: "incremental", agentId: this.agentId }),
-      })
+      let accepted: DreamingTriggerResponse
+      try {
+        accepted = await this.request<DreamingTriggerResponse>("/api/dream/trigger", {
+          method: "POST",
+          body: JSON.stringify({ mode: "incremental", agentId: this.agentId }),
+        })
+      } catch (error) {
+        // The worker may begin its periodic pass in the small interval between
+        // our completed-pass poll and this trigger. Join that pass instead of
+        // treating an already-running error as a benchmark failure.
+        if (!(error instanceof Error) || !error.message.includes("/api/dream/trigger failed (409)")) throw error
+        const status = await this.request<DreamingStatusResponse>(dreamStatusPath, { method: "GET" })
+        const running = status.passes?.find((pass) => pass.status === "running" && pass.id)
+        if (!running?.id) throw error
+        accepted = { passId: running.id }
+      }
       if (!accepted.passId)
         throw new Error(`Dreaming trigger failed: ${accepted.error || "missing pass id"}`)
 

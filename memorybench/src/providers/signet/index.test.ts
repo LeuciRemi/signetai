@@ -86,6 +86,45 @@ describe("Signet benchmark profiles", () => {
     ])
   })
 
+  it("joins a concurrent periodic Dreaming pass while draining the benchmark cursor", async () => {
+    class ConcurrentDreamingProvider extends SignetDreamingProvider {
+      private statusCalls = 0
+
+      protected override async request<T>(path: string): Promise<T> {
+        if (path === "/api/dream/trigger") {
+          throw new Error("/api/dream/trigger failed (409): A dreaming pass is already running")
+        }
+        if (path === "/api/dream/status?agentId=memorybench") {
+          this.statusCalls += 1
+          if (this.statusCalls === 1) return { worker: { running: true }, episodicTokensPending: 2 } as T
+          if (this.statusCalls === 2) {
+            return {
+              worker: { running: true },
+              passes: [{ id: "periodic-pass", status: "running" }],
+              episodicTokensPending: 2,
+            } as T
+          }
+          return {
+            worker: { running: true },
+            passes: [{ id: "periodic-pass", status: "completed" }],
+            episodicTokensPending: 0,
+          } as T
+        }
+        throw new Error(`Unexpected path ${path}`)
+      }
+    }
+
+    const provider = new ConcurrentDreamingProvider()
+    const previousPoll = process.env.SIGNET_BENCH_DREAMING_POLL_SECS
+    process.env.SIGNET_BENCH_DREAMING_POLL_SECS = "0"
+    try {
+      await provider.finalizeIngest({ runId: "run", dataSourceRunId: "source" })
+    } finally {
+      if (previousPoll === undefined) delete process.env.SIGNET_BENCH_DREAMING_POLL_SECS
+      else process.env.SIGNET_BENCH_DREAMING_POLL_SECS = previousPoll
+    }
+  })
+
   it("formats raw sessions like the Supermemory adapter for parity runs", () => {
     const session: UnifiedSession = {
       sessionId: "session-1",
