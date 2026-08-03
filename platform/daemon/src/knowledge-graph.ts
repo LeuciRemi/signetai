@@ -20,8 +20,7 @@ import type {
 	TaskMeta,
 	TaskStatus,
 } from "@signet/core";
-import type { DbAccessor, ReadDb, WriteDb } from "./db-accessor";
-import { requireDependencyReason } from "./dependency-history";
+import type { DbAccessor, ReadDb } from "./db-accessor";
 import { getDreamingEpisodicTokenBacklogInDb } from "./pipeline/dreaming";
 
 // ---------------------------------------------------------------------------
@@ -182,41 +181,6 @@ function rowToTaskMeta(r: Record<string, unknown>): TaskMeta {
 // Aspects
 // ---------------------------------------------------------------------------
 
-export interface UpsertAspectParams {
-	readonly entityId: string;
-	readonly agentId: string;
-	readonly name: string;
-	readonly weight?: number;
-}
-
-export function upsertAspect(accessor: DbAccessor, params: UpsertAspectParams): EntityAspect {
-	const canonical = toCanonicalName(params.name);
-	const ts = now();
-	const id = crypto.randomUUID();
-
-	return accessor.withWriteTx((db) => {
-		// Uses ON CONFLICT on the UNIQUE(entity_id, canonical_name) constraint
-		db.prepare(
-			`INSERT INTO entity_aspects
-			 (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			 ON CONFLICT(entity_id, canonical_name) DO UPDATE SET
-			   name = excluded.name,
-			   weight = COALESCE(excluded.weight, entity_aspects.weight),
-			   updated_at = excluded.updated_at`,
-		).run(id, params.entityId, params.agentId, params.name, canonical, params.weight ?? 0.5, ts, ts);
-
-		// Read back the actual row (may have kept old id on conflict)
-		const row = db
-			.prepare(
-				`SELECT * FROM entity_aspects
-				 WHERE entity_id = ? AND canonical_name = ? AND agent_id = ?`,
-			)
-			.get(params.entityId, canonical, params.agentId) as Record<string, unknown>;
-		return rowToAspect(row);
-	});
-}
-
 export function getAspectsForEntity(accessor: DbAccessor, entityId: string, agentId: string): readonly EntityAspect[] {
 	return accessor.withReadDb((db) => {
 		const rows = db
@@ -231,77 +195,9 @@ export function getAspectsForEntity(accessor: DbAccessor, entityId: string, agen
 	});
 }
 
-export function deleteAspect(accessor: DbAccessor, aspectId: string, agentId: string): void {
-	accessor.withWriteTx((db) => {
-		db.prepare("DELETE FROM entity_aspects WHERE id = ? AND agent_id = ?").run(aspectId, agentId);
-	});
-}
-
 // ---------------------------------------------------------------------------
 // Attributes
 // ---------------------------------------------------------------------------
-
-export interface CreateAttributeParams {
-	readonly aspectId: string;
-	readonly agentId: string;
-	readonly memoryId?: string;
-	readonly kind: AttributeKind;
-	readonly content: string;
-	readonly confidence?: number;
-	readonly importance?: number;
-}
-
-export function createAttribute(accessor: DbAccessor, params: CreateAttributeParams): EntityAttribute {
-	const id = crypto.randomUUID();
-	const ts = now();
-	const normalized = params.content.trim().toLowerCase().replace(/\s+/g, " ");
-
-	return accessor.withWriteTx((db) => {
-		db.prepare(
-			`INSERT INTO entity_attributes
-			 (id, aspect_id, agent_id, memory_id, kind, content,
-			  normalized_content, confidence, importance, status,
-			  created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
-		).run(
-			id,
-			params.aspectId,
-			params.agentId,
-			params.memoryId ?? null,
-			params.kind,
-			params.content,
-			normalized,
-			params.confidence ?? 0.0,
-			params.importance ?? 0.5,
-			ts,
-			ts,
-		);
-
-		return {
-			id,
-			aspectId: params.aspectId,
-			agentId: params.agentId,
-			memoryId: params.memoryId ?? null,
-			kind: params.kind,
-			content: params.content,
-			normalizedContent: normalized,
-			groupKey: null,
-			claimKey: null,
-			confidence: params.confidence ?? 0.0,
-			importance: params.importance ?? 0.5,
-			status: "active" as const,
-			supersededBy: null,
-			sourceKind: null,
-			sourceId: null,
-			sourcePath: null,
-			sourceRoot: null,
-			proposalId: null,
-			proposalEvidence: [],
-			createdAt: ts,
-			updatedAt: ts,
-		};
-	});
-}
 
 export function getAttributesForAspect(
 	accessor: DbAccessor,
@@ -347,138 +243,9 @@ export function getConstraintsForEntity(
 	});
 }
 
-export function supersedeAttribute(accessor: DbAccessor, id: string, supersededById: string, agentId: string): void {
-	const ts = now();
-	accessor.withWriteTx((db) => {
-		db.prepare(
-			`UPDATE entity_attributes
-			 SET status = 'superseded', superseded_by = ?, updated_at = ?
-			 WHERE id = ? AND agent_id = ?`,
-		).run(supersededById, ts, id, agentId);
-	});
-}
-
-export function deleteAttribute(accessor: DbAccessor, id: string, agentId: string): void {
-	const ts = now();
-	accessor.withWriteTx((db) => {
-		db.prepare(
-			`UPDATE entity_attributes
-			 SET status = 'deleted', updated_at = ?
-			 WHERE id = ? AND agent_id = ?`,
-		).run(ts, id, agentId);
-	});
-}
-
 // ---------------------------------------------------------------------------
 // Dependencies
 // ---------------------------------------------------------------------------
-
-export interface UpsertDependencyParams {
-	readonly sourceEntityId: string;
-	readonly targetEntityId: string;
-	readonly agentId: string;
-	readonly aspectId?: string;
-	readonly dependencyType: DependencyType;
-	readonly strength?: number;
-	readonly confidence?: number;
-	readonly reason?: string;
-}
-
-export function upsertDependency(accessor: DbAccessor, params: UpsertDependencyParams): EntityDependency {
-	const ts = now();
-
-	return accessor.withWriteTx((db) => {
-		const existing = db
-			.prepare(
-				`SELECT * FROM entity_dependencies
-				 WHERE source_entity_id = ? AND target_entity_id = ?
-				   AND dependency_type = ? AND agent_id = ?`,
-			)
-			.get(params.sourceEntityId, params.targetEntityId, params.dependencyType, params.agentId) as
-			| Record<string, unknown>
-			| undefined;
-
-		if (existing) {
-			const changed =
-				params.strength !== undefined ||
-				params.aspectId !== undefined ||
-				params.confidence !== undefined ||
-				params.reason !== undefined;
-
-			if (!changed) {
-				return rowToDependency(existing);
-			}
-
-			const reason = requireDependencyReason(
-				params.dependencyType,
-				params.reason ?? (typeof existing.reason === "string" ? existing.reason : null),
-			);
-			const conf = params.confidence ?? (typeof existing.confidence === "number" ? existing.confidence : 0.7);
-			db.prepare(
-				`UPDATE entity_dependencies
-				 SET strength = ?, aspect_id = ?, reason = ?, confidence = ?, updated_at = ?
-				 WHERE id = ? AND agent_id = ?`,
-			).run(
-				params.strength ?? (existing.strength as number),
-				params.aspectId ?? (existing.aspect_id as string | null),
-				reason,
-				conf,
-				ts,
-				existing.id as string,
-				params.agentId,
-			);
-			return rowToDependency({
-				...existing,
-				strength: params.strength ?? (existing.strength as number),
-				aspect_id: params.aspectId ?? (existing.aspect_id as string | null),
-				reason,
-				confidence: conf,
-				updated_at: ts,
-			});
-		}
-
-		const id = crypto.randomUUID();
-		const reason = requireDependencyReason(params.dependencyType, params.reason);
-		const conf = params.confidence ?? 0.7;
-		db.prepare(
-			`INSERT INTO entity_dependencies
-			 (id, source_entity_id, target_entity_id, agent_id,
-			  aspect_id, dependency_type, strength, confidence, reason, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		).run(
-			id,
-			params.sourceEntityId,
-			params.targetEntityId,
-			params.agentId,
-			params.aspectId ?? null,
-			params.dependencyType,
-			params.strength ?? 0.5,
-			conf,
-			reason,
-			ts,
-			ts,
-		);
-		return {
-			id,
-			sourceEntityId: params.sourceEntityId,
-			targetEntityId: params.targetEntityId,
-			agentId: params.agentId,
-			aspectId: params.aspectId ?? null,
-			dependencyType: params.dependencyType,
-			strength: params.strength ?? 0.5,
-			confidence: conf,
-			reason,
-			sourceKind: null,
-			sourceId: null,
-			sourcePath: null,
-			sourceRoot: null,
-			proposalId: null,
-			proposalEvidence: [],
-			createdAt: ts,
-			updatedAt: ts,
-		};
-	});
-}
 
 export function getEntityDependencyById(
 	accessor: DbAccessor,
@@ -533,15 +300,6 @@ export function getDependenciesTo(
 			)
 			.all(entityId, agentId) as Array<Record<string, unknown>>;
 		return rows.map(rowToDependency);
-	});
-}
-
-export function deleteDependency(accessor: DbAccessor, id: string, agentId: string): void {
-	// History is written by the trg_entity_dependencies_audit_delete AFTER DELETE
-	// trigger (migration 050), which covers app deletes, FK cascades, and direct SQL.
-	// No app-layer history write here to avoid duplicate audit rows.
-	accessor.withWriteTx((db) => {
-		db.prepare("DELETE FROM entity_dependencies WHERE id = ? AND agent_id = ?").run(id, agentId);
 	});
 }
 
