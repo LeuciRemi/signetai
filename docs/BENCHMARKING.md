@@ -570,6 +570,7 @@ SIGNET_BENCH_DREAMING_CREDENTIAL_REF=<name> Optional isolated-workspace credenti
 SIGNET_BENCH_DREAMING_PROVIDER_FAMILY=<name> Optional Pi catalog provider family for a compatible endpoint. Use `opencode-go` with OpenCode Zen Go so Pi preserves model-specific tool/thinking protocol metadata.
 SIGNET_BENCH_DREAMING_WAIT_SECS=<n> Max time to await its bounded Dreaming pass, default 720.
 SIGNET_BENCH_DREAMING_TIMEOUT_MS=<n> Per-pass routed inference timeout, default 600000. Raise it with the wait budget for slower agentic models.
+SIGNET_BENCH_DREAMING_MAX_OUTPUT_TOKENS=<n> Per-turn Dreaming output cap, default 32000. Keep it high enough for an agentic pass to finish rather than terminate mid-tool-loop.
 MEMORYBENCH_EXTRACTION_MODEL=<m>    Structured extraction model, default gpt-4o.
 MEMORYBENCH_EXTRACTION_MAX_TOKENS=<n> Markdown extraction cap, default 1200.
 MEMORYBENCH_STRUCTURED_EXTRACTION_MAX_TOKENS=<n> Structured JSON extraction cap, default 1800.

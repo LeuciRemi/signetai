@@ -229,6 +229,7 @@ function writeIsolatedWorkspace(
 	dreamingCredentialRef?: string,
 	dreamingProviderFamily = "openai-compatible",
 	dreamingTimeoutMs = 600_000,
+	dreamingMaxOutputTokens = 32_000,
 ): void {
 	mkdirSync(join(dir, "memory"), { recursive: true });
 	mkdirSync(join(dir, ".daemon", "logs"), { recursive: true });
@@ -248,7 +249,7 @@ function writeIsolatedWorkspace(
     enabled: true
     tokenThreshold: 1000000
     maxInputTokens: 64000
-    maxOutputTokens: 8000
+    maxOutputTokens: ${dreamingMaxOutputTokens}
     timeout: ${dreamingTimeoutMs}
 
 inference:
@@ -283,7 +284,7 @@ inference:
     enabled: true
     tokenThreshold: 1000000
     maxInputTokens: 64000
-    maxOutputTokens: 8000
+    maxOutputTokens: ${dreamingMaxOutputTokens}
     timeout: ${dreamingTimeoutMs}
 
 inference:
@@ -311,7 +312,7 @@ inference:
     enabled: true
     tokenThreshold: 1000000
     maxInputTokens: 64000
-    maxOutputTokens: 8000
+    maxOutputTokens: ${dreamingMaxOutputTokens}
     timeout: ${dreamingTimeoutMs}
 
 inference:
@@ -473,6 +474,7 @@ async function main(): Promise<void> {
 		dreamingCredentialRef || (dreamingApiKey ? "SIGNET_BENCH_DREAMING_API_KEY" : undefined),
 		dreamingProviderFamily,
 		readPositiveIntEnv("SIGNET_BENCH_DREAMING_TIMEOUT_MS", 600_000),
+		readPositiveIntEnv("SIGNET_BENCH_DREAMING_MAX_OUTPUT_TOKENS", 32_000),
 	);
 
 	const usesDefaultSample = defaultedDevSample(parsed.passthrough, parsed.full);
