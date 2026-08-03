@@ -4,8 +4,8 @@
  * The default remember path is intentionally mechanical: it may attach a
  * memory to entities that already exist in the graph, but it must not invent
  * entities, aspects, attributes, or dependencies from raw text. Semantic graph
- * authorship belongs to structured remember payloads, explicit user/agent
- * intent, or reviewed repair/normalization passes.
+ * authorship belongs to Dreaming, audited interactive mutations, or reviewed
+ * repair/normalization passes.
  */
 
 import type { ReadDb, WriteDb } from "./db-accessor";
