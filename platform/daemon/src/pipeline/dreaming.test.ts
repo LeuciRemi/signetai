@@ -504,6 +504,7 @@ describe("dreaming", () => {
 				"incremental",
 			);
 			expect(prompt).toContain(" — Meridian · obsidian");
+			expect(prompt).toContain("source_ref: summary:provenance-summary");
 			expect(prompt).toContain("source_kind: summary");
 			expect(prompt).toContain("source_id: provenance-summary");
 		});

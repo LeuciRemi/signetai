@@ -43,9 +43,15 @@ describe("dreaming-agent-tools", () => {
 	}
 
 	const EVIDENCE_CONTENT = "Acme switched its deployment target to edge runtime in Q2.";
-	const CITATION = { source_kind: "transcript", source_id: "acme-q2", quote: EVIDENCE_CONTENT };
+	const CITATION = {
+		source_ref: "transcript:acme-q2",
+		source_kind: "transcript",
+		source_id: "acme-q2",
+		quote: EVIDENCE_CONTENT,
+	};
 	const evidence: readonly DreamingAgentEvidence[] = [
 		{
+			sourceRef: "transcript:acme-q2",
 			content: EVIDENCE_CONTENT,
 			sourceKind: "transcript",
 			sourceId: "acme-q2",

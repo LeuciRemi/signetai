@@ -24,6 +24,7 @@ describe("dreaming evidence", () => {
 		expect(evidence).toEqual([
 			expect.objectContaining({
 				content: rendered,
+				sourceRef: "memory:memory-1",
 				sourceKind: "manual",
 				sourceId: "memory-1",
 			}),

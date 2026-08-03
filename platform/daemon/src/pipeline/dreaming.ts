@@ -591,7 +591,7 @@ function buildDreamingPrompt(
 		// gate reads, change citation matching (which keys on source_kind /
 		// source_id / source_path / quote), or alter agent isolation.
 		const provenanceSuffix = [source.project, source.harness].filter(Boolean).join(" · ");
-		const heading = `\n### ${label} (${source.capturedAt})${provenanceSuffix ? ` — ${provenanceSuffix}` : ""}\nsource_kind: ${source.sourceKind}\nsource_id: ${source.sourceId}\n${source.sourcePath ? `source_path: ${source.sourcePath}\n` : ""}`;
+		const heading = `\n### ${label} (${source.capturedAt})${provenanceSuffix ? ` — ${provenanceSuffix}` : ""}\nsource_ref: ${source.kind}:${source.id}\nsource_kind: ${source.sourceKind}\nsource_id: ${source.sourceId}\n${source.sourcePath ? `source_path: ${source.sourcePath}\n` : ""}`;
 		// Use the canonical rendered source text (content + structured evidence)
 		// for both budget accounting and prompt rendering so a source whose
 		// structured metadata would overflow the budget is treated consistently
@@ -682,7 +682,7 @@ Do not emit archive_claim_value, update_link, or archive_link: they require stab
       "payload": { "name": "...", "entity_type": "project" },
       "reason": "why this semantic change is warranted",
       "confidence": 0.0,
-      "evidence": [{ "source_kind": "copy source_kind exactly from an episodic_evidence heading", "source_id": "copy source_id exactly from that heading", "source_path": "copy source_path when present", "quote": "exact supporting quote from that source" }]
+      "evidence": [{ "source_ref": "copy source_ref exactly from an episodic_evidence heading", "source_kind": "copy source_kind exactly from that heading", "source_id": "copy source_id exactly from that heading", "source_path": "copy source_path when present", "quote": "exact supporting quote from that source" }]
     }
   ],
   "summary": "Brief description of what you changed and why"

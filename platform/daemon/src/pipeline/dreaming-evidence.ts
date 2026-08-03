@@ -2,6 +2,8 @@ import type { EpisodicSourceRecord } from "../episodic-sources";
 
 /** A rendered immutable source record that a Dreaming agent may cite. */
 export interface DreamingAgentEvidence {
+	/** Canonical episodic selector (`memory:<id>`, `artifact:<id>`, etc.). */
+	readonly sourceRef: string;
 	/** Canonical rendered evidence the quote must be an exact substring of. */
 	readonly content: string;
 	/** Provenance tuple stamped onto derived rows (source entry provenance). */
@@ -68,6 +70,7 @@ export function createDreamingAgentEvidence(
 	sources: readonly EpisodicSourceRecord[],
 ): readonly DreamingAgentEvidence[] {
 	return sources.map((source) => ({
+		sourceRef: `${source.kind}:${source.id}`,
 		content: renderDreamingEvidence(source),
 		sourceKind: source.sourceKind,
 		sourceId: source.sourceId,

@@ -63,14 +63,16 @@ function textResult(payload: DreamingAgentToolResult): { readonly type: "text"; 
 function matchEvidenceQuote(evidence: readonly DreamingAgentEvidence[], citation: unknown): DreamingAgentEvidence | null {
 	if (typeof citation !== "object" || citation === null || Array.isArray(citation)) return null;
 	const value = citation as Record<string, unknown>;
+	const sourceRef = typeof value.source_ref === "string" ? value.source_ref.trim() : "";
 	const sourceKind = typeof value.source_kind === "string" ? value.source_kind.trim() : "";
 	const sourceId = typeof value.source_id === "string" ? value.source_id.trim() : "";
 	const sourcePath = typeof value.source_path === "string" ? value.source_path.trim() : null;
 	const quote = typeof value.quote === "string" ? value.quote.trim() : "";
-	if (!sourceKind || !sourceId || !quote) return null;
+	if (!sourceRef || !sourceKind || !sourceId || !quote) return null;
 	return (
 		evidence.find(
 			(record) =>
+			record.sourceRef === sourceRef &&
 				record.sourceKind === sourceKind &&
 				record.sourceId === sourceId &&
 				(sourcePath === null || record.sourcePath === sourcePath) &&
