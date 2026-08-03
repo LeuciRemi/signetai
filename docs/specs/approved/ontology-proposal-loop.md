@@ -118,10 +118,11 @@ The first implementation supports a small, safe set:
 - `supersede_claim_value`
 - `create_link`
 
-Unsupported operations may still be stored as pending proposals, but applying
-them returns a clear failure until a handler is added. This lets extraction and
-consolidation produce forward-looking proposals without forcing every operation
-to ship at once.
+The four structural convenience operations reuse those same graph primitives:
+`create_policy` writes a constraint claim in the target's `policy` aspect,
+`create_action_type` and `create_interface` create typed entities, and
+`attach_interface` writes an `implements` dependency. They do not introduce a
+second object or interface store.
 
 `create_link` accepts the existing graph dependency roles plus the first
 ontology-facing semantic roles used by extraction: `contains`, `contains_note`,

@@ -661,6 +661,81 @@ function applyCreateEntity(
 	return { entityId, entity: name };
 }
 
+/**
+ * Policies are durable constraints on the entity they govern. Keeping them as
+ * claims preserves their evidence, versioning, and existing constraint guards
+ * rather than introducing a second policy store.
+ */
+function applyCreatePolicy(
+	db: WriteDb,
+	agentId: string,
+	proposal: ProposalRow,
+	payload: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+	const target = readPayloadSelector(payload, "target_entity", "entity", "entity_id");
+	const policyKind = readString(payload, "kind");
+	const content = readString(payload, "content");
+	if (target === null) throw new OntologyProposalError("payload.target_entity is required", 400);
+	if (policyKind === null) throw new OntologyProposalError("payload.kind is required", 400);
+	if (content === null) throw new OntologyProposalError("payload.content is required", 400);
+	const result = applyAddClaimValue(db, agentId, proposal, {
+		entity: target,
+		entity_type: readString(payload, "entity_type") ?? undefined,
+		aspect: "policy",
+		group_key: "policy",
+		claim_key: canonicalKey(policyKind) ?? policyKind,
+		value: content,
+		kind: "constraint",
+		confidence: readNumber(payload, "confidence") ?? proposal.confidence,
+		importance: readNumber(payload, "importance") ?? proposal.confidence,
+	});
+	return { ...result, policyKind, policy: content };
+}
+
+function applyCreateActionType(
+	db: WriteDb,
+	agentId: string,
+	proposal: ProposalRow,
+	payload: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+	const name = readString(payload, "name") ?? readString(payload, "action_type");
+	if (name === null) throw new OntologyProposalError("payload.name is required", 400);
+	return applyCreateEntity(db, agentId, proposal, { name, entity_type: "action" });
+}
+
+function applyCreateInterface(
+	db: WriteDb,
+	agentId: string,
+	proposal: ProposalRow,
+	payload: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+	const name = readString(payload, "name") ?? readString(payload, "interface");
+	if (name === null) throw new OntologyProposalError("payload.name is required", 400);
+	return applyCreateEntity(db, agentId, proposal, { name, entity_type: "interface" });
+}
+
+/** Attach a concrete entity to an interface using the existing typed edge. */
+function applyAttachInterface(
+	db: WriteDb,
+	agentId: string,
+	proposal: ProposalRow,
+	payload: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+	const entity = readPayloadSelector(payload, "entity", "source_entity", "target_entity");
+	const interfaceName = readPayloadSelector(payload, "interface", "interface_name", "target_interface");
+	if (entity === null) throw new OntologyProposalError("payload.entity is required", 400);
+	if (interfaceName === null) throw new OntologyProposalError("payload.interface is required", 400);
+	return applyCreateLink(db, agentId, proposal, {
+		source_entity: entity,
+		target_entity: interfaceName,
+		target_type: "interface",
+		link_type: "implements",
+		reason: readString(payload, "reason") ?? proposal.rationale,
+		strength: readNumber(payload, "strength") ?? 0.5,
+		confidence: readNumber(payload, "confidence") ?? proposal.confidence,
+	});
+}
+
 function applyAddClaimValue(
 	db: WriteDb,
 	agentId: string,
@@ -1528,6 +1603,10 @@ function applyOperation(db: WriteDb, proposal: ProposalRow, actor: string): Read
 	if (proposal.operation === "create_link") return applyCreateLink(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "update_link") return applyUpdateLink(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "archive_link") return applyArchiveLink(db, proposal.agent_id, proposal, payload, actor);
+	if (proposal.operation === "create_policy") return applyCreatePolicy(db, proposal.agent_id, proposal, payload);
+	if (proposal.operation === "create_action_type") return applyCreateActionType(db, proposal.agent_id, proposal, payload);
+	if (proposal.operation === "create_interface") return applyCreateInterface(db, proposal.agent_id, proposal, payload);
+	if (proposal.operation === "attach_interface") return applyAttachInterface(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "pin_entity") return applyPinEntity(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "unpin_entity") return applyUnpinEntity(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "create_entity_alias")

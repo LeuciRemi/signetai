@@ -1332,24 +1332,59 @@ describe("ontology proposals", () => {
 		expect(dot.items[0]?.payload.name).toBe("Dot Project");
 	});
 
-	it("marks unsupported pending operations failed instead of mutating state", () => {
-		const proposal = createOntologyProposal(getDbAccessor(), {
+	it("applies policy, action, and interface operations through existing graph primitives", () => {
+		const policy = applyOntologyOperation(getDbAccessor(), {
 			agentId: "default",
+			actor: "operator",
+			operation: "create_policy",
+			payload: {
+				target_entity: "Signet",
+				kind: "storage",
+				content: "Use SQLite for application state.",
+			},
+		});
+		expect(policy.proposal.status).toBe("applied");
+		const action = applyOntologyOperation(getDbAccessor(), {
+			agentId: "default",
+			actor: "operator",
+			operation: "create_action_type",
+			payload: { action_type: "Deploy release" },
+		});
+		const iface = applyOntologyOperation(getDbAccessor(), {
+			agentId: "default",
+			actor: "operator",
 			operation: "create_interface",
-			payload: { source: ["A"], target: "B" },
+			payload: { name: "Memory provider" },
+		});
+		const attachment = applyOntologyOperation(getDbAccessor(), {
+			agentId: "default",
+			actor: "operator",
+			operation: "attach_interface",
+			payload: { entity: "Signet", interface: "Memory provider" },
 		});
 
-		expect(() =>
-			applyOntologyProposal(getDbAccessor(), {
-				agentId: "default",
-				id: proposal.id,
-				actor: "operator",
-			}),
-		).toThrow(OntologyProposalError);
-
-		const failed = getOntologyProposal(getDbAccessor(), proposal.id, "default");
-		expect(failed?.status).toBe("failed");
-		expect(failed?.result?.error).toContain("Unsupported");
+		expect(action.result).toMatchObject({ entity: "Deploy release" });
+		expect(iface.result).toMatchObject({ entity: "Memory provider" });
+		expect(attachment.result).toMatchObject({ updated: false });
+		const graph = getDbAccessor().withReadDb((db) => ({
+			policy: db
+				.prepare(
+					`SELECT ea.kind, ea.group_key, ea.claim_key, ea.content
+					 FROM entity_attributes ea JOIN entity_aspects asp ON asp.id = ea.aspect_id
+					 JOIN entities e ON e.id = asp.entity_id
+					 WHERE e.agent_id = 'default' AND e.name = 'Signet' AND asp.name = 'policy'`,
+				)
+				.get(),
+			action: db.prepare("SELECT entity_type FROM entities WHERE agent_id = 'default' AND name = 'Deploy release'").get(),
+			interface: db.prepare("SELECT entity_type FROM entities WHERE agent_id = 'default' AND name = 'Memory provider'").get(),
+			link: db
+				.prepare("SELECT dependency_type FROM entity_dependencies WHERE agent_id = 'default'")
+				.get(),
+		}));
+		expect(graph.policy).toMatchObject({ kind: "constraint", group_key: "policy", claim_key: "storage" });
+		expect(graph.action).toMatchObject({ entity_type: "action" });
+		expect(graph.interface).toMatchObject({ entity_type: "interface" });
+		expect(graph.link).toMatchObject({ dependency_type: "implements" });
 	});
 
 	it("applies direct operations by creating an applied proposal and graph mutation atomically", () => {
