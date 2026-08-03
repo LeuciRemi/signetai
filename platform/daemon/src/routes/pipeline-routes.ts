@@ -18,6 +18,7 @@ import {
 	requestDreamingEvidenceRequeue,
 } from "../pipeline";
 import { applyDreamingOperations } from "../pipeline/dreaming-operations.js";
+import { getDreamingCapability, getDreamingCapabilityManifest } from "../pipeline/dreaming-capabilities.js";
 import { getFeedbackTelemetry } from "../pipeline/aspect-feedback.js";
 import { AlreadyRunningError } from "../pipeline/dreaming-worker.js";
 import { getTraversalStatus } from "../pipeline/graph-traversal.js";
@@ -544,8 +545,18 @@ export function registerPipelineRoutes(app: Hono): void {
 	app.use("/api/dream/operations", async (c, next) => {
 		return requirePermission("modify", authConfig)(c, next);
 	});
+	app.use("/api/dream/tools/*", async (c, next) => {
+		return requirePermission("modify", authConfig)(c, next);
+	});
+	app.use("/api/dream/tools", async (c, next) => {
+		return requirePermission("modify", authConfig)(c, next);
+	});
 	app.use("/api/dream/*", async (c, next) => {
-		if (c.req.path === "/api/dream/operations") return next();
+		if (
+			c.req.path === "/api/dream/operations" ||
+			c.req.path === "/api/dream/tools" ||
+			c.req.path.startsWith("/api/dream/tools/")
+		) return next();
 		return requirePermission("admin", authConfig)(c, next);
 	});
 
@@ -632,6 +643,28 @@ export function registerPipelineRoutes(app: Hono): void {
 			}),
 		});
 		return c.json({ ...result, agentId }, result.ok ? 200 : 400);
+	});
+
+	// Pi invokes this registry in-process; MCP and CLI use this transport
+	// binding. The capability id and input schema are never copied here.
+	app.get("/api/dream/tools", (c) => c.json({ items: getDreamingCapabilityManifest() }));
+	app.post("/api/dream/tools/:capability", async (c) => {
+		const raw: unknown = await c.req.json().catch(() => null);
+		if (raw === null) return c.json({ error: "Malformed JSON body" }, 400);
+		const body = asRecord(raw);
+		const scopedAgent = resolveScopedDreamAgent(c, body);
+		if (scopedAgent.error) return c.json({ error: scopedAgent.error }, 403);
+		const capability = getDreamingCapability(
+			{
+				accessor: getDbAccessor(),
+				agentId: scopedAgent.agentId,
+				actor: readString(body, "actor") ?? c.req.header("x-signet-actor") ?? "dreaming-client",
+			},
+			c.req.param("capability"),
+		);
+		if (!capability) return c.json({ error: "Unknown Dreaming capability" }, 404);
+		const result = await capability.invoke(body.input);
+		return c.json({ ...result, agentId: scopedAgent.agentId }, result.ok ? 200 : 400);
 	});
 
 	app.post("/api/dream/trigger", async (c) => {

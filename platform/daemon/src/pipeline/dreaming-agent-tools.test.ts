@@ -6,6 +6,7 @@ import { closeDbAccessor, getDbAccessor, initDbAccessor } from "../db-accessor";
 import {
 	createDreamingAgentTools,
 } from "./dreaming-agent-tools";
+import { DREAMING_CAPABILITY_IDS, getDreamingCapabilityManifest } from "./dreaming-capabilities";
 import type { DreamingAgentEvidence } from "./dreaming-evidence";
 
 /**
@@ -73,6 +74,12 @@ describe("dreaming-agent-tools", () => {
 		if (!tool) throw new Error(`tool ${name} not registered`);
 		return tool;
 	}
+
+	it("derives Pi tools and public metadata from the same capability registry", () => {
+		const tools = createDreamingAgentTools({ accessor: getDbAccessor(), agentId: "owner", actor: "owner" });
+		expect(tools.map((tool) => tool.name)).toEqual([...DREAMING_CAPABILITY_IDS]);
+		expect(getDreamingCapabilityManifest().map((capability) => capability.id)).toEqual([...DREAMING_CAPABILITY_IDS]);
+	});
 
 	it("isolates reads by agentId: search_entities only returns the caller's entities", async () => {
 		insertEntity("e-owner", "Owner Entity", "owner entity", "owner");

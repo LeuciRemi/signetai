@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { DREAMING_CAPABILITY_IDS } from "../pipeline/dreaming-capabilities";
 import { createDreamingMcpServer } from "./dreaming-tools";
 
 interface RegisteredTool {
@@ -31,16 +32,7 @@ describe("Dreaming MCP tools", () => {
 	it("exposes only the scoped conceptual Dreaming surface", () => {
 		const server = createDreamingMcpServer({ daemonUrl: "http://localhost:3850", agentId: "agent-a", version: "test" });
 		expect(Object.keys(tools(server)).sort()).toEqual(
-			[
-				"apply_ontology_ops",
-				"get_claim_evidence",
-				"get_entity",
-				"get_link_evidence",
-				"list_aspect_claims",
-				"search_entities",
-				"search_evidence",
-				"walk_links",
-			].sort(),
+			[...DREAMING_CAPABILITY_IDS].sort(),
 		);
 	});
 
@@ -50,12 +42,14 @@ describe("Dreaming MCP tools", () => {
 		mockFetch(capture);
 
 		await tools(server).search_entities!.handler({ query: "Atlas" });
-		expect(capture.url).toContain("agent_id=agent-a");
+		expect(capture.url).toBe("http://localhost:3850/api/dream/tools/search_entities");
+		expect(JSON.parse(capture.body ?? "{}")).toMatchObject({ agentId: "agent-a", input: { query: "Atlas" } });
 
 		await tools(server).apply_ontology_ops!.handler({
 			operations: [{ operation: "create_entity", payload: { name: "Atlas" } }],
 		});
 		expect(capture.method).toBe("POST");
+		expect(capture.url).toBe("http://localhost:3850/api/dream/tools/apply_ontology_ops");
 		expect(JSON.parse(capture.body ?? "{}")).toMatchObject({ agentId: "agent-a", actor: "dreaming-acpx" });
 	});
 });

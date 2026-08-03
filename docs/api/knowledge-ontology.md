@@ -438,6 +438,34 @@ uses the same scoped-agent resolution as Dreaming trigger requests.
 
 Returns `404` when the scoped exclusion is no longer active.
 
+### GET /api/dream/tools
+
+List the canonical Dreaming capability registry, including each capability's
+JSON Schema. Pi sessions, restricted Dreaming MCP, and `signet dream` bind
+this same registry; clients must not reproduce a separate tool list. Requires
+`modify` permission.
+
+### POST /api/dream/tools/:capability
+
+Invoke one canonical Dreaming capability through the daemon. This is the
+transport binding for restricted MCP and shell-driven harnesses; the daemon
+validates the registry schema and pins all reads and writes to the credential's
+agent scope. Requires `modify` permission.
+
+**Request body**
+
+```json
+{
+  "agentId": "noam",
+  "input": { "query": "deployment target" }
+}
+```
+
+`input` must satisfy the selected capability's schema from `GET /api/dream/tools`.
+For example, `search_entities` accepts `query`, `type`, `limit`, and `offset`;
+`apply_ontology_ops` accepts the cited `operations` batch. The request body
+cannot supply a second agent scope inside `input`.
+
 ### POST /api/dream/trigger
 
 Manually trigger a dreaming pass. Requires `admin` permission.

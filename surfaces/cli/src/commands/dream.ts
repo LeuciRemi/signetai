@@ -50,6 +50,56 @@ export function registerDreamCommands(program: Command, deps: DreamDeps): void {
 	const dream = program.command("dream").description("Manage dreaming memory consolidation");
 
 	dream
+		.command("capabilities")
+		.description("List the daemon-owned Dreaming capability registry")
+		.option("--json", "Output as JSON")
+		.action(async (options: { json?: boolean }) => {
+			const data = await deps.fetchFromDaemon<{ readonly items?: readonly { readonly id: string; readonly description: string }[] }>(
+				"/api/dream/tools",
+			);
+			if (!data) {
+				console.error(chalk.red("Failed to get Dreaming capabilities (is the daemon running?)"));
+				process.exit(1);
+			}
+			if (options.json) {
+				console.log(JSON.stringify(data, null, 2));
+				return;
+			}
+			for (const capability of data.items ?? []) console.log(`${capability.id}\t${capability.description}`);
+		});
+
+	dream
+		.command("tool <capability>")
+		.description("Invoke one daemon-owned Dreaming capability with a JSON input object")
+		.requiredOption("--input <json>", "Capability input JSON object")
+		.option("--agent <id>", "Agent scope")
+		.action(async (capability: string, options: { input: string; agent?: string }) => {
+			let input: unknown;
+			try {
+				input = JSON.parse(options.input);
+			} catch {
+				console.error(chalk.red("--input must be a JSON object"));
+				process.exit(1);
+				return;
+			}
+			if (!input || typeof input !== "object" || Array.isArray(input)) {
+				console.error(chalk.red("--input must be a JSON object"));
+				process.exit(1);
+				return;
+			}
+			const data = await deps.fetchFromDaemon<unknown>(`/api/dream/tools/${encodeURIComponent(capability)}`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ input, ...(options.agent ? { agentId: options.agent } : {}) }),
+			});
+			if (!data) {
+				console.error(chalk.red("Dreaming capability failed (is the daemon running?)"));
+				process.exit(1);
+			}
+			console.log(JSON.stringify(data, null, 2));
+		});
+
+	dream
 		.command("status")
 		.description("Show dreaming worker status and recent passes")
 		.action(async () => {

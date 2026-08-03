@@ -452,7 +452,7 @@ describe("auth guard co-location", () => {
 	});
 
 	describe("dream routes need guards", () => {
-		it("dream status, trigger, evidence requeue, and agent operations return 403 without auth", async () => {
+		it("dream status, trigger, evidence requeue, capability registry, and agent operations return 403 without auth", async () => {
 			const app = await makeApp();
 			const { registerPipelineRoutes } = await import("./routes/pipeline-routes");
 			registerPipelineRoutes(app);
@@ -460,6 +460,8 @@ describe("auth guard co-location", () => {
 			expect(await status(app, "POST", "/api/dream/trigger")).toBe(403);
 			expect(await status(app, "POST", "/api/dream/exclusions/requeue")).toBe(403);
 			expect(await status(app, "POST", "/api/dream/operations")).toBe(403);
+			expect(await status(app, "GET", "/api/dream/tools")).toBe(403);
+			expect(await status(app, "POST", "/api/dream/tools/search_entities")).toBe(403);
 		});
 
 		it("binds agent-scoped Dreaming writes to the credential agent", async () => {
@@ -478,6 +480,23 @@ describe("auth guard co-location", () => {
 				body: JSON.stringify({ agentId: "agent-b", operations: [{ operation: "create_entity", payload: {} }] }),
 			});
 			expect(res.status).toBe(403);
+			const toolRes = await app.request("/api/dream/tools/search_entities", {
+				method: "POST",
+				headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+				body: JSON.stringify({ agentId: "agent-b", input: { query: "Atlas" } }),
+			});
+			expect(toolRes.status).toBe(403);
+			const manifestRes = await app.request("/api/dream/tools", {
+				headers: { Authorization: `Bearer ${token}` },
+			});
+			expect(manifestRes.status).toBe(200);
+			const scopedToolRes = await app.request("/api/dream/tools/search_entities", {
+				method: "POST",
+				headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+				body: JSON.stringify({ input: { query: "Atlas" } }),
+			});
+			expect(scopedToolRes.status).toBe(200);
+			expect(await scopedToolRes.json()).toMatchObject({ tool: "search_entities", ok: true, agentId: "agent-a" });
 		});
 	});
 
