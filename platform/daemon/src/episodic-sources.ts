@@ -8,6 +8,12 @@ export interface EpisodicCursor {
 	readonly capturedAt: string;
 	readonly kind: EpisodicSourceKind | null;
 	readonly id: string;
+	/**
+	 * A character offset into the canonical rendered evidence for `kind:id`.
+	 * Present only while Dreaming is safely processing an oversized immutable
+	 * record across passes; the source row itself is never changed.
+	 */
+	readonly fragmentOffset?: number;
 }
 
 export interface EpisodicSourceRecord {

@@ -14,6 +14,53 @@ export interface DreamingAgentEvidence {
 	readonly sourceEntryId: string | null;
 }
 
+/** One exact, resumable slice of immutable episodic evidence. */
+export interface DreamingEvidenceFragment {
+	readonly source: EpisodicSourceRecord;
+	/** The exact text exposed to the agent and accepted for citations. */
+	readonly content: string;
+	/** Character offsets into renderDreamingEvidence(source). */
+	readonly start: number;
+	readonly end: number;
+	readonly sourceLength: number;
+}
+
+/**
+ * Return the next safe-boundary fragment without dropping or normalizing a
+ * character. The cursor stores absolute offsets, so a later pass can resume
+ * even if the configured context budget changes.
+ */
+export function nextDreamingEvidenceFragment(
+	source: EpisodicSourceRecord,
+	start: number,
+	maxChars: number,
+): DreamingEvidenceFragment | null {
+	const content = renderDreamingEvidence(source);
+	if (!Number.isSafeInteger(start) || start < 0 || start >= content.length || maxChars <= 0) return null;
+	const cappedEnd = Math.min(content.length, start + Math.floor(maxChars));
+	let end = cappedEnd;
+	if (cappedEnd < content.length) {
+		for (let index = cappedEnd - 1; index > start; index -= 1) {
+			const character = content[index]!;
+			const previous = content[index - 1]!;
+			if ((character === "\n" && previous === "\n") || (/\s/.test(character) && /[.!?]/.test(previous))) {
+				let boundaryEnd = index + 1;
+				while (boundaryEnd < content.length && /\s/.test(content[boundaryEnd]!)) boundaryEnd += 1;
+				if (boundaryEnd <= cappedEnd && content.slice(start, boundaryEnd).trim().length > 0) {
+					end = boundaryEnd;
+					break;
+				}
+			}
+		}
+	}
+	return { source, content: content.slice(start, end), start, end, sourceLength: content.length };
+}
+
+export function completeDreamingEvidenceFragment(source: EpisodicSourceRecord): DreamingEvidenceFragment {
+	const content = renderDreamingEvidence(source);
+	return { source, content, start: 0, end: content.length, sourceLength: content.length };
+}
+
 /**
  * Render structured evidence preserved beside an immutable episodic record.
  * This is the canonical text exposed to Dreaming and accepted for citations.
@@ -67,14 +114,18 @@ export function renderDreamingEvidence(source: EpisodicSourceRecord): string {
  * the write tool validate against the same structured text.
  */
 export function createDreamingAgentEvidence(
-	sources: readonly EpisodicSourceRecord[],
+	evidence: readonly (EpisodicSourceRecord | DreamingEvidenceFragment)[],
 ): readonly DreamingAgentEvidence[] {
-	return sources.map((source) => ({
+	return evidence.map((item) => {
+		const fragment = "source" in item ? item : completeDreamingEvidenceFragment(item);
+		const { source } = fragment;
+		return {
 		sourceRef: `${source.kind}:${source.id}`,
-		content: renderDreamingEvidence(source),
+		content: fragment.content,
 		sourceKind: source.sourceKind,
 		sourceId: source.sourceId,
 		sourcePath: source.sourcePath,
 		sourceEntryId: source.sourceEntryId,
-	}));
+		};
+	});
 }

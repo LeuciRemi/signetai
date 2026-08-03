@@ -18,11 +18,21 @@ import {
 	resolveStartupIdentityFiles,
 } from "@signet/core";
 import type { DbAccessor, ReadDb, WriteDb } from "../db-accessor";
-import { type EpisodicCursor, type EpisodicSourceRecord, readRecentEpisodicSources } from "../episodic-sources";
+import {
+	type EpisodicCursor,
+	type EpisodicSourceRecord,
+	readEpisodicSource,
+	readRecentEpisodicSources,
+} from "../episodic-sources";
 import { logger } from "../logger";
 import { createDreamingAgentTools } from "./dreaming-agent-tools";
 import type { DreamingToolCallTrace } from "./dreaming-capabilities";
-import { createDreamingAgentEvidence, renderDreamingEvidence } from "./dreaming-evidence";
+import {
+	createDreamingAgentEvidence,
+	nextDreamingEvidenceFragment,
+	renderDreamingEvidence,
+	type DreamingEvidenceFragment,
+} from "./dreaming-evidence";
 import type { ApplyDreamingOperationsResult, DreamingOperationRequest } from "./dreaming-operations";
 import { countTokens } from "./tokenizer";
 
@@ -44,7 +54,7 @@ export interface DreamingState {
 function parseEpisodicCursor(value: string | null): EpisodicCursor | null {
 	if (!value) return null;
 	try {
-		const parsed = JSON.parse(value) as { capturedAt?: unknown; kind?: unknown; id?: unknown };
+		const parsed = JSON.parse(value) as { capturedAt?: unknown; kind?: unknown; id?: unknown; fragmentOffset?: unknown };
 		if (typeof parsed.capturedAt !== "string" || typeof parsed.id !== "string") return null;
 		if (
 			parsed.kind !== null &&
@@ -55,7 +65,13 @@ function parseEpisodicCursor(value: string | null): EpisodicCursor | null {
 		) {
 			return null;
 		}
-		return { capturedAt: parsed.capturedAt, kind: parsed.kind ?? null, id: parsed.id };
+		const fragmentOffset =
+			typeof parsed.fragmentOffset === "number" &&
+			Number.isSafeInteger(parsed.fragmentOffset) &&
+			parsed.fragmentOffset > 0
+				? parsed.fragmentOffset
+				: undefined;
+		return { capturedAt: parsed.capturedAt, kind: parsed.kind ?? null, id: parsed.id, ...(fragmentOffset ? { fragmentOffset } : {}) };
 	} catch {
 		return null;
 	}
@@ -514,7 +530,11 @@ function fetchEpisodicEvidence(
 	limit: number,
 	cursor: EpisodicCursor | null,
 ): readonly EpisodicSourceRecord[] {
-	return readRecentEpisodicSources(db, agentId, limit, undefined, since, "oldest", cursor);
+	const sources = readRecentEpisodicSources(db, agentId, limit, undefined, since, "oldest", cursor);
+	if (!cursor?.fragmentOffset || cursor.kind === null) return sources;
+	const resumed = readEpisodicSource(db, { agentId, from: `${cursor.kind}:${cursor.id}` });
+	if (!resumed) return sources;
+	return [resumed, ...sources.filter((source) => source.kind !== resumed.kind || source.id !== resumed.id)].slice(0, limit);
 }
 
 function fetchEntityGraph(
@@ -637,12 +657,15 @@ function buildDreamingPrompt(
 	graph: ReturnType<typeof fetchEntityGraph>,
 	agentsDir: string,
 	maxTokens: number,
+	cursor: EpisodicCursor | null,
 ): {
 	readonly prompt: string;
 	readonly lastEvidence: EpisodicSourceRecord | null;
 	readonly lastCursorEvidence: EpisodicSourceRecord | null;
+	readonly lastCursorFragmentOffset: number | null;
 	readonly renderedEvidence: readonly EpisodicSourceRecord[];
-	readonly oversizedEvidence: readonly EpisodicSourceRecord[];
+	readonly completedEvidence: readonly EpisodicSourceRecord[];
+	readonly renderedFragments: readonly DreamingEvidenceFragment[];
 } {
 	const startupEntries = resolveStartupIdentityFiles(agentsDir);
 	const startupMemoryEntry = startupEntries.find((entry) => entry.path.split(/[\\/]/).pop() === "MEMORY.md");
@@ -707,8 +730,10 @@ function buildDreamingPrompt(
 	let usedChars = 0;
 	let lastEvidence: EpisodicSourceRecord | null = null;
 	let lastCursorEvidence: EpisodicSourceRecord | null = null;
+	let lastCursorFragmentOffset: number | null = null;
 	const renderedEvidence: EpisodicSourceRecord[] = [];
-	const oversizedEvidence: EpisodicSourceRecord[] = [];
+	const completedEvidence: EpisodicSourceRecord[] = [];
+	const renderedFragments: DreamingEvidenceFragment[] = [];
 	for (const source of evidence) {
 		const label = `${source.kind}:${source.sourceKind}`;
 		// Surface project and harness provenance labels so the model can
@@ -722,21 +747,20 @@ function buildDreamingPrompt(
 		// for both budget accounting and prompt rendering so a source whose
 		// structured metadata would overflow the budget is treated consistently
 		// with its actual rendered size.
-		const sourceText = renderDreamingEvidence(source);
-		const sourceSize = heading.length + sourceText.length;
-		if (sourceSize > evidenceBudget) {
-			oversizedEvidence.push(source);
-			lastCursorEvidence = source;
-			continue;
-		}
-		if (usedChars + sourceSize > evidenceBudget) {
-			break;
-		}
-		evidenceText += `${heading}${sourceText}\n`;
-		usedChars += sourceSize;
+		const resumeOffset =
+			cursor?.fragmentOffset && cursor.kind === source.kind && cursor.id === source.id ? cursor.fragmentOffset : 0;
+		const fragment = nextDreamingEvidenceFragment(source, resumeOffset, evidenceBudget - usedChars - heading.length);
+		if (!fragment) break;
+		evidenceText += `${heading}${fragment.content}\n`;
+		usedChars += heading.length + fragment.content.length;
 		lastEvidence = source;
 		lastCursorEvidence = source;
+		lastCursorFragmentOffset = fragment.end < fragment.sourceLength ? fragment.end : null;
 		renderedEvidence.push(source);
+		renderedFragments.push(fragment);
+		if (lastCursorFragmentOffset === null) completedEvidence.push(source);
+		// A partial immutable record must resume before later records are read.
+		if (lastCursorFragmentOffset !== null) break;
 	}
 
 	const modeInstructions =
@@ -791,8 +815,10 @@ ${depText || "(no relationships yet)"}
 Use the supplied daemon tools to inspect semantic context before changing it. Search for entities before creating duplicates, inspect claim siblings before superseding them, and inspect links before updating them. Use apply_ontology_ops for every semantic write. Every operation must cite an exact quote plus source_ref from the episodic evidence you received or searched. Do not attempt direct database access.`,
 		lastEvidence,
 		lastCursorEvidence,
+		lastCursorFragmentOffset,
 		renderedEvidence,
-		oversizedEvidence,
+		completedEvidence,
+		renderedFragments,
 	};
 }
 
@@ -848,29 +874,22 @@ export async function runDreamingAgentPass(
 			return { passId, applied: 0, skipped: 0, failed: 0, summary };
 		}
 
-		const { prompt, lastCursorEvidence, renderedEvidence, oversizedEvidence } = buildDreamingPrompt(
+		const { prompt, lastCursorEvidence, lastCursorFragmentOffset, renderedEvidence, completedEvidence, renderedFragments } = buildDreamingPrompt(
 			mode,
 			evidence,
 			graph,
 			agentsDir,
 			cfg.maxInputTokens,
+			state.evidenceCursor,
 		);
 		const evidenceCursor: EpisodicCursor = lastCursorEvidence
-			? { capturedAt: lastCursorEvidence.capturedAt, kind: lastCursorEvidence.kind, id: lastCursorEvidence.id }
+			? {
+					capturedAt: lastCursorEvidence.capturedAt,
+					kind: lastCursorEvidence.kind,
+					id: lastCursorEvidence.id,
+					...(lastCursorFragmentOffset === null ? {} : { fragmentOffset: lastCursorFragmentOffset }),
+				}
 			: (state.evidenceCursor ?? { capturedAt: passStartedAt, kind: null, id: "" });
-		if (renderedEvidence.length === 0 && oversizedEvidence.length > 0) {
-			const summary = `Skipped ${oversizedEvidence.length} oversized episodic source${oversizedEvidence.length === 1 ? "" : "s"}; requeue after increasing the Dreaming input budget.`;
-			accessor.withWriteTx((db) => {
-				recordDreamingEvidenceExclusionsInTx(db, agentId, passId, oversizedEvidence, "oversized_prompt_budget");
-				db.prepare(
-					`UPDATE dreaming_passes SET status = 'completed', completed_at = datetime('now'),
-					 tokens_consumed = 0, mutations_applied = 0, mutations_skipped = ?,
-					 mutations_failed = 0, summary = ? WHERE id = ?`,
-				).run(oversizedEvidence.length, summary, passId);
-				resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, passStartedAt);
-			});
-			return { passId, applied: 0, skipped: oversizedEvidence.length, failed: 0, summary };
-		}
 
 		let applied = 0;
 		let failed = 0;
@@ -880,7 +899,7 @@ export async function runDreamingAgentPass(
 			accessor,
 			agentId,
 			actor: "dreaming",
-			evidence: createDreamingAgentEvidence(renderedEvidence),
+			evidence: createDreamingAgentEvidence(renderedFragments),
 			onOperationsApplied(result, operations) {
 				applied += result.items.filter((item) => item.ok).length;
 				failed += result.items.filter((item) => !item.ok).length;
@@ -904,13 +923,12 @@ export async function runDreamingAgentPass(
 				`UPDATE dreaming_passes SET status = 'completed', completed_at = datetime('now'),
 				 tokens_consumed = ?, mutations_applied = ?, mutations_skipped = ?,
 				 mutations_failed = ?, summary = ? WHERE id = ?`,
-			).run(tokensConsumed, applied, oversizedEvidence.length, failed, summary, passId);
-			recordDreamingEvidenceExclusionsInTx(db, agentId, passId, oversizedEvidence, "oversized_prompt_budget");
+			).run(tokensConsumed, applied, 0, failed, summary, passId);
 			recordDreamingEvidenceExclusionsInTx(db, agentId, passId, rejectedEvidence, "semantic_operation_rejected");
-			resolveRequeuedEvidenceInTx(db, agentId, renderedEvidence);
+			resolveRequeuedEvidenceInTx(db, agentId, completedEvidence);
 			resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, passStartedAt);
 		});
-		return { passId, applied, skipped: oversizedEvidence.length, failed, summary };
+		return { passId, applied, skipped: 0, failed, summary };
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		logger.error("dreaming", "Agentic dreaming pass failed", undefined, { error: message });
@@ -938,7 +956,7 @@ export function getDreamingEpisodicTokenBacklog(accessor: DbAccessor, agentId: s
 
 export function getDreamingEpisodicTokenBacklogInDb(db: ReadDb, agentId: string): number {
 	const state = readDreamingState(db, agentId);
-	return readRecentEpisodicSources(
+	const queued = readRecentEpisodicSources(
 		db,
 		agentId,
 		500,
@@ -946,7 +964,13 @@ export function getDreamingEpisodicTokenBacklogInDb(db: ReadDb, agentId: string)
 		state.evidenceCursor ? null : state.lastPassAt,
 		"newest",
 		state.evidenceCursor,
-	).reduce((total, source) => total + countTokens(source.content), 0);
+	);
+	const resumed =
+		state.evidenceCursor?.fragmentOffset && state.evidenceCursor.kind !== null
+			? readEpisodicSource(db, { agentId, from: `${state.evidenceCursor.kind}:${state.evidenceCursor.id}` })
+			: null;
+	const remaining = resumed ? renderDreamingEvidence(resumed).slice(state.evidenceCursor?.fragmentOffset) : "";
+	return queued.reduce((total, source) => total + countTokens(renderDreamingEvidence(source)), 0) + countTokens(remaining);
 }
 
 export function shouldTriggerDreaming(

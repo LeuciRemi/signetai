@@ -402,7 +402,7 @@ permission.
     {
       "sourceKind": "artifact",
       "sourceId": "sources/notebook/large-export.md",
-      "reason": "oversized_prompt_budget",
+      "reason": "semantic_operation_rejected",
       "passId": "pass-uuid",
       "excludedAt": "2026-04-01 12:00:00",
       "requeueRequestedAt": null,
@@ -413,14 +413,16 @@ permission.
 ```
 
 An exclusion preserves only the source identity and processing status; it does
-not modify or discard the underlying episodic evidence. `reason` is either
-`oversized_prompt_budget` or `semantic_operation_rejected`.
+not modify or discard the underlying episodic evidence. Current Dreaming passes
+record `semantic_operation_rejected` when the daemon rejects an agent's cited
+semantic operation. Oversized immutable evidence is instead resumed at a safe
+boundary across passes and is not quarantined.
 
 ### POST /api/dream/exclusions/requeue
 
-Request one quarantined evidence source be considered again. This is useful
-after increasing Dreaming's input budget or correcting the source. Requires
-`admin` permission.
+Request one quarantined evidence source be considered again after correcting
+the model or configuration issue that caused a rejected semantic operation.
+Requires `admin` permission.
 
 **Request body**
 

@@ -5,6 +5,7 @@ import { runMigrations } from "../../../core/src/migrations";
 import type { DbAccessor } from "../db-accessor";
 import {
 	_testParseEpisodicCursor,
+	getDreamingEpisodicTokenBacklog,
 	getDreamingEvidenceExclusions,
 	getDreamingPasses,
 	getDreamingState,
@@ -72,6 +73,68 @@ describe("Dreaming", () => {
 			expect(_testParseEpisodicCursor(JSON.stringify(cursor))).toEqual(cursor);
 		}
 		expect(_testParseEpisodicCursor(JSON.stringify({ capturedAt: "2026-01-01", kind: "unknown", id: "x" }))).toBeNull();
+		expect(
+			_testParseEpisodicCursor(
+				JSON.stringify({ capturedAt: "2026-03-01T00:00:00.000Z", kind: "summary", id: "fragment", fragmentOffset: 12 }),
+			),
+		).toEqual({ capturedAt: "2026-03-01T00:00:00.000Z", kind: "summary", id: "fragment", fragmentOffset: 12 });
+		expect(
+			_testParseEpisodicCursor(
+				JSON.stringify({ capturedAt: "2026-03-01T00:00:00.000Z", kind: "summary", id: "fragment", fragmentOffset: -1 }),
+			),
+		).toEqual({ capturedAt: "2026-03-01T00:00:00.000Z", kind: "summary", id: "fragment" });
+	});
+
+	it("resumes oversized immutable evidence across passes without excluding or losing it", async () => {
+		const sentences = Array.from(
+			{ length: 12 },
+			(_, index) => `E${String(index + 1).padStart(2, "0")} durable evidence.`,
+		);
+		seedSummary(db, "oversized-summary", sentences.join("\n\n"), 500);
+		db.prepare(
+			`INSERT INTO dreaming_evidence_exclusions
+			 (agent_id, source_kind, source_id, reason, pass_id, excluded_at, requeue_requested_at)
+			 VALUES (?, 'summary', 'oversized-summary', 'semantic_operation_rejected', 'earlier-pass', datetime('now'), datetime('now'))`,
+		).run(AGENT);
+		const prompts: string[] = [];
+		const cfg = defaultCfg({ maxInputTokens: 100 });
+		for (let pass = 0; pass < 20; pass += 1) {
+			await runDreamingAgentPass(
+				accessor,
+				{
+					async run(input) {
+						prompts.push(input.prompt);
+						return { summary: "Reviewed evidence fragment" };
+					},
+				},
+				cfg,
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			const state = getDreamingState(accessor, AGENT);
+			if (!state.evidenceCursor?.fragmentOffset) break;
+			if (pass === 0) {
+				expect(getDreamingEpisodicTokenBacklog(accessor, AGENT)).toBeGreaterThan(0);
+				expect(getDreamingEvidenceExclusions(accessor, AGENT)).toContainEqual(
+					expect.objectContaining({ sourceId: "oversized-summary", resolvedAt: null }),
+				);
+			}
+		}
+		expect(prompts.length).toBeGreaterThan(1);
+		expect(prompts.every((prompt) => sentences.some((sentence) => prompt.includes(sentence)))).toBe(true);
+		const allPromptEvidence = prompts.join("\n");
+		for (const sentence of sentences) expect(allPromptEvidence).toContain(sentence);
+		expect(getDreamingState(accessor, AGENT).evidenceCursor).toMatchObject({ id: "oversized-summary", kind: "summary" });
+		expect(getDreamingState(accessor, AGENT).evidenceCursor?.fragmentOffset).toBeUndefined();
+		expect(getDreamingEvidenceExclusions(accessor, AGENT)).not.toContainEqual(
+			expect.objectContaining({ sourceId: "oversized-summary", reason: "oversized_prompt_budget" }),
+		);
+		expect(
+			db
+				.prepare("SELECT resolved_at FROM dreaming_evidence_exclusions WHERE agent_id = ? AND source_id = ?")
+				.get(AGENT, "oversized-summary"),
+		).toMatchObject({ resolved_at: expect.any(String) });
 	});
 
 	it("uses wall-clock backoff independently of later evidence volume", () => {
