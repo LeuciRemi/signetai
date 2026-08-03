@@ -20,6 +20,7 @@ import type {
 	TaskMeta,
 	TaskStatus,
 } from "@signet/core";
+import { SOURCE_NATIVE_TOPOLOGY_ENTITY_TYPES } from "@signet/core";
 import type { DbAccessor, ReadDb } from "./db-accessor";
 import { getDreamingEpisodicTokenBacklogInDb } from "./pipeline/dreaming";
 
@@ -1931,6 +1932,7 @@ export function getKnowledgeGraphForConstellation(
 	return accessor.withReadDb((db) => {
 		const visibleAgentIds = getConstellationVisibleAgentIds(db, agentId);
 		const agentPlaceholders = placeholders(visibleAgentIds.length);
+		const topologyPlaceholders = placeholders(SOURCE_NATIVE_TOPOLOGY_ENTITY_TYPES.length);
 		// Keep the dashboard read path bounded. The previous implementation loaded
 		// every aspect, active attribute, and dependency for the agent, then filtered
 		// in JS. Large real workspaces can turn a simple Ontology tab visit into an
@@ -1941,6 +1943,10 @@ export function getKnowledgeGraphForConstellation(
 				 FROM entities e
 				 WHERE e.agent_id IN (${agentPlaceholders})
 				   AND COALESCE(e.status, 'active') = 'active'
+				   AND NOT (
+						LOWER(TRIM(e.entity_type)) IN (${topologyPlaceholders})
+						OR (LOWER(TRIM(e.entity_type)) = 'source' AND e.source_root IS NOT NULL)
+				   )
 				   -- Entity mentions are a legacy-memory projection. Dreaming writes
 				   -- semantic structure with episodic provenance directly, so a valid
 				   -- entity can have zero legacy mentions and any entity type.
@@ -1963,7 +1969,7 @@ export function getKnowledgeGraphForConstellation(
 				 ORDER BY e.pinned DESC, e.mentions DESC, e.name ASC
 				 LIMIT ?`,
 			)
-			.all(...visibleAgentIds, limit) as Array<Record<string, unknown>>;
+			.all(...visibleAgentIds, ...SOURCE_NATIVE_TOPOLOGY_ENTITY_TYPES, limit) as Array<Record<string, unknown>>;
 
 		const entityIds = entityRows.map((r) => r.id as string).filter((id) => typeof id === "string");
 

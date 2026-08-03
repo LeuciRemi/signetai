@@ -1,9 +1,9 @@
 /** Deterministic, local quality measurements for the semantic layer Dreaming creates. */
+import { SOURCE_NATIVE_TOPOLOGY_ENTITY_TYPES } from "@signet/core";
 import type { DbAccessor } from "../db-accessor";
 import { classifyEntityQuality, normalizeEntityName } from "../entity-quality";
 import { getOntologyClaimEvidence } from "../ontology-claim-evidence";
 
-const SOURCE_TOPOLOGY_TYPES = ["source_document", "source_folder", "source_document_reference", "skill"] as const;
 const GENERIC_ASPECT_NAMES = ["profile", "details", "general", "information"] as const;
 
 interface ClaimPathRow {
@@ -93,7 +93,7 @@ function qualityIssues(rows: readonly EntityRow[]): readonly DreamingQualityIssu
  */
 export function getDreamingQualityReport(accessor: DbAccessor, agentId: string): DreamingQualityReport {
 	const { claimPaths, entities, totalClaimValues, unaddressableClaimValues, structureQuality } = accessor.withReadDb((db) => {
-		const topologyPlaceholders = SOURCE_TOPOLOGY_TYPES.map(() => "?").join(", ");
+		const topologyPlaceholders = SOURCE_NATIVE_TOPOLOGY_ENTITY_TYPES.map(() => "?").join(", ");
 		const semanticFilter = `NOT (e.entity_type IN (${topologyPlaceholders}) OR (e.entity_type = 'source' AND e.source_root IS NOT NULL))`;
 		const claimPaths = db
 			.prepare(
@@ -106,7 +106,7 @@ export function getDreamingQualityReport(accessor: DbAccessor, agentId: string):
 				   AND TRIM(COALESCE(ea.claim_key, '')) <> ''
 				   AND ${semanticFilter}`,
 			)
-			.all(agentId, ...SOURCE_TOPOLOGY_TYPES) as ClaimPathRow[];
+			.all(agentId, ...SOURCE_NATIVE_TOPOLOGY_ENTITY_TYPES) as ClaimPathRow[];
 		const claimCounts = db
 			.prepare(
 				`SELECT COUNT(*) AS totalClaimValues,
@@ -116,14 +116,14 @@ export function getDreamingQualityReport(accessor: DbAccessor, agentId: string):
 				 JOIN entities e ON e.id = asp.entity_id AND e.agent_id = ea.agent_id
 				 WHERE ea.agent_id = ? AND ea.status = 'active' AND ${semanticFilter}`,
 			)
-			.get(agentId, ...SOURCE_TOPOLOGY_TYPES) as { totalClaimValues: number; unaddressableClaimValues: number | null };
+			.get(agentId, ...SOURCE_NATIVE_TOPOLOGY_ENTITY_TYPES) as { totalClaimValues: number; unaddressableClaimValues: number | null };
 		const entities = db
 			.prepare(
 				`SELECT id, name, canonical_name AS canonicalName, entity_type AS entityType
 				 FROM entities e
 				 WHERE e.agent_id = ? AND COALESCE(e.status, 'active') = 'active' AND ${semanticFilter}`,
 			)
-			.all(agentId, ...SOURCE_TOPOLOGY_TYPES) as EntityRow[];
+			.all(agentId, ...SOURCE_NATIVE_TOPOLOGY_ENTITY_TYPES) as EntityRow[];
 		const structure = db
 			.prepare(
 				`SELECT COUNT(DISTINCT e.id) AS totalEntities,
@@ -138,7 +138,7 @@ export function getDreamingQualityReport(accessor: DbAccessor, agentId: string):
 				  AND COALESCE(asp.status, 'active') = 'active'
 				 WHERE e.agent_id = ? AND COALESCE(e.status, 'active') = 'active' AND ${semanticFilter}`,
 			)
-			.get(...GENERIC_ASPECT_NAMES, agentId, ...SOURCE_TOPOLOGY_TYPES) as {
+			.get(...GENERIC_ASPECT_NAMES, agentId, ...SOURCE_NATIVE_TOPOLOGY_ENTITY_TYPES) as {
 				totalEntities: number;
 				unknownEntityTypes: number | null;
 				totalAspects: number;

@@ -533,6 +533,7 @@ export {
 
 // Memory provenance
 export { DAEMON_DERIVED_MEMORY_SOURCE_TYPES, isDaemonDerivedMemorySourceType } from "./memory-provenance";
+export { SOURCE_NATIVE_TOPOLOGY_ENTITY_TYPES } from "./ontology-topology";
 
 // Connector runtime types
 export {

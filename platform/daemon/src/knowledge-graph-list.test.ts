@@ -469,7 +469,9 @@ describe("listKnowledgeEntities (issue #515)", () => {
 		initDbAccessor(dbPath);
 
 		seedEntity("e-artifact", "Research Report", { entityType: "artifact", mentions: 0 });
+		seedEntity("e-source", "Source note", { entityType: "source_document", mentions: 0 });
 		seedAspect("asp-artifact", "e-artifact", "findings");
+		seedAspect("asp-source", "e-source", "source metadata");
 		seedAttribute("attr-artifact", "asp-artifact", { content: "The report supports the current plan." });
 
 		const graph = getKnowledgeGraphForConstellation(getDbAccessor(), "default");
