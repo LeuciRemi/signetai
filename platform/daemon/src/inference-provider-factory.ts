@@ -1,4 +1,10 @@
-import type { Api, Model, OAuthCredentials } from "@earendil-works/pi-ai";
+import {
+	type Api,
+	type Model,
+	type OAuthCredentials,
+	type ThinkingLevel,
+	getSupportedThinkingLevels,
+} from "@earendil-works/pi-ai";
 import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
 import type { PipelineClaudeCodeConfig, RoutingAccountConfig, RoutingConfig } from "@signet/core";
 import { type PiExecutorKind, createPiModelProvider } from "./pipeline/pi-provider";
@@ -36,6 +42,21 @@ function catalogModel(providerFamily: string, modelId: string): Model<Api> | und
 	return models.find((candidate) => candidate.id === modelId);
 }
 
+function resolveProviderReasoning(
+	target: RoutingConfig["targets"][string],
+	model: NonNullable<RoutingConfig["targets"][string]>["models"][string],
+	piModel: Model<Api> | undefined,
+): ThinkingLevel | undefined {
+	if (target.openrouter?.reasoning?.enabled) return "medium";
+	if (model.reasoning === "high") return "high";
+	if (model.reasoning !== "low") return undefined;
+	// Pi raises a requested low level to high when a model has no low mode.
+	// Omit reasoning for a latency-sensitive low target in that case: Pi then
+	// emits the model's native disabled-thinking representation rather than
+	// silently spending its higher-reasoning tier.
+	return piModel && !getSupportedThinkingLevels(piModel).includes("low") ? undefined : "low";
+}
+
 export async function createRoutingProvider(opts: CreateRoutingProviderOptions): Promise<StreamCapableLlmProvider> {
 	const target = opts.config.targets[opts.targetId];
 	const model = target?.models[opts.modelId];
@@ -69,7 +90,10 @@ export async function createRoutingProvider(opts: CreateRoutingProviderOptions):
 	}
 
 	const credential = await opts.resolveCredential(account);
-	const piModel = CUSTOM_PI_EXECUTORS.has(target.executor) ? undefined : catalogModel(providerFamily, model.model);
+	// A custom transport can still use a Pi catalog model's protocol metadata.
+	// This matters for compatible gateways whose model needs a non-generic tool
+	// or thinking wire format, while the target endpoint remains authoritative.
+	const piModel = catalogModel(providerFamily, model.model);
 	if (!piModel && !CUSTOM_PI_EXECUTORS.has(target.executor)) {
 		throw new Error(`Unknown pi-ai model "${model.model}" for provider "${providerFamily}"`);
 	}
@@ -79,7 +103,9 @@ export async function createRoutingProvider(opts: CreateRoutingProviderOptions):
 		providerFamily,
 		model: model.model,
 		piModel,
-		skipAvailabilityProbe: piModel !== undefined,
+		// Catalog targets use their provider's known endpoint. A custom endpoint
+		// still needs a reachability probe even when its model has catalog metadata.
+		skipAvailabilityProbe: piModel !== undefined && !target.endpoint,
 		baseUrl: target.endpoint,
 		apiKey: credential?.apiKey,
 		// Map routing intent to a pi-ai ThinkingLevel (forwarded per-call as
@@ -90,7 +116,7 @@ export async function createRoutingProvider(opts: CreateRoutingProviderOptions):
 		// the documented OpenRouter reasoning block, or a deliberately-set
 		// "high" depth. Previously this compared to a nonexistent "deep"
 		// value (TS2367) and never produced a usable level.
-		reasoning: target.openrouter?.reasoning?.enabled ? "medium" : model.reasoning === "high" ? "high" : undefined,
+		reasoning: resolveProviderReasoning(target, model, piModel),
 		contextWindow: model.contextWindow,
 		name: `${target.executor}:${model.model}`,
 		defaultTimeoutMs: 60_000,

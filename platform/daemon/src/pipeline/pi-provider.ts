@@ -141,9 +141,11 @@ export function resolvePiModel(config: PiModelProviderConfig): ResolvedModel {
 	const timeoutMs = config.defaultTimeoutMs ?? 60_000;
 	void timeoutMs;
 	if (config.piModel) {
+		const baseUrl =
+			config.baseUrl && config.piModel.api === "openai-completions" ? withVersionPath(config.baseUrl) : config.baseUrl;
 		const piModel: Model<Api> = {
 			...config.piModel,
-			...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+			...(baseUrl ? { baseUrl } : {}),
 			...(config.contextWindow ? { contextWindow: config.contextWindow } : {}),
 			...(config.maxTokens ? { maxTokens: config.maxTokens } : {}),
 		};
@@ -403,7 +405,10 @@ export function createPiModelProvider(
 					headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {},
 					signal: AbortSignal.timeout(8_000),
 				});
-				return res.ok || res.status === 401;
+				// OpenAI-compatible gateways commonly omit /models even though their
+				// chat-completions API is healthy. A 404 proves this host is reachable;
+				// let the routed call report any real completion-path failure.
+				return res.ok || res.status === 401 || res.status === 404;
 			} catch {
 				return false;
 			}

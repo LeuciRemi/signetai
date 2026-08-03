@@ -35,6 +35,24 @@ describe("pi provider catalog models", () => {
 		}
 	});
 
+	test("accepts a reachable OpenAI-compatible gateway without a models endpoint", async () => {
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = mock(() =>
+			Promise.resolve(new Response("not found", { status: 404 })),
+		) as unknown as typeof fetch;
+		try {
+			const provider = createPiModelProvider({
+				executor: "openai-compatible",
+				model: "gateway-model",
+				baseUrl: "https://gateway.example.test/v1",
+				apiKey: "test-key",
+			});
+			await expect(provider.available()).resolves.toBe(true);
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
 	test("settles a successful silent-overflow response without continuing from an assistant message", async () => {
 		const originalFetch = globalThis.fetch;
 		globalThis.fetch = mock(() =>
