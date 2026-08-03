@@ -30,6 +30,7 @@ interface ParsedArgs {
 	full: boolean;
 	ingestOpenRouter: boolean;
 	keepWorkspace: boolean;
+	graph: "on" | "off";
 	port?: number;
 	profile: "rules" | "dreaming" | "supermemory-parity";
 	reset: boolean;
@@ -43,6 +44,7 @@ function parseArgs(raw: string[]): ParsedArgs {
 	let full = process.env.SIGNET_BENCH_FULL === "1";
 	let ingestOpenRouter = process.env.SIGNET_BENCH_INGEST_OPENROUTER === "1";
 	let keepWorkspace = process.env.SIGNET_BENCH_KEEP_WORKSPACE === "1";
+	let graph: "on" | "off" = process.env.SIGNET_BENCH_GRAPH === "off" ? "off" : "on";
 	let port: number | undefined;
 	let profile: "rules" | "dreaming" | "supermemory-parity" =
 		process.env.SIGNET_BENCH_PROFILE === "supermemory-parity"
@@ -65,6 +67,10 @@ function parseArgs(raw: string[]): ParsedArgs {
 			ingestOpenRouter = true;
 		} else if (arg === "--keep-workspace") {
 			keepWorkspace = true;
+		} else if (arg === "--graph") {
+			const next = raw[++i];
+			if (next !== "on" && next !== "off") throw new Error("--graph must be on or off");
+			graph = next;
 		} else if (arg === "--workspace") {
 			const next = raw[++i];
 			if (!next) throw new Error("--workspace requires a path");
@@ -99,6 +105,7 @@ function parseArgs(raw: string[]): ParsedArgs {
 		full,
 		ingestOpenRouter,
 		keepWorkspace,
+		graph,
 		port,
 		profile,
 		reset,
@@ -206,6 +213,7 @@ function quoteHttpUrl(value: string): string {
 function writeIsolatedWorkspace(
 	dir: string,
 	profile: ParsedArgs["profile"],
+	graph: ParsedArgs["graph"],
 	dreamingModel?: string,
 	dreamingEndpoint?: string,
 ): void {
@@ -283,7 +291,7 @@ inference:
 			: "";
 	writeFileSync(
 		join(dir, "agent.yaml"),
-		`configVersion: 2\n\nagent:\n  name: memorybench\n\nauth:\n  mode: local\n\nembedding:\n  provider: ${embeddingProvider}\n  model: ${process.env.SIGNET_BENCH_EMBEDDING_MODEL || "nomic-embed-text-v1.5"}\n  dimensions: ${process.env.SIGNET_BENCH_EMBEDDING_DIMENSIONS || "768"}\n\nsearch:\n  alpha: 0.7\n  top_k: 20\n  min_score: 0.1\n  rehearsal_enabled: false\n\nmemory:\n  pipelineV2:\n    enabled: false\n    graph:\n      enabled: true\n      extractionWritesEnabled: false\n    traversal:\n      enabled: true\n    structural:\n      enabled: false\n      synthesisEnabled: false\n      supersessionSweepEnabled: false\n    reranker:\n      enabled: false\n    autonomous:\n      enabled: false\n    synthesis:\n      enabled: false\n    procedural:\n      enabled: false\n    predictor:\n      enabled: false\n    hints:\n      enabled: true\n    guardrails:\n      maxContentChars: 100000\n      chunkTargetChars: 50000\n      recallTruncateChars: 20000\n${dreamingConfig}`,
+		`configVersion: 2\n\nagent:\n  name: memorybench\n\nauth:\n  mode: local\n\nembedding:\n  provider: ${embeddingProvider}\n  model: ${process.env.SIGNET_BENCH_EMBEDDING_MODEL || "nomic-embed-text-v1.5"}\n  dimensions: ${process.env.SIGNET_BENCH_EMBEDDING_DIMENSIONS || "768"}\n\nsearch:\n  alpha: 0.7\n  top_k: 20\n  min_score: 0.1\n  rehearsal_enabled: false\n\nmemory:\n  pipelineV2:\n    enabled: false\n    graph:\n      enabled: ${graph === "on"}\n      extractionWritesEnabled: false\n    traversal:\n      enabled: ${graph === "on"}\n    structural:\n      enabled: false\n      synthesisEnabled: false\n      supersessionSweepEnabled: false\n    reranker:\n      enabled: false\n    autonomous:\n      enabled: false\n    synthesis:\n      enabled: false\n    procedural:\n      enabled: false\n    predictor:\n      enabled: false\n    hints:\n      enabled: true\n    guardrails:\n      maxContentChars: 100000\n      chunkTargetChars: 50000\n      recallTruncateChars: 20000\n${dreamingConfig}`,
 	);
 }
 
@@ -312,7 +320,13 @@ function isContinuationCommand(command: string, args: string[]): boolean {
 	);
 }
 
-function buildMemoryBenchArgs(raw: string[], full: boolean, profile: ParsedArgs["profile"], reset: boolean): string[] {
+function buildMemoryBenchArgs(
+	raw: string[],
+	full: boolean,
+	profile: ParsedArgs["profile"],
+	graph: ParsedArgs["graph"],
+	reset: boolean,
+): string[] {
 	const command = getMemoryBenchCommand(raw);
 	const args = command === raw[0] ? raw.slice(1) : raw;
 
@@ -320,7 +334,7 @@ function buildMemoryBenchArgs(raw: string[], full: boolean, profile: ParsedArgs[
 
 	const runId =
 		process.env.SIGNET_BENCH_RUN_ID ||
-		`signet-${profile}-longmemeval-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "Z")}`;
+		`signet-${profile}-graph-${graph}-longmemeval-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "Z")}`;
 
 	const provider =
 		profile === "supermemory-parity" ? "signet-supermemory-parity" : profile === "dreaming" ? "signet-dreaming" : "signet";
@@ -381,10 +395,10 @@ async function main(): Promise<void> {
 	if (parsed.profile === "dreaming" && !dreamingEndpoint && !process.env.OPENROUTER_API_KEY?.trim()) {
 		throw new Error("Dreaming benchmark requires SIGNET_BENCH_DREAMING_ENDPOINT or OPENROUTER_API_KEY");
 	}
-	writeIsolatedWorkspace(workspace, parsed.profile, dreamingModel, dreamingEndpoint);
+	writeIsolatedWorkspace(workspace, parsed.profile, parsed.graph, dreamingModel, dreamingEndpoint);
 
 	const usesDefaultSample = defaultedDevSample(parsed.passthrough, parsed.full);
-	const memorybenchArgs = buildMemoryBenchArgs(parsed.passthrough, parsed.full, parsed.profile, parsed.reset);
+	const memorybenchArgs = buildMemoryBenchArgs(parsed.passthrough, parsed.full, parsed.profile, parsed.graph, parsed.reset);
 	const env = {
 		...process.env,
 		...(useOpenRouterIngest ? buildOpenRouterIngestEnv() : {}),
@@ -408,6 +422,7 @@ async function main(): Promise<void> {
 		console.log("Using dev-sized LongMemEval sample. Pass --full or --limit/--sample for a different run size.");
 	}
 	console.log(`Benchmark profile: ${parsed.profile}`);
+	console.log(`Graph retrieval: ${parsed.graph}`);
 	if (parsed.ingestOpenRouter && !useOpenRouterIngest) {
 		console.log("--ingest-openrouter only applies to bench:ingest; leaving current command model config unchanged.");
 	}

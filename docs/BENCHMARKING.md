@@ -437,6 +437,32 @@ model is explicit (`SIGNET_BENCH_DREAMING_MODEL`) and travels through the same
 daemon router as production. It is the profile used for absolute Dreaming
 quality measurements; `rules` is not a substitute for it.
 
+### Retrieval uplift ablation
+
+`--graph off` disables both graph boost and graph traversal while leaving
+episodic inputs and ordinary recall unchanged. For a controlled ablation, keep
+one workspace and run id: first ingest, Dream, and retrieve with the graph on;
+then restart from the `search` phase with the graph off. This preserves the
+exact same episodic and semantic state for both retrieval surfaces.
+
+```bash
+export RUN_ID="dreaming-uplift-$(date -u +%Y%m%dT%H%M%SZ)"
+export WORKSPACE=".bench/workspaces/dreaming-uplift"
+
+# Capture the graph-on report before reusing the run checkpoint.
+SIGNET_BENCH_RUN_ID="$RUN_ID" \
+bun scripts/bench-memory.ts --profile dreaming --graph on --workspace "$WORKSPACE" --full
+cp "memorybench/data/runs/$RUN_ID/report.json" "memorybench/data/runs/$RUN_ID/report-graph-on.json"
+
+# Re-run only search → answer → evaluate → report against the unchanged DB.
+SIGNET_BENCH_RUN_ID="$RUN_ID" \
+bun scripts/bench-memory.ts --profile dreaming --graph off --workspace "$WORKSPACE" --resume -r "$RUN_ID" -f search
+cp "memorybench/data/runs/$RUN_ID/report.json" "memorybench/data/runs/$RUN_ID/report-graph-off.json"
+```
+
+Compare LongMemEval retrieval aggregates (`hit@k`, recall, MRR, NDCG), not
+answer-model scores alone.
+
 The isolated daemon does not run legacy extraction or structural workers for
 benchmark ingestion. Graph and traversal are enabled only so recall can use
 the semantic state created by the selected profile. In the baseline that state
@@ -522,6 +548,7 @@ SIGNET_BENCH_FULL=1                 Run the full benchmark by default.
 SIGNET_BENCH_SKIP_BUILD=1           Skip `bun run build`.
 SIGNET_BENCH_KEEP_WORKSPACE=1       Keep the isolated workspace after the run.
 SIGNET_BENCH_PROFILE=<profile>      rules, dreaming, or supermemory-parity; default rules.
+SIGNET_BENCH_GRAPH=on|off           Enable graph boost/traversal for the benchmark, default on.
 SIGNET_BENCH_RUN_ID=<id>            Override the MemoryBench run id.
 SIGNET_BENCH_JUDGE=<model>          Default judge model, default gpt-4o.
 SIGNET_BENCH_ANSWERING_MODEL=<m>    Default answering model, default gpt-4o.
