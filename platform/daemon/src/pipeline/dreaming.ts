@@ -528,7 +528,6 @@ function buildDreamingPrompt(
 	graph: ReturnType<typeof fetchEntityGraph>,
 	agentsDir: string,
 	maxTokens: number,
-	agentic = false,
 ): {
 	readonly prompt: string;
 	readonly lastEvidence: EpisodicSourceRecord | null;
@@ -680,35 +679,7 @@ ${graphText}
 ${depText || "(no relationships yet)"}
 </knowledge_graph>
 
-${
-	agentic
-		? `Use the supplied daemon tools to inspect semantic context before changing it. Search for entities before creating duplicates, inspect claim siblings before superseding them, and inspect links before updating them. Use apply_ontology_ops for every semantic write. Every operation must cite an exact quote plus source_ref from the episodic evidence you received or searched. Do not attempt direct database access.`
-		: `Respond with ONLY a JSON object in this exact format (no markdown code fences, no other text):
-
-The payload field is the operation payload itself, never a map keyed by operation name. Use these direct payload shapes:
-- create_entity: { "name": "...", "entity_type": "project" }
-- create_aspect: { "entity": "...", "name": "..." }
-- add_claim_value or set_claim_value: { "entity": "...", "aspect": "...", "claim_key": "...", "value": "..." }
-- supersede_claim_value: { "entity": "...", "aspect": "...", "claim_key": "...", "old_value": "...", "new_value": "..." }
-- merge_entities: { "target_entity": "...", "source_entities": ["..."] }
-- archive_entity: { "selector": "..." }; archive_aspect: { "entity": "...", "selector": "..." }
-- create_link: { "source_entity": "...", "target_entity": "...", "link_type": "depends_on" }
-
-Do not emit archive_claim_value, update_link, or archive_link: they require stable IDs that are not present in this graph snapshot.
-
-{
-  "operations": [
-    {
-      "operation": "create_entity|create_aspect|add_claim_value|set_claim_value|supersede_claim_value|merge_entities|archive_entity|archive_aspect|create_link",
-      "payload": { "name": "...", "entity_type": "project" },
-      "reason": "why this semantic change is warranted",
-      "confidence": 0.0,
-      "evidence": [{ "source_ref": "copy source_ref exactly from an episodic_evidence heading", "source_kind": "copy source_kind exactly from that heading", "source_id": "copy source_id exactly from that heading", "source_path": "copy source_path when present", "quote": "exact supporting quote from that source" }]
-    }
-  ],
-  "summary": "Brief description of what you changed and why"
-}`
-}`,
+Use the supplied daemon tools to inspect semantic context before changing it. Search for entities before creating duplicates, inspect claim siblings before superseding them, and inspect links before updating them. Use apply_ontology_ops for every semantic write. Every operation must cite an exact quote plus source_ref from the episodic evidence you received or searched. Do not attempt direct database access.`,
 		lastEvidence,
 		lastCursorEvidence,
 		renderedEvidence,
@@ -774,7 +745,6 @@ export async function runDreamingAgentPass(
 			graph,
 			agentsDir,
 			cfg.maxInputTokens,
-			true,
 		);
 		const evidenceCursor: EpisodicCursor = lastCursorEvidence
 			? { capturedAt: lastCursorEvidence.capturedAt, kind: lastCursorEvidence.kind, id: lastCursorEvidence.id }
