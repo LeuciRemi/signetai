@@ -454,7 +454,6 @@ export {
 	makeRoutingTargetRef,
 	parseRoutingTargetRef,
 	isLocalInferenceEndpoint,
-	compileLegacyRoutingConfig,
 	parseRoutingConfig,
 	validateRoutingReferences,
 	allTargetRefs,

@@ -1,5 +1,4 @@
-import { defaultPipelineModel } from "./pipeline-providers";
-import type { PipelineCommandConfig, PipelineExtractionConfig, PipelineSynthesisConfig } from "./types";
+import type { PipelineCommandConfig } from "./types";
 
 export const ROUTING_ACCOUNT_KINDS = ["subscription_session", "api"] as const;
 export const ROUTING_TARGET_KINDS = ["subscription_session", "api", "local", "gateway"] as const;
@@ -195,7 +194,7 @@ export interface RoutingWorkloadBinding {
 }
 
 export interface RoutingConfig {
-	readonly source: "explicit" | "legacy-implicit";
+	readonly source: "explicit";
 	readonly enabled: boolean;
 	readonly defaultPolicy?: string;
 	readonly accounts: Readonly<Record<string, RoutingAccountConfig>>;
@@ -711,155 +710,9 @@ function parseWorkloadBinding(raw: unknown): RoutingWorkloadBinding | undefined 
 	};
 }
 
-export function compileLegacyRoutingConfig(opts: {
-	readonly extraction: Pick<
-		PipelineExtractionConfig,
-		"provider" | "model" | "endpoint" | "fallbackProvider"
-	>;
-	/** Accepted only for legacy callers; it never creates a route. */
-	readonly synthesis?: Pick<PipelineSynthesisConfig, "enabled" | "provider" | "model" | "endpoint">;
-}): RoutingConfig {
-	const accounts: Record<string, RoutingAccountConfig> = {};
-	const targets: Record<string, RoutingTargetConfig> = {};
-	const policies: Record<string, RoutingPolicyConfig> = {};
-	const taskClasses: Record<string, RoutingTaskClassConfig> = {
-		default: {
-			reasoning: "medium",
-		},
-		interactive: {
-			reasoning: "medium",
-		},
-		memory_extraction: {
-			reasoning: "medium",
-		},
-	};
-	const workloads: {
-		default?: RoutingWorkloadBinding;
-		interactive?: RoutingWorkloadBinding;
-		memoryExtraction?: RoutingWorkloadBinding;
-		widgetGeneration?: RoutingWorkloadBinding;
-		repair?: RoutingWorkloadBinding;
-	} = {};
-	let defaultTargets: readonly string[] = [];
-	let fallbackTargets: readonly string[] = [];
-
-	const legacyAccountForProvider = (
-		provider: RoutingExecutorKind,
-		endpoint: string | undefined,
-	): string | undefined => {
-		if (provider === "openrouter") {
-			accounts["legacy-openrouter"] = {
-				kind: "api",
-				providerFamily: "openrouter",
-				credentialRef: "OPENROUTER_API_KEY",
-			};
-			return "legacy-openrouter";
-		}
-		if (provider === "anthropic") {
-			accounts["legacy-anthropic"] = {
-				kind: "api",
-				providerFamily: "anthropic",
-				credentialRef: "ANTHROPIC_API_KEY",
-			};
-			return "legacy-anthropic";
-		}
-		if (provider === "openai-compatible") {
-			if (isLocalInferenceEndpoint(endpoint)) return undefined;
-			accounts["legacy-openai-compatible"] = {
-				kind: "api",
-				providerFamily: "openai-compatible",
-				credentialRef: "OPENAI_API_KEY",
-			};
-			return "legacy-openai-compatible";
-		}
-		return undefined;
-	};
-
-	if (
-		opts.extraction.provider !== "none" &&
-		opts.extraction.provider !== "acpx"
-	) {
-		targets["legacy-extraction"] = {
-			kind: inferLegacyTargetKind(opts.extraction.provider, opts.extraction.endpoint),
-			executor: opts.extraction.provider,
-			account: legacyAccountForProvider(opts.extraction.provider, opts.extraction.endpoint),
-			endpoint: opts.extraction.endpoint,
-			privacy: inferTargetPrivacy(opts.extraction.provider, opts.extraction.endpoint),
-			models: {
-				default: {
-					model: opts.extraction.model,
-					label: opts.extraction.model,
-					reasoning: "medium",
-				},
-			},
-		};
-		const ref = makeRoutingTargetRef("legacy-extraction", "default");
-		workloads.memoryExtraction = {
-			target: ref,
-			taskClass: "memory_extraction",
-		};
-		defaultTargets = [...defaultTargets, ref];
-
-		const fallbackProvider = opts.extraction.fallbackProvider;
-		if (
-			(fallbackProvider === "llama-cpp" || fallbackProvider === "ollama") &&
-			fallbackProvider !== opts.extraction.provider
-		) {
-			const fallbackModel = defaultPipelineModel(fallbackProvider);
-			targets["legacy-extraction-fallback"] = {
-				kind: "local",
-				executor: fallbackProvider,
-				privacy: "local_only",
-				models: {
-					default: {
-						model: fallbackModel,
-						label: fallbackModel,
-						reasoning: "medium",
-					},
-				},
-			};
-			fallbackTargets = [...fallbackTargets, makeRoutingTargetRef("legacy-extraction-fallback", "default")];
-		}
-	}
-
-	policies["legacy-default"] = {
-		mode: "automatic",
-		defaultTargets,
-		fallbackTargets,
-	};
-	workloads.default = {
-		policy: "legacy-default",
-		taskClass: "default",
-	};
-	workloads.interactive = {
-		policy: "legacy-default",
-		taskClass: "interactive",
-	};
-	workloads.widgetGeneration = {
-		policy: "legacy-default",
-		taskClass: "memory_extraction",
-	};
-	workloads.repair = {
-		policy: "legacy-default",
-		taskClass: "memory_extraction",
-	};
-
+function emptyRoutingConfig(): RoutingConfig {
 	return {
-		source: "legacy-implicit",
-		enabled: defaultTargets.length > 0,
-		defaultPolicy: "legacy-default",
-		accounts,
-		targets,
-		policies,
-		taskClasses,
-		agents: {},
-		workloads,
-	};
-}
-
-function emptyRoutingConfig(source: RoutingConfig["source"]): RoutingConfig {
-	return {
-		source,
+		source: "explicit",
 		enabled: false,
 		accounts: {},
 		targets: {},
@@ -978,8 +831,8 @@ export function validateRoutingReferences(config: RoutingConfig): readonly Routi
 	return issues;
 }
 
-export function parseRoutingConfig(raw: unknown, legacyConfig?: RoutingConfig): RouterResult<RoutingConfig> {
-	const base = legacyConfig ?? emptyRoutingConfig("explicit");
+export function parseRoutingConfig(raw: unknown): RouterResult<RoutingConfig> {
+	const base = emptyRoutingConfig();
 	if (!isRecord(raw)) {
 		return ok(base);
 	}
@@ -1067,7 +920,7 @@ export function parseRoutingConfig(raw: unknown, legacyConfig?: RoutingConfig): 
 	const defaultPolicy = explicitDefaultPolicy ?? base.defaultPolicy ?? Object.keys(policies)[0];
 
 	const config: RoutingConfig = {
-		source: embeddedInference || standaloneInference ? "explicit" : base.source,
+		source: "explicit",
 		enabled,
 		...(defaultPolicy ? { defaultPolicy } : {}),
 		accounts,

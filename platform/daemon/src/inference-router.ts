@@ -17,7 +17,6 @@ import type {
 } from "@signet/core";
 import {
 	allTargetRefs,
-	compileLegacyRoutingConfig,
 	isLocalInferenceEndpoint,
 	parseRoutingConfig,
 	parseRoutingTargetRef,
@@ -356,21 +355,7 @@ export class InferenceRouter {
 			}
 		}
 
-		let legacy: RoutingConfig;
-		try {
-			const memoryCfg = loadMemoryConfig(this.agentsDir);
-			legacy = compileLegacyRoutingConfig({ extraction: memoryCfg.pipelineV2.extraction });
-		} catch (error) {
-			return {
-				ok: false,
-				error: {
-					code: "invalid-config",
-					message: `Failed to resolve legacy inference config: ${formatExecutionError(error)}`,
-				},
-			};
-		}
-
-		const parsed = parseRoutingConfig(raw, legacy);
+		const parsed = parseRoutingConfig(raw);
 		if (!parsed.ok) {
 			this.logConfigError(parsed.error, signature);
 			return parsed;

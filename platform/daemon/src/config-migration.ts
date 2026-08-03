@@ -232,8 +232,7 @@ function writeAtomic(path: string, contents: string): void {
 // v4/v5: retire legacy pipelineV2 routing fields -> inference registry
 // ---------------------------------------------------------------------------
 // Compiles memory.pipelineV2.extraction/synthesis routing fields into the
-// inference.accounts/targets/workloads registry (mirroring the daemon's
-// compileLegacyRoutingConfig), then NULLS the legacy routing keys (provider,
+// inference.accounts/targets/workloads registry, then NULLS the legacy routing keys (provider,
 // model, endpoint, fallbackProvider, command) so the registry is the single
 // source of truth. Tuning fields (timeout, maxTokens, enabled) are preserved.
 //
