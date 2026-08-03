@@ -1923,7 +1923,7 @@ export function pruneSingletonExtractedEntities(
 				     WHERE asp.entity_id = e.id LIMIT 1
 				   )
 				   AND NOT EXISTS (
-				     -- Entity has no stub attributes (aspect_id IS NULL) written by structuralBackfill
+				     -- Entity has no stub attributes (aspect_id IS NULL)
 				     SELECT 1 FROM entity_attributes ea
 				     WHERE ea.aspect_id IS NULL
 				       AND ea.memory_id IN (
@@ -2102,31 +2102,6 @@ export function pruneGenericEntities(
 		actor: ctx.actor,
 	});
 	return { action, success: true, affected, message: `deleted ${affected} generic/non-concrete entities` };
-}
-
-// ---------------------------------------------------------------------------
-// structuralBackfill
-// ---------------------------------------------------------------------------
-
-/** Retired semantic-write repair surface retained as a truthful no-op response. */
-export function structuralBackfill(
-	accessor: DbAccessor,
-	cfg: PipelineV2Config,
-	ctx: RepairContext,
-	limiter: RateLimiter,
-	options?: { batchSize?: number; dryRun?: boolean },
-): RepairResult {
-	const action = "structuralBackfill";
-	// Dreaming owns semantic writes (#913 hard cutover). Structural backfill
-	// is retired because the workers that would lease structural_classify/
-	// structural_dependency jobs are permanently gone. Return success with
-	// zero affected so repair callers see a clean no-op rather than an error.
-	return {
-		action,
-		success: true,
-		affected: 0,
-		message: "Dreaming owns semantic writes; structural backfill is retired",
-	};
 }
 
 // ---------------------------------------------------------------------------

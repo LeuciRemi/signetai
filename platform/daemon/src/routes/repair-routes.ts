@@ -30,7 +30,6 @@ import {
 	releaseStaleLeases,
 	requeueDeadJobs,
 	resyncVectorIndex,
-	structuralBackfill,
 } from "../repair-actions.js";
 import { which } from "../which.js";
 import { AGENTS_DIR, authConfig, repairLimiter } from "./state.js";
@@ -340,25 +339,6 @@ export function registerRepairRoutes(
 			batchSize,
 			dryRun,
 			agentId,
-		});
-		return c.json(result, repairHttpStatus(result));
-	});
-
-	app.post("/api/repair/structural-backfill", async (c) => {
-		const cfg = loadMemoryConfig(AGENTS_DIR);
-		const ctx = resolveRepairContext(c);
-		let batchSize = 100;
-		let dryRun = false;
-		try {
-			const body = await c.req.json();
-			if (typeof body?.batchSize === "number") batchSize = body.batchSize;
-			if (typeof body?.dryRun === "boolean") dryRun = body.dryRun;
-		} catch {
-			// no body or invalid JSON — use defaults
-		}
-		const result = structuralBackfill(getDbAccessor(), cfg.pipelineV2, ctx, repairLimiter, {
-			batchSize,
-			dryRun,
 		});
 		return c.json(result, repairHttpStatus(result));
 	});

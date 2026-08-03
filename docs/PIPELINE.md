@@ -247,8 +247,8 @@ Structural Classification
 
 The per-fact structural classify and structural dependency workers are retired.
 Dreaming owns all automatic semantic writes, so no runtime creates or leases
-`structural_classify`/`structural_dependency` jobs. `structuralBackfill` is a
-truthful no-op, and the obsolete `structural` configuration block is ignored.
+`structural_classify`/`structural_dependency` jobs. The obsolete `structural`
+configuration block is ignored.
 
 The default pipeline does not use a background LLM to author graph structure;
 Dreaming emits audited operations from episodic evidence.

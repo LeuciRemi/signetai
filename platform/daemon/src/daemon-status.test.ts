@@ -481,25 +481,6 @@ describe("structural worker retirement under Dreaming (#946)", () => {
 		expect(workers).toHaveProperty("dreaming");
 	});
 
-	it("the structural-backfill repair path does not create pending structural jobs under Dreaming", async () => {
-		await restartRuntime(DREAMING_ENABLED_STRUCTURAL_CONFIG);
-
-		// Hit the repair endpoint that previously created structural_classify jobs.
-		const res = await app.request("http://localhost/api/repair/structural-backfill", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ batchSize: 50 }),
-		});
-		expect(res.status).toBe(200);
-		const result = (await res.json()) as { success?: boolean; affected?: number; message?: string };
-		expect(result.success).toBe(true);
-		expect(result.affected).toBe(0);
-		expect(result.message).toContain("Dreaming owns semantic writes");
-
-		// No pending structural jobs may exist after the call.
-		expect(countStructuralJobs()).toBe(0);
-	});
-
 	it("does not accumulate new pending structural jobs from pre-existing rows under Dreaming", async () => {
 		// A pre-existing pending structural job (left from before the cutover)
 		// should remain, but the runtime must not create additional pending

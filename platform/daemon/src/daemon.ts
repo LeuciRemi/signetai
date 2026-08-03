@@ -191,7 +191,6 @@ let embeddingIndexMigrationHandle: EmbeddingIndexMigrationHandle | null = null;
 let skillReconcilerHandle: ReturnType<typeof startReconciler> | null = null;
 let schedulerHandle: { stop(): Promise<void> } | null = null;
 let transcriptCaptureWorkerHandle: TranscriptCaptureWorkerHandle | null = null;
-let structuralBackfillTimer: ReturnType<typeof setTimeout> | null = null;
 // These are mirrored into state.ts via setters for read access by
 // route modules. Only daemon.ts should assign or clear them.
 let telemetryRef: TelemetryCollector | undefined;
@@ -1126,15 +1125,7 @@ function readPipelineMode(cfg: ResolvedMemoryConfig["pipelineV2"]): string {
 	return "controlled-write";
 }
 
-function clearStructuralBackfillTimer(): void {
-	if (!structuralBackfillTimer) return;
-	clearTimeout(structuralBackfillTimer);
-	structuralBackfillTimer = null;
-}
-
 async function stopPipelineRuntime(): Promise<void> {
-	clearStructuralBackfillTimer();
-
 	if (skillReconcilerHandle) {
 		try {
 			await Promise.resolve(skillReconcilerHandle.stop());
@@ -1274,7 +1265,6 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 
 	const activeEmbeddingCfg = getDbAccessor().withReadDb((db) => resolveActiveEmbeddingConfig(db, memoryCfg.embedding));
 	configureLlmConcurrency(memoryCfg.pipelineV2.worker.maxLlmConcurrency);
-	clearStructuralBackfillTimer();
 	logger.info("config", "Resolved embedding config", {
 		provider: memoryCfg.embedding.provider,
 		model: memoryCfg.embedding.model,
@@ -1449,11 +1439,6 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 			});
 		}
 	}
-
-	// Structural backfill is retired (#913 hard cutover). Dreaming owns all
-	// semantic writes; the workers that lease structural_classify jobs are
-	// permanently gone. The structuralBackfill function itself returns a
-	// clean no-op, so no startup timer is scheduled.
 
 	if (memoryCfg.pipelineV2.procedural.enabled && !pipelinePaused) {
 		skillReconcilerHandle = startReconciler({

@@ -131,7 +131,6 @@ silently disappear from the API reference.
 | POST | `/api/repair/prune-chunk-groups` | platform/daemon/src/routes/repair-routes.ts |
 | POST | `/api/repair/prune-singleton-entities` | platform/daemon/src/routes/repair-routes.ts |
 | POST | `/api/repair/prune-generic-entities` | platform/daemon/src/routes/repair-routes.ts |
-| POST | `/api/repair/structural-backfill` | platform/daemon/src/routes/repair-routes.ts |
 | GET | `/api/repair/cold-stats` | platform/daemon/src/routes/repair-routes.ts |
 | POST | `/api/repair/cluster-entities` | platform/daemon/src/routes/repair-routes.ts |
 | POST | `/api/repair/relink-entities` | platform/daemon/src/routes/repair-routes.ts |

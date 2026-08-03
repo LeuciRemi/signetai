@@ -1489,14 +1489,6 @@ const result = await signet.pruneSingletonEntities();
 // result.pruned — singleton entities removed
 ```
 
-**`structuralBackfill()`** — Backfill missing relational data.
-
-```typescript
-const result = await signet.structuralBackfill();
-// result.backfilled — records updated
-```
-
-
 Cross-Agent Messaging
 ---
 

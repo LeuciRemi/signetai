@@ -147,3 +147,14 @@ describe("POST /api/repair/relink-entities", () => {
 		expect(readMutationState()).toEqual({ mentions: 1, entityMentions: 1 });
 	});
 });
+
+describe("retired structural repair route", () => {
+	it("does not expose structural-backfill after the Dreaming cutover", async () => {
+		const response = await makeApp().request("/api/repair/structural-backfill", {
+			method: "POST",
+			headers: requestHeaders(),
+		});
+
+		expect(response.status).toBe(404);
+	});
+});

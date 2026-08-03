@@ -670,14 +670,6 @@ export class SignetClientP2 {
 		return this.transport.post<RepairActionResponse>("/api/repair/prune-singleton-entities", opts ?? {});
 	}
 
-	/**
-	 * @example
-	 * const result = await client.structuralBackfill();
-	 */
-	async structuralBackfill(): Promise<RepairActionResponse> {
-		return this.transport.post<RepairActionResponse>("/api/repair/structural-backfill", {});
-	}
-
 	// --- Cross-Agent ---
 
 	/**
