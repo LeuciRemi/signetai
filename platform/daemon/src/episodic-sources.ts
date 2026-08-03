@@ -329,6 +329,32 @@ export function readRecentEpisodicSources(
 	const summaryCursor = cursorPredicate("latest_at", "id", "summary", newer, cursor);
 	const allowedKinds = kinds ? new Set(kinds) : null;
 	const wants = (kind: EpisodicSourceKind): boolean => allowedKinds === null || allowedKinds.has(kind);
+	const hasExclusions = (() => {
+		try {
+			return Boolean(
+				db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dreaming_evidence_exclusions'").get(),
+			);
+		} catch {
+			return false;
+		}
+	})();
+	const requeuePredicate = (kind: EpisodicSourceKind, idColumn: string): string =>
+		!hasExclusions
+			? "0"
+			:
+		`EXISTS (
+			SELECT 1 FROM dreaming_evidence_exclusions AS dee
+			WHERE dee.agent_id = ?
+			  AND dee.source_kind = '${kind}'
+			  AND dee.source_id = ${idColumn}
+			  AND dee.requeue_requested_at IS NOT NULL
+			  AND dee.resolved_at IS NULL
+		)`;
+	const memoryRequeue = requeuePredicate("memory", "id");
+	const artifactRequeue = requeuePredicate("artifact", "source_path");
+	const transcriptRequeue = requeuePredicate("transcript", "session_key");
+	const summaryRequeue = requeuePredicate("summary", "id");
+	const requeueArgs = hasExclusions ? [agentId] : [];
 	const memories: EpisodicSourceRecord[] = wants("memory")
 		? db
 				.prepare(
@@ -342,11 +368,11 @@ export function readRecentEpisodicSources(
 				   -- Session summaries are retained in memories for ordinary recall,
 				   -- but their temporal-DAG node is the one canonical Dreaming input.
 				   AND COALESCE(type, '') != 'session_summary'
-				   AND ${memoryCursor.sql}
+				   AND (${memoryCursor.sql} OR ${memoryRequeue})
 				 ORDER BY julianday(created_at) ${direction}, id ${direction}
 				 LIMIT ?`,
 				)
-				.all(agentId, ...memoryCursor.args, boundedLimit)
+				.all(agentId, ...memoryCursor.args, ...requeueArgs, boundedLimit)
 				.map((row) => {
 					const memory = row as {
 						readonly id: string;
@@ -412,11 +438,11 @@ export function readRecentEpisodicSources(
 			       )
 			     )
 			   )
-			   AND ${artifactCursor.sql}
+				   AND (${artifactCursor.sql} OR ${artifactRequeue})
 			 ORDER BY julianday(captured_at) ${direction}, source_path ${direction}
 			 LIMIT ?`,
 				)
-				.all(agentId, ...artifactCursor.args, boundedLimit)
+				.all(agentId, ...artifactCursor.args, ...requeueArgs, boundedLimit)
 				.map((row) => {
 					const artifact = row as {
 						readonly source_path: string;
@@ -453,11 +479,11 @@ export function readRecentEpisodicSources(
 					`SELECT session_key, content, harness, project, created_at, updated_at
 			 FROM session_transcripts
 			 WHERE agent_id = ?
-			   AND ${transcriptCursor.sql}
+			   AND (${transcriptCursor.sql} OR ${transcriptRequeue})
 			 ORDER BY julianday(COALESCE(updated_at, created_at)) ${direction}, session_key ${direction}
 			 LIMIT ?`,
 				)
-				.all(agentId, ...transcriptCursor.args, boundedLimit)
+				.all(agentId, ...transcriptCursor.args, ...requeueArgs, boundedLimit)
 				.map((row) => {
 					const transcript = row as {
 						readonly session_key: string;
@@ -490,11 +516,11 @@ export function readRecentEpisodicSources(
 			 WHERE agent_id = ?
 			   AND depth = 0
 			   AND COALESCE(source_type, 'summary') IN ('summary', 'compaction', 'checkpoint')
-			   AND ${summaryCursor.sql}
+			   AND (${summaryCursor.sql} OR ${summaryRequeue})
 			 ORDER BY julianday(latest_at) ${direction}, id ${direction}
 			 LIMIT ?`,
 				)
-				.all(agentId, ...summaryCursor.args, boundedLimit)
+				.all(agentId, ...summaryCursor.args, ...requeueArgs, boundedLimit)
 				.map((row) => {
 					const summary = row as {
 						readonly id: string;

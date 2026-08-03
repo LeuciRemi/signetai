@@ -351,8 +351,9 @@ smart model to merge, prune, and enrich the entity graph.
 
 ### GET /api/dream/status
 
-Return the current dreaming worker state, configuration, and recent passes.
-Requires `admin` permission.
+Return the current dreaming worker state, configuration, recent passes, and
+any episodic evidence quarantined because one source cannot fit within the
+configured input budget. Requires `admin` permission.
 
 **Query parameters**
 
@@ -395,9 +396,45 @@ Requires `admin` permission.
       "summary": "Merged 3 duplicate entities, pruned 5 junk attributes",
       "error": null
     }
+  ],
+  "exclusions": [
+    {
+      "sourceKind": "artifact",
+      "sourceId": "sources/notebook/large-export.md",
+      "reason": "oversized_prompt_budget",
+      "passId": "pass-uuid",
+      "excludedAt": "2026-04-01 12:00:00",
+      "requeueRequestedAt": null,
+      "resolvedAt": null
+    }
   ]
 }
 ```
+
+An exclusion preserves only the source identity and processing status; it does
+not modify or discard the underlying episodic evidence.
+
+### POST /api/dream/exclusions/requeue
+
+Request one quarantined evidence source be considered again. This is useful
+after increasing Dreaming's input budget or correcting the source. Requires
+`admin` permission.
+
+**Request body**
+
+```json
+{
+  "sourceKind": "artifact",
+  "sourceId": "sources/notebook/large-export.md",
+  "agentId": "noam"
+}
+```
+
+`sourceKind` must be one of `memory`, `artifact`, `transcript`, or `summary`.
+`sourceId` is the identifier returned by `GET /api/dream/status`. `agentId`
+uses the same scoped-agent resolution as Dreaming trigger requests.
+
+Returns `404` when the scoped exclusion is no longer active.
 
 ### POST /api/dream/trigger
 

@@ -52,9 +52,11 @@ export { startSynthesisWorker, readLastSynthesisTime } from "./synthesis-worker"
 export type { SynthesisWorkerHandle } from "./synthesis-worker";
 export {
 	getDreamingEpisodicTokenBacklog,
+	getDreamingEvidenceExclusions,
 	getDreamingState,
 	getDreamingPasses,
 	recordDreamingFailure,
+	requestDreamingEvidenceRequeue,
 } from "./dreaming";
 export type { DreamingWorkerHandle } from "./dreaming-worker";
 

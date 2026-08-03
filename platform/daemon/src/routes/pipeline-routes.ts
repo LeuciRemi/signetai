@@ -10,10 +10,12 @@ import { getLlmProvider } from "../llm.js";
 import { loadMemoryConfig } from "../memory-config.js";
 import {
 	getDreamingEpisodicTokenBacklog,
+	getDreamingEvidenceExclusions,
 	getDreamingPasses,
 	getDreamingState,
 	getDreamingWorker,
 	getPipelineWorkerStatus,
+	requestDreamingEvidenceRequeue,
 } from "../pipeline";
 import { getFeedbackTelemetry } from "../pipeline/aspect-feedback.js";
 import { AlreadyRunningError } from "../pipeline/dreaming-worker.js";
@@ -533,6 +535,7 @@ export function registerPipelineRoutes(app: Hono): void {
 		const state = getDreamingState(accessor, agentId);
 		const episodicTokensPending = getDreamingEpisodicTokenBacklog(accessor, agentId);
 		const passes = getDreamingPasses(accessor, agentId, 10);
+		const exclusions = getDreamingEvidenceExclusions(accessor, agentId);
 		const worker = getDreamingWorker();
 
 		return c.json({
@@ -551,7 +554,24 @@ export function registerPipelineRoutes(app: Hono): void {
 				timeout: cfg.dreaming.timeout,
 			},
 			passes,
+			exclusions,
 		});
+	});
+
+	app.post("/api/dream/exclusions/requeue", async (c) => {
+		const raw: unknown = await c.req.json().catch(() => null);
+		if (raw === null) return c.json({ error: "Malformed JSON body" }, 400);
+		const body = asRecord(raw);
+		const sourceKind = readString(body, "sourceKind");
+		if (sourceKind !== "memory" && sourceKind !== "artifact" && sourceKind !== "transcript" && sourceKind !== "summary") {
+			return c.json({ error: "Invalid episodic source kind" }, 400);
+		}
+		const sourceId = readString(body, "sourceId");
+		if (!sourceId) return c.json({ error: "Missing episodic source id" }, 400);
+		const agentId = resolveDreamRequestAgentId(c, body);
+		const requeued = requestDreamingEvidenceRequeue(getDbAccessor(), agentId, sourceKind, sourceId);
+		if (!requeued) return c.json({ error: "Dreaming evidence exclusion not found" }, 404);
+		return c.json({ requeued: true, agentId, sourceKind, sourceId });
 	});
 
 	app.post("/api/dream/trigger", async (c) => {

@@ -103,6 +103,7 @@ import { up as memoryKind } from "./094-memory-kind";
 import { up as compactionRecallProjections } from "./095-compaction-recall-projections";
 import { up as retireLegacyIngestion } from "./096-retire-legacy-ingestion";
 import { up as dreamingFailureBackoff } from "./097-dreaming-failure-backoff";
+import { up as dreamingEvidenceExclusions } from "./098-dreaming-evidence-exclusions";
 
 // -- Public interface consumed by Database.init() --
 
@@ -915,6 +916,12 @@ export const MIGRATIONS: readonly Migration[] = [
 		name: "dreaming-failure-backoff",
 		up: dreamingFailureBackoff,
 		artifacts: { columns: [{ table: "dreaming_state", column: "last_failure_at" }] },
+	},
+	{
+		version: 98,
+		name: "dreaming-evidence-exclusions",
+		up: dreamingEvidenceExclusions,
+		artifacts: { tables: ["dreaming_evidence_exclusions"] },
 	},
 ];
 

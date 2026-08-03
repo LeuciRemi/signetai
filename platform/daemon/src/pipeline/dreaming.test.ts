@@ -15,9 +15,11 @@ import { runMigrations } from "../../../core/src/migrations";
 import type { DbAccessor } from "../db-accessor";
 import {
 	_testParseEpisodicCursor,
+	getDreamingEvidenceExclusions,
 	getDreamingPasses,
 	getDreamingState,
 	recordDreamingFailure,
+	requestDreamingEvidenceRequeue,
 	runDreamingPass,
 	shouldTriggerDreaming,
 } from "./dreaming";
@@ -625,25 +627,59 @@ describe("dreaming", () => {
 			expect(secondPrompt).toContain("SECOND_EVIDENCE");
 		});
 
-		it("fails without advancing when the first episodic source cannot fit", async () => {
+		it("quarantines an oversized first source and advances the cursor", async () => {
 			db.prepare(
 				`INSERT INTO session_summaries
 				 (id, agent_id, content, token_count, depth, kind, source_type, earliest_at, latest_at, created_at)
 				 VALUES ('oversize-first', ?, ?, 9000, 0, 'session', 'summary',
 				         '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z')`,
 			).run(AGENT, `OVERSIZE_EVIDENCE ${"large evidence ".repeat(3_000)}`);
-			await expect(
-				runDreamingPass(
-					accessor,
-					async () => JSON.stringify({ operations: [], summary: "should not run" }),
-					defaultCfg({ maxInputTokens: 8_000 }),
-					"/tmp",
-					AGENT,
-					"incremental",
-				),
-			).rejects.toThrow("oversize-first exceeds the Dreaming prompt budget");
-			expect(getDreamingState(accessor, AGENT).evidenceCursor).toBeNull();
-			expect(getDreamingPasses(accessor, AGENT)[0]?.status).toBe("failed");
+			const result = await runDreamingPass(
+				accessor,
+				async () => JSON.stringify({ operations: [], summary: "should not run" }),
+				defaultCfg({ maxInputTokens: 8_000 }),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(result).toMatchObject({ applied: 0, skipped: 1, failed: 0 });
+			expect(getDreamingState(accessor, AGENT).evidenceCursor?.id).toBe("oversize-first");
+			expect(getDreamingPasses(accessor, AGENT)[0]).toMatchObject({ status: "completed", mutationsSkipped: 1 });
+			expect(getDreamingEvidenceExclusions(accessor, AGENT)).toMatchObject([
+			{ sourceKind: "summary", sourceId: "oversize-first", reason: "oversized_prompt_budget" },
+		]);
+		});
+
+		it("requeues quarantined evidence after the input budget increases", async () => {
+			db.prepare(
+				`INSERT INTO session_summaries
+				 (id, agent_id, content, token_count, depth, kind, source_type, earliest_at, latest_at, created_at)
+				 VALUES ('oversize-requeue', ?, ?, 9000, 0, 'session', 'summary',
+				         '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z')`,
+			).run(AGENT, `REQUEUE_OVERSIZE ${"large evidence ".repeat(3_000)}`);
+			await runDreamingPass(
+				accessor,
+				async () => JSON.stringify({ operations: [], summary: "should not run" }),
+				defaultCfg({ maxInputTokens: 8_000 }),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(requestDreamingEvidenceRequeue(accessor, AGENT, "summary", "oversize-requeue")).toBe(true);
+			let prompt = "";
+			await runDreamingPass(
+				accessor,
+				async (input) => {
+					prompt = input;
+					return JSON.stringify({ operations: [], summary: "Processed requeued evidence" });
+				},
+				defaultCfg({ maxInputTokens: 40_000 }),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(prompt).toContain("REQUEUE_OVERSIZE");
+			expect(getDreamingEvidenceExclusions(accessor, AGENT)).toEqual([]);
 		});
 
 		it("loads configured startup identity and DREAMING.md special prompt", async () => {

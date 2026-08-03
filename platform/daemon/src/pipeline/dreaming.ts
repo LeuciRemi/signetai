@@ -105,6 +105,16 @@ interface DreamingPassRow {
 	readonly error: string | null;
 }
 
+export interface DreamingEvidenceExclusion {
+	readonly sourceKind: EpisodicSourceRecord["kind"];
+	readonly sourceId: string;
+	readonly reason: string;
+	readonly passId: string;
+	readonly excludedAt: string;
+	readonly requeueRequestedAt: string | null;
+	readonly resolvedAt: string | null;
+}
+
 interface EntityRow {
 	readonly id: string;
 	readonly name: string;
@@ -294,6 +304,69 @@ export function getDreamingPasses(accessor: DbAccessor, agentId: string, limit =
 			)
 			.all(agentId, limit) as DreamingPassRow[];
 	});
+}
+
+export function getDreamingEvidenceExclusions(accessor: DbAccessor, agentId: string): readonly DreamingEvidenceExclusion[] {
+	return accessor.withReadDb((db) =>
+		db
+			.prepare(
+				`SELECT source_kind AS sourceKind, source_id AS sourceId, reason,
+				        pass_id AS passId, excluded_at AS excludedAt,
+				        requeue_requested_at AS requeueRequestedAt, resolved_at AS resolvedAt
+				 FROM dreaming_evidence_exclusions
+				 WHERE agent_id = ? AND resolved_at IS NULL
+				 ORDER BY excluded_at DESC, source_kind ASC, source_id ASC`,
+			)
+			.all(agentId) as DreamingEvidenceExclusion[],
+	);
+}
+
+export function requestDreamingEvidenceRequeue(
+	accessor: DbAccessor,
+	agentId: string,
+	sourceKind: EpisodicSourceRecord["kind"],
+	sourceId: string,
+): boolean {
+	return accessor.withWriteTx((db) => {
+		const result = db
+			.prepare(
+				`UPDATE dreaming_evidence_exclusions
+				 SET requeue_requested_at = datetime('now')
+				 WHERE agent_id = ? AND source_kind = ? AND source_id = ? AND resolved_at IS NULL`,
+			)
+			.run(agentId, sourceKind, sourceId) as { changes: number };
+		return result.changes > 0;
+	});
+}
+
+function recordOversizedEvidenceExclusionsInTx(
+	db: WriteDb,
+	agentId: string,
+	passId: string,
+	sources: readonly EpisodicSourceRecord[],
+): void {
+	const statement = db.prepare(
+		`INSERT INTO dreaming_evidence_exclusions
+		 (agent_id, source_kind, source_id, reason, pass_id, excluded_at, requeue_requested_at, resolved_at)
+		 VALUES (?, ?, ?, 'oversized_prompt_budget', ?, datetime('now'), NULL, NULL)
+		 ON CONFLICT(agent_id, source_kind, source_id) DO UPDATE SET
+		   reason = excluded.reason,
+		   pass_id = excluded.pass_id,
+		   excluded_at = excluded.excluded_at,
+		   requeue_requested_at = NULL,
+		   resolved_at = NULL`,
+	);
+	for (const source of sources) statement.run(agentId, source.kind, source.id, passId);
+}
+
+function resolveRequeuedEvidenceInTx(db: WriteDb, agentId: string, sources: readonly EpisodicSourceRecord[]): void {
+	const statement = db.prepare(
+		`UPDATE dreaming_evidence_exclusions
+		 SET resolved_at = datetime('now')
+		 WHERE agent_id = ? AND source_kind = ? AND source_id = ?
+		   AND requeue_requested_at IS NOT NULL AND resolved_at IS NULL`,
+	);
+	for (const source of sources) statement.run(agentId, source.kind, source.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -493,7 +566,9 @@ function buildDreamingPrompt(
 ): {
 	readonly prompt: string;
 	readonly lastEvidence: EpisodicSourceRecord | null;
-	readonly unrenderableEvidence: EpisodicSourceRecord | null;
+	readonly lastCursorEvidence: EpisodicSourceRecord | null;
+	readonly renderedEvidence: readonly EpisodicSourceRecord[];
+	readonly oversizedEvidence: readonly EpisodicSourceRecord[];
 } {
 	const startupEntries = resolveStartupIdentityFiles(agentsDir);
 	const startupMemoryEntry = startupEntries.find((entry) => entry.path.split(/[\\/]/).pop() === "MEMORY.md");
@@ -557,7 +632,9 @@ function buildDreamingPrompt(
 	const evidenceBudget = Math.floor(maxTokens * 0.4 * 4); // chars (~4 chars/token)
 	let usedChars = 0;
 	let lastEvidence: EpisodicSourceRecord | null = null;
-	let unrenderableEvidence: EpisodicSourceRecord | null = null;
+	let lastCursorEvidence: EpisodicSourceRecord | null = null;
+	const renderedEvidence: EpisodicSourceRecord[] = [];
+	const oversizedEvidence: EpisodicSourceRecord[] = [];
 	for (const source of evidence) {
 		const label = `${source.kind}:${source.sourceKind}`;
 		// Surface project and harness provenance labels so the model can
@@ -572,13 +649,20 @@ function buildDreamingPrompt(
 		// structured metadata would overflow the budget is treated consistently
 		// with its actual rendered size.
 		const sourceText = renderSourceText(source);
-		if (usedChars + heading.length + sourceText.length > evidenceBudget) {
-			unrenderableEvidence = lastEvidence === null ? source : null;
+		const sourceSize = heading.length + sourceText.length;
+		if (sourceSize > evidenceBudget) {
+			oversizedEvidence.push(source);
+			lastCursorEvidence = source;
+			continue;
+		}
+		if (usedChars + sourceSize > evidenceBudget) {
 			break;
 		}
 		evidenceText += `${heading}${sourceText}\n`;
-		usedChars += heading.length + sourceText.length;
+		usedChars += sourceSize;
 		lastEvidence = source;
+		lastCursorEvidence = source;
+		renderedEvidence.push(source);
 	}
 
 	const modeInstructions =
@@ -656,7 +740,9 @@ Do not emit archive_claim_value, update_link, or archive_link: they require stab
   "summary": "Brief description of what you changed and why"
 }`,
 		lastEvidence,
-		unrenderableEvidence,
+		lastCursorEvidence,
+		renderedEvidence,
+		oversizedEvidence,
 	};
 }
 
@@ -857,21 +943,35 @@ export async function runDreamingPass(
 		}
 
 		// Build prompt and call LLM
-		const { prompt, lastEvidence, unrenderableEvidence } = buildDreamingPrompt(
+		const { prompt, lastCursorEvidence, renderedEvidence, oversizedEvidence } = buildDreamingPrompt(
 			mode,
 			evidence,
 			graph,
 			agentsDir,
 			cfg.maxInputTokens,
 		);
-		if (unrenderableEvidence) {
-			throw new Error(
-				`Episodic evidence ${unrenderableEvidence.kind}:${unrenderableEvidence.id} exceeds the Dreaming prompt budget; split it into source artifacts before retrying`,
-			);
-		}
-		const evidenceCursor: EpisodicCursor = lastEvidence
-			? { capturedAt: lastEvidence.capturedAt, kind: lastEvidence.kind, id: lastEvidence.id }
+		const evidenceCursor: EpisodicCursor = lastCursorEvidence
+			? { capturedAt: lastCursorEvidence.capturedAt, kind: lastCursorEvidence.kind, id: lastCursorEvidence.id }
 			: (state.evidenceCursor ?? { capturedAt: passStartedAt, kind: null, id: "" });
+		if (renderedEvidence.length === 0 && oversizedEvidence.length > 0) {
+			const summary = `Skipped ${oversizedEvidence.length} oversized episodic source${oversizedEvidence.length === 1 ? "" : "s"}; requeue after increasing the Dreaming input budget.`;
+			accessor.withWriteTx((db) => {
+				recordOversizedEvidenceExclusionsInTx(db, agentId, passId, oversizedEvidence);
+				db.prepare(
+					`UPDATE dreaming_passes
+					 SET status = 'completed', completed_at = datetime('now'),
+					     tokens_consumed = 0, mutations_applied = 0,
+					     mutations_skipped = ?, mutations_failed = 0, summary = ?
+					 WHERE id = ?`,
+				).run(oversizedEvidence.length, summary, passId);
+				resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, passStartedAt);
+			});
+			logger.warn("dreaming", summary, {
+				agentId,
+				sources: oversizedEvidence.map((source) => `${source.kind}:${source.id}`),
+			});
+			return { passId, applied: 0, skipped: oversizedEvidence.length, failed: 0, summary };
+		}
 
 		logger.info("dreaming", "Starting dreaming pass", {
 			mode,
@@ -886,7 +986,7 @@ export async function runDreamingPass(
 		});
 
 		// Parse response — count actual tokens for both prompt and output
-		const result = parseDreamingResult(raw, evidence);
+		const result = parseDreamingResult(raw, renderedEvidence);
 		const promptTokens = countTokens(prompt);
 		const totalTokens = promptTokens + result.tokensConsumed;
 
@@ -925,11 +1025,13 @@ export async function runDreamingPass(
 				     mutations_failed = ?,
 				     summary = ?
 				 WHERE id = ?`,
-			).run(totalTokens, applied, 0, failed, result.summary, passId);
+			).run(totalTokens, applied, oversizedEvidence.length, failed, result.summary, passId);
+			recordOversizedEvidenceExclusionsInTx(db, agentId, passId, oversizedEvidence);
+			resolveRequeuedEvidenceInTx(db, agentId, renderedEvidence);
 			resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, passStartedAt);
 			if (errors.length > 0)
 				logger.warn("dreaming", "Some semantic operations were rejected", { errors: errors.slice(0, 10) });
-			return { applied, skipped: 0, failed };
+			return { applied, skipped: oversizedEvidence.length, failed };
 		});
 
 		logger.info("dreaming", "Dreaming pass complete", {
