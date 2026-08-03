@@ -48,7 +48,6 @@ const DEFAULT_OPENAI_COMPATIBLE_BASE_URL = "http://127.0.0.1:1234/v1";
 
 /** Keyless local/gateway servers get a dummy key so pi-ai's resolver short-circuits. */
 const KEYLESS_API_KEY = "signet-keyless";
-const DEFAULT_AGENT_TOOL_CALL_LIMIT = 48;
 
 const LOCAL_COMPAT: OpenAICompletionsCompat = {
 	supportsStore: false,
@@ -104,41 +103,7 @@ export interface PiAgentSession {
 export interface PiAgentSessionProvider {
 	readonly isPiAgentSessionProvider: true;
 	readonly agentSessionTimeoutMs: number;
-	createAgentSession(
-		tools: readonly ToolDefinition[],
-		options?: { readonly maxTokens?: number; readonly maxToolCalls?: number },
-	): Promise<PiAgentSession>;
-}
-
-/**
- * Pi's AgentSession deliberately keeps working until the model finishes. The
- * daemon's maintenance sessions instead need a hard tool budget so one
- * malformed or over-eager model cannot consume unbounded time or mutations.
- */
-export function withAgentToolCallLimit(
-	tools: readonly ToolDefinition[],
-	maxToolCalls: number,
-	onLimitReached: () => void,
-): readonly ToolDefinition[] {
-	let calls = 0;
-	let exhausted = false;
-	return tools.map((tool) => ({
-		...tool,
-		async execute(toolCallId, params, signal, onUpdate, context) {
-			calls++;
-			if (calls > maxToolCalls) {
-				if (!exhausted) {
-					exhausted = true;
-					onLimitReached();
-				}
-				return {
-					content: [{ type: "text", text: `Tool-call limit (${maxToolCalls}) reached; stop this maintenance pass.` }],
-					details: { error: "tool-call-limit" },
-				};
-			}
-			return tool.execute(toolCallId, params, signal, onUpdate, context);
-		},
-	}));
+	createAgentSession(tools: readonly ToolDefinition[], options?: { readonly maxTokens?: number }): Promise<PiAgentSession>;
 }
 
 export function isPiAgentSessionProvider(provider: unknown): provider is StreamCapableLlmProvider & PiAgentSessionProvider {
@@ -483,10 +448,7 @@ export function createPiModelProvider(config: PiModelProviderConfig): StreamCapa
 		...streamCapable,
 		isPiAgentSessionProvider: true,
 		agentSessionTimeoutMs: defaultTimeoutMs,
-		async createAgentSession(
-			tools: readonly ToolDefinition[],
-			options: { readonly maxTokens?: number; readonly maxToolCalls?: number } = {},
-		) {
+		async createAgentSession(tools: readonly ToolDefinition[], options: { readonly maxTokens?: number } = {}) {
 			const authStorage = AuthStorage.inMemory({
 				[piModel.provider]: { type: "api_key", key: apiKey ?? KEYLESS_API_KEY },
 			});
@@ -504,12 +466,6 @@ export function createPiModelProvider(config: PiModelProviderConfig): StreamCapa
 				systemPrompt: "You are a bounded Signet maintenance agent. You may use only the supplied daemon tools.",
 			});
 			await resourceLoader.reload();
-			let abortForToolLimit: (() => void) | undefined;
-			const boundedTools = withAgentToolCallLimit(
-				tools,
-				Math.max(1, Math.floor(options.maxToolCalls ?? DEFAULT_AGENT_TOOL_CALL_LIMIT)),
-				() => abortForToolLimit?.(),
-			);
 			const { session } = await createAgentSession({
 				model: options.maxTokens ? { ...piModel, maxTokens: options.maxTokens } : piModel,
 				authStorage,
@@ -517,10 +473,9 @@ export function createPiModelProvider(config: PiModelProviderConfig): StreamCapa
 				sessionManager: SessionManager.inMemory(),
 				settingsManager,
 				resourceLoader,
-				tools: boundedTools.map((tool) => tool.name),
-				customTools: [...boundedTools],
+				tools: tools.map((tool) => tool.name),
+				customTools: [...tools],
 			});
-			abortForToolLimit = () => void session.abort();
 			return {
 				prompt: (text) => session.prompt(text),
 				abort: () => session.abort(),
