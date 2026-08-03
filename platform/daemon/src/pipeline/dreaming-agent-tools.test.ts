@@ -44,6 +44,23 @@ describe("dreaming-agent-tools", () => {
 		});
 	}
 
+	function insertActiveAttribute(entityId: string, aspectId: string, content: string, agentId: string): void {
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				`INSERT INTO entity_aspects
+				 (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
+				 VALUES (?, ?, ?, 'configuration', 'configuration', 0.5, datetime('now'), datetime('now'))`,
+			).run(aspectId, entityId, agentId);
+			db.prepare(
+				`INSERT INTO entity_attributes
+				 (id, aspect_id, agent_id, kind, content, normalized_content,
+				  confidence, importance, status, group_key, claim_key,
+				  version, version_root_id, created_at, updated_at)
+				 VALUES (?, ?, ?, 'attribute', ?, ?, 0.8, 0.5, 'active', 'configuration', 'default', 1, ?, datetime('now'), datetime('now'))`,
+			).run(`${aspectId}-attribute`, aspectId, agentId, content, content.toLowerCase(), `${aspectId}-attribute`);
+		});
+	}
+
 	const EVIDENCE_CONTENT = "Acme switched its deployment target to edge runtime in Q2.";
 	const CITATION = {
 		source_ref: "transcript:acme-q2",
@@ -105,6 +122,41 @@ describe("dreaming-agent-tools", () => {
 		const items = res.items as Array<{ id: string; name: string }>;
 		expect(items.map((i) => i.id)).toEqual(["e-owner"]);
 		expect(items.some((i) => i.id === "e-other")).toBe(false);
+	});
+
+	it("exposes shared deterministic guards without writing semantic state", async () => {
+		insertEntity("e-atlas", "Atlas", "atlas", "owner");
+		insertEntity("e-atlas-duplicate", "Atlas App", "atlas", "owner");
+		insertEntity("e-other-atlas", "Atlas Elsewhere", "atlas", "intruder");
+		insertActiveAttribute("e-atlas", "a-configuration", "Feature is enabled by default.", "owner");
+		const tools = createDreamingAgentTools({ accessor: getDbAccessor(), agentId: "owner", actor: "owner" });
+
+		const label = readResult(await findTool(tools, "check_entity_label").execute("label", { name: "Status" }, undefined, undefined, {} as never));
+		expect(label).toMatchObject({ tool: "check_entity_label", ok: true, result: { ok: false, reason: "generic_or_scaffolding_name" } });
+
+		const duplicates = readResult(
+			await findTool(tools, "find_duplicate_entities").execute("duplicates", { name: "Atlas" }, undefined, undefined, {} as never),
+		);
+		expect(duplicates).toMatchObject({ tool: "find_duplicate_entities", ok: true });
+		expect((duplicates.items as Array<{ target: { id: string }; sources: Array<{ id: string }> }>)[0]).toMatchObject({
+			target: { id: "e-atlas" },
+			sources: [{ id: "e-atlas-duplicate" }],
+		});
+
+		const contradiction = readResult(
+			await findTool(tools, "check_contradiction").execute(
+				"contradiction",
+				{ entityId: "e-atlas", aspectId: "a-configuration", value: "Feature is disabled by default." },
+				undefined,
+				undefined,
+				{} as never,
+			),
+		);
+		expect(contradiction).toMatchObject({ tool: "check_contradiction", ok: true });
+		expect((contradiction.items as Array<{ detected: boolean; reason: string }>)[0]).toMatchObject({
+			detected: true,
+			reason: "antonym_conflict",
+		});
 	});
 
 	it("reports each Pi capability input, output, and outcome to the pass trace", async () => {

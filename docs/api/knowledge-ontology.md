@@ -516,7 +516,11 @@ For example, `search_entities` accepts `query`, `type`, `limit`, and `offset`;
 `apply_ontology_ops` accepts a cited `operations` batch. Its schema is a
 closed union of the 19 audited ontology operations and each operation's
 payload fields, so clients can validate an operation before attempting a
-write. The request body cannot supply a second agent scope inside `input`.
+write. `check_entity_label`, `find_duplicate_entities`, and
+`check_contradiction` expose the daemon's read-only deterministic guards so a
+reasoner can consult them before proposing a write; cited operation validation
+and semantic writes remain daemon-owned. The request body cannot supply a
+second agent scope inside `input`.
 
 ### POST /api/dream/trigger
 

@@ -17,9 +17,12 @@ import {
 } from "../knowledge-graph";
 import { getOntologyClaimEvidence } from "../ontology-claim-evidence";
 import { getOntologyLinkEvidence } from "../ontology-link-evidence";
+import { findDuplicateEntityMerges } from "../ontology-proposals";
+import { classifyEntityQuality } from "../entity-quality";
 import type { DreamingAgentEvidence } from "./dreaming-evidence";
 import { applyDreamingOperations, type ApplyDreamingOperationsResult, type DreamingOperationRequest } from "./dreaming-operations";
 import { DREAMING_ONTOLOGY_OPERATION_SCHEMA } from "./dreaming-operation-contract";
+import { detectProspectiveContradictionRisk } from "./antonyms";
 
 const bounded = (value: number | undefined, fallback: number, max: number): number =>
 	Math.min(Math.max(Math.floor(value ?? fallback), 1), max);
@@ -37,6 +40,9 @@ export const DREAMING_CAPABILITY_IDS = [
 	"get_claim_evidence",
 	"get_link_evidence",
 	"search_evidence",
+	"check_entity_label",
+	"find_duplicate_entities",
+	"check_contradiction",
 	"apply_ontology_ops",
 ] as const;
 
@@ -240,6 +246,45 @@ export function createDreamingCapabilities(params: CreateDreamingCapabilitiesPar
 			async ({ query, limit }) => ({
 				ok: true,
 				items: accessor.withReadDb((db) => searchEpisodicSources(db, { agentId, query, limit })),
+			}),
+		),
+		capability(
+			"check_entity_label",
+			"Check entity label",
+			"Run the daemon's deterministic entity-label gate before proposing an entity name.",
+			true,
+			z.object({ name: z.string(), type: z.string().optional() }),
+			async ({ name, type }) => ({ ok: true, result: classifyEntityQuality(name, type) }),
+		),
+		capability(
+			"find_duplicate_entities",
+			"Find duplicate entities",
+			"Find exact-canonical duplicate entity merge candidates in this agent scope without writing a proposal.",
+			true,
+			z.object({ name: z.string().min(1) }),
+			async ({ name }) => ({ ok: true, items: findDuplicateEntityMerges(accessor, { agentId, name }) }),
+		),
+		capability(
+			"check_contradiction",
+			"Check claim contradiction",
+			"Compare a proposed claim value with active values in one scoped aspect using the daemon's conservative deterministic guard.",
+			true,
+			z.object({ entityId: z.string().min(1), aspectId: z.string().min(1), value: z.string().min(1) }),
+			async ({ entityId, aspectId, value }) => ({
+				ok: true,
+				items: getAttributesForAspectFiltered(accessor, {
+					entityId,
+					aspectId,
+					agentId,
+					kind: "attribute",
+					status: "active",
+					limit: 200,
+					offset: 0,
+				}).map((attribute) => ({
+					attributeId: attribute.id,
+					content: attribute.content,
+					...detectProspectiveContradictionRisk(value, attribute.content),
+				})),
 			}),
 		),
 		capability(

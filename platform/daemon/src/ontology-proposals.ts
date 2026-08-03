@@ -192,6 +192,11 @@ export interface ProposeDuplicateEntityMergesParams {
 	readonly createdBy?: string;
 }
 
+export interface FindDuplicateEntityMergesParams {
+	readonly agentId: string;
+	readonly name: string;
+}
+
 export interface OntologyOperationInput {
 	readonly operation: string;
 	readonly payload: Readonly<Record<string, unknown>>;
@@ -2166,8 +2171,11 @@ function duplicateMergeCandidates(
 	db: ReadDb,
 	agentId: string,
 	limit: number,
+	canonicalName?: string,
+	includePending = false,
 ): readonly DuplicateEntityMergeCandidate[] {
 	const existing = pendingDuplicateRepairKeys(db, agentId);
+	const scopedCanonicalName = canonicalName?.trim() || null;
 	const rows = db
 		.prepare(
 			`SELECT id, name, canonical_name, entity_type,
@@ -2177,9 +2185,10 @@ function duplicateMergeCandidates(
 			 FROM entities
 			 WHERE agent_id = ?
 			   AND COALESCE(status, 'active') = 'active'
+			   AND (? IS NULL OR canonical_name = ? OR canonical_name IS NULL)
 			 ORDER BY COALESCE(canonical_name, LOWER(name)), COALESCE(mentions, 0) DESC, updated_at DESC`,
 		)
-		.all(agentId) as DuplicateEntityRow[];
+		.all(agentId, scopedCanonicalName, scopedCanonicalName) as DuplicateEntityRow[];
 	const groups = new Map<string, DuplicateEntityRow[]>();
 	for (const row of rows) {
 		const key = canonical(row.canonical_name ?? row.name);
@@ -2187,7 +2196,9 @@ function duplicateMergeCandidates(
 	}
 
 	return [...groups.entries()]
-		.filter(([key, group]) => key.length > 0 && group.length > 1 && !existing.has(key))
+		.filter(([key, group]) =>
+			key.length > 0 && group.length > 1 && (scopedCanonicalName === null || key === scopedCanonicalName) && (includePending || !existing.has(key)),
+		)
 		.map(([key, group]) => {
 			const ordered = [...group].sort(compareDuplicateTargets);
 			const target = ordered[0];
@@ -2230,6 +2241,21 @@ function duplicateMergeCandidates(
 		})
 		.sort((a, b) => b.sources.length - a.sources.length || a.canonicalName.localeCompare(b.canonicalName))
 		.slice(0, limit);
+}
+
+/**
+ * Read-only exact-canonical duplicate lookup for a named entity. The same
+ * merge candidate planner powers the repair/proposal path, so guard callers
+ * see the target, sources, and safety warnings that the daemon would use.
+ */
+export function findDuplicateEntityMerges(
+	accessor: DbAccessor,
+	params: FindDuplicateEntityMergesParams,
+): readonly DuplicateEntityMergeCandidate[] {
+	const agentId = requireText(params.agentId, "agentId");
+	const canonicalName = canonical(params.name);
+	if (canonicalName.length === 0) return [];
+	return accessor.withReadDb((db) => duplicateMergeCandidates(db, agentId, 1, canonicalName, true));
 }
 
 export function proposeDuplicateEntityMerges(
