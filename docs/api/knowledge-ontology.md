@@ -440,6 +440,38 @@ uses the same scoped-agent resolution as Dreaming trigger requests.
 
 Returns `404` when the scoped exclusion is no longer active.
 
+### POST /api/dream/operations
+
+Apply a batch of cited ontology operations for an external Dreaming agent.
+Requires `modify` permission. This is the daemon-owned semantic apply seam:
+the caller supplies operations and evidence, but the daemon resolves every
+episodic source in the credential's agent scope before it writes graph state.
+
+**Request body**
+
+```json
+{
+  "agentId": "noam",
+  "actor": "dreaming-agent",
+  "operations": [
+    {
+      "operation": "set_claim_value",
+      "payload": { "entityId": "entity-id", "aspect": "role", "value": "Engineer" },
+      "reason": "The cited note explicitly identifies this role.",
+      "evidence": [{ "sourceKind": "artifact", "sourceId": "note.md", "quote": "..." }],
+      "confidence": 0.9
+    }
+  ]
+}
+```
+
+`operations` must be non-empty. Each entry must use one of the same closed,
+payload-validated ontology operation schemas exposed by `apply_ontology_ops`
+from `GET /api/dream/tools`; a write requires a canonical episodic source and
+an exact supporting quote. The response is `200` for a fully accepted batch or
+`400` with structured rejection details. `agentId` uses scoped-agent
+resolution and cannot cross the credential's agent scope.
+
 ### GET /api/dream/passes/:passId/tools
 
 Return the local, ordered Pi capability trace for one Dreaming pass: every
@@ -481,8 +513,10 @@ agent scope. Requires `modify` permission.
 
 `input` must satisfy the selected capability's schema from `GET /api/dream/tools`.
 For example, `search_entities` accepts `query`, `type`, `limit`, and `offset`;
-`apply_ontology_ops` accepts the cited `operations` batch. The request body
-cannot supply a second agent scope inside `input`.
+`apply_ontology_ops` accepts a cited `operations` batch. Its schema is a
+closed union of the 19 audited ontology operations and each operation's
+payload fields, so clients can validate an operation before attempting a
+write. The request body cannot supply a second agent scope inside `input`.
 
 ### POST /api/dream/trigger
 

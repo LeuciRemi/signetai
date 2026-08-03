@@ -203,6 +203,36 @@ describe("Dreaming", () => {
 		});
 	});
 
+	it("navigates semantic state through scoped tools instead of a partial graph snapshot", async () => {
+		const evidence = "The deployment is now handled by Aster.";
+		seedSummary(db, "navigation-summary", evidence, 8);
+		db.prepare(
+			`INSERT INTO entities
+			 (id, name, canonical_name, entity_type, agent_id, mentions, pinned, created_at, updated_at)
+			 VALUES ('snapshot-sentinel', 'Static Snapshot Sentinel', 'static snapshot sentinel', 'project', ?, 1, 0, datetime('now'), datetime('now'))`,
+		).run(AGENT);
+		let prompt = "";
+		let toolNames: readonly string[] = [];
+		await runDreamingAgentPass(
+			accessor,
+			{
+				async run(input) {
+					prompt = input.prompt;
+					toolNames = input.tools.map((tool) => tool.name);
+					return { summary: "Navigated graph through tools" };
+				},
+			},
+			defaultCfg(),
+			"/tmp",
+			AGENT,
+			"incremental",
+		);
+		expect(prompt).not.toContain("<knowledge_graph>");
+		expect(prompt).not.toContain("Static Snapshot Sentinel");
+		expect(prompt).toContain("intentionally not preloaded");
+		expect(toolNames).toEqual(expect.arrayContaining(["search_entities", "get_entity", "list_aspect_claims", "walk_links"]));
+	});
+
 	it("retains rejected agent evidence for explicit requeue", async () => {
 		const evidence = "Briar owns the release process.";
 		seedSummary(db, "rejected-summary", evidence, 8);
@@ -258,7 +288,7 @@ describe("Dreaming", () => {
 			AGENT,
 			"incremental",
 		);
-		expect(empty.summary).toBe("No new episodic evidence or semantic entities to process");
+		expect(empty.summary).toBe("No new episodic evidence to process");
 		expect(invoked).toBe(false);
 
 		seedSummary(db, "failure", "Evidence that reaches the agent.", 5);

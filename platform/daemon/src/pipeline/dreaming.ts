@@ -119,48 +119,6 @@ export interface DreamingEvidenceExclusion {
 	readonly resolvedAt: string | null;
 }
 
-interface EntityRow {
-	readonly id: string;
-	readonly name: string;
-	readonly entityType: string;
-	readonly description: string | null;
-}
-
-interface AspectRow {
-	readonly id: string;
-	readonly entityId: string;
-	readonly name: string;
-	readonly weight: number;
-}
-
-interface AttributeRow {
-	readonly id: string;
-	readonly aspectId: string;
-	readonly kind: string;
-	readonly content: string;
-	readonly status: string;
-	readonly importance: number;
-}
-
-interface DependencyRow {
-	readonly id: string;
-	readonly sourceEntityId: string;
-	readonly targetEntityId: string;
-	readonly dependencyType: string;
-	readonly strength: number;
-	readonly confidence: number;
-	readonly reason: string | null;
-}
-
-/** Source-native navigation rows are episodic topology, not semantic memory. */
-function semanticEntityFilter(alias = ""): string {
-	const column = (name: "entity_type" | "source_root"): string => (alias ? `${alias}.${name}` : name);
-	return `NOT (
-		${column("entity_type")} IN ('source_document', 'source_folder', 'source_document_reference', 'skill')
-		OR (${column("entity_type")} = 'source' AND ${column("source_root")} IS NOT NULL)
-	)`;
-}
-
 /** Routed bounded-agent executor. The daemon creates the tools and owns all writes. */
 export interface DreamingAgentExecutor {
 	run(input: {
@@ -186,7 +144,7 @@ function readNonEmptyString(value: unknown): string | null {
  */
 function rejectedAgentEvidence(
 	result: ApplyDreamingOperationsResult,
-	operations: readonly DreamingOperationRequest[],
+	operations: readonly Pick<DreamingOperationRequest, "evidence">[],
 	sources: readonly EpisodicSourceRecord[],
 ): readonly EpisodicSourceRecord[] {
 	const rejectedIndexes = new Set<number>(
@@ -207,6 +165,15 @@ function rejectedAgentEvidence(
 		}
 	}
 	return sources.filter((source) => references.has(`${source.kind}:${source.id}`));
+}
+
+/** Recover cited sources when tool-schema validation rejects an operation before the apply seam runs. */
+function operationEvidenceFromToolInput(input: unknown): readonly Pick<DreamingOperationRequest, "evidence">[] {
+	if (!isRecord(input) || !Array.isArray(input.operations)) return [];
+	return input.operations.flatMap((operation) => {
+		if (!isRecord(operation) || !Array.isArray(operation.evidence)) return [];
+		return [{ evidence: operation.evidence }];
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -537,94 +504,6 @@ function fetchEpisodicEvidence(
 	return [resumed, ...sources.filter((source) => source.kind !== resumed.kind || source.id !== resumed.id)].slice(0, limit);
 }
 
-function fetchEntityGraph(
-	db: ReadDb,
-	agentId: string,
-	limits?: { entities?: number; aspects?: number; attributes?: number; dependencies?: number },
-): {
-	entities: readonly EntityRow[];
-	aspects: readonly AspectRow[];
-	attributes: readonly AttributeRow[];
-	dependencies: readonly DependencyRow[];
-} {
-	const maxEntities = limits?.entities ?? 2000;
-	const maxAspects = limits?.aspects ?? 10_000;
-	const maxAttrs = limits?.attributes ?? 50_000;
-	const maxDeps = limits?.dependencies ?? 10_000;
-
-	const entities = db
-		.prepare(
-			`SELECT id, name, entity_type AS entityType, description
-			 FROM entities WHERE agent_id = ? AND ${semanticEntityFilter()}
-			 ORDER BY mentions DESC, updated_at DESC
-			 LIMIT ?`,
-		)
-		.all(agentId, maxEntities) as EntityRow[];
-
-	const aspects = db
-		.prepare(
-			`SELECT ea.id, ea.entity_id AS entityId, ea.name, ea.weight
-			 FROM entity_aspects ea
-			 JOIN entities e ON e.id = ea.entity_id AND e.agent_id = ea.agent_id
-			 WHERE ea.agent_id = ? AND ${semanticEntityFilter("e")}
-			 ORDER BY ea.weight DESC
-			 LIMIT ?`,
-		)
-		.all(agentId, maxAspects) as AspectRow[];
-
-	const attributes = db
-		.prepare(
-			`SELECT ea.id, ea.aspect_id AS aspectId, ea.kind, ea.content,
-			        ea.status, ea.importance
-			 FROM entity_attributes ea
-			 JOIN entity_aspects asp ON asp.id = ea.aspect_id AND asp.agent_id = ea.agent_id
-			 JOIN entities e ON e.id = asp.entity_id AND e.agent_id = ea.agent_id
-			 WHERE ea.agent_id = ? AND ea.status = 'active' AND ${semanticEntityFilter("e")}
-			 ORDER BY ea.importance DESC
-			 LIMIT ?`,
-		)
-		.all(agentId, maxAttrs) as AttributeRow[];
-
-	const dependencies = db
-		.prepare(
-			`SELECT entity_dependencies.id, entity_dependencies.source_entity_id AS sourceEntityId,
-			        entity_dependencies.target_entity_id AS targetEntityId,
-			        entity_dependencies.dependency_type AS dependencyType,
-			        entity_dependencies.strength, entity_dependencies.confidence, entity_dependencies.reason
-			 FROM entity_dependencies
-			 JOIN entities source ON source.id = entity_dependencies.source_entity_id AND source.agent_id = entity_dependencies.agent_id
-			 JOIN entities target ON target.id = entity_dependencies.target_entity_id AND target.agent_id = entity_dependencies.agent_id
-			 WHERE entity_dependencies.agent_id = ?
-			   AND ${semanticEntityFilter("source")}
-			   AND ${semanticEntityFilter("target")}
-			 ORDER BY entity_dependencies.strength DESC, entity_dependencies.confidence DESC,
-			          entity_dependencies.updated_at DESC, entity_dependencies.id ASC
-			 LIMIT ?`,
-		)
-		.all(agentId, maxDeps) as DependencyRow[];
-
-	return { entities, aspects, attributes, dependencies };
-}
-
-/** Log when any graph query hit its row cap — signals incomplete data. */
-function warnIfTruncated(
-	graph: ReturnType<typeof fetchEntityGraph>,
-	limits: { entities?: number; aspects?: number; attributes?: number; dependencies?: number },
-): void {
-	const truncated: string[] = [];
-	if (graph.entities.length >= (limits.entities ?? 2000)) truncated.push(`entities(${graph.entities.length})`);
-	if (graph.aspects.length >= (limits.aspects ?? 10_000)) truncated.push(`aspects(${graph.aspects.length})`);
-	if (graph.attributes.length >= (limits.attributes ?? 50_000))
-		truncated.push(`attributes(${graph.attributes.length})`);
-	if (graph.dependencies.length >= (limits.dependencies ?? 10_000))
-		truncated.push(`dependencies(${graph.dependencies.length})`);
-	if (truncated.length > 0) {
-		logger.warn("dreaming", "Entity graph truncated by row limits — dreaming pass will operate on a partial snapshot", {
-			truncated,
-		});
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Prompt construction
 // ---------------------------------------------------------------------------
@@ -654,7 +533,6 @@ function renderIdentityBlock(dir: string, entries: readonly IdentityContextFileE
 function buildDreamingPrompt(
 	mode: DreamingMode,
 	evidence: readonly EpisodicSourceRecord[],
-	graph: ReturnType<typeof fetchEntityGraph>,
 	agentsDir: string,
 	maxTokens: number,
 	cursor: EpisodicCursor | null,
@@ -675,54 +553,6 @@ function buildDreamingPrompt(
 	);
 	const dreamingPrompt = renderIdentityBlock(agentsDir, resolveSpecialIdentityFiles(agentsDir, "dreaming"));
 	const memoryMd = startupMemoryEntry ? readIdentityFile(agentsDir, startupMemoryEntry) : "";
-
-	// Build graph snapshot
-	const entityMap = new Map(graph.entities.map((e) => [e.id, e]));
-	const aspectsByEntity = new Map<string, AspectRow[]>();
-	for (const a of graph.aspects) {
-		const list = aspectsByEntity.get(a.entityId) ?? [];
-		list.push(a);
-		aspectsByEntity.set(a.entityId, list);
-	}
-	const attrsByAspect = new Map<string, AttributeRow[]>();
-	for (const a of graph.attributes) {
-		const list = attrsByAspect.get(a.aspectId) ?? [];
-		list.push(a);
-		attrsByAspect.set(a.aspectId, list);
-	}
-
-	let graphText = "";
-	// Character budget for graph section: ~20% of token budget (~4 chars/token)
-	const graphBudget = Math.floor(maxTokens * 0.2 * 4);
-	for (const entity of graph.entities) {
-		const entityHeader = `\n## ${entity.name} (${entity.entityType})${entity.description ? `\n${entity.description}` : ""}`;
-		if (graphText.length + entityHeader.length > graphBudget) break;
-		graphText += entityHeader;
-		const aspects = aspectsByEntity.get(entity.id) ?? [];
-		for (const aspect of aspects) {
-			const aspectLine = `\n### ${aspect.name} (weight: ${aspect.weight.toFixed(2)})`;
-			if (graphText.length + aspectLine.length > graphBudget) break;
-			graphText += aspectLine;
-			const attrs = attrsByAspect.get(aspect.id) ?? [];
-			for (const attr of attrs) {
-				const tag = attr.kind === "constraint" ? " [CONSTRAINT]" : "";
-				const attrLine = `\n- ${attr.content}${tag}`;
-				if (graphText.length + attrLine.length > graphBudget) break;
-				graphText += attrLine;
-			}
-		}
-		graphText += "\n";
-	}
-
-	let depText = "";
-	const depBudget = Math.floor(maxTokens * 0.03 * 4); // ~3% for dependencies
-	for (const dep of graph.dependencies) {
-		const src = entityMap.get(dep.sourceEntityId)?.name ?? dep.sourceEntityId;
-		const tgt = entityMap.get(dep.targetEntityId)?.name ?? dep.targetEntityId;
-		const line = `\n- ${src} --[${dep.dependencyType}]--> ${tgt} (strength: ${dep.strength.toFixed(2)}, confidence: ${dep.confidence.toFixed(2)})`;
-		if (depText.length + line.length > depBudget) break;
-		depText += line;
-	}
 
 	let evidenceText = "";
 	// Keep substantial room for identity, instructions, and the structured result.
@@ -805,14 +635,7 @@ Guidelines:
 
 ${evidenceText ? `<episodic_evidence>\n${evidenceText}\n</episodic_evidence>` : ""}
 
-<knowledge_graph>
-${graphText}
-
-### Entity Relationships
-${depText || "(no relationships yet)"}
-</knowledge_graph>
-
-Use the supplied daemon tools to inspect semantic context before changing it. Search for entities before creating duplicates, inspect claim siblings before superseding them, and inspect links before updating them. Use apply_ontology_ops for every semantic write. Every operation must cite an exact quote plus source_ref from the episodic evidence you received or searched. Do not attempt direct database access.`,
+Use the supplied daemon tools to inspect semantic context before changing it. Search for entities before creating duplicates, inspect claim siblings before superseding them, and inspect links before updating them. The graph is intentionally not preloaded: navigate it with the tools so decisions use current, scoped data instead of a partial snapshot. Use apply_ontology_ops for every semantic write. Every operation must cite an exact quote plus source_ref from the episodic evidence you received or searched. Do not attempt direct database access.`,
 		lastEvidence,
 		lastCursorEvidence,
 		lastCursorFragmentOffset,
@@ -843,26 +666,11 @@ export async function runDreamingAgentPass(
 	const passStartedAt = new Date().toISOString();
 	try {
 		const state = getDreamingState(accessor, agentId);
-		const graphTokenBudget = Math.floor(cfg.maxInputTokens * 0.4);
-		const graphLimits = {
-			entities: Math.max(100, Math.floor(graphTokenBudget / 20)),
-			aspects: Math.max(200, Math.floor(graphTokenBudget / 10)),
-			attributes: Math.max(500, Math.floor(graphTokenBudget / 25)),
-			dependencies: Math.max(200, Math.floor(graphTokenBudget / 20)),
-		};
-		const { evidence, graph } = accessor.withReadDb((db) => ({
-			evidence: fetchEpisodicEvidence(
-				db,
-				agentId,
-				mode === "compact" || state.evidenceCursor ? null : state.lastPassAt,
-				200,
-				state.evidenceCursor,
-			),
-			graph: fetchEntityGraph(db, agentId, graphLimits),
-		}));
-		warnIfTruncated(graph, graphLimits);
-		if (mode === "incremental" && evidence.length === 0 && graph.entities.length === 0) {
-			const summary = "No new episodic evidence or semantic entities to process";
+		const evidence = accessor.withReadDb((db) =>
+			fetchEpisodicEvidence(db, agentId, mode === "compact" || state.evidenceCursor ? null : state.lastPassAt, 200, state.evidenceCursor),
+		);
+		if (mode === "incremental" && evidence.length === 0) {
+			const summary = "No new episodic evidence to process";
 			accessor.withWriteTx((db) => {
 				db.prepare(
 					`UPDATE dreaming_passes SET status = 'completed', completed_at = datetime('now'),
@@ -877,7 +685,6 @@ export async function runDreamingAgentPass(
 		const { prompt, lastCursorEvidence, lastCursorFragmentOffset, renderedEvidence, completedEvidence, renderedFragments } = buildDreamingPrompt(
 			mode,
 			evidence,
-			graph,
 			agentsDir,
 			cfg.maxInputTokens,
 			state.evidenceCursor,
@@ -894,6 +701,7 @@ export async function runDreamingAgentPass(
 		let applied = 0;
 		let failed = 0;
 		let toolCallSequence = 0;
+		let applyCallbackReported = false;
 		const rejectedEvidence: EpisodicSourceRecord[] = [];
 		const tools = createDreamingAgentTools({
 			accessor,
@@ -901,6 +709,7 @@ export async function runDreamingAgentPass(
 			actor: "dreaming",
 			evidence: createDreamingAgentEvidence(renderedFragments),
 			onOperationsApplied(result, operations) {
+				applyCallbackReported = true;
 				applied += result.items.filter((item) => item.ok).length;
 				failed += result.items.filter((item) => !item.ok).length;
 				if (!result.ok && result.items.length === 0) failed++;
@@ -908,6 +717,19 @@ export async function runDreamingAgentPass(
 			},
 			onToolCall(trace) {
 				recordDreamingToolCall(accessor, agentId, passId, ++toolCallSequence, trace);
+				if (trace.tool === "apply_ontology_ops") {
+					if (!trace.output.ok && !applyCallbackReported) {
+						rejectedEvidence.push(
+							...rejectedAgentEvidence(
+								{ ok: false, items: [] },
+								operationEvidenceFromToolInput(trace.input),
+								renderedEvidence,
+							),
+						);
+						failed++;
+					}
+					applyCallbackReported = false;
+				}
 			},
 		});
 		logger.info("dreaming", "Starting agentic dreaming pass", {
