@@ -59,6 +59,7 @@ export {
 	recordDreamingFailure,
 	requestDreamingEvidenceRequeue,
 } from "./dreaming";
+export { getDreamingQualityReport } from "./dreaming-quality";
 export type { DreamingWorkerHandle } from "./dreaming-worker";
 
 /** Get the active synthesis worker handle (for API routes). */

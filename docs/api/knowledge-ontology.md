@@ -445,6 +445,15 @@ tool's input, output, success result, and latency. The route is agent-scoped
 and requires `admin` permission. It is intended for reviewing whether the
 agent searched graph or episodic evidence before proposing semantic writes.
 
+### GET /api/dream/quality
+
+Return deterministic, agent-scoped semantic quality measures for the current
+Dreaming graph. `citationCoverage` counts active claim values that retain an
+exact quote in canonical proposal evidence plus a resolvable episodic source;
+a source pointer without a quote is not citation coverage. `graphGarbageRate` applies the shared
+entity-quality classifier and detects possessive duplicates, excluding
+source-native topology. Requires `admin` permission.
+
 ### GET /api/dream/tools
 
 List the canonical Dreaming capability registry, including each capability's

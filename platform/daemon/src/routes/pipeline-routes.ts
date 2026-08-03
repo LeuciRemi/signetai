@@ -14,6 +14,7 @@ import {
 	getDreamingPasses,
 	getDreamingState,
 	getDreamingToolCalls,
+	getDreamingQualityReport,
 	getDreamingWorker,
 	getPipelineWorkerStatus,
 	requestDreamingEvidenceRequeue,
@@ -604,6 +605,13 @@ export function registerPipelineRoutes(app: Hono): void {
 		const passId = c.req.param("passId").trim();
 		if (!passId) return c.json({ error: "Missing Dreaming pass id" }, 400);
 		return c.json({ agentId: scopedAgent.agentId, passId, items: getDreamingToolCalls(getDbAccessor(), scopedAgent.agentId, passId) });
+	});
+
+	/** Deterministic semantic-quality measurements for the scoped Dreaming graph. */
+	app.get("/api/dream/quality", (c) => {
+		const scopedAgent = resolveScopedDreamAgent(c);
+		if (scopedAgent.error) return c.json({ error: scopedAgent.error }, 403);
+		return c.json(getDreamingQualityReport(getDbAccessor(), scopedAgent.agentId));
 	});
 
 	app.post("/api/dream/exclusions/requeue", async (c) => {
