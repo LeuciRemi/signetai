@@ -19,6 +19,7 @@ import {
 	resolveOntologyEvidenceRef,
 	uniqueOntologyEvidenceRefs,
 } from "./ontology-evidence";
+import { txIngestEnvelope, txSupersedeMemory } from "./transactions";
 
 type ProposalRow = {
 	readonly id: string;
@@ -764,6 +765,83 @@ function applyAttachInterface(
 	});
 }
 
+/**
+ * An active claim value is a first-class semantic memory, not merely a graph
+ * decoration. The attribute and its retrievable memory intentionally share a
+ * durable id and are created in the same ontology apply transaction.
+ */
+function materializeAttributeMemoryInTx(
+	db: WriteDb,
+	input: {
+		readonly attributeId: string;
+		readonly entityId: string;
+		readonly agentId: string;
+		readonly content: string;
+		readonly normalizedContent: string;
+		readonly importance: number;
+		readonly proposal: ProposalRow;
+	},
+): string {
+	const existing = db
+		.prepare("SELECT id FROM memories WHERE id = ?")
+		.get(input.attributeId) as { id: string } | undefined;
+	if (!existing) {
+		txIngestEnvelope(db, {
+			id: input.attributeId,
+			content: input.content,
+			normalizedContent: input.normalizedContent,
+			// Claim identity, rather than raw text, is the deduplication unit: two
+			// independently maintained claims may legitimately render the same text.
+			contentHash: `semantic-attribute:${input.attributeId}`,
+			who: "dreaming",
+			why: input.proposal.rationale || null,
+			project: null,
+			importance: input.importance,
+			type: "semantic",
+			tags: "semantic,attribute",
+			pinned: 0,
+			extractionStatus: "completed",
+			updatedBy: "dreaming",
+			memoryKind: null,
+			sourceType: "dreaming",
+			sourceId: input.proposal.source_id,
+			sourcePath: input.proposal.source_path,
+			agentId: input.agentId,
+			visibility: "global",
+			createdAt: now(),
+		});
+	}
+	db.prepare("UPDATE entity_attributes SET memory_id = ? WHERE id = ? AND agent_id = ?").run(
+		input.attributeId,
+		input.attributeId,
+		input.agentId,
+	);
+	db.prepare("INSERT OR IGNORE INTO memory_entity_mentions (memory_id, entity_id) VALUES (?, ?)").run(
+		input.attributeId,
+		input.entityId,
+	);
+	db.prepare(
+		`UPDATE entities
+		 SET mentions = (SELECT COUNT(*) FROM memory_entity_mentions WHERE entity_id = entities.id)
+		 WHERE id = ? AND agent_id = ?`,
+	).run(input.entityId, input.agentId);
+	return input.attributeId;
+}
+
+function supersedeAttributeMemoryInTx(
+	db: WriteDb,
+	input: { readonly memoryId: string | null; readonly replacementMemoryId: string; readonly proposal: ProposalRow },
+): void {
+	if (!input.memoryId || input.memoryId === input.replacementMemoryId) return;
+	txSupersedeMemory(db, {
+		memoryId: input.memoryId,
+		supersededBy: input.replacementMemoryId,
+		reason: input.proposal.rationale || null,
+		changedBy: "dreaming",
+		changedAt: now(),
+	});
+}
+
 function applyAddClaimValue(
 	db: WriteDb,
 	agentId: string,
@@ -834,7 +912,16 @@ function applyAddClaimValue(
 		proposal.id,
 		JSON.stringify(proposalEvidence),
 	);
-	return { entityId, aspectId, attributeId: id, deduped: false };
+	const memoryId = materializeAttributeMemoryInTx(db, {
+		attributeId: id,
+		entityId,
+		agentId,
+		content: value,
+		normalizedContent: normalized,
+		importance,
+		proposal,
+	});
+	return { entityId, aspectId, attributeId: id, memoryId, deduped: false };
 }
 
 function applySetClaimValue(
@@ -858,7 +945,7 @@ function applySetClaimValue(
 	const kind = normalizeAttributeKind(readString(payload, "kind"));
 	const slot = db
 		.prepare(
-			`SELECT id, content, normalized_content, version, version_root_id, kind, status
+			`SELECT id, memory_id, content, normalized_content, version, version_root_id, kind, status
 			 FROM entity_attributes
 			 WHERE aspect_id = ?
 			   AND agent_id = ?
@@ -869,6 +956,7 @@ function applySetClaimValue(
 		)
 		.all(aspectId, agentId, kind, groupKey, claimKey) as Array<{
 		id: string;
+		memory_id: string | null;
 		content: string;
 		normalized_content: string;
 		version: number | null;
@@ -929,6 +1017,15 @@ function applySetClaimValue(
 		proposal.id,
 		JSON.stringify(proposalAuditEvidence(proposal)),
 	);
+	const memoryId = materializeAttributeMemoryInTx(db, {
+		attributeId: id,
+		entityId,
+		agentId,
+		content: value,
+		normalizedContent: normalized,
+		importance,
+		proposal,
+	});
 
 	if (active.length > 0) {
 		db.prepare(
@@ -942,12 +1039,16 @@ function applySetClaimValue(
 			   AND status = 'active'
 			   AND id != ?`,
 		).run(id, agentId, aspectId, kind, groupKey, claimKey, id);
+		for (const prior of active) {
+			supersedeAttributeMemoryInTx(db, { memoryId: prior.memory_id, replacementMemoryId: memoryId, proposal });
+		}
 	}
 
 	return {
 		entityId,
 		aspectId,
 		attributeId: id,
+		memoryId,
 		version,
 		versionRootId: rootId,
 		previousAttributeId: previous?.id ?? null,

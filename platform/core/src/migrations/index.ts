@@ -107,6 +107,7 @@ import { up as dreamingEvidenceExclusions } from "./098-dreaming-evidence-exclus
 import { up as dreamingToolCalls } from "./099-dreaming-tool-calls";
 import { up as dreamingRunbook } from "./100-dreaming-runbook";
 import { up as dreamingAttention } from "./101-dreaming-attention";
+import { up as attributeSemanticMemories } from "./102-attribute-semantic-memories";
 
 // -- Public interface consumed by Database.init() --
 
@@ -948,6 +949,11 @@ export const MIGRATIONS: readonly Migration[] = [
 		name: "dreaming-attention",
 		up: dreamingAttention,
 		artifacts: { tables: ["dreaming_attention"] },
+	},
+	{
+		version: 102,
+		name: "attribute-semantic-memories",
+		up: attributeSemanticMemories,
 	},
 ];
 

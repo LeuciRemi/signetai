@@ -654,6 +654,9 @@ Guidelines:
 - Provide clear reasons for all deletions and merges
 - Be conservative — only change what you're confident about
 - Episodic evidence is immutable source material. Do not treat it as semantic memory or rewrite it; use its provenance when deciding whether a semantic change is warranted.
+- Every active claim value is a first-class semantic memory. Its value must be an atomic, complete assertion that is understandable without the graph; write "Signet is a memory system", not "memory system" or a transcript fragment.
+- Attach each assertion to the narrowest meaningful entity and aspect. Use a specific aspect such as "product identity", "architecture", or "preference"; do not use catch-all aspects such as "profile", "details", "general", or "information" unless that is the actual subject.
+- Choose a concrete entity type whenever evidence supports one. unknown is a last resort, not a default.
 </task>
 
 ${evidenceText ? `<episodic_evidence>\n${evidenceText}\n</episodic_evidence>` : ""}

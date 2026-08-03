@@ -138,6 +138,41 @@ describe("ontology proposals", () => {
 		expect(row?.confidence).toBeCloseTo(0.92);
 		expect(row?.source_kind).toBe("transcript");
 		expect(row?.proposal_id).toBe(proposal.id);
+
+		const projection = getDbAccessor().withReadDb(
+			(db) =>
+				db
+					.prepare(
+						`SELECT attr.id AS attribute_id, attr.memory_id, mem.content, mem.type, mem.memory_kind,
+						        mem.source_type, mem.source_id,
+						        (SELECT COUNT(*) FROM memory_entity_mentions WHERE memory_id = attr.memory_id) AS mentions
+						 FROM entity_attributes attr
+						 JOIN entity_aspects asp ON asp.id = attr.aspect_id
+						 JOIN memories mem ON mem.id = attr.memory_id
+						 WHERE asp.entity_id = (SELECT id FROM entities WHERE name = 'Signet' AND agent_id = 'ant')`,
+					)
+					.get() as
+					| {
+							attribute_id: string;
+							memory_id: string;
+							content: string;
+							type: string;
+							memory_kind: string | null;
+							source_type: string;
+							source_id: string;
+							mentions: number;
+						  }
+					| undefined,
+		);
+		expect(projection).toMatchObject({
+			attribute_id: projection?.memory_id,
+			content: "Ontology extraction preserves provenance before mutating semantic state.",
+			type: "semantic",
+			memory_kind: null,
+			source_type: "dreaming",
+			source_id: "transcript:test",
+			mentions: 1,
+		});
 		expect(JSON.parse(row?.proposal_evidence ?? "[]")).toEqual([{ source: "transcript:test", message_ids: ["m1"] }]);
 	});
 
@@ -742,6 +777,7 @@ describe("ontology proposals", () => {
 			"ontology_proposal",
 			"session_transcript",
 			"memory_artifact",
+			"memory",
 		]);
 		expect(evidence.items[0]?.evidence[0]?.label).toBe(`proposal:${proposal.id}`);
 		expect(evidence.items[0]?.evidence[1]?.excerpt).toContain("evidence after proposal application");
