@@ -652,12 +652,35 @@ function applyCreateEntity(
 ): Readonly<Record<string, unknown>> {
 	const name = readString(payload, "name");
 	if (name === null) throw new OntologyProposalError("payload.name is required", 400);
-	const entityId = resolveOrCreateEntity(db, agentId, name, normalizeEntityType(readString(payload, "entity_type")));
-	db.prepare(
-		`UPDATE entities
-		 SET proposal_id = ?, proposal_evidence = ?, updated_at = datetime('now')
-		 WHERE id = ? AND agent_id = ?`,
-	).run(proposal.id, JSON.stringify(proposalAuditEvidence(proposal)), entityId, agentId);
+	const existingEntityId = resolveEntity(db, agentId, name);
+	const entityId =
+		existingEntityId ?? resolveOrCreateEntity(db, agentId, name, normalizeEntityType(readString(payload, "entity_type")));
+	const proposalEvidence = JSON.stringify(proposalAuditEvidence(proposal));
+	if (existingEntityId !== null) {
+		// Never turn a previously user-owned or differently sourced entity into a
+		// source-owned row merely because new evidence mentions it.
+		db.prepare(
+			`UPDATE entities
+			 SET proposal_id = ?, proposal_evidence = ?, updated_at = datetime('now')
+			 WHERE id = ? AND agent_id = ?`,
+		).run(proposal.id, proposalEvidence, entityId, agentId);
+	} else {
+		db.prepare(
+			`UPDATE entities
+			 SET proposal_id = ?, proposal_evidence = ?, source_id = ?, source_kind = ?,
+			     source_path = ?, source_root = ?, updated_at = datetime('now')
+			 WHERE id = ? AND agent_id = ?`,
+		).run(
+			proposal.id,
+			proposalEvidence,
+			proposal.source_id,
+			proposal.source_kind,
+			proposal.source_path,
+			proposal.source_root,
+			entityId,
+			agentId,
+		);
+	}
 	return { entityId, entity: name };
 }
 

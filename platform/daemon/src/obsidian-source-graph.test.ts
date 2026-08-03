@@ -381,19 +381,18 @@ describe("Obsidian source graph structure", () => {
 		mkdirSync(root, { recursive: true });
 		const sourceId = "obsidian:dreaming-vault";
 
-		// Stand up user-owned semantic entities/aspects (no source provenance;
-		// Dreaming inserts entities without source_id) and attach a Dreaming-
-		// derived claim and link stamped with the source entry id + source_root
-		// 'dreaming'.
+		// Stand up a source-owned Dreaming entity/aspect with a claim and link
+		// stamped with the source entry id + source_root 'dreaming'.
 		const db = getDbAccessor();
 		db.withWriteTx((write) => {
 			write
 				.prepare(
-					`INSERT INTO entities (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
-					 VALUES ('derived-entity', 'Derived', 'derived', 'project', 'obsidian-graph-agent', 0,
+					`INSERT INTO entities
+					 (id, name, canonical_name, entity_type, agent_id, mentions, source_id, source_root, created_at, updated_at)
+					 VALUES ('derived-entity', 'Derived', 'derived', 'project', 'obsidian-graph-agent', 0, ?, 'dreaming',
 					 datetime('now'), datetime('now'))`,
 				)
-				.run();
+				.run(sourceId);
 			write
 				.prepare(
 					`INSERT INTO entity_aspects (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
@@ -432,6 +431,11 @@ describe("Obsidian source graph structure", () => {
 		expect(purged.dependencies).toBeGreaterThan(0);
 
 		const remaining = getDbAccessor().withReadDb((read) => ({
+			entity: (
+				read.prepare("SELECT COUNT(*) AS count FROM entities WHERE id = ?").get("derived-entity") as {
+					count: number;
+				}
+			).count,
 			claim: (
 				read.prepare("SELECT COUNT(*) AS count FROM entity_attributes WHERE id = ?").get("derived-claim") as {
 					count: number;
@@ -443,6 +447,7 @@ describe("Obsidian source graph structure", () => {
 				}
 			).count,
 		}));
+		expect(remaining.entity).toBe(0);
 		expect(remaining.claim).toBe(0);
 		expect(remaining.link).toBe(0);
 	});

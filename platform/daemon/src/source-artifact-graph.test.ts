@@ -2,9 +2,19 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { DreamingConfig } from "@signet/core";
 import { closeDbAccessor, getDbAccessor, initDbAccessor } from "./db-accessor";
 import { indexSourceArtifactStructure, purgeSourceArtifactStructure } from "./source-artifact-graph";
 import { purgeSourceOwnedRows } from "./source-purge";
+import { runDreamingAgentPass } from "./pipeline/dreaming";
+
+const DREAMING_CONFIG: DreamingConfig = {
+	tokenThreshold: 1,
+	maxInputTokens: 32_000,
+	maxOutputTokens: 1_000,
+	timeout: 30_000,
+	backfillOnFirstRun: true,
+};
 
 describe("source artifact graph structure", () => {
 	let dir = "";
@@ -236,5 +246,81 @@ describe("source artifact graph structure", () => {
 			).count,
 		}));
 		expect(counts).toEqual({ derived: 0, other: 1 });
+	});
+
+	it("stamps source-backed Dreaming writes with the purge key end to end", async () => {
+		const quote = "Nightly drift detection protects the edge fleet.";
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				`INSERT INTO memory_artifacts
+				 (agent_id, source_path, source_sha256, source_kind, source_id, source_node_id,
+				  session_id, session_token, captured_at, content, updated_at, is_deleted)
+				 VALUES ('default', 'sources/nightly.md', 'nightly-sha', 'source_obsidian_markdown',
+				  'obsidian:nightly', 'note-node-1', 'source-session', 'source-token',
+				  datetime('now'), ?, datetime('now'), 0)`,
+			).run(quote);
+		});
+
+		const result = await runDreamingAgentPass(
+			getDbAccessor(),
+			{
+				async run(input) {
+					const apply = input.tools.find((tool) => tool.name === "apply_ontology_ops");
+					if (!apply) throw new Error("Missing apply_ontology_ops");
+					await apply.execute(
+						"source-owned-call",
+						{
+							operations: [
+								{
+									operation: "create_entity",
+									payload: { name: "Nightly Drift Detection", entity_type: "process" },
+									reason: "The source names a durable operational process.",
+									evidence: [
+										{
+											source_ref: "artifact:sources/nightly.md",
+											source_kind: "source_obsidian_markdown",
+											source_id: "note-node-1",
+											source_path: "sources/nightly.md",
+											quote,
+										},
+									],
+								},
+							],
+						},
+						undefined,
+						undefined,
+						{} as never,
+					);
+					return { summary: "Applied source-owned Dreaming entity" };
+				},
+			},
+			DREAMING_CONFIG,
+			dir,
+			"default",
+			"incremental",
+		);
+
+		expect(result).toMatchObject({ applied: 1, failed: 0 });
+		const derived = getDbAccessor().withReadDb((db) =>
+			db
+				.prepare(
+					`SELECT source_id, source_kind, source_path, source_root
+					 FROM entities WHERE agent_id = 'default' AND name = 'Nightly Drift Detection'`,
+				)
+				.get(),
+		);
+		expect(derived).toEqual({
+			source_id: "obsidian:nightly",
+			source_kind: "source_obsidian_markdown",
+			source_path: "sources/nightly.md",
+			source_root: "dreaming",
+		});
+
+		purgeSourceOwnedRows({ agentId: "default", sourceId: "obsidian:nightly" });
+		expect(
+			getDbAccessor().withReadDb(
+				(db) => db.prepare("SELECT COUNT(*) AS count FROM entities WHERE name = ?").get("Nightly Drift Detection") as { count: number },
+			).count,
+		).toBe(0);
 	});
 });

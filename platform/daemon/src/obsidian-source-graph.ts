@@ -678,16 +678,12 @@ export function purgeObsidianSourceStructure(
 		const communities = db
 			.prepare(`DELETE FROM entity_communities WHERE ${agentWhere}source_id = ? AND source_root = ?`)
 			.run(...params).changes;
-		// Also remove Dreaming-derived semantic rows (claim values and links) that
-		// carry this configured Signet source entry id in source_id but the literal
-		// source_root 'dreaming' instead of the vault root. The Dreaming worker is
-		// the sole producer of that provenance and stamps the source entry id so
-		// derived rows are purgeable on disconnect. Entities/aspects are not
-		// source-stamped by Dreaming (it inserts them without source_id), so they
-		// remain user-owned semantic nodes; only the source-rooted claim/link rows
-		// are removed here. This keeps the disconnect purge consistent with
-		// purgeSourceOwnedRows (used by the GitHub/Discord providers), which deletes
-		// source-owned graph rows by source_id alone.
+		// Also remove Dreaming-derived semantic rows that carry this configured
+		// Signet source entry id but the literal source_root 'dreaming' instead of
+		// the vault root. Newly created Dreaming entities are source-owned; existing
+		// user-owned entities retain their provenance when new evidence mentions
+		// them. This keeps the disconnect purge consistent with purgeSourceOwnedRows
+		// (used by GitHub/Discord), which deletes source-owned graph rows by id.
 		const derivedParams = input.agentId ? [input.agentId, input.sourceId] : [input.sourceId];
 		const derivedAttrs = db
 			.prepare(`DELETE FROM entity_attributes WHERE ${agentWhere}source_id = ? AND source_root = 'dreaming'`)
@@ -695,8 +691,18 @@ export function purgeObsidianSourceStructure(
 		const derivedDeps = db
 			.prepare(`DELETE FROM entity_dependencies WHERE ${agentWhere}source_id = ? AND source_root = 'dreaming'`)
 			.run(...derivedParams).changes;
+		const derivedEntityIds = db
+			.prepare(`SELECT id FROM entities WHERE ${agentWhere}source_id = ? AND source_root = 'dreaming'`)
+			.all(...derivedParams) as Array<{ id: string }>;
+		if (derivedEntityIds.length > 0) {
+			const deleteAspects = db.prepare("DELETE FROM entity_aspects WHERE entity_id = ?");
+			for (const entity of derivedEntityIds) deleteAspects.run(entity.id);
+		}
+		const derivedEntities = db
+			.prepare(`DELETE FROM entities WHERE ${agentWhere}source_id = ? AND source_root = 'dreaming'`)
+			.run(...derivedParams).changes;
 		return {
-			entities,
+			entities: entities + derivedEntities,
 			attributes: attrs + derivedAttrs,
 			dependencies: deps + derivedDeps,
 			communities,
