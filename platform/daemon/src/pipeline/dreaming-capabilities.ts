@@ -57,6 +57,12 @@ export interface DreamingCapabilityResult {
 	readonly [key: string]: unknown;
 }
 
+type DreamingCapabilityOutput = {
+	readonly ok: boolean;
+	readonly error?: string;
+	readonly [key: string]: unknown;
+};
+
 export interface DreamingToolCallTrace {
 	readonly toolCallId: string;
 	readonly tool: DreamingCapabilityId;
@@ -100,7 +106,7 @@ function capability<T extends z.ZodType>(
 	description: string,
 	readOnly: boolean,
 	inputSchema: T,
-	run: (input: z.output<T>) => Promise<Omit<DreamingCapabilityResult, "tool">>,
+	run: (input: z.output<T>) => Promise<DreamingCapabilityOutput>,
 ): DreamingCapability {
 	return {
 		id,
@@ -108,13 +114,14 @@ function capability<T extends z.ZodType>(
 		description,
 		readOnly,
 		inputSchema,
-		async invoke(input) {
+		async invoke(input): Promise<DreamingCapabilityResult> {
 			const parsed = inputSchema.safeParse(input);
 			if (!parsed.success) {
 				return { tool: id, ok: false, error: parsed.error.issues.map((issue) => issue.message).join("; ") };
 			}
 			try {
-				return { tool: id, ...(await run(parsed.data)) };
+				const output = await run(parsed.data);
+				return { tool: id, ...output };
 			} catch (error) {
 				return { tool: id, ok: false, error: error instanceof Error ? error.message : String(error) };
 			}
