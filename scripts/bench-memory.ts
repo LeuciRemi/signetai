@@ -195,7 +195,20 @@ function quoteYaml(value: string): string {
 	return JSON.stringify(value);
 }
 
-function writeIsolatedWorkspace(dir: string, profile: ParsedArgs["profile"], dreamingModel?: string): void {
+function quoteHttpUrl(value: string): string {
+	const parsed = new URL(value);
+	if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.username || parsed.password) {
+		throw new Error("Dreaming endpoint must be an unauthenticated http(s) URL");
+	}
+	return JSON.stringify(value);
+}
+
+function writeIsolatedWorkspace(
+	dir: string,
+	profile: ParsedArgs["profile"],
+	dreamingModel?: string,
+	dreamingEndpoint?: string,
+): void {
 	mkdirSync(join(dir, "memory"), { recursive: true });
 	mkdirSync(join(dir, ".daemon", "logs"), { recursive: true });
 	writeFileSync(join(dir, "AGENTS.md"), "# MemoryBench Agent\n\nIsolated benchmark workspace.\n");
@@ -207,7 +220,35 @@ function writeIsolatedWorkspace(dir: string, profile: ParsedArgs["profile"], dre
 	const embeddingProvider = process.env.SIGNET_BENCH_EMBEDDING_PROVIDER || "native";
 	const dreamingConfig =
 		profile === "dreaming"
-			? `
+			? dreamingEndpoint
+				? `
+  dreaming:
+    enabled: true
+    tokenThreshold: 1000000
+    maxInputTokens: 64000
+    maxOutputTokens: 8000
+    timeout: 300000
+
+inference:
+  defaultPolicy: memorybench-dreaming
+  targets:
+    memorybench-dreaming:
+      executor: llama-cpp
+      endpoint: ${quoteHttpUrl(dreamingEndpoint)}
+      models:
+        default:
+          model: ${quoteYaml(dreamingModel ?? "")}
+          toolUse: true
+  policies:
+    memorybench-dreaming:
+      mode: strict
+      defaultTargets:
+        - memorybench-dreaming/default
+  workloads:
+    memoryExtraction:
+      policy: memorybench-dreaming
+`
+				: `
   dreaming:
     enabled: true
     tokenThreshold: 1000000
@@ -333,13 +374,14 @@ async function main(): Promise<void> {
 	const home = join(workspace, "home");
 	mkdirSync(home, { recursive: true });
 	const dreamingModel = process.env.SIGNET_BENCH_DREAMING_MODEL?.trim();
+	const dreamingEndpoint = process.env.SIGNET_BENCH_DREAMING_ENDPOINT?.trim();
 	if (parsed.profile === "dreaming" && !dreamingModel) {
 		throw new Error("Dreaming benchmark requires SIGNET_BENCH_DREAMING_MODEL (an OpenRouter model id)");
 	}
-	if (parsed.profile === "dreaming" && !process.env.OPENROUTER_API_KEY?.trim()) {
-		throw new Error("Dreaming benchmark requires OPENROUTER_API_KEY for the daemon inference route");
+	if (parsed.profile === "dreaming" && !dreamingEndpoint && !process.env.OPENROUTER_API_KEY?.trim()) {
+		throw new Error("Dreaming benchmark requires SIGNET_BENCH_DREAMING_ENDPOINT or OPENROUTER_API_KEY");
 	}
-	writeIsolatedWorkspace(workspace, parsed.profile, dreamingModel);
+	writeIsolatedWorkspace(workspace, parsed.profile, dreamingModel, dreamingEndpoint);
 
 	const usesDefaultSample = defaultedDevSample(parsed.passthrough, parsed.full);
 	const memorybenchArgs = buildMemoryBenchArgs(parsed.passthrough, parsed.full, parsed.profile, parsed.reset);
