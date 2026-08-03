@@ -37,20 +37,9 @@ import {
 import { applyOntologyOperationBatchInTx, type OntologyOperationInput } from "../ontology-proposals";
 import { getOntologyClaimEvidence } from "../ontology-claim-evidence";
 import { getOntologyLinkEvidence } from "../ontology-link-evidence";
+import type { DreamingAgentEvidence } from "./dreaming-evidence";
 
-/** Evidence record made available to the agent for citation. */
-export interface DreamingAgentEvidence {
-	/** Stable handle the agent cites back, e.g. `memory:<id>` or `transcript:<key>`. */
-	readonly ref: string;
-	/** Canonical rendered evidence the quote must be an exact substring of. */
-	readonly content: string;
-	/** Provenance tuple stamped onto derived rows (source entry provenance). */
-	readonly sourceKind: string;
-	readonly sourceId: string | null;
-	readonly sourcePath: string | null;
-	/** Configured Signet source entry id, when known. See episodic-sources. */
-	readonly sourceEntryId: string | null;
-}
+export type { DreamingAgentEvidence } from "./dreaming-evidence";
 
 /** Shape of every tool result returned to the agent. */
 export interface DreamingAgentToolResult {

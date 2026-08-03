@@ -1,5 +1,17 @@
 import type { EpisodicSourceRecord } from "../episodic-sources";
 
+/** A rendered immutable source record that a Dreaming agent may cite. */
+export interface DreamingAgentEvidence {
+	/** Canonical rendered evidence the quote must be an exact substring of. */
+	readonly content: string;
+	/** Provenance tuple stamped onto derived rows (source entry provenance). */
+	readonly sourceKind: string;
+	readonly sourceId: string;
+	readonly sourcePath: string | null;
+	/** Configured Signet source entry id, when known. */
+	readonly sourceEntryId: string | null;
+}
+
 /**
  * Render structured evidence preserved beside an immutable episodic record.
  * This is the canonical text exposed to Dreaming and accepted for citations.
@@ -45,4 +57,21 @@ export function renderDreamingEvidenceMeta(evidenceMeta: string | null): string 
 export function renderDreamingEvidence(source: EpisodicSourceRecord): string {
 	const metadata = renderDreamingEvidenceMeta(source.evidenceMeta);
 	return metadata ? `${source.content}\n${metadata}` : source.content;
+}
+
+/**
+ * Convert the exact evidence passed to a Dreaming session into citation
+ * records. The content is deliberately rendered here, once, so agents and
+ * the write tool validate against the same structured text.
+ */
+export function createDreamingAgentEvidence(
+	sources: readonly EpisodicSourceRecord[],
+): readonly DreamingAgentEvidence[] {
+	return sources.map((source) => ({
+		content: renderDreamingEvidence(source),
+		sourceKind: source.sourceKind,
+		sourceId: source.sourceId,
+		sourcePath: source.sourcePath,
+		sourceEntryId: source.sourceEntryId,
+	}));
 }

@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { closeDbAccessor, getDbAccessor, initDbAccessor } from "../db-accessor";
 import {
 	createDreamingAgentTools,
-	type DreamingAgentEvidence,
 } from "./dreaming-agent-tools";
+import type { DreamingAgentEvidence } from "./dreaming-evidence";
 
 /**
  * Regression coverage for the daemon-owned conceptual ontology tool factory
@@ -46,7 +46,6 @@ describe("dreaming-agent-tools", () => {
 	const CITATION = { source_kind: "transcript", source_id: "acme-q2", quote: EVIDENCE_CONTENT };
 	const evidence: readonly DreamingAgentEvidence[] = [
 		{
-			ref: "transcript:acme-q2",
 			content: EVIDENCE_CONTENT,
 			sourceKind: "transcript",
 			sourceId: "acme-q2",
