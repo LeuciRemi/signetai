@@ -210,12 +210,19 @@ function quoteHttpUrl(value: string): string {
 	return JSON.stringify(value);
 }
 
+function isLocalEndpoint(value: string): boolean {
+	const hostname = new URL(value).hostname.toLowerCase();
+	return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
 function writeIsolatedWorkspace(
 	dir: string,
 	profile: ParsedArgs["profile"],
 	graph: ParsedArgs["graph"],
 	dreamingModel?: string,
 	dreamingEndpoint?: string,
+	dreamingCredentialRef?: string,
+	dreamingProviderFamily = "openai-compatible",
 ): void {
 	mkdirSync(join(dir, "memory"), { recursive: true });
 	mkdirSync(join(dir, ".daemon", "logs"), { recursive: true });
@@ -229,13 +236,49 @@ function writeIsolatedWorkspace(
 	const dreamingConfig =
 		profile === "dreaming"
 			? dreamingEndpoint
-				? `
+				? dreamingCredentialRef
+					? `
   dreaming:
     enabled: true
     tokenThreshold: 1000000
     maxInputTokens: 64000
     maxOutputTokens: 8000
-    timeout: 300000
+    timeout: 600000
+
+inference:
+  defaultPolicy: memorybench-dreaming
+  accounts:
+    memorybench-api:
+      kind: api
+      providerFamily: ${quoteYaml(dreamingProviderFamily)}
+      credentialRef: ${quoteYaml(dreamingCredentialRef)}
+  targets:
+    memorybench-dreaming:
+      executor: openai-compatible
+      account: memorybench-api
+      endpoint: ${quoteHttpUrl(dreamingEndpoint)}
+      privacy: restricted_remote
+      models:
+        default:
+          model: ${quoteYaml(dreamingModel ?? "")}
+          reasoning: low
+          toolUse: true
+  policies:
+    memorybench-dreaming:
+      mode: strict
+      defaultTargets:
+        - memorybench-dreaming/default
+  workloads:
+    memoryExtraction:
+      policy: memorybench-dreaming
+`
+					: `
+  dreaming:
+    enabled: true
+    tokenThreshold: 1000000
+    maxInputTokens: 64000
+    maxOutputTokens: 8000
+    timeout: 600000
 
 inference:
   defaultPolicy: memorybench-dreaming
@@ -246,6 +289,7 @@ inference:
       models:
         default:
           model: ${quoteYaml(dreamingModel ?? "")}
+          reasoning: low
           toolUse: true
   policies:
     memorybench-dreaming:
@@ -262,7 +306,7 @@ inference:
     tokenThreshold: 1000000
     maxInputTokens: 64000
     maxOutputTokens: 8000
-    timeout: 300000
+    timeout: 600000
 
 inference:
   defaultPolicy: memorybench-dreaming
@@ -278,6 +322,7 @@ inference:
       models:
         default:
           model: ${quoteYaml(dreamingModel ?? "")}
+          reasoning: low
           toolUse: true
   policies:
     memorybench-dreaming:
@@ -337,7 +382,11 @@ function buildMemoryBenchArgs(
 		`signet-${profile}-graph-${graph}-longmemeval-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "Z")}`;
 
 	const provider =
-		profile === "supermemory-parity" ? "signet-supermemory-parity" : profile === "dreaming" ? "signet-dreaming" : "signet";
+		profile === "supermemory-parity"
+			? "signet-supermemory-parity"
+			: profile === "dreaming"
+				? "signet-dreaming"
+				: "signet";
 	const continuation = isContinuationCommand(command, args);
 	const defaults: string[] = [];
 
@@ -389,16 +438,44 @@ async function main(): Promise<void> {
 	mkdirSync(home, { recursive: true });
 	const dreamingModel = process.env.SIGNET_BENCH_DREAMING_MODEL?.trim();
 	const dreamingEndpoint = process.env.SIGNET_BENCH_DREAMING_ENDPOINT?.trim();
+	const dreamingCredentialRef = process.env.SIGNET_BENCH_DREAMING_CREDENTIAL_REF?.trim();
+	const dreamingProviderFamily = process.env.SIGNET_BENCH_DREAMING_PROVIDER_FAMILY?.trim() || "openai-compatible";
+	const dreamingApiKey = process.env.SIGNET_BENCH_DREAMING_API_KEY?.trim();
 	if (parsed.profile === "dreaming" && !dreamingModel) {
 		throw new Error("Dreaming benchmark requires SIGNET_BENCH_DREAMING_MODEL (an OpenRouter model id)");
 	}
 	if (parsed.profile === "dreaming" && !dreamingEndpoint && !process.env.OPENROUTER_API_KEY?.trim()) {
 		throw new Error("Dreaming benchmark requires SIGNET_BENCH_DREAMING_ENDPOINT or OPENROUTER_API_KEY");
 	}
-	writeIsolatedWorkspace(workspace, parsed.profile, parsed.graph, dreamingModel, dreamingEndpoint);
+	if (
+		parsed.profile === "dreaming" &&
+		dreamingEndpoint &&
+		!isLocalEndpoint(dreamingEndpoint) &&
+		!dreamingApiKey &&
+		!dreamingCredentialRef
+	) {
+		throw new Error(
+			"A remote Dreaming endpoint requires SIGNET_BENCH_DREAMING_API_KEY or SIGNET_BENCH_DREAMING_CREDENTIAL_REF",
+		);
+	}
+	writeIsolatedWorkspace(
+		workspace,
+		parsed.profile,
+		parsed.graph,
+		dreamingModel,
+		dreamingEndpoint,
+		dreamingCredentialRef || (dreamingApiKey ? "SIGNET_BENCH_DREAMING_API_KEY" : undefined),
+		dreamingProviderFamily,
+	);
 
 	const usesDefaultSample = defaultedDevSample(parsed.passthrough, parsed.full);
-	const memorybenchArgs = buildMemoryBenchArgs(parsed.passthrough, parsed.full, parsed.profile, parsed.graph, parsed.reset);
+	const memorybenchArgs = buildMemoryBenchArgs(
+		parsed.passthrough,
+		parsed.full,
+		parsed.profile,
+		parsed.graph,
+		parsed.reset,
+	);
 	const env = {
 		...process.env,
 		...(useOpenRouterIngest ? buildOpenRouterIngestEnv() : {}),

@@ -17,7 +17,7 @@ describe("Signet benchmark profiles", () => {
       this.calls.push({ path, init })
       if (path === "/api/memory/remember") return { id: "episodic-1", embedded: true } as T
       if (path === "/api/dream/trigger") return { passId: "pass-1" } as T
-      if (path === "/api/dream/status") {
+      if (path === "/api/dream/status?agentId=memorybench") {
         return { worker: { running: true }, passes: [{ id: "pass-1", status: "completed" }] } as T
       }
       throw new Error(`Unexpected path ${path}`)
@@ -49,9 +49,9 @@ describe("Signet benchmark profiles", () => {
     expect(JSON.parse(String(remember?.init.body))).not.toHaveProperty("structured")
     expect(provider.calls.map((call) => call.path)).toEqual([
       "/api/memory/remember",
-      "/api/dream/status",
+      "/api/dream/status?agentId=memorybench",
       "/api/dream/trigger",
-      "/api/dream/status",
+      "/api/dream/status?agentId=memorybench",
     ])
   })
 

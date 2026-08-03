@@ -433,6 +433,7 @@ export class SignetProvider implements Provider {
    */
   async finalizeIngest(_options: FinalizeIngestOptions): Promise<void> {
     if (this.profile !== "dreaming") return
+    const dreamStatusPath = `/api/dream/status?agentId=${encodeURIComponent(this.agentId)}`
 
     // A daemon may be restarting its pipeline after embedding initialization
     // while ingest finishes. Wait for the configured worker instead of turning
@@ -440,7 +441,7 @@ export class SignetProvider implements Provider {
     const readyDeadline = Date.now() + 60_000
     let workerReady = false
     while (Date.now() < readyDeadline) {
-      const status = await this.request<DreamingStatusResponse>("/api/dream/status", {
+      const status = await this.request<DreamingStatusResponse>(dreamStatusPath, {
         method: "GET",
       })
       if (status.worker?.running) {
@@ -460,7 +461,7 @@ export class SignetProvider implements Provider {
     const deadline = Date.now() + readPositiveInt("SIGNET_BENCH_DREAMING_WAIT_SECS", 720) * 1000
     const pollMs = Math.min(readPositiveInt("SIGNET_BENCH_DREAMING_POLL_SECS", 1), 5) * 1000
     while (Date.now() < deadline) {
-      const status = await this.request<DreamingStatusResponse>("/api/dream/status", {
+      const status = await this.request<DreamingStatusResponse>(dreamStatusPath, {
         method: "GET",
       })
       const pass = status.passes?.find((candidate) => candidate.id === accepted.passId)
