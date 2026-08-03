@@ -875,6 +875,20 @@ describe("ontology proposals", () => {
 		expect(replacement?.content).toContain("provenance-backed operations");
 		expect(replacement?.confidence).toBeCloseTo(0.93);
 		expect(replacement?.source_kind).toBe("transcript");
+		const memoryStates = getDbAccessor().withReadDb(
+			(db) =>
+				db
+					.prepare("SELECT id, is_deleted, superseded_by FROM memories WHERE id IN (?, ?)")
+					.all(oldId, replacementId) as Array<{ id: string; is_deleted: number; superseded_by: string | null }>,
+		);
+		expect(memoryStates.find((memory) => memory.id === oldId)).toMatchObject({
+			is_deleted: 0,
+			superseded_by: replacementId,
+		});
+		expect(memoryStates.find((memory) => memory.id === replacementId)).toMatchObject({
+			is_deleted: 0,
+			superseded_by: null,
+		});
 	});
 
 	it("applies semantic create_link proposal roles from ontology extraction", () => {
@@ -1656,6 +1670,21 @@ describe("ontology proposals", () => {
 		});
 		expect(restored.items.find((item) => item.version === 2)?.status).toBe("active");
 		expect(restored.items.find((item) => item.version === 3)?.status).toBe("superseded");
+		const restoredMemoryState = getDbAccessor().withReadDb(
+			(db) =>
+				db
+					.prepare("SELECT id, is_deleted, superseded_by FROM memories WHERE id IN (?, ?)")
+					.all(shown?.id, v3.result?.attributeId) as Array<{
+						id: string;
+						is_deleted: number;
+						superseded_by: string | null;
+					}>,
+		);
+		expect(restoredMemoryState.find((memory) => memory.id === shown?.id)).toMatchObject({
+			is_deleted: 0,
+			superseded_by: null,
+		});
+		expect(restoredMemoryState.find((memory) => memory.id === v3.result?.attributeId)?.superseded_by).toBe(shown?.id);
 	});
 
 	it("archives claim values and hides them from default active reads", () => {
@@ -1695,6 +1724,53 @@ describe("ontology proposals", () => {
 		});
 		expect(active.n).toBe(0);
 		expect(versions.items[0]?.status).toBe("deleted");
+		const memory = getDbAccessor().withReadDb(
+			(db) => db.prepare("SELECT is_deleted FROM memories WHERE id = ?").get(attributeId) as { is_deleted: number } | undefined,
+		);
+		expect(memory?.is_deleted).toBe(1);
+	});
+
+	it("restores an archived semantic claim memory and honors an explicit force", () => {
+		const applied = applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "operator",
+			operation: "set_claim_value",
+			payload: {
+				entity: "Signet",
+				entity_type: "project",
+				aspect: "architecture",
+				group_key: "ontology",
+				claim_key: "restore_archived_claim",
+				value: "This semantic claim can be restored.",
+			},
+		});
+		const attributeId = applied.result?.attributeId as string;
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare("UPDATE memories SET pinned = 1 WHERE id = ?").run(attributeId);
+		});
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "operator",
+			operation: "archive_claim_value",
+			payload: { attribute_id: attributeId, force: true },
+		});
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "operator",
+			operation: "restore_claim_version",
+			payload: { attribute_id: attributeId },
+		});
+		const restored = getDbAccessor().withReadDb(
+			(db) =>
+				db
+					.prepare(
+						`SELECT attr.status, mem.is_deleted, mem.superseded_by
+						 FROM entity_attributes attr JOIN memories mem ON mem.id = attr.memory_id
+						 WHERE attr.id = ?`,
+					)
+					.get(attributeId) as { status: string; is_deleted: number; superseded_by: string | null } | undefined,
+		);
+		expect(restored).toEqual({ status: "active", is_deleted: 0, superseded_by: null });
 	});
 
 	it("continues claim version chains after the active value is archived", () => {

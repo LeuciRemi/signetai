@@ -19,7 +19,7 @@ import {
 	resolveOntologyEvidenceRef,
 	uniqueOntologyEvidenceRefs,
 } from "./ontology-evidence";
-import { txIngestEnvelope, txSupersedeMemory } from "./transactions";
+import { insertHistoryEvent, txForgetMemory, txIngestEnvelope, txSupersedeMemory } from "./transactions";
 
 type ProposalRow = {
 	readonly id: string;
@@ -833,12 +833,63 @@ function supersedeAttributeMemoryInTx(
 	input: { readonly memoryId: string | null; readonly replacementMemoryId: string; readonly proposal: ProposalRow },
 ): void {
 	if (!input.memoryId || input.memoryId === input.replacementMemoryId) return;
-	txSupersedeMemory(db, {
+	const result = txSupersedeMemory(db, {
 		memoryId: input.memoryId,
 		supersededBy: input.replacementMemoryId,
 		reason: input.proposal.rationale || null,
 		changedBy: "dreaming",
 		changedAt: now(),
+	});
+	if (result.status !== "superseded" && result.status !== "already_superseded") {
+		throw new OntologyProposalError(`Unable to supersede semantic memory: ${result.status}`, 409);
+	}
+}
+
+function archiveAttributeMemoryInTx(
+	db: WriteDb,
+	memoryId: string | null,
+	proposal: ProposalRow,
+	force: boolean,
+): void {
+	if (!memoryId) return;
+	const result = txForgetMemory(db, {
+		memoryId,
+		reason: proposal.rationale || "Semantic claim archived",
+		changedBy: "dreaming",
+		changedAt: now(),
+		force,
+	});
+	if (result.status === "pinned_requires_force") {
+		throw new OntologyProposalError("Refusing to archive a claim whose semantic memory is pinned", 409);
+	}
+	if (result.status !== "deleted" && result.status !== "already_deleted") {
+		throw new OntologyProposalError(`Unable to archive semantic memory: ${result.status}`, 409);
+	}
+}
+
+function restoreAttributeMemoryInTx(db: WriteDb, memoryId: string | null, proposal: ProposalRow): void {
+	if (!memoryId) return;
+	const memory = db
+		.prepare("SELECT id, content, is_deleted, superseded_by FROM memories WHERE id = ?")
+		.get(memoryId) as { id: string; content: string; is_deleted: number; superseded_by: string | null } | undefined;
+	if (!memory) return;
+	if (memory.is_deleted === 0 && memory.superseded_by === null) return;
+	const changedAt = now();
+	db.prepare(
+		`UPDATE memories
+		 SET is_deleted = 0, deleted_at = NULL, superseded_by = NULL, superseded_at = NULL,
+		     superseded_reason = NULL, updated_at = ?, updated_by = 'dreaming', version = version + 1
+		 WHERE id = ?`,
+	).run(changedAt, memoryId);
+	insertHistoryEvent(db, {
+		memoryId,
+		event: "recovered",
+		oldContent: null,
+		newContent: memory.content,
+		changedBy: "dreaming",
+		reason: proposal.rationale || "Semantic claim restored",
+		metadata: JSON.stringify({ previousSupersededBy: memory.superseded_by }),
+		createdAt: changedAt,
 	});
 }
 
@@ -1093,8 +1144,9 @@ function applySupersedeClaimValue(
 	filters.push("COALESCE(group_key, 'general') = ?");
 	args.push(groupKey);
 
-	const rows = db.prepare(`SELECT id FROM entity_attributes WHERE ${filters.join(" AND ")}`).all(...args) as Array<{
+	const rows = db.prepare(`SELECT id, memory_id FROM entity_attributes WHERE ${filters.join(" AND ")}`).all(...args) as Array<{
 		id: string;
+		memory_id: string | null;
 	}>;
 	if (rows.length === 0) throw new OntologyProposalError("No active claim values matched supersession payload", 400);
 
@@ -1118,13 +1170,34 @@ function applySupersedeClaimValue(
 		replacementId = typeof replacement.attributeId === "string" ? replacement.attributeId : null;
 	}
 
-	const supersededBy = replacementId ?? readString(payload, "superseded_by");
+	const requestedReplacementId = readString(payload, "superseded_by");
+	const supersededBy = replacementId ?? requestedReplacementId;
+	const replacementMemoryId =
+		replacementId ??
+		(requestedReplacementId === null
+			? null
+			: (() => {
+					const target = db
+						.prepare("SELECT id, memory_id FROM entity_attributes WHERE id = ? AND agent_id = ?")
+						.get(requestedReplacementId, agentId) as { id: string; memory_id: string | null } | undefined;
+					if (!target?.memory_id) {
+						throw new OntologyProposalError("payload.superseded_by must reference a semantic claim memory", 400);
+					}
+					return target.memory_id;
+				})());
 	const ids = rows.map((row) => row.id);
 	db.prepare(
 		`UPDATE entity_attributes
 		 SET status = 'superseded', superseded_by = ?, updated_at = datetime('now')
 		 WHERE agent_id = ? AND id IN (${ids.map(() => "?").join(", ")})`,
 	).run(supersededBy, agentId, ...ids);
+	if (replacementMemoryId === null) {
+		for (const row of rows) archiveAttributeMemoryInTx(db, row.memory_id, proposal, false);
+	} else {
+		for (const row of rows) {
+			supersedeAttributeMemoryInTx(db, { memoryId: row.memory_id, replacementMemoryId, proposal });
+		}
+	}
 
 	return { supersededAttributeIds: ids, replacementAttributeId: replacementId };
 }
@@ -1181,6 +1254,15 @@ function applyArchiveEntity(
 	if (pinned?.pinned === 1 && !truthy(payload.force)) {
 		throw new OntologyProposalError("Refusing to archive pinned entity without force", 409);
 	}
+	const attributeMemories = db
+		.prepare(
+			`SELECT attr.memory_id
+			 FROM entity_attributes attr
+			 JOIN entity_aspects asp ON asp.id = attr.aspect_id AND asp.agent_id = attr.agent_id
+			 WHERE asp.entity_id = ? AND attr.agent_id = ? AND attr.status = 'active'`,
+		)
+		.all(entity.id, agentId) as Array<{ memory_id: string | null }>;
+	for (const attribute of attributeMemories) archiveAttributeMemoryInTx(db, attribute.memory_id, proposal, truthy(payload.force));
 	db.prepare(
 		`UPDATE entities
 		 SET status = 'archived', archived_at = datetime('now'), archived_by = ?,
@@ -1273,6 +1355,10 @@ function applyArchiveAspect(
 	if (constraint && !truthy(payload.force)) {
 		throw new OntologyProposalError("Refusing to archive aspect with active constraint attributes without force", 409);
 	}
+	const attributeMemories = db
+		.prepare("SELECT memory_id FROM entity_attributes WHERE aspect_id = ? AND agent_id = ? AND status = 'active'")
+		.all(aspect.id, agentId) as Array<{ memory_id: string | null }>;
+	for (const attribute of attributeMemories) archiveAttributeMemoryInTx(db, attribute.memory_id, proposal, truthy(payload.force));
 	db.prepare(
 		`UPDATE entity_aspects
 		 SET status = 'archived', archived_at = datetime('now'), archived_by = ?,
@@ -1305,12 +1391,13 @@ function applyArchiveClaimValue(
 	const attributeId = readString(payload, "attribute_id");
 	if (attributeId === null) throw new OntologyProposalError("payload.attribute_id is required", 400);
 	const row = db
-		.prepare("SELECT id, kind FROM entity_attributes WHERE id = ? AND agent_id = ?")
-		.get(attributeId, agentId) as { id: string; kind: string } | undefined;
+		.prepare("SELECT id, kind, memory_id FROM entity_attributes WHERE id = ? AND agent_id = ?")
+		.get(attributeId, agentId) as { id: string; kind: string; memory_id: string | null } | undefined;
 	if (!row) throw new OntologyProposalError("Attribute not found", 404);
 	if (row.kind === "constraint" && !truthy(payload.force)) {
 		throw new OntologyProposalError("Refusing to archive constraint attribute without force", 409);
 	}
+	archiveAttributeMemoryInTx(db, row.memory_id, proposal, truthy(payload.force));
 	db.prepare(
 		`UPDATE entity_attributes
 		 SET status = 'deleted', archived_at = datetime('now'), archived_by = ?,
@@ -1337,13 +1424,14 @@ function applyRestoreClaimVersion(
 	if (attributeId === null) throw new OntologyProposalError("payload.attribute_id is required", 400);
 	const row = db
 		.prepare(
-			`SELECT id, aspect_id, kind, group_key, claim_key, version_root_id
+			`SELECT id, memory_id, aspect_id, kind, group_key, claim_key, version_root_id
 			 FROM entity_attributes
 			 WHERE id = ? AND agent_id = ?`,
 		)
 		.get(attributeId, agentId) as
 		| {
 				id: string;
+				memory_id: string | null;
 				aspect_id: string;
 				kind: string;
 				group_key: string | null;
@@ -1352,6 +1440,18 @@ function applyRestoreClaimVersion(
 		  }
 		| undefined;
 	if (!row) throw new OntologyProposalError("Attribute not found", 404);
+	const activeMemories = db
+		.prepare(
+			`SELECT memory_id FROM entity_attributes
+			 WHERE agent_id = ? AND aspect_id = ? AND kind = ?
+			   AND COALESCE(group_key, 'general') = COALESCE(?, 'general')
+			   AND claim_key = ? AND status = 'active' AND id != ?`,
+		)
+		.all(agentId, row.aspect_id, row.kind, row.group_key, row.claim_key, attributeId) as Array<{ memory_id: string | null }>;
+	restoreAttributeMemoryInTx(db, row.memory_id, proposal);
+	for (const active of activeMemories) {
+		supersedeAttributeMemoryInTx(db, { memoryId: active.memory_id, replacementMemoryId: attributeId, proposal });
+	}
 	db.prepare(
 		`UPDATE entity_attributes
 		 SET status = 'superseded', superseded_by = ?, updated_at = datetime('now')
