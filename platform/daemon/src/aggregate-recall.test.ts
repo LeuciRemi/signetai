@@ -369,15 +369,30 @@ memory:
 	it("synthesizes through a direct OpenAI-compatible API target without ACPX", async () => {
 		writeFileSync(
 			join(dir, "agent.yaml"),
-			`name: AggregateRecallTest
-memory:
-  pipelineV2:
-    extraction:
-      provider: openai-compatible
-      model: gpt-4o-mini
+			`inference:
+  defaultPolicy: aggregate
+  accounts:
+    aggregate-api:
+      kind: api
+      providerFamily: openai-compatible
+      credentialRef: OPENAI_API_KEY
+  targets:
+    aggregate:
+      executor: openai-compatible
+      account: aggregate-api
       endpoint: https://gateway.example.test/v1
-    synthesis:
-      enabled: false
+      models:
+        default:
+          model: gpt-4o-mini
+  policies:
+    aggregate:
+      mode: automatic
+      defaultTargets:
+        - aggregate/default
+  workloads:
+    aggregateRecall:
+      target: aggregate/default
+      taskClass: session_synthesis
 `,
 		);
 		process.env.OPENAI_API_KEY = "test-openai-compatible-key";
