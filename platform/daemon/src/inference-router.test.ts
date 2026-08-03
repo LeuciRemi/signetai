@@ -2,8 +2,7 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { registerOAuthProvider, unregisterOAuthProvider } from "@earendil-works/pi-ai/oauth";
-import { resetOAuthStateForTests, storeOAuthCredentials } from "./inference-oauth";
+import { registerOAuthProviderForTests, resetOAuthStateForTests, storeOAuthCredentials } from "./inference-oauth";
 import { getOrCreateInferenceRouter, resetInferenceRouterForTests } from "./inference-router";
 import { invalidateSecretsCache } from "./secrets";
 
@@ -85,7 +84,6 @@ printf 'dreaming agent completed\\n'
 afterEach(() => {
 	globalThis.fetch = originalFetch;
 	resetOAuthStateForTests();
-	unregisterOAuthProvider(REVOKED_OAUTH_PROVIDER_ID);
 	invalidateSecretsCache();
 	if (originalSignetPath === undefined) Reflect.deleteProperty(process.env, "SIGNET_PATH");
 	else process.env.SIGNET_PATH = originalSignetPath;
@@ -194,17 +192,20 @@ describe("InferenceRouter legacy API credentials", () => {
 
 			process.env.SIGNET_PATH = dir;
 			invalidateSecretsCache();
-			registerOAuthProvider({
+			registerOAuthProviderForTests({
 				id: REVOKED_OAUTH_PROVIDER_ID,
 				name: "Revoked review OAuth",
-				async login() {
-					throw new Error("login not used");
-				},
-				async refreshToken() {
-					throw new Error("revoked refresh token");
-				},
-				getApiKey(credentials) {
-					return credentials.access;
+				oauth: {
+					name: "Revoked review OAuth",
+					async login() {
+						throw new Error("login not used");
+					},
+					async refresh() {
+						throw new Error("revoked refresh token");
+					},
+					async toAuth(credentials) {
+						return { apiKey: credentials.access };
+					},
 				},
 			});
 			await storeOAuthCredentials(REVOKED_OAUTH_PROVIDER_ID, {

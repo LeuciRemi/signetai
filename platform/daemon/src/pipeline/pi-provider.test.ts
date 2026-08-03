@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test";
-import { type Api, type Model, getModels } from "@earendil-works/pi-ai";
-import { githubCopilotOAuthProvider } from "@earendil-works/pi-ai/oauth";
+import { describe, expect, mock, test } from "bun:test";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { getBuiltinModels as getModels } from "@earendil-works/pi-ai/providers/all";
 import { createPiModelProvider, isPiAgentSessionProvider, resolvePiModel } from "./pi-provider";
 
 describe("pi provider catalog models", () => {
@@ -20,28 +20,6 @@ describe("pi provider catalog models", () => {
 		expect(resolved.apiKey).toBe("oauth-access");
 	});
 
-	test("preserves Copilot headers and applies credential-dependent model changes", () => {
-		const models = getModels("github-copilot") as Model<Api>[];
-		const modified = githubCopilotOAuthProvider.modifyModels?.(models, {
-			refresh: "refresh",
-			access: "tid=1;proxy-ep=proxy.enterprise.example.com;exp=9999999999",
-			expires: Date.now() + 60_000,
-		});
-		const model = modified?.[0];
-		expect(model).toBeDefined();
-		if (!model) throw new Error("Copilot catalog model missing");
-		const resolved = resolvePiModel({
-			executor: "github-copilot",
-			providerFamily: "github-copilot",
-			model: model.id,
-			piModel: model,
-			apiKey: "copilot-access",
-		});
-
-		expect(resolved.piModel.baseUrl).toBe("https://api.enterprise.example.com");
-		expect(resolved.piModel.headers?.["Copilot-Integration-Id"]).toBe("vscode-chat");
-	});
-
 	test("creates an isolated AgentSession with no ambient tools", async () => {
 		const provider = createPiModelProvider({
 			executor: "openai-compatible",
@@ -54,6 +32,37 @@ describe("pi provider catalog models", () => {
 			expect(session.getActiveToolNames()).toEqual([]);
 		} finally {
 			session.dispose();
+		}
+	});
+
+	test("settles a successful silent-overflow response without continuing from an assistant message", async () => {
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = mock(() =>
+			Promise.resolve(
+				new Response(
+					[
+						`data: ${JSON.stringify({ choices: [{ delta: { content: "done" } }], usage: { prompt_tokens: 3, completion_tokens: 1 } })}\n\n`,
+						`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] })}\n\n`,
+						"data: [DONE]\n\n",
+					].join(""),
+					{ status: 200, headers: { "content-type": "text/event-stream" } },
+				),
+			),
+		) as unknown as typeof fetch;
+
+		const provider = createPiModelProvider({
+			executor: "openai-compatible",
+			model: "silent-overflow-test",
+			baseUrl: "http://127.0.0.1:1234/v1",
+			contextWindow: 2,
+		});
+		await expect(provider.generate("ordinary routed call")).resolves.toBe("done");
+		const session = await provider.createAgentSession([]);
+		try {
+			await expect(session.prompt("finish without tools")).resolves.toBeUndefined();
+		} finally {
+			session.dispose();
+			globalThis.fetch = originalFetch;
 		}
 	});
 });

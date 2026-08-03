@@ -12,21 +12,19 @@
 import {
 	type Api,
 	type Context,
+	InMemoryCredentialStore,
 	type Model,
 	type OpenAICompletionsCompat,
 	type ThinkingLevel,
 	type Usage,
-	completeSimple,
-	streamSimple,
 } from "@earendil-works/pi-ai";
 import {
-	AuthStorage,
 	DefaultResourceLoader,
-	ModelRegistry,
+	ModelRuntime,
 	SessionManager,
 	SettingsManager,
-	createAgentSession,
 	type ToolDefinition,
+	createAgentSession,
 } from "@earendil-works/pi-coding-agent";
 import type { LlmGenerateResult, LlmProvider, LlmUsage } from "@signet/core";
 import { logger } from "../logger";
@@ -103,10 +101,15 @@ export interface PiAgentSession {
 export interface PiAgentSessionProvider {
 	readonly isPiAgentSessionProvider: true;
 	readonly agentSessionTimeoutMs: number;
-	createAgentSession(tools: readonly ToolDefinition[], options?: { readonly maxTokens?: number }): Promise<PiAgentSession>;
+	createAgentSession(
+		tools: readonly ToolDefinition[],
+		options?: { readonly maxTokens?: number },
+	): Promise<PiAgentSession>;
 }
 
-export function isPiAgentSessionProvider(provider: unknown): provider is StreamCapableLlmProvider & PiAgentSessionProvider {
+export function isPiAgentSessionProvider(
+	provider: unknown,
+): provider is StreamCapableLlmProvider & PiAgentSessionProvider {
 	return (
 		typeof provider === "object" &&
 		provider !== null &&
@@ -302,11 +305,26 @@ function callerAbort(
 	};
 }
 
-export function createPiModelProvider(config: PiModelProviderConfig): StreamCapableLlmProvider & PiAgentSessionProvider {
+export function createPiModelProvider(
+	config: PiModelProviderConfig,
+): StreamCapableLlmProvider & PiAgentSessionProvider {
 	const { piModel, apiKey, label } = resolvePiModel(config);
 	const name = config.name ?? label;
 	const defaultTimeoutMs = config.defaultTimeoutMs ?? 60_000;
 	const reasoning = config.reasoning;
+	const modelRuntime = ModelRuntime.create({
+		credentials: new InMemoryCredentialStore(),
+		modelsPath: null,
+	}).then((runtime) => {
+		runtime.registerProvider(piModel.provider, {
+			name: piModel.provider,
+			baseUrl: piModel.baseUrl,
+			api: piModel.api,
+			apiKey: apiKey ?? KEYLESS_API_KEY,
+			models: [{ ...piModel }],
+		});
+		return runtime;
+	});
 
 	function buildContext(prompt: string): Context {
 		return {
@@ -343,7 +361,7 @@ export function createPiModelProvider(config: PiModelProviderConfig): StreamCapa
 		const abort = callerAbort(opts, defaultTimeoutMs);
 		const t0 = Date.now();
 		try {
-			const msg = await completeSimple(piModel, buildContext(prompt), buildOptions(opts, abort));
+			const msg = await (await modelRuntime).completeSimple(piModel, buildContext(prompt), buildOptions(opts, abort));
 			const durationMs = Date.now() - t0;
 			if (msg.stopReason === "error" || msg.stopReason === "aborted") {
 				throw toError(name, msg);
@@ -400,7 +418,7 @@ export function createPiModelProvider(config: PiModelProviderConfig): StreamCapa
 			let fullText = "";
 			let finalUsage: LlmUsage | null = null;
 
-			const piStream = streamSimple(piModel, buildContext(prompt), buildOptions(opts, abort));
+			const piStream = (await modelRuntime).streamSimple(piModel, buildContext(prompt), buildOptions(opts, abort));
 
 			const stream = new ReadableStream<LlmProviderStreamEvent>({
 				async start(controller) {
@@ -449,10 +467,9 @@ export function createPiModelProvider(config: PiModelProviderConfig): StreamCapa
 		isPiAgentSessionProvider: true,
 		agentSessionTimeoutMs: defaultTimeoutMs,
 		async createAgentSession(tools: readonly ToolDefinition[], options: { readonly maxTokens?: number } = {}) {
-			const authStorage = AuthStorage.inMemory({
-				[piModel.provider]: { type: "api_key", key: apiKey ?? KEYLESS_API_KEY },
-			});
-			const modelRegistry = ModelRegistry.inMemory(authStorage);
+			// Isolated from the user's Pi credentials and models.json. The same
+			// daemon-owned runtime services ordinary calls and this AgentSession.
+			const isolatedRuntime = await modelRuntime;
 			const settingsManager = SettingsManager.inMemory();
 			const resourceLoader = new DefaultResourceLoader({
 				cwd: process.cwd(),
@@ -468,8 +485,7 @@ export function createPiModelProvider(config: PiModelProviderConfig): StreamCapa
 			await resourceLoader.reload();
 			const { session } = await createAgentSession({
 				model: options.maxTokens ? { ...piModel, maxTokens: options.maxTokens } : piModel,
-				authStorage,
-				modelRegistry,
+				modelRuntime: isolatedRuntime,
 				sessionManager: SessionManager.inMemory(),
 				settingsManager,
 				resourceLoader,
