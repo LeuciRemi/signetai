@@ -17,6 +17,7 @@ import {
 	getPipelineWorkerStatus,
 	requestDreamingEvidenceRequeue,
 } from "../pipeline";
+import { applyDreamingOperations } from "../pipeline/dreaming-operations.js";
 import { getFeedbackTelemetry } from "../pipeline/aspect-feedback.js";
 import { AlreadyRunningError } from "../pipeline/dreaming-worker.js";
 import { getTraversalStatus } from "../pipeline/graph-traversal.js";
@@ -127,6 +128,11 @@ function readBoolean(record: Readonly<Record<string, unknown>>, key: string): bo
 	if (value === "true") return true;
 	if (value === "false") return false;
 	return undefined;
+}
+
+function readArray(record: Readonly<Record<string, unknown>>, key: string): readonly unknown[] | undefined {
+	const value = record[key];
+	return Array.isArray(value) ? value : undefined;
 }
 
 export function resolveDreamRequestAgentId(c: Context, body: Readonly<Record<string, unknown>> = {}): string {
@@ -572,6 +578,38 @@ export function registerPipelineRoutes(app: Hono): void {
 		const requeued = requestDreamingEvidenceRequeue(getDbAccessor(), agentId, sourceKind, sourceId);
 		if (!requeued) return c.json({ error: "Dreaming evidence exclusion not found" }, 404);
 		return c.json({ requeued: true, agentId, sourceKind, sourceId });
+	});
+
+	/**
+	 * Daemon apply seam for external Dreaming agents. Unlike generic ontology
+	 * operations, every write must carry a canonical episodic source reference
+	 * and an exact quote; the daemon resolves it in the caller's agent scope.
+	 */
+	app.post("/api/dream/operations", async (c) => {
+		const raw: unknown = await c.req.json().catch(() => null);
+		if (raw === null) return c.json({ error: "Malformed JSON body" }, 400);
+		const body = asRecord(raw);
+		const operations = readArray(body, "operations");
+		if (!operations || operations.length === 0) return c.json({ error: "operations are required" }, 400);
+		const agentId = resolveDreamRequestAgentId(c, body);
+		const actor = readString(body, "actor") ?? c.req.header("x-signet-actor") ?? "dreaming-agent";
+		const result = applyDreamingOperations({
+			accessor: getDbAccessor(),
+			agentId,
+			actor,
+			operations: operations.map((rawOperation) => {
+				const operation = asRecord(rawOperation);
+				return {
+					operation: readString(operation, "operation") ?? "",
+					payload: asRecord(operation.payload),
+					reason: readString(operation, "reason") ?? readString(operation, "rationale"),
+					evidence: readArray(operation, "evidence"),
+					confidence: readNumber(operation, "confidence"),
+					risk: readString(operation, "risk") ?? null,
+				};
+			}),
+		});
+		return c.json({ ...result, agentId }, result.ok ? 200 : 400);
 	});
 
 	app.post("/api/dream/trigger", async (c) => {
