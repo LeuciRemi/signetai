@@ -38,6 +38,8 @@ export interface DreamingResult {
 	readonly tokensConsumed: number;
 	/** Operations discarded because they failed structural or evidence validation. */
 	readonly invalidOperations: number;
+	/** Evidence cited by discarded operations, retained for explicit requeue. */
+	readonly rejectedEvidence: readonly EpisodicSourceRecord[];
 }
 
 export interface DreamingState {
@@ -306,18 +308,22 @@ export function getDreamingPasses(accessor: DbAccessor, agentId: string, limit =
 	});
 }
 
-export function getDreamingEvidenceExclusions(accessor: DbAccessor, agentId: string): readonly DreamingEvidenceExclusion[] {
-	return accessor.withReadDb((db) =>
-		db
-			.prepare(
-				`SELECT source_kind AS sourceKind, source_id AS sourceId, reason,
+export function getDreamingEvidenceExclusions(
+	accessor: DbAccessor,
+	agentId: string,
+): readonly DreamingEvidenceExclusion[] {
+	return accessor.withReadDb(
+		(db) =>
+			db
+				.prepare(
+					`SELECT source_kind AS sourceKind, source_id AS sourceId, reason,
 				        pass_id AS passId, excluded_at AS excludedAt,
 				        requeue_requested_at AS requeueRequestedAt, resolved_at AS resolvedAt
 				 FROM dreaming_evidence_exclusions
 				 WHERE agent_id = ? AND resolved_at IS NULL
 				 ORDER BY excluded_at DESC, source_kind ASC, source_id ASC`,
-			)
-			.all(agentId) as DreamingEvidenceExclusion[],
+				)
+				.all(agentId) as DreamingEvidenceExclusion[],
 	);
 }
 
@@ -339,16 +345,17 @@ export function requestDreamingEvidenceRequeue(
 	});
 }
 
-function recordOversizedEvidenceExclusionsInTx(
+function recordDreamingEvidenceExclusionsInTx(
 	db: WriteDb,
 	agentId: string,
 	passId: string,
 	sources: readonly EpisodicSourceRecord[],
+	reason: string,
 ): void {
 	const statement = db.prepare(
 		`INSERT INTO dreaming_evidence_exclusions
 		 (agent_id, source_kind, source_id, reason, pass_id, excluded_at, requeue_requested_at, resolved_at)
-		 VALUES (?, ?, ?, 'oversized_prompt_budget', ?, datetime('now'), NULL, NULL)
+			 VALUES (?, ?, ?, ?, ?, datetime('now'), NULL, NULL)
 		 ON CONFLICT(agent_id, source_kind, source_id) DO UPDATE SET
 		   reason = excluded.reason,
 		   pass_id = excluded.pass_id,
@@ -356,7 +363,7 @@ function recordOversizedEvidenceExclusionsInTx(
 		   requeue_requested_at = NULL,
 		   resolved_at = NULL`,
 	);
-	for (const source of sources) statement.run(agentId, source.kind, source.id, passId);
+	for (const source of sources) statement.run(agentId, source.kind, source.id, reason, passId);
 }
 
 function resolveRequeuedEvidenceInTx(db: WriteDb, agentId: string, sources: readonly EpisodicSourceRecord[]): void {
@@ -793,6 +800,16 @@ function matchEvidenceToSource(value: unknown, sources: readonly EpisodicSourceR
 	);
 }
 
+function matchedEvidenceSources(
+	value: unknown,
+	sources: readonly EpisodicSourceRecord[],
+): readonly EpisodicSourceRecord[] {
+	if (!isRecord(value) || !Array.isArray(value.evidence)) return [];
+	return value.evidence
+		.map((item) => matchEvidenceToSource(item, sources))
+		.filter((source): source is EpisodicSourceRecord => source !== null);
+}
+
 function normalizeDreamingOperation(raw: unknown, sources: readonly EpisodicSourceRecord[]): DreamingOperation | null {
 	if (!isRecord(raw)) return null;
 	const operation = readNonEmptyString(raw.operation);
@@ -801,9 +818,7 @@ function normalizeDreamingOperation(raw: unknown, sources: readonly EpisodicSour
 	const evidence = Array.isArray(raw.evidence) ? raw.evidence : [];
 	if (!operation || !DREAMING_OPERATIONS.has(operation) || !isRecord(payload) || !reason || evidence.length === 0)
 		return null;
-	const matchedSources = evidence
-		.map((item) => matchEvidenceToSource(item, sources))
-		.filter((source): source is EpisodicSourceRecord => source !== null);
+	const matchedSources = matchedEvidenceSources(raw, sources);
 	if (matchedSources.length !== evidence.length) return null;
 	const confidence = raw.confidence;
 	if (
@@ -857,10 +872,15 @@ function parseDreamingResult(raw: string, sources: readonly EpisodicSourceRecord
 	const result = isRecord(parsed) ? parsed : {};
 	if (!Array.isArray(result.operations)) throw new Error("Dreaming response operations must be an array");
 	const all = result.operations;
-	const operations = all
-		.map((operation) => normalizeDreamingOperation(operation, sources))
+	const normalized = all.map((operation) => ({
+		operation: normalizeDreamingOperation(operation, sources),
+		evidence: matchedEvidenceSources(operation, sources),
+	}));
+	const operations = normalized
+		.map(({ operation }) => operation)
 		.filter((operation): operation is DreamingOperation => operation !== null);
 	const invalidOperations = all.length - operations.length;
+	const rejectedEvidence = normalized.flatMap(({ operation, evidence }) => (operation === null ? evidence : []));
 	if (invalidOperations > 0) {
 		logger.warn("dreaming", "LLM response contained invalid semantic operations — discarded", {
 			count: invalidOperations,
@@ -871,6 +891,7 @@ function parseDreamingResult(raw: string, sources: readonly EpisodicSourceRecord
 		summary: readNonEmptyString(result.summary) ?? "No summary provided",
 		tokensConsumed: countTokens(raw),
 		invalidOperations,
+		rejectedEvidence,
 	};
 }
 
@@ -956,7 +977,7 @@ export async function runDreamingPass(
 		if (renderedEvidence.length === 0 && oversizedEvidence.length > 0) {
 			const summary = `Skipped ${oversizedEvidence.length} oversized episodic source${oversizedEvidence.length === 1 ? "" : "s"}; requeue after increasing the Dreaming input budget.`;
 			accessor.withWriteTx((db) => {
-				recordOversizedEvidenceExclusionsInTx(db, agentId, passId, oversizedEvidence);
+				recordDreamingEvidenceExclusionsInTx(db, agentId, passId, oversizedEvidence, "oversized_prompt_budget");
 				db.prepare(
 					`UPDATE dreaming_passes
 					 SET status = 'completed', completed_at = datetime('now'),
@@ -1002,6 +1023,7 @@ export async function runDreamingPass(
 			let applied = 0;
 			let failed = result.invalidOperations;
 			const errors: string[] = [];
+			const rejectedEvidence = [...result.rejectedEvidence];
 			for (const operation of result.operations) {
 				db.exec("SAVEPOINT dreaming_operation");
 				try {
@@ -1013,6 +1035,7 @@ export async function runDreamingPass(
 					db.exec("RELEASE SAVEPOINT dreaming_operation");
 					failed++;
 					errors.push(error instanceof Error ? error.message : String(error));
+					rejectedEvidence.push(...matchedEvidenceSources({ evidence: operation.evidence }, renderedEvidence));
 				}
 			}
 			db.prepare(
@@ -1026,7 +1049,8 @@ export async function runDreamingPass(
 				     summary = ?
 				 WHERE id = ?`,
 			).run(totalTokens, applied, oversizedEvidence.length, failed, result.summary, passId);
-			recordOversizedEvidenceExclusionsInTx(db, agentId, passId, oversizedEvidence);
+			recordDreamingEvidenceExclusionsInTx(db, agentId, passId, oversizedEvidence, "oversized_prompt_budget");
+			recordDreamingEvidenceExclusionsInTx(db, agentId, passId, rejectedEvidence, "semantic_operation_rejected");
 			resolveRequeuedEvidenceInTx(db, agentId, renderedEvidence);
 			resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, passStartedAt);
 			if (errors.length > 0)
@@ -1093,7 +1117,7 @@ export function shouldTriggerDreaming(
 	// must not require exponentially more incoming evidence before recovery.
 	if (state.consecutiveFailures > 0) {
 		const exp = Math.min(state.consecutiveFailures, MAX_FAILURE_BACKOFF_MULTIPLIER);
-		const failedAt = state.lastFailureAt === null ? NaN : Date.parse(state.lastFailureAt);
+		const failedAt = state.lastFailureAt === null ? Number.NaN : Date.parse(state.lastFailureAt);
 		if (!Number.isFinite(failedAt) || nowMs - failedAt < FAILURE_BACKOFF_BASE_MS * 2 ** exp) return false;
 	}
 

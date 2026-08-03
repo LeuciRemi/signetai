@@ -234,7 +234,7 @@ describe("dreaming", () => {
 			expect(Number.isFinite(failedAt)).toBe(true);
 			// First failure waits 5min × 2¹, regardless of how much evidence arrives.
 			expect(shouldTriggerDreaming(accessor, cfg, AGENT, failedAt + 10 * 60 * 1000 - 1)).toBe(false);
-		seedSummary(db, "second-backlog", "episodic source ".repeat(3_000), 3_000);
+			seedSummary(db, "second-backlog", "episodic source ".repeat(3_000), 3_000);
 			expect(shouldTriggerDreaming(accessor, cfg, AGENT, failedAt + 10 * 60 * 1000)).toBe(true);
 		});
 
@@ -646,8 +646,8 @@ describe("dreaming", () => {
 			expect(getDreamingState(accessor, AGENT).evidenceCursor?.id).toBe("oversize-first");
 			expect(getDreamingPasses(accessor, AGENT)[0]).toMatchObject({ status: "completed", mutationsSkipped: 1 });
 			expect(getDreamingEvidenceExclusions(accessor, AGENT)).toMatchObject([
-			{ sourceKind: "summary", sourceId: "oversize-first", reason: "oversized_prompt_budget" },
-		]);
+				{ sourceKind: "summary", sourceId: "oversize-first", reason: "oversized_prompt_budget" },
+			]);
 		});
 
 		it("requeues quarantined evidence after the input budget increases", async () => {
@@ -1222,6 +1222,9 @@ describe("dreaming", () => {
 			);
 			expect(result).toMatchObject({ applied: 1, failed: 1 });
 			expect(getDreamingState(accessor, AGENT).evidenceCursor?.id).toBe("invalid-operation");
+			expect(getDreamingEvidenceExclusions(accessor, AGENT)).toMatchObject([
+				{ sourceKind: "summary", sourceId: "invalid-operation", reason: "semantic_operation_rejected" },
+			]);
 		});
 
 		it("keeps valid semantic operations when a later operation is rejected", async () => {
@@ -1257,6 +1260,9 @@ describe("dreaming", () => {
 				db.prepare("SELECT name FROM entities WHERE agent_id = ? AND canonical_name = 'cedar'").get(AGENT),
 			).toEqual({ name: "Cedar" });
 			expect(getDreamingState(accessor, AGENT).evidenceCursor?.id).toBe("rejected-operation");
+			expect(getDreamingEvidenceExclusions(accessor, AGENT)).toMatchObject([
+				{ sourceKind: "summary", sourceId: "rejected-operation", reason: "semantic_operation_rejected" },
+			]);
 		});
 
 		it("records failed pass on LLM error", async () => {

@@ -352,8 +352,9 @@ smart model to merge, prune, and enrich the entity graph.
 ### GET /api/dream/status
 
 Return the current dreaming worker state, configuration, recent passes, and
-any episodic evidence quarantined because one source cannot fit within the
-configured input budget. Requires `admin` permission.
+episodic evidence that needs explicit review: a source too large for the input
+budget or evidence cited by a rejected semantic operation. Requires `admin`
+permission.
 
 **Query parameters**
 
@@ -412,7 +413,8 @@ configured input budget. Requires `admin` permission.
 ```
 
 An exclusion preserves only the source identity and processing status; it does
-not modify or discard the underlying episodic evidence.
+not modify or discard the underlying episodic evidence. `reason` is either
+`oversized_prompt_budget` or `semantic_operation_rejected`.
 
 ### POST /api/dream/exclusions/requeue
 
