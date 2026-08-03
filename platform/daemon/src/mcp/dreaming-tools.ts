@@ -28,7 +28,7 @@ export function createDreamingMcpServer(options: DreamingMcpServerOptions): McpS
 				inputSchema: z.fromJSONSchema(capability.inputSchema) as never,
 				annotations: { readOnlyHint: capability.readOnly },
 			},
-			async (input: unknown) => {
+			(async (input: unknown) => {
 				const result = await daemonFetch<unknown>(
 					options.daemonUrl,
 					`/api/dream/tools/${encodeURIComponent(capability.id)}`,
@@ -38,7 +38,7 @@ export function createDreamingMcpServer(options: DreamingMcpServerOptions): McpS
 					},
 				);
 				return result.ok ? textResult(result.data) : errorResult(`Dreaming ${capability.id} failed: ${result.error}`);
-			},
+			}) as never,
 		);
 	}
 	return server;

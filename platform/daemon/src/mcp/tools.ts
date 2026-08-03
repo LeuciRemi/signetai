@@ -137,6 +137,21 @@ export interface DaemonError {
 
 export type FetchResult<T> = DaemonResponse<T> | DaemonError;
 
+/**
+ * The MCP SDK currently resolves its tool overloads against a second Zod
+ * major. Keep the cast at this transport boundary so every daemon tool retains
+ * its real Zod schema and inferred handler input instead of spreading unsafe
+ * casts across individual registrations.
+ */
+function registerMcpTool<TSchema extends z.ZodType>(
+	server: McpServer,
+	name: string,
+	config: { readonly inputSchema: TSchema } & Record<string, unknown>,
+	handler: (input: z.output<TSchema>) => unknown,
+): void {
+	server.registerTool(name, { ...config, inputSchema: config.inputSchema as never }, handler as never);
+}
+
 const BASE_TOOL_NAMES = new Set<string>([
 	"memory_search",
 	"memory_store",
@@ -614,7 +629,7 @@ export async function refreshMarketplaceProxyTools(
 
 		nextNames.add(proxyName);
 
-		server.registerTool(
+		registerMcpTool(server,
 			proxyName,
 			{
 				title,
@@ -764,7 +779,7 @@ function registerGraphiqCompatAliases(server: McpServer, pluginHostProvider: Gra
 	];
 
 	for (const def of compatDefs) {
-		server.registerTool(
+		registerMcpTool(server,
 			def.alias,
 			{
 				title: `[deprecated: use ${def.canonical}]`,
@@ -822,7 +837,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// memory_search — hybrid vector + keyword search
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"memory_search",
 		{
 			title: "Search Memories",
@@ -918,7 +933,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"signet_recall",
 		{
 			title: "Signet Recall",
@@ -1000,7 +1015,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"signet_source_search",
 		{
 			title: "Signet Source Search",
@@ -1038,7 +1053,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// memory_store — save a new memory
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"memory_store",
 		{
 			title: "Store Memory",
@@ -1171,7 +1186,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"signet_save_note",
 		{
 			title: "Save Codex Memory Note",
@@ -1198,7 +1213,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// memory_get — retrieve a memory by ID
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"memory_get",
 		{
 			title: "Get Memory",
@@ -1220,7 +1235,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// memory_list — list memories with optional filters
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"memory_list",
 		{
 			title: "List Memories",
@@ -1251,7 +1266,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// memory_modify — edit an existing memory
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"memory_modify",
 		{
 			title: "Modify Memory",
@@ -1290,7 +1305,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// memory_forget — soft-delete a memory
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"memory_forget",
 		{
 			title: "Forget Memory",
@@ -1317,7 +1332,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// memory_feedback — rate relevance of injected memories
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"memory_feedback",
 		{
 			title: "Rate Memory Relevance",
@@ -1375,7 +1390,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// agent_peers — list active peer sessions
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"agent_peers",
 		{
 			title: "List Peer Sessions",
@@ -1412,7 +1427,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// agent_message_send — send message to another agent/session
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"agent_message_send",
 		{
 			title: "Send Agent Message",
@@ -1481,7 +1496,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// agent_message_inbox — read recent inbound messages
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"agent_message_inbox",
 		{
 			title: "Read Agent Inbox",
@@ -1522,7 +1537,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// secret_list — list available secret names
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"secret_list",
 		{
 			title: "List Secrets",
@@ -1542,7 +1557,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// secret_exec — run a command with secrets injected as env vars
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"secret_exec",
 		{
 			title: "Execute with Secrets",
@@ -1594,7 +1609,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"secret_exec_status",
 		{
 			title: "Secret Exec Status",
@@ -1637,7 +1652,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 
 	const contextPath = (path: string): string => appendMarketplaceContext(path, proxyState.context);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"mcp_server_list",
 		{
 			title: "List Tool Servers",
@@ -1667,7 +1682,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"mcp_server_search",
 		{
 			title: "Search Tool Servers",
@@ -1725,7 +1740,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"mcp_server_enable",
 		{
 			title: "Enable Tool Server",
@@ -1755,7 +1770,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"mcp_server_disable",
 		{
 			title: "Disable Tool Server",
@@ -1785,7 +1800,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"mcp_server_scope_get",
 		{
 			title: "Get Tool Server Scope",
@@ -1817,7 +1832,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"mcp_server_scope_set",
 		{
 			title: "Set Tool Server Scope",
@@ -1855,7 +1870,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"mcp_server_policy_get",
 		{
 			title: "Get MCP Exposure Policy",
@@ -1871,7 +1886,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"mcp_server_policy_set",
 		{
 			title: "Set MCP Exposure Policy",
@@ -1909,7 +1924,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// mcp_server_call — call a routed marketplace MCP tool
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"mcp_server_call",
 		{
 			title: "Call Tool Server",
@@ -1954,7 +1969,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"session_bypass",
 		{
 			title: "Toggle Session Bypass",
@@ -1985,7 +2000,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// knowledge_expand — drill deeper into a knowledge graph entity
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"knowledge_expand",
 		{
 			title: "Expand Entity",
@@ -2154,7 +2169,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		return fetchNavigation("/api/knowledge/hygiene", params, "Knowledge hygiene report");
 	};
 
-	server.registerTool(
+	registerMcpTool(server,
 		"knowledge_tree",
 		{
 			title: "Knowledge Tree",
@@ -2169,7 +2184,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		knowledgeTree,
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"knowledge_list_entities",
 		{
 			title: "Knowledge: List Entities",
@@ -2182,7 +2197,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		listEntities,
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"knowledge_get_entity",
 		{
 			title: "Knowledge: Get Entity",
@@ -2195,7 +2210,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		getEntity,
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"knowledge_list_aspects",
 		{
 			title: "Knowledge: List Aspects",
@@ -2208,7 +2223,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		listAspects,
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"knowledge_list_groups",
 		{
 			title: "Knowledge: List Groups",
@@ -2221,7 +2236,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		listGroups,
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"knowledge_list_claims",
 		{
 			title: "Knowledge: List Claims",
@@ -2234,7 +2249,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		listClaims,
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"knowledge_list_attributes",
 		{
 			title: "Knowledge: List Attributes",
@@ -2247,7 +2262,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		listAttributes,
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"knowledge_hygiene_report",
 		{
 			title: "Knowledge Hygiene Report",
@@ -2264,7 +2279,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// The daemon validates every citation against scoped episodic evidence and
 	// applies each item through the audited Dreaming operation seam. ACPX gets
 	// this over stdio MCP; it never receives a SQLite handle.
-	server.registerTool(
+	registerMcpTool(server,
 		"apply_ontology_ops",
 		{
 			title: "Apply Dreaming ontology operations",
@@ -2285,7 +2300,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"entity_list",
 		{
 			title: "List Entities",
@@ -2296,7 +2311,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		listEntities,
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"entity_get",
 		{
 			title: "Get Entity",
@@ -2307,7 +2322,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		getEntity,
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"entity_aspects",
 		{
 			title: "List Entity Aspects",
@@ -2318,7 +2333,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		listAspects,
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"entity_groups",
 		{
 			title: "List Entity Groups",
@@ -2329,7 +2344,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		listGroups,
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"entity_claims",
 		{
 			title: "List Entity Claims",
@@ -2340,7 +2355,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		listClaims,
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"entity_attributes",
 		{
 			title: "List Entity Attributes",
@@ -2354,7 +2369,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 	// ------------------------------------------------------------------
 	// knowledge_expand_session — temporal drill-down via session DAG
 	// ------------------------------------------------------------------
-	server.registerTool(
+	registerMcpTool(server,
 		"knowledge_expand_session",
 		{
 			title: "Expand Entity Sessions",
@@ -2387,7 +2402,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"lcm_expand",
 		{
 			title: "Expand Temporal Node",
@@ -2418,7 +2433,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"session_search",
 		{
 			title: "Search Session Transcripts",
@@ -2457,7 +2472,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"signet_session_search",
 		{
 			title: "Signet Session Search",
@@ -2495,7 +2510,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"signet_code_search",
 		{
 			title: "Search Code",
@@ -2528,7 +2543,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"signet_code_context",
 		{
 			title: "Code Context",
@@ -2549,7 +2564,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"signet_code_blast",
 		{
 			title: "Code Blast Radius",
@@ -2575,7 +2590,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		},
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"signet_code_status",
 		{
 			title: "Code Index Status",
@@ -2585,7 +2600,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		async () => graphIqToolResult(["status"], "Code status failed", "signet_code_status", pluginHostProvider),
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"signet_code_doctor",
 		{
 			title: "Code Index Doctor",
@@ -2595,7 +2610,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 		async () => graphIqToolResult(["doctor"], "Code doctor failed", "signet_code_doctor", pluginHostProvider),
 	);
 
-	server.registerTool(
+	registerMcpTool(server,
 		"signet_code_constants",
 		{
 			title: "Code Constants",
