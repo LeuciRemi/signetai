@@ -1941,8 +1941,25 @@ export function getKnowledgeGraphForConstellation(
 				 FROM entities e
 				 WHERE e.agent_id IN (${agentPlaceholders})
 				   AND COALESCE(e.status, 'active') = 'active'
-				   AND LOWER(TRIM(e.entity_type)) IN ('person', 'project')
-				   AND (e.mentions > 0 OR e.pinned = 1)
+				   -- Entity mentions are a legacy-memory projection. Dreaming writes
+				   -- semantic structure with episodic provenance directly, so a valid
+				   -- entity can have zero legacy mentions and any entity type.
+				   AND (
+						e.mentions > 0
+						OR e.pinned = 1
+						OR EXISTS (
+							SELECT 1 FROM entity_aspects asp
+							WHERE asp.entity_id = e.id
+							  AND asp.agent_id = e.agent_id
+							  AND COALESCE(asp.status, 'active') = 'active'
+						)
+						OR EXISTS (
+							SELECT 1 FROM entity_dependencies dep
+							WHERE dep.agent_id = e.agent_id
+							  AND COALESCE(dep.status, 'active') = 'active'
+							  AND (dep.source_entity_id = e.id OR dep.target_entity_id = e.id)
+						)
+				   )
 				 ORDER BY e.pinned DESC, e.mentions DESC, e.name ASC
 				 LIMIT ?`,
 			)
