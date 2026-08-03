@@ -374,10 +374,11 @@ during lease). If `attempts >= max_attempts` (default 3), the job is
 moved to status `dead`; otherwise it returns to `pending` for retry on the
 next tick. A dead job stays in the table for audit and cleanup purposes.
 
-The retired extraction queue no longer accepts new work. Startup first promotes
-each live source behind an unfinished historical `extract` job into the
-episodic Dreaming cursor, then terminalizes the obsolete job so no evidence is
-abandoned or left leased forever.
+The retired extraction queue no longer accepts new work. Startup terminalizes
+each unfinished historical `extract` job so none is abandoned or left leased
+forever. It preserves the source's existing provenance and `memory_kind`: only
+already-episodic evidence is reachable by Dreaming, while derived rows remain
+derived and are not re-ingested as source material.
 
 Backoff state tracks consecutive failures. On zero failures, the tick
 interval is `workerPollMs` (default 2,000 ms). Each failure doubles the

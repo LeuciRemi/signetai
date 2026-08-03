@@ -42,6 +42,7 @@ export interface DreamingResult {
 
 export interface DreamingState {
 	readonly consecutiveFailures: number;
+	readonly lastFailureAt: string | null;
 	readonly lastPassAt: string | null;
 	readonly evidenceCursor: EpisodicCursor | null;
 	readonly lastPassId: string | null;
@@ -156,6 +157,7 @@ function readDreamingState(db: ReadDb, agentId: string): DreamingState {
 	let row:
 		| {
 				consecutive_failures: number;
+				last_failure_at: string | null;
 				last_pass_at: string | null;
 				evidence_cursor: string | null;
 				last_pass_id: string | null;
@@ -165,7 +167,7 @@ function readDreamingState(db: ReadDb, agentId: string): DreamingState {
 	try {
 		row = db
 			.prepare(
-				`SELECT consecutive_failures,
+				`SELECT consecutive_failures, last_failure_at,
 				        last_pass_at, evidence_cursor, last_pass_id, last_pass_mode
 				 FROM dreaming_state WHERE agent_id = ?`,
 			)
@@ -177,6 +179,7 @@ function readDreamingState(db: ReadDb, agentId: string): DreamingState {
 	if (!row) {
 		return {
 			consecutiveFailures: 0,
+			lastFailureAt: null,
 			lastPassAt: null,
 			evidenceCursor: null,
 			lastPassId: null,
@@ -185,6 +188,7 @@ function readDreamingState(db: ReadDb, agentId: string): DreamingState {
 	}
 	return {
 		consecutiveFailures: row.consecutive_failures,
+		lastFailureAt: row.last_failure_at,
 		lastPassAt: row.last_pass_at,
 		evidenceCursor: parseEpisodicCursor(row.evidence_cursor),
 		lastPassId: row.last_pass_id,
@@ -209,6 +213,7 @@ function resetDreamingTokens(
 		db.prepare(
 			`UPDATE dreaming_state
 			 SET consecutive_failures = 0,
+			     last_failure_at = NULL,
 			     last_pass_at = ?,
 			     evidence_cursor = ?,
 			     last_pass_id = ?,
@@ -219,8 +224,8 @@ function resetDreamingTokens(
 	} else {
 		db.prepare(
 			`INSERT INTO dreaming_state
-			 (agent_id, consecutive_failures, last_pass_at, evidence_cursor, last_pass_id, last_pass_mode)
-			 VALUES (?, 0, ?, ?, ?, ?)`,
+			 (agent_id, consecutive_failures, last_failure_at, last_pass_at, evidence_cursor, last_pass_id, last_pass_mode)
+			 VALUES (?, 0, NULL, ?, ?, ?, ?)`,
 		).run(agentId, lastPassAt, evidenceCursor === null ? null : JSON.stringify(evidenceCursor), passId, mode);
 	}
 }
@@ -232,13 +237,14 @@ export function recordDreamingFailure(accessor: DbAccessor, agentId: string): vo
 			db.prepare(
 				`UPDATE dreaming_state
 				 SET consecutive_failures = consecutive_failures + 1,
+				     last_failure_at = datetime('now'),
 				     updated_at = datetime('now')
 				 WHERE agent_id = ?`,
 			).run(agentId);
 		} else {
 			db.prepare(
-				`INSERT INTO dreaming_state (agent_id, tokens_since_last_pass, consecutive_failures)
-				 VALUES (?, 0, 1)`,
+				`INSERT INTO dreaming_state (agent_id, tokens_since_last_pass, consecutive_failures, last_failure_at)
+				 VALUES (?, 0, 1, datetime('now'))`,
 			).run(agentId);
 		}
 	});
@@ -946,8 +952,9 @@ export async function runDreamingPass(
 // Threshold check
 // ---------------------------------------------------------------------------
 
-// Max backoff: 5min * 2^6 = ~5.3 hours
+// Max backoff: 5min * 2^6 = ~5.3 hours.
 const MAX_FAILURE_BACKOFF_MULTIPLIER = 6;
+const FAILURE_BACKOFF_BASE_MS = 5 * 60 * 1000;
 
 /**
  * The worker's backlog is the episodic evidence it has not yet reasoned over,
@@ -971,27 +978,21 @@ export function getDreamingEpisodicTokenBacklogInDb(db: ReadDb, agentId: string)
 	).reduce((total, source) => total + countTokens(source.content), 0);
 }
 
-export function shouldTriggerDreaming(accessor: DbAccessor, cfg: DreamingConfig, agentId: string): boolean {
+export function shouldTriggerDreaming(
+	accessor: DbAccessor,
+	cfg: DreamingConfig,
+	agentId: string,
+	nowMs = Date.now(),
+): boolean {
 	const state = getDreamingState(accessor, agentId);
 	const episodicTokens = getDreamingEpisodicTokenBacklog(accessor, agentId);
 
-	// Exponential backoff on consecutive failures: require tokens to
-	// exceed threshold * 2^failures before retrying. The worker runs
-	// every 5 min; this naturally delays retries (5min, 10min, 20min,
-	// 40min, 80min, 160min, capped at ~5h).
+	// Back off by wall clock, not by evidence volume. A transient provider outage
+	// must not require exponentially more incoming evidence before recovery.
 	if (state.consecutiveFailures > 0) {
 		const exp = Math.min(state.consecutiveFailures, MAX_FAILURE_BACKOFF_MULTIPLIER);
-		const backoffChecks = 2 ** exp;
-
-		// For first-run failures with backfill, require at least
-		// tokenThreshold of episodic evidence before retrying (instead of
-		// triggering unconditionally with 0 tokens)
-		if (state.lastPassAt === null && cfg.backfillOnFirstRun) {
-			return episodicTokens >= cfg.tokenThreshold;
-		}
-
-		// For all other cases, multiply the threshold by the backoff factor
-		return episodicTokens >= cfg.tokenThreshold * backoffChecks;
+		const failedAt = state.lastFailureAt === null ? NaN : Date.parse(state.lastFailureAt);
+		if (!Number.isFinite(failedAt) || nowMs - failedAt < FAILURE_BACKOFF_BASE_MS * 2 ** exp) return false;
 	}
 
 	// First run only backfills when there is actual episodic evidence to reason

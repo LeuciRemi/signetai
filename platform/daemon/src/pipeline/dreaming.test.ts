@@ -224,27 +224,25 @@ describe("dreaming", () => {
 			expect(shouldTriggerDreaming(accessor, defaultCfg({ backfillOnFirstRun: false }), AGENT)).toBe(false);
 		});
 
-		it("backs off on consecutive failures", () => {
-			// First failure: requires 2x threshold
-			seedSummary(db, "first-backlog", "episodic source ".repeat(10), 10);
+		it("backs off failed passes by wall clock instead of evidence volume", () => {
+			seedSummary(db, "first-backlog", "episodic source", 10);
 			recordDreamingFailure(accessor, AGENT);
-			const cfg = defaultCfg({ tokenThreshold: 100, backfillOnFirstRun: false });
-			// At 1 failure, need 2x threshold — the current evidence is below it.
-			expect(shouldTriggerDreaming(accessor, cfg, AGENT)).toBe(false);
-			// More episodic evidence clears the backoff threshold.
-			seedSummary(db, "second-backlog", "episodic source ".repeat(300), 300);
-			expect(shouldTriggerDreaming(accessor, cfg, AGENT)).toBe(true);
+			const cfg = defaultCfg({ tokenThreshold: 1, backfillOnFirstRun: false });
+			const failedAt = Date.parse(getDreamingState(accessor, AGENT).lastFailureAt ?? "");
+			expect(Number.isFinite(failedAt)).toBe(true);
+			// First failure waits 5min × 2¹, regardless of how much evidence arrives.
+			expect(shouldTriggerDreaming(accessor, cfg, AGENT, failedAt + 10 * 60 * 1000 - 1)).toBe(false);
+		seedSummary(db, "second-backlog", "episodic source ".repeat(3_000), 3_000);
+			expect(shouldTriggerDreaming(accessor, cfg, AGENT, failedAt + 10 * 60 * 1000)).toBe(true);
 		});
 
-		it("backs off first-run failures requiring threshold tokens", () => {
-			// First-run with backfill but has failures — requires tokenThreshold
+		it("retries a first-run failure after its wall-clock delay when evidence exists", () => {
 			recordDreamingFailure(accessor, AGENT);
-			const cfg = defaultCfg({ backfillOnFirstRun: true, tokenThreshold: 10 });
-			// No tokens: would normally trigger on first run, but failure backoff blocks
-			expect(shouldTriggerDreaming(accessor, cfg, AGENT)).toBe(false);
-			// Episodic evidence reaches the retry threshold.
-			seedSummary(db, "failure-backfill", "episodic source ".repeat(20), 20);
-			expect(shouldTriggerDreaming(accessor, cfg, AGENT)).toBe(true);
+			const cfg = defaultCfg({ backfillOnFirstRun: true, tokenThreshold: 10_000 });
+			const failedAt = Date.parse(getDreamingState(accessor, AGENT).lastFailureAt ?? "");
+			seedSummary(db, "failure-backfill", "episodic source", 1);
+			expect(shouldTriggerDreaming(accessor, cfg, AGENT, failedAt + 10 * 60 * 1000 - 1)).toBe(false);
+			expect(shouldTriggerDreaming(accessor, cfg, AGENT, failedAt + 10 * 60 * 1000)).toBe(true);
 		});
 	});
 

@@ -1248,16 +1248,17 @@ function syncAgentRoster(agentsDir: string): void {
 async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?: TelemetryCollector): Promise<void> {
 	const pipelinePaused = memoryCfg.pipelineV2.paused;
 	logger.info("dreaming", "Dreaming owns all semantic writes; legacy extraction is retired");
-	// Promote the source of every pre-existing legacy `extract` job into the
-	// Dreaming cursor, then terminalize the job. Leased rows are terminalized
-	// too: no legacy worker remains to finish them. Runs on every invocation,
-	// covers cold boot and live-reload config transitions (#913).
+	// Terminalize every pre-existing legacy `extract` job. The source keeps its
+	// provenance and memory kind, so only already-episodic evidence remains
+	// reachable by the Dreaming cursor; derived rows are never reclassified.
+	// Leased rows are terminalized too because no legacy worker remains. Runs on
+	// cold boot and live-reload config transitions (#913).
 	if (!pipelinePaused) {
 		const deadLettered = retireLegacyExtractionJobs(getDbAccessor(), {
 			reason: "Dreaming cutover: legacy extraction worker not started",
 		});
 		if (deadLettered > 0) {
-			logger.info("dreaming", "Promoted and retired legacy extraction jobs", {
+			logger.info("dreaming", "Retired legacy extraction jobs", {
 				count: deadLettered,
 			});
 		}
