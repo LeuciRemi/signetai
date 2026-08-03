@@ -132,6 +132,12 @@ function isLocalBaseUrl(url: string): boolean {
 
 function withVersionPath(baseUrl: string): string {
 	const trimmed = baseUrl.trim().replace(/\/+$/, "");
+	// Routing targets conventionally store an OpenAI *base* URL, while users
+	// commonly paste the concrete chat-completions endpoint. Pi appends the
+	// operation path itself, so normalize that concrete form instead of issuing
+	// `/chat/completions/chat/completions`.
+	if (trimmed.endsWith("/v1/chat/completions")) return trimmed.slice(0, -"/chat/completions".length);
+	if (trimmed.endsWith("/v1/responses")) return trimmed.slice(0, -"/responses".length);
 	if (trimmed.endsWith("/v1")) return trimmed;
 	return `${trimmed}/v1`;
 }

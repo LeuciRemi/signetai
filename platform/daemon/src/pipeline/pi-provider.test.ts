@@ -20,6 +20,21 @@ describe("pi provider catalog models", () => {
 		expect(resolved.apiKey).toBe("oauth-access");
 	});
 
+	test("normalizes a pasted OpenAI chat-completions endpoint to Pi's base URL", () => {
+		const model = getModels("opencode-go").find((candidate) => candidate.id === "deepseek-v4-flash");
+		expect(model).toBeDefined();
+		const resolved = resolvePiModel({
+			executor: "openai-compatible",
+			providerFamily: "opencode-go",
+			model: "deepseek-v4-flash",
+			piModel: model as Model<Api>,
+			apiKey: "test-key",
+			baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
+		});
+
+		expect(resolved.piModel.baseUrl).toBe("https://opencode.ai/zen/go/v1");
+	});
+
 	test("creates an isolated AgentSession with no ambient tools", async () => {
 		const provider = createPiModelProvider({
 			executor: "openai-compatible",
