@@ -241,6 +241,9 @@ describe("migration framework", () => {
 		// v96 retires the unscoped legacy ingestion ledger.
 		expect(tableNames).not.toContain("ingestion_jobs");
 
+		// v99 keeps Pi Dreaming capability traces local and pass-scoped.
+		expect(tableNames).toContain("dreaming_tool_calls");
+
 		// v14 tables
 		expect(tableNames).toContain("telemetry_events");
 

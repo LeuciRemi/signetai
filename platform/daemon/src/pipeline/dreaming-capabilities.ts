@@ -57,6 +57,14 @@ export interface DreamingCapabilityResult {
 	readonly [key: string]: unknown;
 }
 
+export interface DreamingToolCallTrace {
+	readonly toolCallId: string;
+	readonly tool: DreamingCapabilityId;
+	readonly input: unknown;
+	readonly output: DreamingCapabilityResult;
+	readonly latencyMs: number;
+}
+
 export interface DreamingCapability {
 	readonly id: DreamingCapabilityId;
 	readonly title: string;
@@ -75,6 +83,7 @@ export interface CreateDreamingCapabilitiesParams {
 		result: ApplyDreamingOperationsResult,
 		operations: readonly DreamingOperationRequest[],
 	) => void;
+	readonly onToolCall?: (trace: DreamingToolCallTrace) => void;
 }
 
 export interface DreamingCapabilityManifestEntry {

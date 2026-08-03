@@ -94,6 +94,29 @@ describe("dreaming-agent-tools", () => {
 		expect(items.some((i) => i.id === "e-other")).toBe(false);
 	});
 
+	it("reports each Pi capability input, output, and outcome to the pass trace", async () => {
+		insertEntity("e-owner", "Owner Entity", "owner entity", "owner");
+		const traces: Array<{ tool: string; input: unknown; output: { ok: boolean }; latencyMs: number }> = [];
+		const tools = createDreamingAgentTools({
+			accessor: getDbAccessor(),
+			agentId: "owner",
+			actor: "owner",
+			onToolCall(trace) {
+				traces.push(trace);
+			},
+		});
+		const search = findTool(tools, "search_entities");
+		await search.execute("pi-call-1", { query: "owner" }, undefined, undefined, {} as never);
+
+		expect(traces).toHaveLength(1);
+		expect(traces[0]).toMatchObject({
+			tool: "search_entities",
+			input: { query: "owner" },
+			output: { tool: "search_entities", ok: true },
+		});
+		expect(traces[0]!.latencyMs).toBeGreaterThanOrEqual(0);
+	});
+
 	it("get_entity returns null result for an entity owned by another agent", async () => {
 		insertEntity("e-other", "Other Entity", "other entity", "intruder");
 

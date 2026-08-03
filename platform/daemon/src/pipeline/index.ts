@@ -53,6 +53,7 @@ export type { SynthesisWorkerHandle } from "./synthesis-worker";
 export {
 	getDreamingEpisodicTokenBacklog,
 	getDreamingEvidenceExclusions,
+	getDreamingToolCalls,
 	getDreamingState,
 	getDreamingPasses,
 	recordDreamingFailure,

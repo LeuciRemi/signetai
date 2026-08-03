@@ -8,6 +8,7 @@ import {
 	getDreamingEvidenceExclusions,
 	getDreamingPasses,
 	getDreamingState,
+	getDreamingToolCalls,
 	recordDreamingFailure,
 	runDreamingAgentPass,
 	shouldTriggerDreaming,
@@ -126,6 +127,16 @@ describe("Dreaming", () => {
 		expect(result).toMatchObject({ applied: 1, failed: 0, summary: "Created Aster" });
 		expect(db.prepare("SELECT proposal_id FROM entities WHERE agent_id = ? AND name = 'Aster'").get(AGENT)).toMatchObject({
 			proposal_id: expect.any(String),
+		});
+		const calls = getDreamingToolCalls(accessor, AGENT, result.passId);
+		expect(calls).toHaveLength(1);
+		expect(calls[0]).toMatchObject({
+			passId: result.passId,
+			sequence: 1,
+			toolName: "apply_ontology_ops",
+			success: true,
+			input: { operations: expect.any(Array) },
+			output: { tool: "apply_ontology_ops", ok: true },
 		});
 	});
 

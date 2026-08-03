@@ -452,13 +452,14 @@ describe("auth guard co-location", () => {
 	});
 
 	describe("dream routes need guards", () => {
-		it("dream status, trigger, evidence requeue, capability registry, and agent operations return 403 without auth", async () => {
+		it("dream status, pass traces, trigger, evidence requeue, capability registry, and agent operations return 403 without auth", async () => {
 			const app = await makeApp();
 			const { registerPipelineRoutes } = await import("./routes/pipeline-routes");
 			registerPipelineRoutes(app);
 			expect(await status(app, "GET", "/api/dream/status")).toBe(403);
 			expect(await status(app, "POST", "/api/dream/trigger")).toBe(403);
 			expect(await status(app, "POST", "/api/dream/exclusions/requeue")).toBe(403);
+			expect(await status(app, "GET", "/api/dream/passes/pass-1/tools")).toBe(403);
 			expect(await status(app, "POST", "/api/dream/operations")).toBe(403);
 			expect(await status(app, "GET", "/api/dream/tools")).toBe(403);
 			expect(await status(app, "POST", "/api/dream/tools/search_entities")).toBe(403);

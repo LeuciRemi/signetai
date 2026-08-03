@@ -13,6 +13,7 @@ import {
 	getDreamingEvidenceExclusions,
 	getDreamingPasses,
 	getDreamingState,
+	getDreamingToolCalls,
 	getDreamingWorker,
 	getPipelineWorkerStatus,
 	requestDreamingEvidenceRequeue,
@@ -591,6 +592,18 @@ export function registerPipelineRoutes(app: Hono): void {
 			passes,
 			exclusions,
 		});
+	});
+
+	/**
+	 * Review the exact capability calls a Pi Dreaming agent made during one
+	 * scoped pass. The trace is local, agent-scoped, and never written to logs.
+	 */
+	app.get("/api/dream/passes/:passId/tools", (c) => {
+		const scopedAgent = resolveScopedDreamAgent(c);
+		if (scopedAgent.error) return c.json({ error: scopedAgent.error }, 403);
+		const passId = c.req.param("passId").trim();
+		if (!passId) return c.json({ error: "Missing Dreaming pass id" }, 400);
+		return c.json({ agentId: scopedAgent.agentId, passId, items: getDreamingToolCalls(getDbAccessor(), scopedAgent.agentId, passId) });
 	});
 
 	app.post("/api/dream/exclusions/requeue", async (c) => {

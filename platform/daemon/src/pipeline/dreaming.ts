@@ -21,6 +21,7 @@ import type { DbAccessor, ReadDb, WriteDb } from "../db-accessor";
 import { type EpisodicCursor, type EpisodicSourceRecord, readRecentEpisodicSources } from "../episodic-sources";
 import { logger } from "../logger";
 import { createDreamingAgentTools } from "./dreaming-agent-tools";
+import type { DreamingToolCallTrace } from "./dreaming-capabilities";
 import { createDreamingAgentEvidence, renderDreamingEvidence } from "./dreaming-evidence";
 import type { ApplyDreamingOperationsResult, DreamingOperationRequest } from "./dreaming-operations";
 import { countTokens } from "./tokenizer";
@@ -77,6 +78,19 @@ interface DreamingPassRow {
 	readonly mutationsFailed: number | null;
 	readonly summary: string | null;
 	readonly error: string | null;
+}
+
+export interface DreamingToolCall {
+	readonly id: string;
+	readonly passId: string;
+	readonly sequence: number;
+	readonly toolCallId: string | null;
+	readonly toolName: string;
+	readonly input: unknown;
+	readonly output: unknown;
+	readonly success: boolean;
+	readonly latencyMs: number;
+	readonly createdAt: string;
 }
 
 export interface DreamingEvidenceExclusion {
@@ -324,6 +338,101 @@ export function getDreamingPasses(accessor: DbAccessor, agentId: string, limit =
 			)
 			.all(agentId, limit) as DreamingPassRow[];
 	});
+}
+
+const MAX_DREAMING_TOOL_TRACE_JSON_CHARS = 128_000;
+
+function serializeToolTrace(value: unknown): string {
+	let json: string | undefined;
+	try {
+		json = JSON.stringify(value);
+	} catch (error) {
+		return JSON.stringify({ serializationError: error instanceof Error ? error.message : String(error) });
+	}
+	if (json === undefined) return "null";
+	if (json.length <= MAX_DREAMING_TOOL_TRACE_JSON_CHARS) return json;
+	return JSON.stringify({
+		truncated: true,
+		originalChars: json.length,
+		preview: json.slice(0, MAX_DREAMING_TOOL_TRACE_JSON_CHARS),
+	});
+}
+
+function parseToolTrace(value: string): unknown {
+	try {
+		return JSON.parse(value) as unknown;
+	} catch {
+		return { malformedTrace: true };
+	}
+}
+
+function recordDreamingToolCall(
+	accessor: DbAccessor,
+	agentId: string,
+	passId: string,
+	sequence: number,
+	trace: DreamingToolCallTrace,
+): void {
+	accessor.withWriteTx((db) => {
+		db.prepare(
+			`INSERT INTO dreaming_tool_calls
+			 (id, agent_id, pass_id, sequence, tool_call_id, tool_name, input_json, output_json, success, latency_ms)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			randomUUID(),
+			agentId,
+			passId,
+			sequence,
+			trace.toolCallId || null,
+			trace.tool,
+			serializeToolTrace(trace.input),
+			serializeToolTrace(trace.output),
+			trace.output.ok ? 1 : 0,
+			Math.max(0, Math.floor(trace.latencyMs)),
+		);
+	});
+}
+
+/** Return the Pi capability trace for one scoped Dreaming pass. */
+export function getDreamingToolCalls(accessor: DbAccessor, agentId: string, passId: string): readonly DreamingToolCall[] {
+	return accessor.withReadDb((db) =>
+		db
+			.prepare(
+				`SELECT id, pass_id AS passId, sequence, tool_call_id AS toolCallId,
+				        tool_name AS toolName, input_json AS inputJson, output_json AS outputJson,
+				        success, latency_ms AS latencyMs, created_at AS createdAt
+				 FROM dreaming_tool_calls
+				 WHERE agent_id = ? AND pass_id = ?
+				 ORDER BY sequence ASC`,
+			)
+			.all(agentId, passId)
+			.map((row) => {
+				const typed = row as {
+					id: string;
+					passId: string;
+					sequence: number;
+					toolCallId: string | null;
+					toolName: string;
+					inputJson: string;
+					outputJson: string;
+					success: number;
+					latencyMs: number;
+					createdAt: string;
+				};
+				return {
+					id: typed.id,
+					passId: typed.passId,
+					sequence: typed.sequence,
+					toolCallId: typed.toolCallId,
+					toolName: typed.toolName,
+					input: parseToolTrace(typed.inputJson),
+					output: parseToolTrace(typed.outputJson),
+					success: typed.success === 1,
+					latencyMs: typed.latencyMs,
+					createdAt: typed.createdAt,
+				};
+			}) as DreamingToolCall[],
+	);
 }
 
 export function getDreamingEvidenceExclusions(
@@ -765,6 +874,7 @@ export async function runDreamingAgentPass(
 
 		let applied = 0;
 		let failed = 0;
+		let toolCallSequence = 0;
 		const rejectedEvidence: EpisodicSourceRecord[] = [];
 		const tools = createDreamingAgentTools({
 			accessor,
@@ -776,6 +886,9 @@ export async function runDreamingAgentPass(
 				failed += result.items.filter((item) => !item.ok).length;
 				if (!result.ok && result.items.length === 0) failed++;
 				rejectedEvidence.push(...rejectedAgentEvidence(result, operations, renderedEvidence));
+			},
+			onToolCall(trace) {
+				recordDreamingToolCall(accessor, agentId, passId, ++toolCallSequence, trace);
 			},
 		});
 		logger.info("dreaming", "Starting agentic dreaming pass", {

@@ -438,6 +438,13 @@ uses the same scoped-agent resolution as Dreaming trigger requests.
 
 Returns `404` when the scoped exclusion is no longer active.
 
+### GET /api/dream/passes/:passId/tools
+
+Return the local, ordered Pi capability trace for one Dreaming pass: every
+tool's input, output, success result, and latency. The route is agent-scoped
+and requires `admin` permission. It is intended for reviewing whether the
+agent searched graph or episodic evidence before proposing semantic writes.
+
 ### GET /api/dream/tools
 
 List the canonical Dreaming capability registry, including each capability's
