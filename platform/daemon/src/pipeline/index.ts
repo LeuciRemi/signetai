@@ -59,6 +59,7 @@ export {
 	recordDreamingFailure,
 	requestDreamingEvidenceRequeue,
 } from "./dreaming";
+export { getDreamingAttention } from "./dreaming-attention";
 export { getDreamingQualityReport } from "./dreaming-quality";
 export type { DreamingWorkerHandle } from "./dreaming-worker";
 

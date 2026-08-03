@@ -11,9 +11,11 @@ import {
 	getDreamingState,
 	getDreamingToolCalls,
 	recordDreamingFailure,
+	requestDreamingEvidenceRequeue,
 	runDreamingAgentPass,
 	shouldTriggerDreaming,
 } from "./dreaming";
+import { enqueueDreamingAttentionInTx, getDreamingAttention } from "./dreaming-attention";
 import { readDreamingRunbook } from "./dreaming-runbook";
 
 const AGENT = "default";
@@ -146,6 +148,117 @@ describe("Dreaming", () => {
 		expect(shouldTriggerDreaming(accessor, cfg, AGENT, failedAt + 10 * 60 * 1000 - 1)).toBe(false);
 		seedSummary(db, "later", "episodic source ".repeat(3_000), 3_000);
 		expect(shouldTriggerDreaming(accessor, cfg, AGENT, failedAt + 10 * 60 * 1000)).toBe(true);
+	});
+
+	it("runs and resolves scoped semantic attention without new episodic evidence", async () => {
+		accessor.withWriteTx((tx) => {
+			enqueueDreamingAttentionInTx(tx, {
+				agentId: AGENT,
+				kind: "review_due",
+				subjectRef: "entity:aster",
+				details: { reason: "review_after reached" },
+				priority: 90,
+			});
+		});
+		expect(shouldTriggerDreaming(accessor, defaultCfg(), AGENT)).toBe(true);
+
+		let prompt = "";
+		const result = await runDreamingAgentPass(
+			accessor,
+			{
+				async run(input) {
+					prompt = input.prompt;
+					return { summary: "Reviewed due claim" };
+				},
+			},
+			defaultCfg(),
+			"/tmp",
+			AGENT,
+			"incremental",
+		);
+
+		expect(result.summary).toBe("Reviewed due claim");
+		expect(prompt).toContain("<semantic_attention>");
+		expect(prompt).toContain("entity:aster");
+		expect(getDreamingAttention(accessor, AGENT)).toEqual([]);
+	});
+
+	it("keeps semantic attention pending when its pass fails", async () => {
+		accessor.withWriteTx((tx) => {
+			enqueueDreamingAttentionInTx(tx, {
+				agentId: AGENT,
+				kind: "contested_claim",
+				subjectRef: "claim:aster:owner",
+				details: { reason: "conflicting evidence" },
+			});
+		});
+
+		await expect(
+			runDreamingAgentPass(
+				accessor,
+				{ async run() { throw new Error("provider unavailable"); } },
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			),
+		).rejects.toThrow("provider unavailable");
+		expect(getDreamingAttention(accessor, AGENT)).toContainEqual(
+			expect.objectContaining({ kind: "contested_claim", subjectRef: "claim:aster:owner" }),
+		);
+	});
+
+	it("keeps a same-subject requeue made during a pass for the next pass", async () => {
+		accessor.withWriteTx((tx) => {
+			enqueueDreamingAttentionInTx(tx, {
+				agentId: AGENT,
+				kind: "hygiene",
+				subjectRef: "entity:aster",
+			});
+		});
+
+		await runDreamingAgentPass(
+			accessor,
+			{
+				async run() {
+					accessor.withWriteTx((tx) => {
+						enqueueDreamingAttentionInTx(tx, {
+							agentId: AGENT,
+							kind: "hygiene",
+							subjectRef: "entity:aster",
+						});
+					});
+					return { summary: "Reviewed once" };
+				},
+			},
+			defaultCfg(),
+			"/tmp",
+			AGENT,
+			"incremental",
+		);
+
+		expect(getDreamingAttention(accessor, AGENT)).toContainEqual(
+			expect.objectContaining({ kind: "hygiene", subjectRef: "entity:aster" }),
+		);
+	});
+
+	it("turns an explicit evidence requeue into scoped semantic attention", () => {
+		db.prepare(
+			`INSERT INTO dreaming_evidence_exclusions
+			 (agent_id, source_kind, source_id, reason, pass_id, excluded_at, requeue_requested_at, resolved_at)
+			 VALUES (?, 'summary', 'retry-summary', 'semantic_operation_rejected', 'failed-pass', datetime('now'), NULL, NULL)`,
+		).run(AGENT);
+
+		expect(requestDreamingEvidenceRequeue(accessor, AGENT, "summary", "retry-summary")).toBe(true);
+		const attention = getDreamingAttention(accessor, AGENT);
+		expect(attention).toEqual([
+			expect.objectContaining({
+				kind: "evidence_requeue",
+				subjectRef: "summary:retry-summary",
+				details: { sourceKind: "summary", sourceId: "retry-summary" },
+			}),
+		]);
+		expect(Object.keys(attention[0] ?? {})).not.toContain("detailsJson");
 	});
 
 	it("applies cited operations only through the daemon-owned tool surface", async () => {
@@ -339,7 +452,7 @@ describe("Dreaming", () => {
 			AGENT,
 			"incremental",
 		);
-		expect(empty.summary).toBe("No new episodic evidence to process");
+		expect(empty.summary).toBe("No new episodic evidence or semantic attention to process");
 		expect(invoked).toBe(false);
 
 		seedSummary(db, "failure", "Evidence that reaches the agent.", 5);

@@ -84,6 +84,8 @@ export function getDreamingWorkerAgentIds(accessor: DbAccessor, defaultAgentId: 
 				 UNION
 				 SELECT DISTINCT agent_id AS id FROM session_transcripts
 				 UNION
+				 SELECT DISTINCT agent_id AS id FROM dreaming_attention WHERE resolved_at IS NULL
+				 UNION
 				 SELECT DISTINCT agent_id AS id FROM entities`,
 			)
 			.all() as Array<{ id: string | null }>;

@@ -351,10 +351,11 @@ smart model to merge, prune, and enrich the entity graph.
 
 ### GET /api/dream/status
 
-Return the current dreaming worker state, configuration, recent passes, and
-episodic evidence that needs explicit review: a source too large for the input
-budget or evidence cited by a rejected semantic operation. Requires `admin`
-permission.
+Return the current dreaming worker state, configuration, recent passes,
+quarantined evidence, and pending agent-scoped semantic attention. Attention
+is operational context for work such as due reviews, hygiene, contested claims,
+or an explicitly requeued evidence source; it never copies or replaces
+episodic evidence. Requires `admin` permission.
 
 **Query parameters**
 
@@ -408,6 +409,16 @@ permission.
       "requeueRequestedAt": null,
       "resolvedAt": null
     }
+  ],
+  "attention": [
+    {
+      "id": "attention-uuid",
+      "kind": "review_due",
+      "subjectRef": "entity:aster",
+      "details": { "reason": "review_after reached" },
+      "priority": 90,
+      "createdAt": "2026-04-01 12:00:00"
+    }
   ]
 }
 ```
@@ -417,6 +428,12 @@ not modify or discard the underlying episodic evidence. Current Dreaming passes
 record `semantic_operation_rejected` when the daemon rejects an agent's cited
 semantic operation. Oversized immutable evidence is instead resumed at a safe
 boundary across passes and is not quarantined.
+
+An attention item is selected with the next scoped pass and rendered as
+non-evidentiary context. It is resolved only after that pass completes; a
+failed pass leaves it pending. The worker can run for pending attention even
+when no new episodic evidence has arrived, while normal failure backoff still
+applies.
 
 ### POST /api/dream/exclusions/requeue
 
@@ -439,6 +456,8 @@ Requires `admin` permission.
 uses the same scoped-agent resolution as Dreaming trigger requests.
 
 Returns `404` when the scoped exclusion is no longer active.
+Requeueing also records an `evidence_requeue` attention item, so it can wake a
+scoped Dreaming pass without waiting for unrelated new evidence.
 
 ### POST /api/dream/operations
 

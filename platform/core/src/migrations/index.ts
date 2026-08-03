@@ -106,6 +106,7 @@ import { up as dreamingFailureBackoff } from "./097-dreaming-failure-backoff";
 import { up as dreamingEvidenceExclusions } from "./098-dreaming-evidence-exclusions";
 import { up as dreamingToolCalls } from "./099-dreaming-tool-calls";
 import { up as dreamingRunbook } from "./100-dreaming-runbook";
+import { up as dreamingAttention } from "./101-dreaming-attention";
 
 // -- Public interface consumed by Database.init() --
 
@@ -941,6 +942,12 @@ export const MIGRATIONS: readonly Migration[] = [
 				{ table: "dreaming_passes", column: "runbook_json" },
 			],
 		},
+	},
+	{
+		version: 101,
+		name: "dreaming-attention",
+		up: dreamingAttention,
+		artifacts: { tables: ["dreaming_attention"] },
 	},
 ];
 

@@ -10,6 +10,7 @@ import { getLlmProvider } from "../llm.js";
 import { loadMemoryConfig } from "../memory-config.js";
 import {
 	getDreamingEpisodicTokenBacklog,
+	getDreamingAttention,
 	getDreamingEvidenceExclusions,
 	getDreamingPasses,
 	getDreamingState,
@@ -573,6 +574,7 @@ export function registerPipelineRoutes(app: Hono): void {
 		const episodicTokensPending = getDreamingEpisodicTokenBacklog(accessor, agentId);
 		const passes = getDreamingPasses(accessor, agentId, 10);
 		const exclusions = getDreamingEvidenceExclusions(accessor, agentId);
+		const attention = getDreamingAttention(accessor, agentId);
 		const worker = getDreamingWorker();
 
 		return c.json({
@@ -591,6 +593,7 @@ export function registerPipelineRoutes(app: Hono): void {
 				timeout: cfg.dreaming.timeout,
 			},
 			passes,
+			attention,
 			exclusions,
 		});
 	});
