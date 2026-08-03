@@ -19,6 +19,7 @@ import { getOntologyClaimEvidence } from "../ontology-claim-evidence";
 import { getOntologyLinkEvidence } from "../ontology-link-evidence";
 import type { DreamingAgentEvidence } from "./dreaming-evidence";
 import { applyDreamingOperations, type ApplyDreamingOperationsResult, type DreamingOperationRequest } from "./dreaming-operations";
+import { DREAMING_ONTOLOGY_OPERATION_SCHEMA } from "./dreaming-operation-contract";
 
 const bounded = (value: number | undefined, fallback: number, max: number): number =>
 	Math.min(Math.max(Math.floor(value ?? fallback), 1), max);
@@ -27,15 +28,6 @@ const pagination = {
 	limit: z.number().finite().optional(),
 	offset: z.number().finite().optional(),
 };
-
-const operationSchema = z.object({
-	operation: z.string(),
-	payload: z.object({}).catchall(z.unknown()),
-	reason: z.string().optional(),
-	evidence: z.array(z.unknown()).optional(),
-	confidence: z.number().finite().optional(),
-	risk: z.string().nullable().optional(),
-});
 
 export const DREAMING_CAPABILITY_IDS = [
 	"search_entities",
@@ -117,7 +109,13 @@ function capability<T extends z.ZodType>(
 		async invoke(input): Promise<DreamingCapabilityResult> {
 			const parsed = inputSchema.safeParse(input);
 			if (!parsed.success) {
-				return { tool: id, ok: false, error: parsed.error.issues.map((issue) => issue.message).join("; ") };
+				return {
+					tool: id,
+					ok: false,
+					error: parsed.error.issues
+						.map((issue) => `${issue.path.length > 0 ? `${issue.path.join(".")}: ` : ""}${issue.message}`)
+						.join("; "),
+				};
 			}
 			try {
 				const output = await run(parsed.data);
@@ -247,9 +245,9 @@ export function createDreamingCapabilities(params: CreateDreamingCapabilitiesPar
 		capability(
 			"apply_ontology_ops",
 			"Apply ontology operations",
-			"Apply cited ontology operations through the daemon audit seam. Every quote must be exact evidence.",
+			"Apply cited ontology operations through the daemon audit seam. The operation schema lists every supported operation and payload. Every quote must be exact evidence.",
 			false,
-			z.object({ operations: z.array(operationSchema).min(1).max(100) }),
+			z.object({ operations: z.array(DREAMING_ONTOLOGY_OPERATION_SCHEMA).min(1).max(100) }),
 			async ({ operations }) => {
 				const result = applyDreamingOperations({ accessor, agentId, actor, operations, allowedEvidence: evidence });
 				params.onOperationsApplied?.(result, operations);

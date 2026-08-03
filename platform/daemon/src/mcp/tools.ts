@@ -17,6 +17,7 @@ import {
 import { z } from "zod";
 import { getActiveGraphiqDbPath, runGraphiqCli } from "../graphiq.js";
 import { createDefaultPluginHost } from "../plugins/index.js";
+import { DREAMING_ONTOLOGY_OPERATION_SCHEMA } from "../pipeline/dreaming-operation-contract.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -2270,19 +2271,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 			description:
 				"Apply cited ontology operations. Each evidence item must include source_ref, source_kind, source_id, and an exact quote from scoped episodic evidence.",
 			inputSchema: z.object({
-				operations: z
-					.array(
-						z.object({
-							operation: z.string(),
-							payload: z.object({}).catchall(z.unknown()),
-							reason: z.string().optional(),
-							evidence: z.array(z.unknown()).optional(),
-							confidence: z.number().optional(),
-							risk: z.string().nullable().optional(),
-						}),
-					)
-					.min(1)
-					.max(100),
+				operations: z.array(DREAMING_ONTOLOGY_OPERATION_SCHEMA).min(1).max(100),
 				agent_id: z.string().optional(),
 			}),
 		},

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ONTOLOGY_PROPOSAL_OPERATIONS } from "@signet/core";
 import { closeDbAccessor, getDbAccessor, initDbAccessor } from "../db-accessor";
 import {
 	createDreamingAgentTools,
@@ -81,6 +82,18 @@ describe("dreaming-agent-tools", () => {
 		expect(getDreamingCapabilityManifest().map((capability) => capability.id)).toEqual([...DREAMING_CAPABILITY_IDS]);
 	});
 
+	it("publishes the complete ontology operation vocabulary and payload fields to agents", () => {
+		const manifest = getDreamingCapabilityManifest().find((capability) => capability.id === "apply_ontology_ops");
+		expect(manifest).toBeDefined();
+		const schema = JSON.stringify(manifest!.inputSchema);
+		for (const operation of ONTOLOGY_PROPOSAL_OPERATIONS) {
+			expect(schema).toContain(operation);
+		}
+		for (const requiredField of ["new_name", "claim_key", "link_type", "source_entity", "target_entity"]) {
+			expect(schema).toContain(requiredField);
+		}
+	});
+
 	it("isolates reads by agentId: search_entities only returns the caller's entities", async () => {
 		insertEntity("e-owner", "Owner Entity", "owner entity", "owner");
 		insertEntity("e-other", "Other Entity", "other entity", "intruder");
@@ -154,7 +167,27 @@ describe("dreaming-agent-tools", () => {
 			),
 		);
 		expect(res.ok).toBe(false);
-		expect(res.error).toContain("Unsupported ontology proposal operation");
+		expect(res.error).toContain("Invalid discriminator value");
+		const count = getDbAccessor().withReadDb(
+			(db) => db.prepare("SELECT COUNT(*) AS count FROM entities WHERE agent_id = ?").get("ant") as { count: number },
+		);
+		expect(count.count).toBe(0);
+	});
+
+	it("rejects malformed payloads before asking the caller to supply citations", async () => {
+		const tools = createDreamingAgentTools({ accessor: getDbAccessor(), agentId: "ant", actor: "ant", evidence });
+		const apply = findTool(tools, "apply_ontology_ops");
+		const res = readResult(
+			await apply.execute(
+				"call",
+				{ operations: [{ operation: "rename_entity", payload: { entity: "Acme" }, evidence: [CITATION] }] },
+				undefined,
+				undefined,
+				{} as never,
+			),
+		);
+		expect(res.ok).toBe(false);
+		expect(res.error).toContain("new_name");
 	});
 
 	it("rejects citations whose quote is not an exact substring of supplied evidence", async () => {
