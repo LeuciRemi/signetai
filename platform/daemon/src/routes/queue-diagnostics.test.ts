@@ -11,6 +11,7 @@ import { Hono } from "hono";
 import { runMigrations } from "../../../core/src/migrations";
 import type { DbAccessor, ReadDb, WriteDb } from "../db-accessor";
 import { cancelObsoleteJobs, createRateLimiter, pruneTerminalJobs, requeueDeadJobs } from "../repair-actions";
+import { registerPipelineRoutes } from "./pipeline-routes";
 import { registerQueueDiagnosticsRoutes } from "./queue-diagnostics";
 
 function makeAccessor(db: Database): DbAccessor {
@@ -120,6 +121,40 @@ describe("/api/diagnostics/queue", () => {
 		expect(body.queues).not.toHaveProperty("extraction");
 		expect(body.oldestDeadSummaryJob?.id).toBe("dead-sum-1");
 		expect(body.thresholds.summaryDeadWarn).toBe(50);
+	});
+
+	it("wins over the generic diagnostics domain route", async () => {
+		const app = new Hono();
+		registerPipelineRoutes(app);
+		registerQueueDiagnosticsRoutes(app, { accessor: env.accessor, limiter: createRateLimiter() });
+
+		const res = await app.request("/api/diagnostics/queue");
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { timestamp?: string; queues?: { memory?: unknown } };
+		expect(body.timestamp).toEqual(expect.any(String));
+		expect(body.queues?.memory).toBeDefined();
+	});
+
+	it("preserves the queue admin guard after the generic route forwards", async () => {
+		const app = new Hono();
+		registerPipelineRoutes(app);
+		registerQueueDiagnosticsRoutes(app, {
+			accessor: env.accessor,
+			limiter: createRateLimiter(),
+			authConfig: { mode: "team" } as NonNullable<Parameters<typeof registerQueueDiagnosticsRoutes>[1]>["authConfig"],
+		});
+
+		expect((await app.request("/api/diagnostics/queue")).status).toBe(403);
+	});
+
+	it("does not shadow the concrete OpenClaw diagnostics route", async () => {
+		const app = new Hono();
+		registerPipelineRoutes(app);
+
+		const res = await app.request("/api/diagnostics/openclaw");
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { status?: string };
+		expect(body.status).toBeOneOf(["connected", "stale", "never-seen"]);
 	});
 });
 

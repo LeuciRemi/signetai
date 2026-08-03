@@ -344,8 +344,13 @@ export function registerPipelineRoutes(app: Hono): void {
 		return c.json(report);
 	});
 
-	app.get("/api/diagnostics/:domain", (c) => {
+	app.get("/api/diagnostics/:domain", async (c, next) => {
 		const domain = c.req.param("domain");
+		// These concrete routes are registered after this generic diagnostics
+		// domain route. Let each return its own response rather than a cached
+		// aggregate subobject. Any new single-segment diagnostics route must
+		// either be registered before this route or be added here.
+		if (domain === "queue" || domain === "openclaw") return next();
 		const report = getCachedDiagnosticsReport();
 
 		const domainData = report[domain as keyof typeof report];
