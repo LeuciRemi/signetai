@@ -12,7 +12,6 @@ import {
 	type DreamingMode,
 	createDreamingPass,
 	getDreamingEpisodicTokenBacklog,
-	getDreamingState,
 	recordDreamingFailure,
 	runDreamingPass,
 	shouldTriggerDreaming,
@@ -153,12 +152,11 @@ export function startDreamingWorker(
 		for (const runAgentId of getDreamingWorkerAgentIds(accessor, defaultAgentId)) {
 			if (stopped || active) return;
 			try {
-				const state = getDreamingState(accessor, runAgentId);
-				const isFirst = state.lastPassAt === null && cfg.backfillOnFirstRun;
-				const mode: DreamingMode = isFirst ? "compact" : "incremental";
-
-				if (!shouldTriggerDreaming(accessor, cfg, runAgentId)) continue;
 				const episodicTokens = getDreamingEpisodicTokenBacklog(accessor, runAgentId);
+				if (!shouldTriggerDreaming(accessor, cfg, runAgentId, Date.now(), episodicTokens)) continue;
+				// A first backfill integrates the full episodic window. Compact mode is
+				// an explicit maintenance action, not an automatic substitute for it.
+				const mode: DreamingMode = "incremental";
 
 				logger.info("dreaming-worker", "Episodic evidence threshold reached, starting dreaming pass", {
 					agentId: runAgentId,

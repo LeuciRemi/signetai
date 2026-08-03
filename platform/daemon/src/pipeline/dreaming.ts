@@ -1109,9 +1109,9 @@ export function shouldTriggerDreaming(
 	cfg: DreamingConfig,
 	agentId: string,
 	nowMs = Date.now(),
+	episodicTokens = getDreamingEpisodicTokenBacklog(accessor, agentId),
 ): boolean {
 	const state = getDreamingState(accessor, agentId);
-	const episodicTokens = getDreamingEpisodicTokenBacklog(accessor, agentId);
 
 	// Back off by wall clock, not by evidence volume. A transient provider outage
 	// must not require exponentially more incoming evidence before recovery.

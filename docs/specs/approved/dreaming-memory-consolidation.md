@@ -118,9 +118,9 @@ daemon queues a dreaming job. The threshold is configurable in
 memory:
   dreaming:
     enabled: true
-    tokenThreshold: 100000    # trigger after ~100k tokens of summaries
+    tokenThreshold: 100000    # trigger after ~100k tokens of episodic evidence
     maxInputTokens: 128000    # context budget per pass
-    backfillOnFirstRun: true  # run compaction on first dreaming pass
+    backfillOnFirstRun: true  # integrate available episodic evidence on first pass
 ```
 
 This means:
@@ -421,11 +421,12 @@ The mechanical consolidation engine is complete:
   `supersede_attribute`, `create_attribute`, `delete_attribute`. Atomic
   application in a single write transaction. Pinned entities and
   constraint attributes protected (reported as `skipped`).
-- **Token-budget trigger.** Summary worker accumulates transcript
-  token counts into `dreaming_state`. Background worker polls every
-  5 minutes and fires when threshold is crossed.
-- **Compact and incremental modes.** First pass auto-runs in compact
-  mode when `backfillOnFirstRun: true`. Manual trigger via API/CLI.
+- **Token-budget trigger.** The shared episodic source selector measures
+  unreasoned evidence. Background worker polls every 5 minutes and fires
+  when threshold is crossed.
+- **Compact and incremental modes.** First pass auto-runs incrementally over
+  the complete available episodic window when `backfillOnFirstRun: true`.
+  Compact maintenance is an explicit API/CLI action.
 - **Config surface.** `agent.yaml` > `memory.dreaming` with threshold,
   budget, backfill, and timeout settings. Provider and model are
   inherited from the synthesis provider (no separate dreaming-specific

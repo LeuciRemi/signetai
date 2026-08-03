@@ -217,6 +217,12 @@ describe("dreaming", () => {
 			expect(shouldTriggerDreaming(accessor, defaultCfg({ tokenThreshold: 1 }), AGENT)).toBe(true);
 		});
 
+		it("accepts a caller-measured backlog so the worker does not tokenize it twice", () => {
+			seedSummary(db, "at-threshold", "episodic source", 2);
+			expect(shouldTriggerDreaming(accessor, defaultCfg({ tokenThreshold: 1 }), AGENT, Date.now(), 0)).toBe(false);
+			expect(shouldTriggerDreaming(accessor, defaultCfg({ tokenThreshold: 1 }), AGENT, Date.now(), 2)).toBe(true);
+		});
+
 		it("triggers on first run with backfill", () => {
 			seedSummary(db, "first-backfill", "episodic source", 2);
 			expect(shouldTriggerDreaming(accessor, defaultCfg({ backfillOnFirstRun: true }), AGENT)).toBe(true);
