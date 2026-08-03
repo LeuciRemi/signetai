@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { type Api, type Model, getModels } from "@earendil-works/pi-ai";
 import { githubCopilotOAuthProvider } from "@earendil-works/pi-ai/oauth";
-import { createPiModelProvider, isPiAgentSessionProvider, resolvePiModel } from "./pi-provider";
+import * as Type from "typebox";
+import { createPiModelProvider, isPiAgentSessionProvider, resolvePiModel, withAgentToolCallLimit } from "./pi-provider";
 
 describe("pi provider catalog models", () => {
 	test("preserves the Codex responses API and registry metadata", () => {
@@ -55,5 +56,35 @@ describe("pi provider catalog models", () => {
 		} finally {
 			session.dispose();
 		}
+	});
+
+	test("stops dispatching tools after the daemon-owned session budget", async () => {
+		let executed = 0;
+		let exhausted = 0;
+		const [tool] = withAgentToolCallLimit(
+			[
+				{
+					name: "inspect",
+					label: "Inspect",
+					description: "Inspect scoped state",
+					parameters: Type.Object({}),
+					async execute() {
+						executed++;
+						return { content: [{ type: "text" as const, text: "ok" }], details: {} };
+					},
+				},
+			],
+			1,
+			() => exhausted++,
+		);
+		if (!tool) throw new Error("Expected bounded tool");
+		const invoke = () => tool.execute("call", {}, undefined, undefined, undefined as never);
+
+		await invoke();
+		const limited = await invoke();
+
+		expect(executed).toBe(1);
+		expect(exhausted).toBe(1);
+		expect(limited.content).toEqual([{ type: "text", text: "Tool-call limit (1) reached; stop this maintenance pass." }]);
 	});
 });
