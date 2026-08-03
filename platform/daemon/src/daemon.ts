@@ -189,6 +189,7 @@ let httpServer: import("node:net").Server | null = null;
 let dreamingWorkerHandle: DreamingWorkerHandle | null = null;
 let embeddingTrackerHandle: EmbeddingTrackerHandle | null = null;
 let embeddingIndexMigrationHandle: EmbeddingIndexMigrationHandle | null = null;
+let embeddingPromotionRestart: Promise<void> | null = null;
 let skillReconcilerHandle: ReturnType<typeof startReconciler> | null = null;
 let schedulerHandle: { stop(): Promise<void> } | null = null;
 let transcriptCaptureWorkerHandle: TranscriptCaptureWorkerHandle | null = null;
@@ -1192,6 +1193,30 @@ async function restartPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry
 	await startPipelineRuntime(memoryCfg, telemetry);
 }
 
+function restartAfterEmbeddingPromotion(telemetry?: TelemetryCollector): void {
+	if (embeddingPromotionRestart) return;
+	const activePass = dreamingWorkerHandle?.activePass;
+	embeddingPromotionRestart = (async () => {
+		// An embedding-index promotion changes recall infrastructure, not the
+		// evidence window already being reasoned over. Let that bounded pass
+		// finish instead of orphaning it during the broad worker restart.
+		if (activePass) {
+			logger.info("embedding", "Deferring embedding worker restart until Dreaming pass completes");
+			await activePass.catch(() => undefined);
+		}
+		if (shuttingDown) return;
+		await restartPipelineRuntime(loadMemoryConfig(AGENTS_DIR), telemetry);
+	})()
+		.catch((error) => {
+			logger.error("embedding", "Promoted index but could not restart embedding workers", undefined, {
+				error: error instanceof Error ? error.message : String(error),
+			});
+		})
+		.finally(() => {
+			embeddingPromotionRestart = null;
+		});
+}
+
 export async function stopDaemonRuntimeForTests(): Promise<void> {
 	await stopPipelineRuntime();
 }
@@ -1419,14 +1444,7 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 			pollMs: memoryCfg.pipelineV2.embeddingTracker.pollMs,
 			batchSize: memoryCfg.pipelineV2.embeddingTracker.batchSize,
 			onPromoted: () => {
-				// The tracker and extraction worker hold their embedding config at
-				// construction time. Recreate them only after the new generation is
-				// committed, never while the active slot is still serving recall.
-				void restartPipelineRuntime(loadMemoryConfig(AGENTS_DIR), telemetry).catch((error) => {
-					logger.error("embedding", "Promoted index but could not restart embedding workers", undefined, {
-						error: error instanceof Error ? error.message : String(error),
-					});
-				});
+				restartAfterEmbeddingPromotion(telemetry);
 			},
 		});
 	}
