@@ -16,24 +16,13 @@ export function retireLegacyExtractionJobs(accessor: DbAccessor, options: Legacy
 	return accessor.withWriteTx((db) => {
 		const sources = db
 			.prepare(
-				`SELECT DISTINCT m.id, m.type, COALESCE(m.is_deleted, 0) AS is_deleted
+				`SELECT DISTINCT m.id
 				 FROM memory_jobs j
 				 JOIN memories m ON m.id = j.memory_id
 				 WHERE j.job_type = 'extract'
 				   AND j.status IN ('pending', 'leased')`,
 			)
-			.all() as Array<{ id: string; type: string | null; is_deleted: number }>;
-
-		// Existing extraction jobs can predate migration 094. Retain each live
-		// source as episodic evidence before retiring the unconsumed job. A
-		// session-summary memory is a recall projection, not a raw input; its
-		// temporal-DAG node remains the canonical Dreaming source.
-		for (const source of sources) {
-			if (source.is_deleted !== 0 || source.type === "session_summary") continue;
-			db.prepare("UPDATE memories SET memory_kind = 'episodic' WHERE id = ? AND COALESCE(is_deleted, 0) = 0").run(
-				source.id,
-			);
-		}
+			.all() as Array<{ id: string }>;
 
 		const result = db
 			.prepare(
@@ -44,6 +33,9 @@ export function retireLegacyExtractionJobs(accessor: DbAccessor, options: Legacy
 			)
 			.run(options.reason, now, now);
 
+		// Migration 094 owns memory_kind: this retirement never promotes a row
+		// into episodic evidence. Mark every retired job's source consistently,
+		// whether it was raw evidence or daemon-derived output.
 		for (const source of sources) {
 			db.prepare("UPDATE memories SET extraction_status = 'retired' WHERE id = ?").run(source.id);
 		}

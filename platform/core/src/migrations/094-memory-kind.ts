@@ -1,3 +1,4 @@
+import { DAEMON_DERIVED_MEMORY_SOURCE_TYPES } from "../memory-provenance";
 /**
  * Migration 094: Add `memories.memory_kind` and `memories.evidence_meta`, and
  * backfill episodic evidence.
@@ -39,7 +40,7 @@
 import type { MigrationDb } from "./index";
 
 /** Daemon-derived source_types that are NOT primary episodic evidence. */
-const DERIVED_SOURCE_TYPES = ["extract", "aggregate-recall", "session_end", "checkpoint"];
+const DERIVED_SOURCE_TYPES = DAEMON_DERIVED_MEMORY_SOURCE_TYPES;
 
 function hasColumn(db: MigrationDb, table: string, column: string): boolean {
 	const rows = db.prepare(`PRAGMA table_info(${table})`).all() as ReadonlyArray<Record<string, unknown>>;

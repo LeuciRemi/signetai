@@ -259,7 +259,7 @@ describe("legacy extraction cutover sweep (#946)", () => {
 		const now = new Date().toISOString();
 		getDbAccessor().withWriteTx((db) => {
 			db.prepare(
-				"INSERT INTO memories (id, content, extraction_status, agent_id, created_at, updated_at) VALUES (?, ?, 'queued', 'default', ?, ?)",
+				"INSERT INTO memories (id, content, source_type, extraction_status, memory_kind, agent_id, created_at, updated_at) VALUES (?, ?, 'manual', 'queued', 'episodic', 'default', ?, ?)",
 			).run(memoryId, `seed ${memoryId}`, now, now);
 		});
 	}

@@ -1614,6 +1614,11 @@ describe("migration framework", () => {
 			"session summary fact",
 			"session_end",
 		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-checkpoint",
+			"checkpoint-derived fact",
+			"checkpoint",
+		);
 
 		memoryKind(db as unknown as Parameters<typeof memoryKind>[0]);
 		memoryKind(db as unknown as Parameters<typeof memoryKind>[0]);
@@ -1634,6 +1639,7 @@ describe("migration framework", () => {
 		expect(byId.get("mem-extract")).toBeNull();
 		expect(byId.get("mem-aggregate")).toBeNull();
 		expect(byId.get("mem-session-end")).toBeNull();
+		expect(byId.get("mem-checkpoint")).toBeNull();
 	});
 
 	test("migration 095 reclassifies compaction recall projections as derived", () => {
