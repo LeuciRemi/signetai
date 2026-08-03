@@ -39,6 +39,7 @@ import {
 	resetSessionStartDedupe,
 	writeMemoryMd,
 } from "../hooks.js";
+import { getTranscriptCaptureJobStatus } from "../transcript-capture-worker";
 import { getInferenceRouterOrNull } from "../inference-router";
 import { logger } from "../logger";
 import { loadMemoryConfig } from "../memory-config";
@@ -182,12 +183,12 @@ function skipConflictingSessionEnd(
 
 const ISO_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 
-function parseIsoTimestamp(value: unknown): { value?: string; error?: string } {
+function parseIsoTimestamp(value: unknown, field = "createdAt"): { value?: string; error?: string } {
 	const text = parseOptionalString(value);
 	if (!text) return {};
-	if (!ISO_TIMESTAMP_RE.test(text)) return { error: "createdAt must be an ISO timestamp" };
+	if (!ISO_TIMESTAMP_RE.test(text)) return { error: `${field} must be an ISO timestamp` };
 	const ms = Date.parse(text);
-	if (!Number.isFinite(ms)) return { error: "createdAt must be a valid timestamp" };
+	if (!Number.isFinite(ms)) return { error: `${field} must be a valid timestamp` };
 	return { value: new Date(ms).toISOString() };
 }
 
@@ -392,6 +393,9 @@ function registerSessionEnd(app: Hono): void {
 			if (!body.harness) {
 				return c.json({ error: "harness is required" }, 400);
 			}
+			const capturedAt = parseIsoTimestamp(body.capturedAt, "capturedAt");
+			if (capturedAt.error) return c.json({ error: capturedAt.error }, 400);
+			body.capturedAt = capturedAt.value;
 
 			const runtimePath = resolveRuntimePath(c, body);
 			if (runtimePath) body.runtimePath = runtimePath;
@@ -457,6 +461,19 @@ function registerSessionEnd(app: Hono): void {
 			logger.error("hooks", "Session end hook failed", e as Error);
 			return c.json({ error: "Hook execution failed" }, 500);
 		}
+	});
+
+	app.get("/api/hooks/transcript-capture/:jobId", async (c) => {
+		const denied = await requirePermission("remember", authConfig)(c, () => Promise.resolve());
+		if (denied) return denied;
+		const requestedAgentId = resolveAgentId({ agentId: parseOptionalString(c.req.query("agentId")) });
+		const scopedAgent = resolveScopedAgentId(c, requestedAgentId);
+		if (scopedAgent.error) return c.json({ error: scopedAgent.error }, 403);
+		const jobId = c.req.param("jobId").trim();
+		if (!jobId) return c.json({ error: "jobId is required" }, 400);
+		const job = getTranscriptCaptureJobStatus(getDbAccessor(), scopedAgent.agentId, jobId);
+		if (!job) return c.json({ error: "Transcript capture job not found" }, 404);
+		return c.json(job);
 	});
 }
 

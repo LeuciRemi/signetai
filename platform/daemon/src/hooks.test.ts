@@ -1751,6 +1751,50 @@ describe("handleSessionEnd", () => {
 		}
 	});
 
+	test.serial("preserves an imported session's capture time across canonical episodic records", async () => {
+		createMemoryDb([]);
+		const capturedAt = "2023-05-20T10:20:00.000Z";
+		const transcript = "User: retain the original session date for temporal reasoning.\nAssistant: the transcript remains immutable evidence.\n".repeat(
+			8,
+		);
+
+		const result = await handleSessionEnd({
+			harness: "memorybench",
+			transcript,
+			sessionKey: "memorybench:case-1:session-1",
+			sessionId: "memorybench:case-1:session-1",
+			agentId: "memorybench",
+			cwd: "memorybench",
+			capturedAt,
+		});
+
+		expect(result.transcriptCaptureJobId).toBeString();
+		await flushSessionEndDeferredWork();
+
+		const db = openTestDb();
+		try {
+			const live = db
+				.prepare("SELECT created_at, updated_at FROM session_transcripts WHERE agent_id = ? AND session_key = ?")
+				.get("memorybench", "memorybench:case-1:session-1") as
+				| { created_at: string; updated_at: string }
+				| undefined;
+			const artifact = db
+				.prepare(
+					"SELECT captured_at FROM memory_artifacts WHERE agent_id = ? AND source_kind = 'transcript' LIMIT 1",
+				)
+				.get("memorybench") as { captured_at: string } | undefined;
+			const memoryCount = db.prepare("SELECT COUNT(*) AS count FROM memories WHERE agent_id = ?").get("memorybench") as {
+				count: number;
+			};
+
+			expect(live).toEqual({ created_at: capturedAt, updated_at: capturedAt });
+			expect(artifact?.captured_at).toBe(capturedAt);
+			expect(memoryCount.count).toBe(0);
+		} finally {
+			db.close();
+		}
+	});
+
 	test.serial("defers canonical JSONL rewrite until after session-end response", async () => {
 		createMemoryDb([]);
 		const transcriptPath = join(TEST_DIR, "deferred-canonical-transcript.txt");

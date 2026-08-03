@@ -103,8 +103,13 @@ export class SignetClientP2 {
 	 */
 	async sessionEnd(opts: {
 		readonly sessionKey: string;
-		readonly summary?: string;
+		readonly harness: string;
 		readonly project?: string;
+		readonly transcriptPath?: string;
+		readonly transcript?: string;
+		readonly sessionId?: string;
+		readonly agentId?: string;
+		readonly capturedAt?: string;
 	}): Promise<SessionEndResponse> {
 		return this.transport.post<SessionEndResponse>("/api/hooks/session-end", opts);
 	}
@@ -119,6 +124,7 @@ export class SignetClientP2 {
 		readonly transcript?: string;
 		readonly sessionId?: string;
 		readonly cwd?: string;
+		readonly capturedAt?: string;
 		readonly reason?: string;
 		readonly runtimePath?: string;
 	}): void {

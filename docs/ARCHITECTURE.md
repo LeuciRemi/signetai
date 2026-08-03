@@ -972,7 +972,7 @@ All endpoints are served by the Hono server on port 3850.
 | `/api/embeddings/projection` | GET | recall | UMAP 2D/3D projection |
 | `/api/hooks/session-start` | POST | remember | Inject context into session |
 | `/api/hooks/user-prompt-submit` | POST | recall | Per-prompt entity context load |
-| `/api/hooks/session-end` | POST | remember | Extract session memories |
+| `/api/hooks/session-end` | POST | remember | Capture immutable session evidence |
 | `/api/hooks/remember` | POST | remember | Save a memory via hook |
 | `/api/hooks/recall` | POST | recall | Search via hook |
 | `/api/hooks/pre-compaction` | POST | remember | Pre-compaction instructions |

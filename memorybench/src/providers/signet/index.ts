@@ -58,6 +58,16 @@ interface SignetRememberResponse {
   error?: string
 }
 
+interface SignetSessionEndResponse {
+  transcriptCaptureJobId?: string
+  error?: string
+}
+
+interface TranscriptCaptureJobResponse {
+  status?: "pending" | "processing" | "completed" | "failed" | "dead"
+  error?: string | null
+}
+
 interface DreamingTriggerResponse {
   passId?: string
   error?: string
@@ -66,6 +76,7 @@ interface DreamingTriggerResponse {
 interface DreamingStatusResponse {
   worker?: { running?: boolean }
   passes?: Array<{ id?: string; status?: string; error?: string | null }>
+  episodicTokensPending?: number
 }
 
 function parseSessionDate(session: UnifiedSession): string | undefined {
@@ -298,12 +309,12 @@ export class SignetProvider implements Provider {
 
     for (const session of sessions) {
       if (this.profile === "dreaming") {
-        const result = await this.rememberSession(session, options, {
-          content: formatTranscript(session),
-          tags: `memorybench,${options.containerTag},${session.sessionId},dreaming,raw-session`,
-          transcript: formatTranscript(session),
-        })
-        this.collectMemoryIds(result, ids, pending)
+        const capture = await this.captureDreamingSession(session, options)
+        if (!capture.transcriptCaptureJobId) {
+          throw new Error(`Canonical transcript capture was not queued for session ${session.sessionId}`)
+        }
+        ids.push(this.benchmarkSessionId(session, options.containerTag))
+        pending.push(capture.transcriptCaptureJobId)
         continue
       }
       if (this.profile === "supermemory-parity") {
@@ -344,7 +355,7 @@ export class SignetProvider implements Provider {
     }
 
     logger.debug(
-      `Ingested ${sessions.length} session(s) as ${ids.length} ${this.profile} Signet memories for ${options.containerTag}`
+      `Ingested ${sessions.length} session(s) as ${ids.length} ${this.profile} Signet inputs for ${options.containerTag}`
     )
     return { documentIds: ids, taskIds: pending.length > 0 ? pending : undefined }
   }
@@ -354,6 +365,10 @@ export class SignetProvider implements Provider {
     _containerTag: string,
     onProgress?: IndexingProgressCallback
   ): Promise<void> {
+    if (this.profile === "dreaming") {
+      await this.awaitTranscriptCapture(result, onProgress)
+      return
+    }
     if (!result.taskIds || result.taskIds.length === 0) {
       onProgress?.({
         completedIds: result.documentIds,
@@ -451,29 +466,108 @@ export class SignetProvider implements Provider {
       await new Promise((resolve) => setTimeout(resolve, 1_000))
     }
     if (!workerReady) throw new Error("Dreaming worker did not become ready after ingestion")
-    const accepted = await this.request<DreamingTriggerResponse>("/api/dream/trigger", {
-      method: "POST",
-      body: JSON.stringify({ mode: "incremental", agentId: this.agentId }),
-    })
-    if (!accepted.passId)
-      throw new Error(`Dreaming trigger failed: ${accepted.error || "missing pass id"}`)
-
     const deadline = Date.now() + readPositiveInt("SIGNET_BENCH_DREAMING_WAIT_SECS", 720) * 1000
     const pollMs = Math.min(readPositiveInt("SIGNET_BENCH_DREAMING_POLL_SECS", 1), 5) * 1000
     while (Date.now() < deadline) {
-      const status = await this.request<DreamingStatusResponse>(dreamStatusPath, {
-        method: "GET",
+      const accepted = await this.request<DreamingTriggerResponse>("/api/dream/trigger", {
+        method: "POST",
+        body: JSON.stringify({ mode: "incremental", agentId: this.agentId }),
       })
-      const pass = status.passes?.find((candidate) => candidate.id === accepted.passId)
-      if (pass && pass.status !== "running") {
-        if (pass.status === "completed") return
-        throw new Error(
-          `Dreaming pass ${accepted.passId} ${pass.status || "failed"}: ${pass.error || "no detail"}`
-        )
+      if (!accepted.passId)
+        throw new Error(`Dreaming trigger failed: ${accepted.error || "missing pass id"}`)
+
+      let completed = false
+      while (Date.now() < deadline) {
+        const status = await this.request<DreamingStatusResponse>(dreamStatusPath, {
+          method: "GET",
+        })
+        const pass = status.passes?.find((candidate) => candidate.id === accepted.passId)
+        if (pass && pass.status !== "running") {
+          if (pass.status !== "completed") {
+            throw new Error(
+              `Dreaming pass ${accepted.passId} ${pass.status || "failed"}: ${pass.error || "no detail"}`
+            )
+          }
+          if (typeof status.episodicTokensPending !== "number") {
+            throw new Error("Dreaming status did not report the episodic backlog")
+          }
+          if (status.episodicTokensPending === 0) return
+          completed = true
+          break
+        }
+        await new Promise((resolve) => setTimeout(resolve, pollMs))
       }
-      await new Promise((resolve) => setTimeout(resolve, pollMs))
+      if (!completed) break
     }
-    throw new Error(`Timed out waiting for Dreaming pass ${accepted.passId}`)
+    throw new Error("Timed out draining the Dreaming episodic backlog")
+  }
+
+  private benchmarkSessionId(session: UnifiedSession, containerTag: string): string {
+    return `memorybench:${containerTag}:${session.sessionId}`
+  }
+
+  private async captureDreamingSession(
+    session: UnifiedSession,
+    options: IngestOptions
+  ): Promise<SignetSessionEndResponse> {
+    const transcript = formatTranscript(session)
+    if (!hasUsableMemoryContent(transcript)) {
+      throw new Error(`Canonical transcript capture skipped for ${session.sessionId}: transcript is empty`)
+    }
+    const sessionId = this.benchmarkSessionId(session, options.containerTag)
+    const result = await this.request<SignetSessionEndResponse>("/api/hooks/session-end", {
+      method: "POST",
+      body: JSON.stringify({
+        harness: "memorybench",
+        sessionId,
+        sessionKey: sessionId,
+        agentId: this.agentId,
+        cwd: this.project,
+        transcript,
+        capturedAt: parseSessionDate(session),
+      }),
+    })
+    if (result.error) {
+      throw new Error(`Canonical transcript capture failed for ${session.sessionId}: ${result.error}`)
+    }
+    return result
+  }
+
+  private async awaitTranscriptCapture(
+    result: IngestResult,
+    onProgress?: IndexingProgressCallback
+  ): Promise<void> {
+    const pending = new Set(result.taskIds ?? [])
+    const completed: string[] = []
+    const failed: string[] = []
+    const deadline = Date.now() + this.timeoutMs
+    let delay = 100
+
+    while (pending.size > 0 && Date.now() < deadline) {
+      for (const id of [...pending]) {
+        const job = await this.request<TranscriptCaptureJobResponse>(
+          `/api/hooks/transcript-capture/${encodeURIComponent(id)}?agentId=${encodeURIComponent(this.agentId)}`,
+          { method: "GET" }
+        )
+        if (job.status === "completed") {
+          pending.delete(id)
+          completed.push(id)
+        } else if (job.status === "dead") {
+          pending.delete(id)
+          failed.push(id)
+          throw new Error(`Transcript capture ${id} ${job.status}: ${job.error || "no detail"}`)
+        }
+      }
+      onProgress?.({ completedIds: completed, failedIds: failed, total: result.documentIds.length })
+      if (pending.size > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delay))
+        delay = Math.min(Math.ceil(delay * 1.5), 1_000)
+      }
+    }
+
+    if (pending.size > 0) {
+      throw new Error(`Timed out waiting for ${pending.size} canonical transcript capture job(s)`)
+    }
   }
 
   private collectMemoryIds(result: SignetRememberResponse, ids: string[], pending: string[]): void {

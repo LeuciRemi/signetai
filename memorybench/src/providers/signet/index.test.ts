@@ -12,28 +12,51 @@ import type { UnifiedSession } from "../../types/unified"
 describe("Signet benchmark profiles", () => {
   class CapturingDreamingProvider extends SignetDreamingProvider {
     calls: Array<{ path: string; init: RequestInit }> = []
+    private statusCalls = 0
+    private triggerCalls = 0
 
     protected override async request<T>(path: string, init: RequestInit): Promise<T> {
       this.calls.push({ path, init })
-      if (path === "/api/memory/remember") return { id: "episodic-1", embedded: true } as T
-      if (path === "/api/dream/trigger") return { passId: "pass-1" } as T
+      if (path === "/api/hooks/session-end") return { transcriptCaptureJobId: "capture-1" } as T
+      if (path === "/api/hooks/transcript-capture/capture-1?agentId=memorybench") {
+        return { status: "completed" } as T
+      }
+      if (path === "/api/dream/trigger") {
+        this.triggerCalls += 1
+        return { passId: `pass-${this.triggerCalls}` } as T
+      }
       if (path === "/api/dream/status?agentId=memorybench") {
-        return { worker: { running: true }, passes: [{ id: "pass-1", status: "completed" }] } as T
+        this.statusCalls += 1
+        if (this.statusCalls === 1) return { worker: { running: true }, episodicTokensPending: 2 } as T
+        if (this.statusCalls === 2) {
+          return {
+            worker: { running: true },
+            passes: [{ id: "pass-1", status: "completed" }],
+            episodicTokensPending: 1,
+          } as T
+        }
+        return {
+          worker: { running: true },
+          passes: [{ id: "pass-2", status: "completed" }],
+          episodicTokensPending: 0,
+        } as T
       }
       throw new Error(`Unexpected path ${path}`)
     }
   }
 
-  it("keeps benchmark input episodic until one post-ingest Dreaming pass", async () => {
+  it("captures benchmark sessions as canonical episodic transcripts and drains Dreaming before retrieval", async () => {
     const provider = new CapturingDreamingProvider()
     const session: UnifiedSession = {
       sessionId: "session-1",
       messages: [{ role: "user", content: "I moved deployment to edge runtime." }],
+      metadata: { date: "2023-05-20T10:20:00.000Z" },
     }
     const previousPoll = process.env.SIGNET_BENCH_DREAMING_POLL_SECS
     process.env.SIGNET_BENCH_DREAMING_POLL_SECS = "0"
     try {
-      await provider.ingest([session], { containerTag: "question-1-run" })
+      const ingest = await provider.ingest([session], { containerTag: "question-1-run" })
+      await provider.awaitIndexing(ingest, "question-1-run")
       await provider.finalizeIngest({ runId: "run", dataSourceRunId: "source" })
     } finally {
       if (previousPoll === undefined) delete process.env.SIGNET_BENCH_DREAMING_POLL_SECS
@@ -41,14 +64,21 @@ describe("Signet benchmark profiles", () => {
     }
 
     expect(provider.name).toBe("signet-dreaming")
-    const remember = provider.calls.find((call) => call.path === "/api/memory/remember")
-    expect(JSON.parse(String(remember?.init.body))).toMatchObject({
-      content: "user: I moved deployment to edge runtime.",
-      tags: "memorybench,question-1-run,session-1,dreaming,raw-session",
+    expect(provider.calls.some((call) => call.path === "/api/memory/remember")).toBe(false)
+    const capture = provider.calls.find((call) => call.path === "/api/hooks/session-end")
+    expect(JSON.parse(String(capture?.init.body))).toMatchObject({
+      harness: "memorybench",
+      sessionId: "memorybench:question-1-run:session-1",
+      sessionKey: "memorybench:question-1-run:session-1",
+      agentId: "memorybench",
+      capturedAt: "2023-05-20T10:20:00.000Z",
+      transcript: "[2023-05-20T10:20:00.000Z]\nuser: I moved deployment to edge runtime.",
     })
-    expect(JSON.parse(String(remember?.init.body))).not.toHaveProperty("structured")
     expect(provider.calls.map((call) => call.path)).toEqual([
-      "/api/memory/remember",
+      "/api/hooks/session-end",
+      "/api/hooks/transcript-capture/capture-1?agentId=memorybench",
+      "/api/dream/status?agentId=memorybench",
+      "/api/dream/trigger",
       "/api/dream/status?agentId=memorybench",
       "/api/dream/trigger",
       "/api/dream/status?agentId=memorybench",

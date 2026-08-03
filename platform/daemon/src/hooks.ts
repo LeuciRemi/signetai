@@ -312,6 +312,8 @@ export interface SessionEndRequest {
 	sessionKey?: string;
 	agentId?: string;
 	cwd?: string;
+	/** Immutable capture time supplied by an importing harness. */
+	capturedAt?: string;
 	reason?: string;
 	runtimePath?: "plugin" | "legacy";
 }
@@ -320,6 +322,7 @@ export interface SessionEndResponse {
 	memoriesSaved: number;
 	queued?: boolean;
 	jobId?: string;
+	transcriptCaptureJobId?: string;
 }
 
 export interface CheckpointExtractRequest {
@@ -1706,7 +1709,7 @@ export async function handleSessionEnd(req: SessionEndRequest): Promise<SessionE
 	const sessionKey = req.sessionKey || req.sessionId;
 	const agentId = resolveAgentId({ agentId: req.agentId, sessionKey: req.sessionKey || req.sessionId });
 	ensureAgentRegistered(agentId);
-	const endedAt = new Date().toISOString();
+	const endedAt = req.capturedAt ?? new Date().toISOString();
 
 	// Keep session-start dedup across normal Stop/session-end hooks. Codex can
 	// emit Stop between turns and then emit SessionStart again when an idle
@@ -1837,7 +1840,7 @@ export async function handleSessionEnd(req: SessionEndRequest): Promise<SessionE
 	// is not held open by large transcript rewrites.
 	if (retainedTranscript && sessionKey) {
 		try {
-			upsertSessionTranscript(sessionKey, retainedTranscript, req.harness, req.cwd ?? null, agentId);
+			upsertSessionTranscript(sessionKey, retainedTranscript, req.harness, req.cwd ?? null, agentId, endedAt);
 		} catch (e) {
 			logger.warn("hooks", "Live transcript retention failed (non-fatal)", {
 				error: e instanceof Error ? e.message : String(e),
@@ -1926,9 +1929,10 @@ export async function handleSessionEnd(req: SessionEndRequest): Promise<SessionE
 		});
 	}
 
+	let transcriptCaptureJobId: string | null = null;
 	if (retainedTranscript.trim().length > 0 || rawTranscript.trim().length > 0) {
 		try {
-			enqueueTranscriptCaptureJob(getDbAccessor(), {
+			transcriptCaptureJobId = enqueueTranscriptCaptureJob(getDbAccessor(), {
 				agentId,
 				harness: req.harness,
 				sessionKey: sessionKey ?? null,
@@ -1980,7 +1984,12 @@ export async function handleSessionEnd(req: SessionEndRequest): Promise<SessionE
 		});
 	});
 
-	return { memoriesSaved: 0, queued: Boolean(jobId), jobId };
+	return {
+		memoriesSaved: 0,
+		queued: Boolean(jobId),
+		jobId,
+		...(transcriptCaptureJobId ? { transcriptCaptureJobId } : {}),
+	};
 }
 
 async function deferSessionEndWork(params: {
