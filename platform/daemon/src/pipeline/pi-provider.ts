@@ -19,6 +19,15 @@ import {
 	completeSimple,
 	streamSimple,
 } from "@earendil-works/pi-ai";
+import {
+	AuthStorage,
+	DefaultResourceLoader,
+	ModelRegistry,
+	SessionManager,
+	SettingsManager,
+	createAgentSession,
+	type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import type { LlmGenerateResult, LlmProvider, LlmUsage } from "@signet/core";
 import { logger } from "../logger";
 import type {
@@ -74,6 +83,38 @@ export interface PiModelProviderConfig {
 	readonly maxTokens?: number;
 	readonly defaultTimeoutMs?: number;
 	readonly name?: string;
+}
+
+/**
+ * A deliberately isolated Pi AgentSession for daemon-owned agentic work.
+ *
+ * The daemon supplies every tool, including the single audited write seam.
+ * No project context, extensions, skills, or persisted Pi session is exposed
+ * to this background process.
+ */
+export interface PiAgentSession {
+	prompt(text: string): Promise<void>;
+	abort(): Promise<void>;
+	dispose(): void;
+	getActiveToolNames(): readonly string[];
+	getFailureMessage(): string | undefined;
+}
+
+export interface PiAgentSessionProvider {
+	readonly isPiAgentSessionProvider: true;
+	readonly agentSessionTimeoutMs: number;
+	createAgentSession(tools: readonly ToolDefinition[], options?: { readonly maxTokens?: number }): Promise<PiAgentSession>;
+}
+
+export function isPiAgentSessionProvider(provider: unknown): provider is StreamCapableLlmProvider & PiAgentSessionProvider {
+	return (
+		typeof provider === "object" &&
+		provider !== null &&
+		"isPiAgentSessionProvider" in provider &&
+		provider.isPiAgentSessionProvider === true &&
+		"createAgentSession" in provider &&
+		typeof provider.createAgentSession === "function"
+	);
 }
 
 interface ResolvedModel {
@@ -261,7 +302,7 @@ function callerAbort(
 	};
 }
 
-export function createPiModelProvider(config: PiModelProviderConfig): StreamCapableLlmProvider {
+export function createPiModelProvider(config: PiModelProviderConfig): StreamCapableLlmProvider & PiAgentSessionProvider {
 	const { piModel, apiKey, label } = resolvePiModel(config);
 	const name = config.name ?? label;
 	const defaultTimeoutMs = config.defaultTimeoutMs ?? 60_000;
@@ -403,5 +444,55 @@ export function createPiModelProvider(config: PiModelProviderConfig): StreamCapa
 		},
 	};
 
-	return streamCapable;
+	return {
+		...streamCapable,
+		isPiAgentSessionProvider: true,
+		agentSessionTimeoutMs: defaultTimeoutMs,
+		async createAgentSession(tools: readonly ToolDefinition[], options: { readonly maxTokens?: number } = {}) {
+			const authStorage = AuthStorage.inMemory({
+				[piModel.provider]: { type: "api_key", key: apiKey ?? KEYLESS_API_KEY },
+			});
+			const modelRegistry = ModelRegistry.inMemory(authStorage);
+			const settingsManager = SettingsManager.inMemory();
+			const resourceLoader = new DefaultResourceLoader({
+				cwd: process.cwd(),
+				agentDir: process.cwd(),
+				settingsManager,
+				noExtensions: true,
+				noSkills: true,
+				noPromptTemplates: true,
+				noThemes: true,
+				noContextFiles: true,
+				systemPrompt: "You are a bounded Signet maintenance agent. You may use only the supplied daemon tools.",
+			});
+			await resourceLoader.reload();
+			const { session } = await createAgentSession({
+				model: options.maxTokens ? { ...piModel, maxTokens: options.maxTokens } : piModel,
+				authStorage,
+				modelRegistry,
+				sessionManager: SessionManager.inMemory(),
+				settingsManager,
+				resourceLoader,
+				tools: tools.map((tool) => tool.name),
+				customTools: [...tools],
+			});
+			return {
+				prompt: (text) => session.prompt(text),
+				abort: () => session.abort(),
+				dispose: () => session.dispose(),
+				getActiveToolNames: () => session.getActiveToolNames(),
+				getFailureMessage: () => {
+					for (const message of [...session.messages].reverse()) {
+						if (
+							message.role === "assistant" &&
+							(message.stopReason === "error" || message.stopReason === "aborted" || message.stopReason === "length")
+						) {
+							return message.errorMessage ?? `Pi agent ${message.stopReason}`;
+						}
+					}
+					return undefined;
+				},
+			};
+		},
+	};
 }

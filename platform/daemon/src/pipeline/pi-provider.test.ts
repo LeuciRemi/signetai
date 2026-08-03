@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type Api, type Model, getModels } from "@earendil-works/pi-ai";
 import { githubCopilotOAuthProvider } from "@earendil-works/pi-ai/oauth";
-import { resolvePiModel } from "./pi-provider";
+import { createPiModelProvider, isPiAgentSessionProvider, resolvePiModel } from "./pi-provider";
 
 describe("pi provider catalog models", () => {
 	test("preserves the Codex responses API and registry metadata", () => {
@@ -40,5 +40,20 @@ describe("pi provider catalog models", () => {
 
 		expect(resolved.piModel.baseUrl).toBe("https://api.enterprise.example.com");
 		expect(resolved.piModel.headers?.["Copilot-Integration-Id"]).toBe("vscode-chat");
+	});
+
+	test("creates an isolated AgentSession with no ambient tools", async () => {
+		const provider = createPiModelProvider({
+			executor: "openai-compatible",
+			model: "test-model",
+			baseUrl: "http://127.0.0.1:1234/v1",
+		});
+		expect(isPiAgentSessionProvider(provider)).toBe(true);
+		const session = await provider.createAgentSession([]);
+		try {
+			expect(session.getActiveToolNames()).toEqual([]);
+		} finally {
+			session.dispose();
+		}
 	});
 });
