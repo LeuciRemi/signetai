@@ -27,7 +27,8 @@ describe("Signet benchmark profiles", () => {
       }
       if (path === "/api/dream/status?agentId=memorybench") {
         this.statusCalls += 1
-        if (this.statusCalls === 1) return { worker: { running: true }, episodicTokensPending: 2 } as T
+        if (this.statusCalls === 1)
+          return { worker: { running: true }, episodicTokensPending: 2 } as T
         if (this.statusCalls === 2) {
           return {
             worker: { running: true },

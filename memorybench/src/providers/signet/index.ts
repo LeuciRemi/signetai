@@ -311,7 +311,9 @@ export class SignetProvider implements Provider {
       if (this.profile === "dreaming") {
         const capture = await this.captureDreamingSession(session, options)
         if (!capture.transcriptCaptureJobId) {
-          throw new Error(`Canonical transcript capture was not queued for session ${session.sessionId}`)
+          throw new Error(
+            `Canonical transcript capture was not queued for session ${session.sessionId}`
+          )
         }
         ids.push(this.benchmarkSessionId(session, options.containerTag))
         pending.push(capture.transcriptCaptureJobId)
@@ -512,7 +514,9 @@ export class SignetProvider implements Provider {
   ): Promise<SignetSessionEndResponse> {
     const transcript = formatTranscript(session)
     if (!hasUsableMemoryContent(transcript)) {
-      throw new Error(`Canonical transcript capture skipped for ${session.sessionId}: transcript is empty`)
+      throw new Error(
+        `Canonical transcript capture skipped for ${session.sessionId}: transcript is empty`
+      )
     }
     const sessionId = this.benchmarkSessionId(session, options.containerTag)
     const result = await this.request<SignetSessionEndResponse>("/api/hooks/session-end", {
@@ -528,7 +532,9 @@ export class SignetProvider implements Provider {
       }),
     })
     if (result.error) {
-      throw new Error(`Canonical transcript capture failed for ${session.sessionId}: ${result.error}`)
+      throw new Error(
+        `Canonical transcript capture failed for ${session.sessionId}: ${result.error}`
+      )
     }
     return result
   }

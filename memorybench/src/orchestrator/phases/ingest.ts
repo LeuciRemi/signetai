@@ -152,13 +152,5 @@ export async function runIngestPhase(
     },
   })
 
-  // Source sessions must be durably ingested before a provider performs a
-  // global derivation such as Dreaming. Running this per session/question
-  // would make semantic output timing-dependent and hide cross-session facts.
-  await provider.finalizeIngest?.({
-    runId: checkpoint.runId,
-    dataSourceRunId: checkpoint.dataSourceRunId,
-  })
-
   logger.success("Ingest phase complete")
 }
