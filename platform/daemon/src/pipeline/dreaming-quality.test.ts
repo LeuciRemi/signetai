@@ -47,9 +47,13 @@ describe("Dreaming quality report", () => {
 			VALUES
 				('ent-signet', 'Signet', 'signet', 'project', 'agent-a', 1, '${now}', '${now}'),
 				('ent-signet-possessive', 'Signet''s', 'signet''s', 'project', 'agent-a', 1, '${now}', '${now}'),
-				('ent-source', 'Source note', 'source note', 'source_document', 'agent-a', 1, '${now}', '${now}');
+				('ent-source', 'Source note', 'source note', 'source_document', 'agent-a', 1, '${now}', '${now}'),
+				('ent-unknown', 'Loose note', 'loose note', 'unknown', 'agent-a', 1, '${now}', '${now}');
 			INSERT INTO entity_aspects (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
-			VALUES ('asp-signet', 'ent-signet', 'agent-a', 'architecture', 'architecture', 1, '${now}', '${now}');
+			VALUES
+				('asp-signet', 'ent-signet', 'agent-a', 'architecture', 'architecture', 1, '${now}', '${now}'),
+				('asp-unknown', 'ent-unknown', 'agent-a', 'Details', 'details', 1, '${now}', '${now}'),
+				('asp-profile', 'ent-unknown', 'agent-a', 'Profile', 'profile', 1, '${now}', '${now}');
 		`);
 		db.prepare(
 			`INSERT INTO entity_attributes
@@ -76,10 +80,20 @@ describe("Dreaming quality report", () => {
 			rate: 0.5,
 		});
 		expect(report.graphGarbageRate).toMatchObject({
-			totalEntities: 2,
+			totalEntities: 3,
 			garbageEntities: 1,
-			rate: 0.5,
+			rate: 1 / 3,
 			examples: [{ id: "ent-signet-possessive", name: "Signet's", reason: "possessive_duplicate" }],
+		});
+		expect(report.structureQuality).toEqual({
+			totalEntities: 3,
+			unknownEntityTypes: 1,
+			unknownEntityTypeRate: 1 / 3,
+			totalAspects: 3,
+			profileAspects: 1,
+			profileAspectRate: 1 / 3,
+			genericAspects: 2,
+			genericAspectRate: 2 / 3,
 		});
 	});
 });

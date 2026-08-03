@@ -505,7 +505,10 @@ Dreaming graph. `citationCoverage` counts active claim values that retain an
 exact quote in canonical proposal evidence plus a resolvable episodic source;
 a source pointer without a quote is not citation coverage. `graphGarbageRate` applies the shared
 entity-quality classifier and detects possessive duplicates, excluding
-source-native topology. Requires `admin` permission.
+source-native topology. `structureQuality` reports the unknown entity-type
+rate, exact `profile` aspect rate, and generic-aspect rate (`profile`,
+`details`, `general`, and `information`) for model-ablation comparisons.
+Requires `admin` permission.
 
 ### GET /api/dream/tools
 

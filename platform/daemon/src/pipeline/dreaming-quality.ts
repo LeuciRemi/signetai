@@ -4,6 +4,7 @@ import { classifyEntityQuality, normalizeEntityName } from "../entity-quality";
 import { getOntologyClaimEvidence } from "../ontology-claim-evidence";
 
 const SOURCE_TOPOLOGY_TYPES = ["source_document", "source_folder", "source_document_reference", "skill"] as const;
+const GENERIC_ASPECT_NAMES = ["profile", "details", "general", "information"] as const;
 
 interface ClaimPathRow {
 	readonly entity: string;
@@ -42,6 +43,19 @@ export interface DreamingQualityReport {
 		readonly rate: number | null;
 		readonly examples: readonly DreamingQualityIssue[];
 	};
+	/** Model-sensitive ontology-shape signals, reported alongside correctness. */
+	readonly structureQuality: {
+		readonly totalEntities: number;
+		readonly unknownEntityTypes: number;
+		readonly unknownEntityTypeRate: number | null;
+		readonly totalAspects: number;
+		/** Exact `profile` buckets, retained for model-ablation comparisons. */
+		readonly profileAspects: number;
+		readonly profileAspectRate: number | null;
+		/** Generic buckets (including `details`) that flatten semantic structure. */
+		readonly genericAspects: number;
+		readonly genericAspectRate: number | null;
+	};
 }
 
 function isResolvedEpisodicQuote(item: {
@@ -78,7 +92,7 @@ function qualityIssues(rows: readonly EntityRow[]): readonly DreamingQualityIssu
  * users inspect, while source-native topology is excluded from quality counts.
  */
 export function getDreamingQualityReport(accessor: DbAccessor, agentId: string): DreamingQualityReport {
-	const { claimPaths, entities, totalClaimValues, unaddressableClaimValues } = accessor.withReadDb((db) => {
+	const { claimPaths, entities, totalClaimValues, unaddressableClaimValues, structureQuality } = accessor.withReadDb((db) => {
 		const topologyPlaceholders = SOURCE_TOPOLOGY_TYPES.map(() => "?").join(", ");
 		const semanticFilter = `NOT (e.entity_type IN (${topologyPlaceholders}) OR (e.entity_type = 'source' AND e.source_root IS NOT NULL))`;
 		const claimPaths = db
@@ -110,11 +124,51 @@ export function getDreamingQualityReport(accessor: DbAccessor, agentId: string):
 				 WHERE e.agent_id = ? AND COALESCE(e.status, 'active') = 'active' AND ${semanticFilter}`,
 			)
 			.all(agentId, ...SOURCE_TOPOLOGY_TYPES) as EntityRow[];
+		const structure = db
+			.prepare(
+				`SELECT COUNT(DISTINCT e.id) AS totalEntities,
+				        COUNT(DISTINCT CASE WHEN LOWER(TRIM(e.entity_type)) IN ('', 'unknown') THEN e.id END) AS unknownEntityTypes,
+				        COUNT(asp.id) AS totalAspects,
+				        SUM(CASE WHEN LOWER(TRIM(asp.canonical_name)) = 'profile' THEN 1 ELSE 0 END) AS profileAspects,
+				        SUM(CASE WHEN LOWER(TRIM(asp.canonical_name)) IN (${GENERIC_ASPECT_NAMES.map(() => "?").join(", ")}) THEN 1 ELSE 0 END) AS genericAspects
+				 FROM entities e
+				 LEFT JOIN entity_aspects asp
+				   ON asp.entity_id = e.id
+				  AND asp.agent_id = e.agent_id
+				  AND COALESCE(asp.status, 'active') = 'active'
+				 WHERE e.agent_id = ? AND COALESCE(e.status, 'active') = 'active' AND ${semanticFilter}`,
+			)
+			.get(...GENERIC_ASPECT_NAMES, agentId, ...SOURCE_TOPOLOGY_TYPES) as {
+				totalEntities: number;
+				unknownEntityTypes: number | null;
+				totalAspects: number;
+				profileAspects: number | null;
+				genericAspects: number | null;
+			};
 		return {
 			claimPaths,
 			entities,
 			totalClaimValues: Number(claimCounts.totalClaimValues),
 			unaddressableClaimValues: Number(claimCounts.unaddressableClaimValues ?? 0),
+			structureQuality: {
+				totalEntities: Number(structure.totalEntities),
+				unknownEntityTypes: Number(structure.unknownEntityTypes ?? 0),
+				unknownEntityTypeRate:
+					Number(structure.totalEntities) === 0
+						? null
+						: Number(structure.unknownEntityTypes ?? 0) / Number(structure.totalEntities),
+				totalAspects: Number(structure.totalAspects),
+				profileAspects: Number(structure.profileAspects ?? 0),
+				profileAspectRate:
+					Number(structure.totalAspects) === 0
+						? null
+						: Number(structure.profileAspects ?? 0) / Number(structure.totalAspects),
+				genericAspects: Number(structure.genericAspects ?? 0),
+				genericAspectRate:
+					Number(structure.totalAspects) === 0
+						? null
+						: Number(structure.genericAspects ?? 0) / Number(structure.totalAspects),
+			},
 		};
 	});
 
@@ -160,5 +214,6 @@ export function getDreamingQualityReport(accessor: DbAccessor, agentId: string):
 			rate: entities.length === 0 ? null : garbage.length / entities.length,
 			examples: garbage.slice(0, 50),
 		},
+		structureQuality,
 	};
 }
