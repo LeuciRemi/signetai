@@ -43,28 +43,32 @@ export function txDecrementEntityMentions(db: WriteDb, input: DecrementInput): D
 		).run(entityId);
 	}
 
-	// Delete orphaned entities (mentions = 0)
-	const orphaned = db.prepare("SELECT id FROM entities WHERE mentions = 0").all() as Array<{ id: string }>;
+	// Delete only entities affected by this purge. A retention pass may process
+	// one agent while another agent already has an unrelated zero-mention row.
+	const placeholders = input.entityIds.map(() => "?").join(", ");
+	const orphaned = db
+		.prepare(`SELECT id FROM entities WHERE mentions = 0 AND id IN (${placeholders})`)
+		.all(...input.entityIds) as Array<{ id: string }>;
 
 	if (orphaned.length > 0) {
-		const placeholders = orphaned.map(() => "?").join(", ");
+		const orphanedPlaceholders = orphaned.map(() => "?").join(", ");
 		const ids = orphaned.map((r) => r.id);
 
 		// Clean dangling relations first
 		db.prepare(
 			`DELETE FROM relations
-			 WHERE source_entity_id IN (${placeholders})
-			    OR target_entity_id IN (${placeholders})`,
+			 WHERE source_entity_id IN (${orphanedPlaceholders})
+			    OR target_entity_id IN (${orphanedPlaceholders})`,
 		).run(...ids, ...ids);
 
 		// Clean any remaining mention links
 		db.prepare(
 			`DELETE FROM memory_entity_mentions
-			 WHERE entity_id IN (${placeholders})`,
+			 WHERE entity_id IN (${orphanedPlaceholders})`,
 		).run(...ids);
 
 		// Delete the entities themselves
-		db.prepare(`DELETE FROM entities WHERE id IN (${placeholders})`).run(...ids);
+		db.prepare(`DELETE FROM entities WHERE id IN (${orphanedPlaceholders})`).run(...ids);
 	}
 
 	return { entitiesOrphaned: orphaned.length };

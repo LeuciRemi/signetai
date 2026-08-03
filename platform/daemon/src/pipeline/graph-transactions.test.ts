@@ -52,6 +52,24 @@ describe("graph-transactions", () => {
 			expect(row.mentions).toBe(2);
 		});
 
+		it("does not delete another agent's unrelated zero-mention entity", () => {
+			const now = new Date().toISOString();
+			db.prepare(
+				`INSERT INTO entities (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			).run("ent-owner", "Owner", "owner", "project", "agent-a", 1, now, now);
+			db.prepare(
+				`INSERT INTO entities (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			).run("ent-other", "Other", "other", "project", "agent-b", 0, now, now);
+
+			const result = txDecrementEntityMentions(asWriteDb(db), { entityIds: ["ent-owner"] });
+
+			expect(result.entitiesOrphaned).toBe(1);
+			expect(db.prepare("SELECT id FROM entities WHERE id = ?").get("ent-owner")).toBeNull();
+			expect(db.prepare("SELECT id FROM entities WHERE id = ?").get("ent-other")).toBeTruthy();
+		});
+
 		it("cleans dangling relations when entity is orphaned", () => {
 			const now = new Date().toISOString();
 			db.prepare(
