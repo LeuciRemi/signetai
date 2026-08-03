@@ -303,6 +303,55 @@ describe("dreaming", () => {
 			).toMatchObject({ proposal_id: expect.any(String) });
 		});
 
+		it("retains evidence for requeue when an agent operation is rejected", async () => {
+			const evidence = "Briar owns the release process.";
+			seedSummary(db, "rejected-agentic-summary", evidence, 8);
+			const result = await runDreamingAgentPass(
+				accessor,
+				{
+					async run(input) {
+						const apply = input.tools.find((tool) => tool.name === "apply_ontology_ops");
+						if (!apply) throw new Error("Missing apply_ontology_ops");
+						await apply.execute(
+							"call",
+							{
+								operations: [
+									{
+										operation: "not_an_ontology_operation",
+										payload: {},
+										evidence: [
+											{
+												source_ref: "summary:rejected-agentic-summary",
+												source_kind: "summary",
+												source_id: "rejected-agentic-summary",
+												quote: evidence,
+											},
+										],
+									},
+								],
+							},
+							undefined,
+							undefined,
+							{} as never,
+						);
+						return { summary: "Rejected unsupported operation" };
+					},
+				},
+				defaultCfg(),
+				"/tmp",
+				AGENT,
+				"incremental",
+			);
+			expect(result).toMatchObject({ applied: 0, failed: 1 });
+			expect(getDreamingEvidenceExclusions(accessor, AGENT)).toContainEqual(
+				expect.objectContaining({
+					sourceKind: "summary",
+					sourceId: "rejected-agentic-summary",
+					reason: "semantic_operation_rejected",
+				}),
+			);
+		});
+
 		it("completes pass with no data gracefully", async () => {
 			const generate = async () => JSON.stringify({ operations: [], summary: "Nothing to do" });
 

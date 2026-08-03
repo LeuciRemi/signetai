@@ -36,7 +36,11 @@ import {
 import { getOntologyClaimEvidence } from "../ontology-claim-evidence";
 import { getOntologyLinkEvidence } from "../ontology-link-evidence";
 import type { DreamingAgentEvidence } from "./dreaming-evidence";
-import { applyDreamingOperations, type ApplyDreamingOperationsResult } from "./dreaming-operations";
+import {
+	applyDreamingOperations,
+	type ApplyDreamingOperationsResult,
+	type DreamingOperationRequest,
+} from "./dreaming-operations";
 
 export type { DreamingAgentEvidence } from "./dreaming-evidence";
 
@@ -62,7 +66,10 @@ export interface CreateDreamingAgentToolsParams {
 	/** Evidence records the agent may quote from. Empty means no citations allowed. */
 	readonly evidence?: readonly DreamingAgentEvidence[];
 	/** Lets the pass lifecycle account for immediate audited writes. */
-	readonly onOperationsApplied?: (result: ApplyDreamingOperationsResult) => void;
+	readonly onOperationsApplied?: (
+		result: ApplyDreamingOperationsResult,
+		operations: readonly DreamingOperationRequest[],
+	) => void;
 }
 
 /**
@@ -353,7 +360,7 @@ export function createDreamingAgentTools(params: CreateDreamingAgentToolsParams)
 			}
 
 			const result = applyDreamingOperations({ accessor, agentId, actor, operations: p.operations, allowedEvidence: evidence });
-			params.onOperationsApplied?.(result);
+			params.onOperationsApplied?.(result, p.operations);
 			return {
 				content: [
 					textResult({

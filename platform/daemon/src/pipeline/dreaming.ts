@@ -24,6 +24,7 @@ import { type OntologyOperationInput, applyOntologyOperationBatchInTx } from "..
 import { createDreamingAgentTools } from "./dreaming-agent-tools";
 import { extractBalancedJsonObjects } from "./extraction";
 import { createDreamingAgentEvidence, renderDreamingEvidence, renderDreamingEvidenceMeta } from "./dreaming-evidence";
+import type { ApplyDreamingOperationsResult, DreamingOperationRequest } from "./dreaming-operations";
 import { countTokens } from "./tokenizer";
 
 // ---------------------------------------------------------------------------
@@ -171,6 +172,37 @@ export interface DreamingAgentExecutor {
 		readonly timeoutMs: number;
 		readonly maxTokens: number;
 	}): Promise<{ readonly summary?: string }>;
+}
+
+/**
+ * Keep evidence cited by an agent operation that the daemon rejects. The
+ * static path has always preserved this audit/requeue trail; agentic calls
+ * need the same behavior even when citation validation fails before the
+ * operation service can return per-item results.
+ */
+function rejectedAgentEvidence(
+	result: ApplyDreamingOperationsResult,
+	operations: readonly DreamingOperationRequest[],
+	sources: readonly EpisodicSourceRecord[],
+): readonly EpisodicSourceRecord[] {
+	const rejectedIndexes = new Set<number>(
+		result.items.filter((item) => !item.ok).map((item) => item.index),
+	);
+	const rejectedOperations =
+		rejectedIndexes.size > 0
+			? operations.filter((_operation, index) => rejectedIndexes.has(index))
+			: result.ok
+				? []
+				: operations;
+	const references = new Set<string>();
+	for (const operation of rejectedOperations) {
+		for (const evidence of operation.evidence ?? []) {
+			if (!isRecord(evidence)) continue;
+			const sourceRef = readNonEmptyString(evidence.source_ref);
+			if (sourceRef) references.add(sourceRef);
+		}
+	}
+	return sources.filter((source) => references.has(`${source.kind}:${source.id}`));
 }
 
 // ---------------------------------------------------------------------------
@@ -932,15 +964,17 @@ export async function runDreamingAgentPass(
 
 		let applied = 0;
 		let failed = 0;
+		const rejectedEvidence: EpisodicSourceRecord[] = [];
 		const tools = createDreamingAgentTools({
 			accessor,
 			agentId,
 			actor: "dreaming",
 			evidence: createDreamingAgentEvidence(renderedEvidence),
-			onOperationsApplied(result) {
+			onOperationsApplied(result, operations) {
 				applied += result.items.filter((item) => item.ok).length;
 				failed += result.items.filter((item) => !item.ok).length;
 				if (!result.ok && result.items.length === 0) failed++;
+				rejectedEvidence.push(...rejectedAgentEvidence(result, operations, renderedEvidence));
 			},
 		});
 		logger.info("dreaming", "Starting agentic dreaming pass", {
@@ -958,6 +992,7 @@ export async function runDreamingAgentPass(
 				 mutations_failed = ?, summary = ? WHERE id = ?`,
 			).run(tokensConsumed, applied, oversizedEvidence.length, failed, summary, passId);
 			recordDreamingEvidenceExclusionsInTx(db, agentId, passId, oversizedEvidence, "oversized_prompt_budget");
+			recordDreamingEvidenceExclusionsInTx(db, agentId, passId, rejectedEvidence, "semantic_operation_rejected");
 			resolveRequeuedEvidenceInTx(db, agentId, renderedEvidence);
 			resetDreamingTokens(db, agentId, passId, mode, evidenceCursor, passStartedAt);
 		});
