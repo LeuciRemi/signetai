@@ -63,9 +63,9 @@ question directly.
 
 ## Verification
 
-- Match proof to the risk and the user-visible boundary. Prefer behavioral
-  tests; a bug fix normally includes the smallest regression test that would
-  have caught it.
+- Match proof to the risk and the user-visible boundary. A bug fix
+  includes the smallest regression test that would have caught it (see
+  Tests and evals below).
 - Static checks are not runtime proof. Exercise the installed daemon, CLI,
   desktop shell, integration, browser extension, or generated package when the
   failure depends on that surface.
@@ -76,6 +76,24 @@ question directly.
 - Use focused checks first. Root scripts are defined in `package.json`; common
   entry points are `bun test`, `bun run lint`, `bun run typecheck`, and
   `bun run build`.
+
+## Tests and evals
+
+- Do not write tests alongside new features: tests prove that code does
+  what it does, not that what it does is good. Prove new behavior with
+  evals, not tests.
+- New user-facing capabilities ship with a runnable eval: fixed inputs,
+  measurable criteria, and a reproducible score or pass/fail a reviewer can
+  run. An eval that only prints output is a demo, not an eval.
+- Regression tests are for bug fixes only. Every bug fix includes the
+  smallest test that would have caught the bug, and the test names the bug.
+- An invariant test may accompany a feature only when it pins a named
+  contract (agent isolation, evidence immutability, provenance, audit). The
+  test must name the invariant and the failure it prevents. If you cannot
+  name the bug or the invariant, do not write the test.
+- Removed features do not get tests. Retirement is enforced at runtime with
+  loud, actionable errors (retired config keys, removed routes), not by a
+  suite asserting the feature is still gone.
 
 ## Documentation parity
 
