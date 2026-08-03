@@ -30,20 +30,20 @@ describe("Dreaming MCP tools", () => {
 	});
 
 	it("exposes only the scoped conceptual Dreaming surface", () => {
-		const server = createDreamingMcpServer({ daemonUrl: "http://localhost:3850", agentId: "agent-a", version: "test" });
+		const server = createDreamingMcpServer({ daemonUrl: "http://localhost:3850", agentId: "agent-a", passId: "pass-a", version: "test" });
 		expect(Object.keys(tools(server)).sort()).toEqual(
 			[...DREAMING_CAPABILITY_IDS].sort(),
 		);
 	});
 
 	it("pins all reads and writes to the configured agent rather than accepting an agent id from the model", async () => {
-		const server = createDreamingMcpServer({ daemonUrl: "http://localhost:3850", agentId: "agent-a", version: "test" });
+		const server = createDreamingMcpServer({ daemonUrl: "http://localhost:3850", agentId: "agent-a", passId: "pass-a", version: "test" });
 		const capture: { url?: string; method?: string; body?: string } = {};
 		mockFetch(capture);
 
 		await tools(server).search_entities!.handler({ query: "Atlas" });
 		expect(capture.url).toBe("http://localhost:3850/api/dream/tools/search_entities");
-		expect(JSON.parse(capture.body ?? "{}")).toMatchObject({ agentId: "agent-a", input: { query: "Atlas" } });
+		expect(JSON.parse(capture.body ?? "{}")).toMatchObject({ agentId: "agent-a", passId: "pass-a", input: { query: "Atlas" } });
 
 		await tools(server).apply_ontology_ops!.handler({
 			operations: [{ operation: "create_entity", payload: { name: "Atlas" } }],

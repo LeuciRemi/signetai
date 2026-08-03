@@ -41,6 +41,8 @@ describe("Dreaming capability CLI binding", () => {
 			"search_entities",
 			"--agent",
 			"agent-a",
+			"--pass-id",
+			"pass-a",
 			"--input",
 			'{"query":"Atlas"}',
 		]);
@@ -49,7 +51,7 @@ describe("Dreaming capability CLI binding", () => {
 				path: "/api/dream/tools/search_entities",
 				options: expect.objectContaining({
 					method: "POST",
-					body: JSON.stringify({ input: { query: "Atlas" }, agentId: "agent-a" }),
+					body: JSON.stringify({ input: { query: "Atlas" }, agentId: "agent-a", passId: "pass-a" }),
 				}),
 			},
 		]);

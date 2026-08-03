@@ -105,6 +105,7 @@ import { up as retireLegacyIngestion } from "./096-retire-legacy-ingestion";
 import { up as dreamingFailureBackoff } from "./097-dreaming-failure-backoff";
 import { up as dreamingEvidenceExclusions } from "./098-dreaming-evidence-exclusions";
 import { up as dreamingToolCalls } from "./099-dreaming-tool-calls";
+import { up as dreamingRunbook } from "./100-dreaming-runbook";
 
 // -- Public interface consumed by Database.init() --
 
@@ -929,6 +930,17 @@ export const MIGRATIONS: readonly Migration[] = [
 		name: "dreaming-tool-calls",
 		up: dreamingToolCalls,
 		artifacts: { tables: ["dreaming_tool_calls"] },
+	},
+	{
+		version: 100,
+		name: "dreaming-runbook",
+		up: dreamingRunbook,
+		artifacts: {
+			columns: [
+				{ table: "dreaming_passes", column: "evidence_window_json" },
+				{ table: "dreaming_passes", column: "runbook_json" },
+			],
+		},
 	},
 ];
 

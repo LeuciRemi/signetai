@@ -127,6 +127,7 @@ export function startDreamingWorker(
 							? {
 									acpxMcp: {
 										agentId,
+										passId: input.passId,
 										daemonUrl: options.acpxMcp.daemonUrl,
 										authorizationToken: options.acpxMcp.authorizationTokenForAgent?.(agentId),
 									},

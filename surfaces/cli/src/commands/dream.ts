@@ -73,7 +73,8 @@ export function registerDreamCommands(program: Command, deps: DreamDeps): void {
 		.description("Invoke one daemon-owned Dreaming capability with a JSON input object")
 		.requiredOption("--input <json>", "Capability input JSON object")
 		.option("--agent <id>", "Agent scope")
-		.action(async (capability: string, options: { input: string; agent?: string }) => {
+		.option("--pass-id <id>", "Current Dreaming pass (required by runbook_write)")
+		.action(async (capability: string, options: { input: string; agent?: string; passId?: string }) => {
 			let input: unknown;
 			try {
 				input = JSON.parse(options.input);
@@ -90,7 +91,11 @@ export function registerDreamCommands(program: Command, deps: DreamDeps): void {
 			const data = await deps.fetchFromDaemon<unknown>(`/api/dream/tools/${encodeURIComponent(capability)}`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ input, ...(options.agent ? { agentId: options.agent } : {}) }),
+				body: JSON.stringify({
+					input,
+					...(options.agent ? { agentId: options.agent } : {}),
+					...(options.passId ? { passId: options.passId } : {}),
+				}),
 			});
 			if (!data) {
 				console.error(chalk.red("Dreaming capability failed (is the daemon running?)"));

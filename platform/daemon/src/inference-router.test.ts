@@ -115,6 +115,7 @@ describe("InferenceRouter legacy API credentials", () => {
 				{
 					acpxMcp: {
 						agentId: "agent-a",
+						passId: "pass-a",
 						daemonUrl: "http://127.0.0.1:3850",
 						authorizationToken: "scoped-agent-token",
 					},
@@ -142,6 +143,7 @@ describe("InferenceRouter legacy API credentials", () => {
 			expect(mcpConfig.mcpServers[0]?.env).toEqual(
 				expect.arrayContaining([
 					{ name: "SIGNET_DREAMING_AGENT_ID", value: "agent-a" },
+					{ name: "SIGNET_DREAMING_PASS_ID", value: "pass-a" },
 					{ name: "SIGNET_DAEMON_URL", value: "http://127.0.0.1:3850" },
 					{ name: "SIGNET_TOKEN", value: "scoped-agent-token" },
 				]),

@@ -18,6 +18,7 @@ import { up as memoryLifecycleRepair } from "./083-memory-lifecycle-repair";
 import { up as memoryKind } from "./094-memory-kind";
 import { up as compactionRecallProjections } from "./095-compaction-recall-projections";
 import { up as retireLegacyIngestion } from "./096-retire-legacy-ingestion";
+import { up as dreamingRunbook } from "./100-dreaming-runbook";
 import { MIGRATIONS, hasPendingMigrations, runMigrations } from "./index";
 
 function createFreshDb(): Database {
@@ -1695,5 +1696,14 @@ describe("migration framework", () => {
 			content: "preserved recall row",
 			memory_kind: null,
 		});
+	});
+
+	test("migration 100 adds Dreaming runbook columns to an existing pass table idempotently", () => {
+		db = createFreshDb();
+		db.exec("CREATE TABLE dreaming_passes (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, status TEXT NOT NULL)");
+		dreamingRunbook(db as unknown as Parameters<typeof dreamingRunbook>[0]);
+		dreamingRunbook(db as unknown as Parameters<typeof dreamingRunbook>[0]);
+		const columns = db.query("PRAGMA table_info(dreaming_passes)").all() as Array<{ name: string }>;
+		expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining(["evidence_window_json", "runbook_json"]));
 	});
 });

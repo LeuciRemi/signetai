@@ -680,6 +680,7 @@ export function registerPipelineRoutes(app: Hono): void {
 				accessor: getDbAccessor(),
 				agentId: scopedAgent.agentId,
 				actor: readString(body, "actor") ?? c.req.header("x-signet-actor") ?? "dreaming-client",
+				passId: readString(body, "passId") ?? undefined,
 			},
 			c.req.param("capability"),
 		);

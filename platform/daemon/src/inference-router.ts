@@ -797,7 +797,12 @@ export class InferenceRouter {
 			readonly timeoutMs?: number;
 			readonly maxTokens?: number;
 			readonly refresh?: boolean;
-			readonly acpxMcp?: { readonly agentId: string; readonly daemonUrl: string; readonly authorizationToken?: string };
+			readonly acpxMcp?: {
+				readonly agentId: string;
+				readonly passId: string;
+				readonly daemonUrl: string;
+				readonly authorizationToken?: string;
+			};
 		},
 	): Promise<RouterResult<InferenceAgentExecutionResult>> {
 		const background = this.beginBackgroundExecution(request.operation);

@@ -520,7 +520,11 @@ write. `check_entity_label`, `find_duplicate_entities`, and
 `check_contradiction` expose the daemon's read-only deterministic guards so a
 reasoner can consult them before proposing a write; cited operation validation
 and semantic writes remain daemon-owned. The request body cannot supply a
-second agent scope inside `input`.
+second agent scope inside `input`. `runbook_read` returns recent scoped pass
+outcomes, applied/rejected operations, evidence windows, unresolved
+quarantines, and notes; `runbook_write` stores one short structured note on a
+currently running pass. CLI callers supply that pass with `--pass-id`; the Pi
+and restricted ACPX bindings receive it from the daemon-owned pass context.
 
 ### POST /api/dream/trigger
 

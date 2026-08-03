@@ -12,6 +12,7 @@ describe("Dreaming ACPX MCP config", () => {
 	it("creates one ephemeral scoped MCP server and removes it after the turn", () => {
 		const config = createDreamingAcpxMcpConfig({
 			agentId: "agent-a",
+			passId: "pass-a",
 			daemonUrl: "http://127.0.0.1:3850",
 			authorizationToken: "scoped-token",
 		});
@@ -22,8 +23,9 @@ describe("Dreaming ACPX MCP config", () => {
 		expect(parsed.mcpServers).toHaveLength(1);
 		expect(parsed.mcpServers[0]).toMatchObject({ name: "signet_dreaming" });
 		expect(parsed.mcpServers[0]?.env).toEqual(
-			expect.arrayContaining([
-				{ name: "SIGNET_DREAMING_AGENT_ID", value: "agent-a" },
+				expect.arrayContaining([
+					{ name: "SIGNET_DREAMING_AGENT_ID", value: "agent-a" },
+					{ name: "SIGNET_DREAMING_PASS_ID", value: "pass-a" },
 				{ name: "SIGNET_DAEMON_URL", value: "http://127.0.0.1:3850" },
 				{ name: "SIGNET_TOKEN", value: "scoped-token" },
 			]),

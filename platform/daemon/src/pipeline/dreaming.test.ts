@@ -14,6 +14,7 @@ import {
 	runDreamingAgentPass,
 	shouldTriggerDreaming,
 } from "./dreaming";
+import { readDreamingRunbook } from "./dreaming-runbook";
 
 const AGENT = "default";
 
@@ -201,6 +202,10 @@ describe("Dreaming", () => {
 			input: { operations: expect.any(Array) },
 			output: { tool: "apply_ontology_ops", ok: true },
 		});
+		expect(readDreamingRunbook(accessor, AGENT)[0]).toMatchObject({
+			passId: result.passId,
+			operations: [{ operation: "create_entity", ok: true, error: null }],
+		});
 	});
 
 	it("navigates semantic state through scoped tools instead of a partial graph snapshot", async () => {
@@ -231,6 +236,51 @@ describe("Dreaming", () => {
 		expect(prompt).not.toContain("Static Snapshot Sentinel");
 		expect(prompt).toContain("intentionally not preloaded");
 		expect(toolNames).toEqual(expect.arrayContaining(["search_entities", "get_entity", "list_aspect_claims", "walk_links"]));
+	});
+
+	it("carries scoped runbook history and exact evidence windows into a later pass", async () => {
+		seedSummary(db, "runbook-summary", "The deployment review is deferred pending an owner.", 10);
+		const first = await runDreamingAgentPass(
+			accessor,
+			{
+				async run(input) {
+					const write = input.tools.find((tool) => tool.name === "runbook_write");
+					if (!write) throw new Error("Missing runbook_write");
+					await write.execute(
+						"runbook",
+						{ summary: "Deferred deployment review", openQuestions: ["Who owns the review?"], deferred: ["Link owner after confirmation"] },
+						undefined,
+						undefined,
+						{} as never,
+					);
+					return { summary: "Recorded deferred review" };
+				},
+			},
+			defaultCfg(),
+			"/tmp",
+			AGENT,
+			"incremental",
+		);
+		const stored = db.prepare("SELECT evidence_window_json, runbook_json FROM dreaming_passes WHERE id = ?").get(first.passId) as {
+			evidence_window_json: string;
+			runbook_json: string;
+		};
+		expect(JSON.parse(stored.evidence_window_json)).toMatchObject({ sources: [{ sourceRef: "summary:runbook-summary" }] });
+		expect(JSON.parse(stored.runbook_json)).toMatchObject({ openQuestions: ["Who owns the review?"] });
+
+		let prompt = "";
+		await runDreamingAgentPass(
+			accessor,
+			{ async run(input) { prompt = input.prompt; return { summary: "Reviewed prior runbook" }; } },
+			defaultCfg(),
+			"/tmp",
+			AGENT,
+			"compact",
+		);
+		expect(prompt).toContain("<dreaming_runbook>");
+		expect(prompt).toContain("Deferred deployment review");
+		expect(prompt).toContain("not source evidence");
+		expect(prompt).toContain("call runbook_write once");
 	});
 
 	it("retains rejected agent evidence for explicit requeue", async () => {

@@ -25,6 +25,7 @@ function resolveMcpEntrypoint(): string {
  */
 export function createDreamingAcpxMcpConfig(params: {
 	readonly agentId: string;
+	readonly passId: string;
 	readonly daemonUrl: string;
 	readonly authorizationToken?: string;
 }): DreamingAcpxMcpConfig {
@@ -32,6 +33,7 @@ export function createDreamingAcpxMcpConfig(params: {
 	const path = join(dir, "mcp.json");
 	const env = [
 		{ name: "SIGNET_DREAMING_AGENT_ID", value: params.agentId },
+		{ name: "SIGNET_DREAMING_PASS_ID", value: params.passId },
 		{ name: "SIGNET_DAEMON_URL", value: params.daemonUrl },
 		...(params.authorizationToken ? [{ name: "SIGNET_TOKEN", value: params.authorizationToken }] : []),
 	];

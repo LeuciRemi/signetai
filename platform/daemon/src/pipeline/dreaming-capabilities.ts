@@ -23,6 +23,7 @@ import type { DreamingAgentEvidence } from "./dreaming-evidence";
 import { applyDreamingOperations, type ApplyDreamingOperationsResult, type DreamingOperationRequest } from "./dreaming-operations";
 import { DREAMING_ONTOLOGY_OPERATION_SCHEMA } from "./dreaming-operation-contract";
 import { detectProspectiveContradictionRisk } from "./antonyms";
+import { readDreamingRunbook, writeDreamingRunbook } from "./dreaming-runbook";
 
 const bounded = (value: number | undefined, fallback: number, max: number): number =>
 	Math.min(Math.max(Math.floor(value ?? fallback), 1), max);
@@ -43,6 +44,8 @@ export const DREAMING_CAPABILITY_IDS = [
 	"check_entity_label",
 	"find_duplicate_entities",
 	"check_contradiction",
+	"runbook_read",
+	"runbook_write",
 	"apply_ontology_ops",
 ] as const;
 
@@ -82,6 +85,8 @@ export interface CreateDreamingCapabilitiesParams {
 	readonly accessor: DbAccessor;
 	readonly agentId: string;
 	readonly actor: string;
+	/** Present only for a live Dreaming pass; protects runbook writes. */
+	readonly passId?: string;
 	readonly evidence?: readonly DreamingAgentEvidence[];
 	readonly onOperationsApplied?: (
 		result: ApplyDreamingOperationsResult,
@@ -286,6 +291,32 @@ export function createDreamingCapabilities(params: CreateDreamingCapabilitiesPar
 					...detectProspectiveContradictionRisk(value, attribute.content),
 				})),
 			}),
+		),
+		capability(
+			"runbook_read",
+			"Read Dreaming runbook",
+			"Read recent scoped pass outcomes, evidence windows, quarantines, and structured runbook notes.",
+			true,
+			z.object({ limit: z.number().finite().optional() }),
+			async ({ limit }) => ({ ok: true, items: readDreamingRunbook(accessor, agentId, bounded(limit, 5, 20)) }),
+		),
+		capability(
+			"runbook_write",
+			"Write Dreaming runbook",
+			"Store a short structured note on the current scoped Dreaming pass for future passes to review.",
+			false,
+			z.object({
+				summary: z.string().trim().min(1).max(2_000),
+				openQuestions: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
+				deferred: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
+			}),
+			async (entry) => {
+				if (!params.passId) return { ok: false, error: "Runbook writes require a live Dreaming pass" };
+				if (!writeDreamingRunbook(accessor, { agentId, passId: params.passId, entry })) {
+					return { ok: false, error: "Dreaming pass is not running in this agent scope" };
+				}
+				return { ok: true, passId: params.passId };
+			},
 		),
 		capability(
 			"apply_ontology_ops",
