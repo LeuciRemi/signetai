@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerOAuthProvider, unregisterOAuthProvider } from "@earendil-works/pi-ai/oauth";
@@ -26,6 +26,62 @@ function openAiSseResponse(
 	return new Response(chunks.join(""), { status: 200, headers: { "content-type": "text/event-stream" } });
 }
 
+function writeDreamingAcpxAgentFixture(root: string): {
+	readonly argsPath: string;
+	readonly mcpConfigPathPath: string;
+	readonly mcpConfigCopyPath: string;
+} {
+	mkdirSync(join(root, "memory"), { recursive: true });
+	const bin = join(root, "fake-dreaming-acpx.sh");
+	const argsPath = join(root, "acpx-args.txt");
+	const mcpConfigPathPath = join(root, "acpx-mcp-path.txt");
+	const mcpConfigCopyPath = join(root, "acpx-mcp.json");
+	writeFileSync(
+		bin,
+		`#!/usr/bin/env bash
+printf '%s\\n' "$@" > ${JSON.stringify(argsPath)}
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--mcp-config" ]; then
+    printf '%s' "$2" > ${JSON.stringify(mcpConfigPathPath)}
+    cp "$2" ${JSON.stringify(mcpConfigCopyPath)}
+    break
+  fi
+  shift
+done
+cat >/dev/null
+printf 'dreaming agent completed\\n'
+`,
+	);
+	chmodSync(bin, 0o755);
+	writeFileSync(
+		join(root, "agent.yaml"),
+		`inference:
+  defaultPolicy: dreaming
+  targets:
+    dreaming:
+      executor: acpx
+      acpx:
+        agent: codex
+        bin: ${bin}
+        permissions: deny-all
+        hooks: disabled
+        terminal: false
+      models:
+        default:
+          model: gpt-5.4-mini
+  policies:
+    dreaming:
+      mode: strict
+      defaultTargets:
+        - dreaming/default
+  workloads:
+    memoryExtraction:
+      policy: dreaming
+`,
+	);
+	return { argsPath, mcpConfigPathPath, mcpConfigCopyPath };
+}
+
 afterEach(() => {
 	globalThis.fetch = originalFetch;
 	resetOAuthStateForTests();
@@ -47,6 +103,55 @@ afterEach(() => {
 });
 
 describe("InferenceRouter legacy API credentials", () => {
+	it("runs an ACPX agent with one ephemeral agent-scoped Dreaming MCP binding", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "signet-router-dreaming-acpx-"));
+		const fixture = writeDreamingAcpxAgentFixture(dir);
+		try {
+			const router = getOrCreateInferenceRouter(dir);
+			const result = await router.runAgent(
+				{ operation: "memory_extraction", promptPreview: "consolidate selected evidence" },
+				"Use the supplied evidence and daemon tools.",
+				[],
+				{
+					acpxMcp: {
+						agentId: "agent-a",
+						daemonUrl: "http://127.0.0.1:3850",
+						authorizationToken: "scoped-agent-token",
+					},
+				},
+			);
+			expect(result.ok).toBe(true);
+			if (!result.ok) return;
+			expect(result.value.decision.targetRef).toBe("dreaming/default");
+			expect(result.value.attempts).toEqual([
+				expect.objectContaining({ targetRef: "dreaming/default", ok: true }),
+			]);
+
+			const args = readFileSync(fixture.argsPath, "utf8").trim().split("\n");
+			expect(args).toContain("--mcp-config");
+			const mcpConfigPath = readFileSync(fixture.mcpConfigPathPath, "utf8");
+			expect(args[args.indexOf("--mcp-config") + 1]).toBe(mcpConfigPath);
+			const mcpConfig = JSON.parse(readFileSync(fixture.mcpConfigCopyPath, "utf8")) as {
+				mcpServers: Array<{
+					name: string;
+					env: Array<{ name: string; value: string }>;
+				}>;
+			};
+			expect(mcpConfig.mcpServers).toHaveLength(1);
+			expect(mcpConfig.mcpServers[0]).toMatchObject({ name: "signet_dreaming" });
+			expect(mcpConfig.mcpServers[0]?.env).toEqual(
+				expect.arrayContaining([
+					{ name: "SIGNET_DREAMING_AGENT_ID", value: "agent-a" },
+					{ name: "SIGNET_DAEMON_URL", value: "http://127.0.0.1:3850" },
+					{ name: "SIGNET_TOKEN", value: "scoped-agent-token" },
+				]),
+			);
+			expect(existsSync(mcpConfigPath)).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("isolates a rejected OAuth refresh from healthy fallback targets", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "signet-router-oauth-refresh-"));
 		try {
