@@ -1260,14 +1260,20 @@ function applyCreateLink(
 	proposal: ProposalRow,
 	payload: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, unknown>> {
-	const source = readString(payload, "source_entity");
-	const target = readString(payload, "target_entity");
+	const sourceIdSelector = readString(payload, "source_entity_id");
+	const targetIdSelector = readString(payload, "target_entity_id");
+	const source = sourceIdSelector ?? readString(payload, "source_entity");
+	const target = targetIdSelector ?? readString(payload, "target_entity");
 	if (source === null) throw new OntologyProposalError("payload.source_entity is required", 400);
 	if (target === null) throw new OntologyProposalError("payload.target_entity is required", 400);
 
 	const dependencyType = normalizeDependencyType(readString(payload, "link_type"));
-	const sourceId = resolveOrCreateEntity(db, agentId, source, normalizeEntityType(readString(payload, "source_type")));
-	const targetId = resolveOrCreateEntity(db, agentId, target, normalizeEntityType(readString(payload, "target_type")));
+	const sourceId = sourceIdSelector
+		? resolveEntityStrict(db, agentId, source).id
+		: resolveOrCreateEntity(db, agentId, source, normalizeEntityType(readString(payload, "source_type")));
+	const targetId = targetIdSelector
+		? resolveEntityStrict(db, agentId, target).id
+		: resolveOrCreateEntity(db, agentId, target, normalizeEntityType(readString(payload, "target_type")));
 	const reason = requireDependencyReason(dependencyType, readString(payload, "reason") ?? proposal.rationale);
 	const strength = clamp01(readNumber(payload, "strength") ?? 0.5);
 	const confidence = clamp01(readNumber(payload, "confidence") ?? proposal.confidence);
