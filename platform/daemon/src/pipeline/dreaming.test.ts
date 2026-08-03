@@ -235,6 +235,7 @@ describe("Dreaming", () => {
 		expect(prompt).not.toContain("<knowledge_graph>");
 		expect(prompt).not.toContain("Static Snapshot Sentinel");
 		expect(prompt).toContain("intentionally not preloaded");
+		expect(prompt).toContain("do not inventory every named entity");
 		expect(toolNames).toEqual(expect.arrayContaining(["search_entities", "get_entity", "list_aspect_claims", "walk_links"]));
 	});
 
