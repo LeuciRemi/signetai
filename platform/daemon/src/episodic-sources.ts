@@ -573,3 +573,55 @@ export function readEpisodicSource(db: ReadDb, options: ReadEpisodicSourceOption
 		readEpisodicSummary(db, options.agentId, from)
 	);
 }
+
+/**
+ * Search immutable episodic evidence without falling back to semantic memory.
+ *
+ * This belongs beside the canonical cross-store reader so every Dreaming
+ * caller uses the same provenance, deletion, and source-native boundaries.
+ * It deliberately returns complete source records: callers bound the number
+ * of matches, never by truncating the evidence a model may cite.
+ */
+export function searchEpisodicSources(
+	db: ReadDb,
+	params: { readonly agentId: string; readonly query: string; readonly limit?: number },
+): EpisodicSourceRecord[] {
+	const query = params.query.trim();
+	if (!query) return [];
+	const limit = Math.max(1, Math.min(Math.floor(params.limit ?? 20), 50));
+	const like = `%${query}%`;
+	const rows = db
+		.prepare(
+			`SELECT kind, id
+			 FROM (
+				SELECT 'memory' AS kind, id, created_at AS captured_at
+				FROM memories
+				WHERE agent_id = ? AND memory_kind = 'episodic'
+				  AND COALESCE(is_deleted, 0) = 0 AND visibility != 'archived' AND scope IS NULL
+				  AND COALESCE(type, '') != 'session_summary' AND content LIKE ?
+				UNION ALL
+				SELECT 'artifact' AS kind, source_path AS id, captured_at
+				FROM memory_artifacts
+				WHERE agent_id = ? AND COALESCE(is_deleted, 0) = 0 AND content LIKE ?
+				UNION ALL
+				SELECT 'transcript' AS kind, session_key AS id, COALESCE(updated_at, created_at) AS captured_at
+				FROM session_transcripts
+				WHERE agent_id = ? AND content LIKE ?
+				UNION ALL
+				SELECT 'summary' AS kind, id, latest_at AS captured_at
+				FROM session_summaries
+				WHERE agent_id = ? AND depth = 0
+				  AND COALESCE(source_type, 'summary') IN ('summary', 'compaction', 'checkpoint')
+				  AND content LIKE ?
+			 )
+			 ORDER BY julianday(captured_at) DESC, kind ASC, id ASC
+			 LIMIT ?`,
+		)
+		.all(params.agentId, like, params.agentId, like, params.agentId, like, params.agentId, like, limit) as Array<{
+			kind: EpisodicSourceKind;
+			id: string;
+		}>;
+	return rows
+		.map((row) => readEpisodicSource(db, { agentId: params.agentId, from: `${row.kind}:${row.id}` }))
+		.filter((source): source is EpisodicSourceRecord => source !== null);
+}

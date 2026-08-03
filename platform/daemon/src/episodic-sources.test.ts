@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeDbAccessor, getDbAccessor, initDbAccessor } from "./db-accessor";
-import { readEpisodicSource, readRecentEpisodicSources } from "./episodic-sources";
+import { readEpisodicSource, readRecentEpisodicSources, searchEpisodicSources } from "./episodic-sources";
 
 describe("episodic source selection", () => {
 	let dir = "";
@@ -188,5 +188,40 @@ describe("episodic source selection", () => {
 		expect(
 			getDbAccessor().withReadDb((db) => readRecentEpisodicSources(db, "ant", 10, undefined, null, "oldest")),
 		).toMatchObject([{ kind: "artifact", id: "sessions/recovery-transcript.md", sourceKind: "transcript" }]);
+	});
+
+	it("searches only live episodic evidence across source stores", () => {
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				`INSERT INTO memories
+				 (id, content, type, agent_id, visibility, memory_kind, created_at, updated_at)
+				 VALUES ('matching-memory', 'Needle in a manual memory', 'fact', 'ant', 'global', 'episodic',
+				  '2026-08-01T10:00:00.000Z', '2026-08-01T10:00:00.000Z')`,
+			).run();
+			db.prepare(
+				`INSERT INTO memory_artifacts
+				 (agent_id, source_path, source_sha256, source_kind, session_id, session_token, captured_at, content, updated_at, is_deleted)
+				 VALUES ('ant', 'sources/needle.md', 'needle-sha', 'source_markdown', 'session-a', 'token-a',
+				  '2026-08-01T11:00:00.000Z', 'Needle in source evidence', '2026-08-01T11:00:00.000Z', 0)`,
+			).run();
+			db.prepare(
+				`INSERT INTO memories
+				 (id, content, type, agent_id, visibility, memory_kind, created_at, updated_at)
+				 VALUES ('derived-memory', 'Needle in derived state', 'fact', 'ant', 'global', 'semantic',
+				  '2026-08-01T12:00:00.000Z', '2026-08-01T12:00:00.000Z')`,
+			).run();
+			db.prepare(
+				`INSERT INTO memory_artifacts
+				 (agent_id, source_path, source_sha256, source_kind, session_id, session_token, captured_at, content, updated_at, is_deleted)
+				 VALUES ('other', 'sources/other.md', 'other-sha', 'source_markdown', 'session-b', 'token-b',
+				  '2026-08-01T13:00:00.000Z', 'Needle for another agent', '2026-08-01T13:00:00.000Z', 0)`,
+			).run();
+		});
+
+		const matches = getDbAccessor().withReadDb((db) => searchEpisodicSources(db, { agentId: "ant", query: "Needle" }));
+		expect(matches).toMatchObject([
+			{ kind: "artifact", id: "sources/needle.md", content: "Needle in source evidence" },
+			{ kind: "memory", id: "matching-memory", content: "Needle in a manual memory" },
+		]);
 	});
 });
