@@ -10,6 +10,8 @@ export interface CreateRoutingProviderOptions {
 	readonly targetId: string;
 	readonly modelId: string;
 	readonly acpxHooks?: AcpxHooksMode;
+	/** Per-run ACPX arguments (for example, a scoped ephemeral MCP config). */
+	readonly acpxExtraArgs?: readonly string[];
 	readonly claudeCode?: PipelineClaudeCodeConfig;
 	resolveCredential(account: RoutingAccountConfig | undefined): Promise<ResolvedInferenceCredential | undefined>;
 }
@@ -54,6 +56,7 @@ export async function createRoutingProvider(opts: CreateRoutingProviderOptions):
 		return createAcpxProvider({
 			...target.acpx,
 			...(opts.acpxHooks ? { hooks: opts.acpxHooks } : {}),
+			extraArgs: [...(target.acpx.extraArgs ?? []), ...(opts.acpxExtraArgs ?? [])],
 			model: model.model,
 		});
 	}

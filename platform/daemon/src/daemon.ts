@@ -33,7 +33,7 @@ import { watch } from "chokidar";
 import { Hono } from "hono";
 import { resolveDaemonAgentId } from "./agent-id";
 import { yieldEvery } from "./async-yield";
-import { requirePermission } from "./auth";
+import { createToken, requirePermission } from "./auth";
 import { bindWithRetry } from "./bind-with-retry";
 import {
 	migrateConfig,
@@ -95,6 +95,7 @@ import {
 	type RuntimeSynthesisProviderName,
 	analyticsCollector,
 	authConfig,
+	authSecret,
 	bindAbort,
 	invalidateDiagnosticsCache,
 	providerRuntimeResolution,
@@ -1432,7 +1433,19 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 
 	if (!pipelinePaused && !memoryCfg.pipelineV2.mutationsFrozen) {
 		try {
-			dreamingWorkerHandle = startDreamingWorker(getDbAccessor(), memoryCfg.dreaming, AGENTS_DIR, defaultAgentId);
+			dreamingWorkerHandle = startDreamingWorker(getDbAccessor(), memoryCfg.dreaming, AGENTS_DIR, defaultAgentId, {
+				acpxMcp: {
+					daemonUrl: `http://${INTERNAL_SELF_HOST}:${PORT}`,
+					authorizationTokenForAgent: (agentId) =>
+						authSecret
+							? createToken(
+								authSecret,
+								{ sub: `dreaming:${agentId}`, role: "agent", scope: { agent: agentId } },
+								Math.max(900, Math.ceil(memoryCfg.dreaming.timeout / 1000) + 60),
+							)
+							: undefined,
+				},
+			});
 			setDreamingWorker(dreamingWorkerHandle);
 		} catch (err) {
 			logger.warn("dreaming", "Failed to start dreaming worker (non-fatal)", {

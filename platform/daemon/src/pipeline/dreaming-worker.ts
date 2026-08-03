@@ -6,14 +6,15 @@
 
 import type { DreamingConfig } from "@signet/core";
 import type { DbAccessor } from "../db-accessor";
-import { getInferenceProvider } from "../llm";
+import { getOrCreateInferenceRouter } from "../inference-router";
 import { logger } from "../logger";
 import {
 	type DreamingMode,
+	type DreamingAgentExecutor,
 	createDreamingPass,
 	getDreamingEpisodicTokenBacklog,
 	recordDreamingFailure,
-	runDreamingPass,
+	runDreamingAgentPass,
 	shouldTriggerDreaming,
 } from "./dreaming";
 
@@ -46,6 +47,16 @@ export interface DreamingWorkerHandle {
 	 * Await this (with a timeout) during shutdown before closing the DB.
 	 */
 	readonly activePass: Promise<unknown> | null;
+}
+
+export interface DreamingWorkerOptions {
+	/** Test seam; production always uses the configured inference router. */
+	readonly executorFactory?: (agentId: string) => DreamingAgentExecutor;
+	/** Scoped connection details for ACPX's temporary MCP server. */
+	readonly acpxMcp?: {
+		readonly daemonUrl: string;
+		readonly authorizationTokenForAgent?: (agentId: string) => string | undefined;
+	};
 }
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 min
@@ -90,12 +101,43 @@ export function startDreamingWorker(
 	cfg: DreamingConfig,
 	agentsDir: string,
 	defaultAgentId: string,
+	options: DreamingWorkerOptions = {},
 ): DreamingWorkerHandle {
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let active = false;
 	let activeAgent: string | null = null;
 	let stopped = false;
 	let activePassPromise: Promise<unknown> | null = null;
+	const router = options.executorFactory ? null : getOrCreateInferenceRouter(agentsDir);
+	const executorForAgent = (agentId: string): DreamingAgentExecutor =>
+		options.executorFactory?.(agentId) ?? {
+			async run(input) {
+				const result = await router!.runAgent(
+					{
+						agentId,
+						operation: "memory_extraction",
+						promptPreview: input.prompt.slice(0, 8000),
+					},
+					input.prompt,
+					input.tools,
+					{
+						timeoutMs: input.timeoutMs,
+						maxTokens: input.maxTokens,
+						...(options.acpxMcp
+							? {
+									acpxMcp: {
+										agentId,
+										daemonUrl: options.acpxMcp.daemonUrl,
+										authorizationToken: options.acpxMcp.authorizationTokenForAgent?.(agentId),
+									},
+								}
+							: {}),
+					},
+				);
+				if (!result.ok) throw new Error(result.error.message);
+				return { summary: `Dreaming agent completed through ${result.value.decision.targetRef}` };
+			},
+		};
 
 	// Sweep orphaned passes from unclean shutdown: any 'running' record
 	// was left by a crash or forced stop — mark it failed
@@ -121,12 +163,11 @@ export function startDreamingWorker(
 		existingPassId?: string,
 	): Promise<{ passId: string; applied: number; skipped: number; failed: number; summary: string }> {
 		if (active) throw new AlreadyRunningError();
-		const provider = getInferenceProvider("memoryExtraction");
 		active = true;
 		activeAgent = runAgentId;
-		const p = runDreamingPass(
+		const p = runDreamingAgentPass(
 			accessor,
-			provider.generate.bind(provider),
+			executorForAgent(runAgentId),
 			cfg,
 			agentsDir,
 			runAgentId,
@@ -210,11 +251,10 @@ export function startDreamingWorker(
 		triggerAsync(mode: DreamingMode, agentId?: string): string {
 			if (active) throw new AlreadyRunningError();
 			const runAgentId = normalizeAgentId(agentId, defaultAgentId);
-			const provider = getInferenceProvider("memoryExtraction");
 			const passId = createDreamingPass(accessor, runAgentId, mode);
 			active = true;
 			activeAgent = runAgentId;
-			const p = runDreamingPass(accessor, provider.generate.bind(provider), cfg, agentsDir, runAgentId, mode, passId);
+			const p = runDreamingAgentPass(accessor, executorForAgent(runAgentId), cfg, agentsDir, runAgentId, mode, passId);
 			activePassPromise = p;
 			p.catch((e) => {
 				recordDreamingFailure(accessor, runAgentId);

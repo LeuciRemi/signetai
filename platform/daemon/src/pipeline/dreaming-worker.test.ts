@@ -3,10 +3,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { DreamingConfig, LlmProvider } from "@signet/core";
+import type { DreamingConfig } from "@signet/core";
 import { runMigrations } from "../../../core/src/migrations";
 import type { DbAccessor } from "../db-accessor";
-import { closeInferenceProviderResolver, initInferenceProviderResolver } from "../llm";
 import { getDreamingWorkerAgentIds, startDreamingWorker } from "./dreaming-worker";
 
 function defaultCfg(overrides?: Partial<DreamingConfig>): DreamingConfig {
@@ -40,18 +39,6 @@ function wrapDb(db: Database): DbAccessor {
 	} as unknown as DbAccessor;
 }
 
-function makeProvider(): LlmProvider {
-	return {
-		name: "test",
-		async available() {
-			return true;
-		},
-		async generate() {
-			return JSON.stringify({ summary: "noop", mutations: [] });
-		},
-	};
-}
-
 describe("dreaming worker agent scope", () => {
 	let db: Database;
 	let accessor: DbAccessor;
@@ -62,11 +49,9 @@ describe("dreaming worker agent scope", () => {
 		runMigrations(db as unknown as Parameters<typeof runMigrations>[0]);
 		accessor = wrapDb(db);
 		agentsDir = mkdtempSync(join(tmpdir(), "dreaming-worker-"));
-		initInferenceProviderResolver(() => makeProvider());
 	});
 
 	afterEach(() => {
-		closeInferenceProviderResolver();
 		rmSync(agentsDir, { recursive: true, force: true });
 		db.close();
 	});
@@ -163,15 +148,14 @@ describe("dreaming worker agent scope", () => {
 		// cites only the evidence present in THIS agent's prompt. Since each
 		// pass is bound to one agent_id, only that agent's summary appears.
 		const seenPrompts: string[] = [];
-		const deterministicProvider: LlmProvider = {
-			name: "deterministic-multi-agent",
-			async available() {
-				return true;
-			},
-			async generate(prompt: string) {
+		const executorFactory = () => ({
+			async run(input: { prompt: string; tools: ReadonlyArray<{ name: string; execute: (...args: unknown[]) => Promise<unknown> }> }) {
+				const prompt = input.prompt;
 				seenPrompts.push(prompt);
+				const apply = input.tools.find((tool) => tool.name === "apply_ontology_ops");
+				if (!apply) throw new Error("Missing apply_ontology_ops");
 				if (prompt.includes(alphaEvidence) && !prompt.includes(betaEvidence)) {
-					return JSON.stringify({
+					await apply.execute("call", {
 						operations: [
 							{
 								operation: "create_entity",
@@ -179,15 +163,20 @@ describe("dreaming worker agent scope", () => {
 								reason: "The evidence identifies the Apex project.",
 								confidence: 0.9,
 								evidence: [
-									{ source_kind: "summary", source_id: "summary-alpha", quote: alphaEvidence },
+									{
+										source_ref: "summary:summary-alpha",
+										source_kind: "summary",
+										source_id: "summary-alpha",
+										quote: alphaEvidence,
+									},
 								],
 							},
 						],
-						summary: "Consolidated alpha evidence",
 					});
+					return { summary: "Consolidated alpha evidence" };
 				}
 				if (prompt.includes(betaEvidence) && !prompt.includes(alphaEvidence)) {
-					return JSON.stringify({
+					await apply.execute("call", {
 						operations: [
 							{
 								operation: "create_entity",
@@ -195,17 +184,21 @@ describe("dreaming worker agent scope", () => {
 								reason: "The evidence identifies the Zenith project.",
 								confidence: 0.9,
 								evidence: [
-									{ source_kind: "summary", source_id: "summary-beta", quote: betaEvidence },
+									{
+										source_ref: "summary:summary-beta",
+										source_kind: "summary",
+										source_id: "summary-beta",
+										quote: betaEvidence,
+									},
 								],
 							},
 						],
-						summary: "Consolidated beta evidence",
 					});
+					return { summary: "Consolidated beta evidence" };
 				}
-				return JSON.stringify({ operations: [], summary: "No recognized evidence" });
+				return { summary: "No recognized evidence" };
 			},
-		};
-		initInferenceProviderResolver(() => deterministicProvider);
+		});
 
 		// Mirror one check cycle: discover agents, run one pass per agent.
 		const worker = startDreamingWorker(
@@ -213,6 +206,7 @@ describe("dreaming worker agent scope", () => {
 			defaultCfg({ tokenThreshold: 1, backfillOnFirstRun: true }),
 			agentsDir,
 			"default",
+			{ executorFactory },
 		);
 		try {
 			for (const agentId of getDreamingWorkerAgentIds(accessor, "default")) {

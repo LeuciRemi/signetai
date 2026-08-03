@@ -123,18 +123,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-interface DaemonResponse<T> {
+export interface DaemonResponse<T> {
 	readonly ok: true;
 	readonly data: T;
 }
 
-interface DaemonError {
+export interface DaemonError {
 	readonly ok: false;
 	readonly error: string;
 	readonly status: number;
 }
 
-type FetchResult<T> = DaemonResponse<T> | DaemonError;
+export type FetchResult<T> = DaemonResponse<T> | DaemonError;
 
 const BASE_TOOL_NAMES = new Set<string>([
 	"memory_search",
@@ -244,7 +244,7 @@ function normalizeAuthorizationHeader(value: string | undefined): string | undef
 	return trimmed ? trimmed.replace(/[\r\n]+/g, "") : undefined;
 }
 
-async function daemonFetch<T>(
+export async function daemonFetch<T>(
 	baseUrl: string,
 	path: string,
 	options: {
@@ -291,7 +291,7 @@ async function daemonFetch<T>(
 	}
 }
 
-function textResult(value: unknown): { content: Array<{ type: "text"; text: string }> } {
+export function textResult(value: unknown): { content: Array<{ type: "text"; text: string }> } {
 	return {
 		content: [
 			{
@@ -323,7 +323,7 @@ function graphIqPositionalArg(
 	return { ok: true, value };
 }
 
-function errorResult(msg: string): {
+export function errorResult(msg: string): {
 	content: Array<{ type: "text"; text: string }>;
 	isError: true;
 } {

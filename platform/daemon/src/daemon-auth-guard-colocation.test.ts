@@ -461,6 +461,24 @@ describe("auth guard co-location", () => {
 			expect(await status(app, "POST", "/api/dream/exclusions/requeue")).toBe(403);
 			expect(await status(app, "POST", "/api/dream/operations")).toBe(403);
 		});
+
+		it("binds agent-scoped Dreaming writes to the credential agent", async () => {
+			const app = await makeApp();
+			const state = await import("./routes/state.js");
+			const { createAuthMiddleware, createToken } = await import("./auth");
+			const { registerPipelineRoutes } = await import("./routes/pipeline-routes");
+			const secret = state.authSecret;
+			if (!secret) throw new Error("expected auth secret for team-mode Dreaming test");
+			app.use("*", createAuthMiddleware(state.authConfig, secret));
+			registerPipelineRoutes(app);
+			const token = createToken(secret, { sub: "dreaming-agent-a", role: "agent", scope: { agent: "agent-a" } }, 60);
+			const res = await app.request("/api/dream/operations", {
+				method: "POST",
+				headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+				body: JSON.stringify({ agentId: "agent-b", operations: [{ operation: "create_entity", payload: {} }] }),
+			});
+			expect(res.status).toBe(403);
+		});
 	});
 
 	describe("connector routes need guards", () => {

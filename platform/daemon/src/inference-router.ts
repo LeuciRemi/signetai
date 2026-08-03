@@ -38,6 +38,7 @@ import {
 	generateWithTracking,
 } from "./pipeline/provider";
 import { isPiAgentSessionProvider } from "./pipeline/pi-provider";
+import { createDreamingAcpxMcpConfig } from "./pipeline/acpx-dreaming-mcp";
 import { getSecret } from "./secrets";
 
 const SNAPSHOT_TTL_MS = 15_000;
@@ -603,12 +604,13 @@ export class InferenceRouter {
 		targetId: string,
 		modelId: string,
 		acpxHooks?: AcpxHooksMode,
+		acpxExtraArgs?: readonly string[],
 	): Promise<StreamCapableLlmProvider> {
 		const cacheKey = `${loaded.signature}:${targetId}/${modelId}:${acpxHooks ?? "configured-hooks"}`;
 		const target = loaded.config.targets[targetId];
 		const account = target?.account ? loaded.config.accounts[target.account] : undefined;
 		const oauthBacked = isOAuthBackedAccount(account);
-		if (!oauthBacked) {
+		if (!oauthBacked && !acpxExtraArgs) {
 			const cached = this.providerCache.get(cacheKey);
 			if (cached) return cached;
 		}
@@ -619,12 +621,13 @@ export class InferenceRouter {
 				targetId,
 				modelId,
 				acpxHooks,
+				acpxExtraArgs,
 				claudeCode: loadMemoryConfig(this.agentsDir).pipelineV2.claudeCode,
 				resolveCredential: (candidateAccount) => this.resolveCredential(candidateAccount),
 			});
 		})();
 
-		if (!oauthBacked) this.providerCache.set(cacheKey, build);
+		if (!oauthBacked && !acpxExtraArgs) this.providerCache.set(cacheKey, build);
 		return build;
 	}
 
@@ -790,7 +793,12 @@ export class InferenceRouter {
 		request: RouteRequest,
 		prompt: string,
 		tools: readonly ToolDefinition[],
-		opts?: { readonly timeoutMs?: number; readonly maxTokens?: number; readonly refresh?: boolean },
+		opts?: {
+			readonly timeoutMs?: number;
+			readonly maxTokens?: number;
+			readonly refresh?: boolean;
+			readonly acpxMcp?: { readonly agentId: string; readonly daemonUrl: string; readonly authorizationToken?: string };
+		},
 	): Promise<RouterResult<InferenceAgentExecutionResult>> {
 		const background = this.beginBackgroundExecution(request.operation);
 		if (!background) {
@@ -810,16 +818,31 @@ export class InferenceRouter {
 					continue;
 				}
 				const startedAt = Date.now();
+				let mcpConfig: ReturnType<typeof createDreamingAcpxMcpConfig> | undefined;
 				try {
-					const provider = await this.createProvider(loaded.value, parsed.value.targetId, parsed.value.modelId);
+					const target = loaded.value.config.targets[parsed.value.targetId];
+					if (target?.executor === "acpx") {
+						if (!opts?.acpxMcp) {
+							throw new Error("ACPX agent target requires the scoped Signet MCP binding");
+						}
+						mcpConfig = createDreamingAcpxMcpConfig(opts.acpxMcp);
+					}
+					const provider = await this.createProvider(
+						loaded.value,
+						parsed.value.targetId,
+						parsed.value.modelId,
+						undefined,
+						mcpConfig ? ["--mcp-config", mcpConfig.path] : undefined,
+					);
 					if (!isPiAgentSessionProvider(provider)) {
-						attempts.push({
-							targetRef,
-							ok: false,
-							durationMs: Date.now() - startedAt,
-							error: "target requires the ACPX MCP agent binding",
+						const generated = await provider.generate(prompt, {
+							timeoutMs: opts?.timeoutMs,
+							maxTokens: opts?.maxTokens,
 						});
-						continue;
+						if (!generated.trim()) throw new Error("ACPX agent returned no completion");
+						this.clearObservedRuntimeState(loaded.value, targetRef);
+						attempts.push({ targetRef, ok: true, durationMs: Date.now() - startedAt, usage: null });
+						return { ok: true, value: { decision: decision.value, attempts } };
 					}
 					const session = await provider.createAgentSession(tools, { maxTokens: opts?.maxTokens });
 					let timer: ReturnType<typeof setTimeout> | null = null;
@@ -841,6 +864,8 @@ export class InferenceRouter {
 					const message = formatExecutionError(error);
 					this.observeExecutionFailure(loaded.value, targetRef, message);
 					attempts.push({ targetRef, ok: false, durationMs: Date.now() - startedAt, error: message });
+				} finally {
+					mcpConfig?.dispose();
 				}
 			}
 			return {

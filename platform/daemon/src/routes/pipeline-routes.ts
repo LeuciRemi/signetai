@@ -135,16 +135,25 @@ function readArray(record: Readonly<Record<string, unknown>>, key: string): read
 	return Array.isArray(value) ? value : undefined;
 }
 
+function requestedDreamAgentId(c: Context, body: Readonly<Record<string, unknown>> = {}): string | undefined {
+	return (
+		readString(body, "agentId") ??
+		readString(body, "agent_id") ??
+		c.req.query("agentId") ??
+		c.req.query("agent_id") ??
+		c.req.header("x-signet-agent-id")
+	);
+}
+
 export function resolveDreamRequestAgentId(c: Context, body: Readonly<Record<string, unknown>> = {}): string {
-	return resolveAgentId({
-		agentId:
-			readString(body, "agentId") ??
-			readString(body, "agent_id") ??
-			c.req.query("agentId") ??
-			c.req.query("agent_id") ??
-			c.req.header("x-signet-agent-id") ??
-			resolveDaemonAgentId(),
-	});
+	return resolveAgentId({ agentId: requestedDreamAgentId(c, body) ?? resolveDaemonAgentId() });
+}
+
+function resolveScopedDreamAgent(
+	c: Context,
+	body: Readonly<Record<string, unknown>> = {},
+): { readonly agentId: string; readonly error?: string } {
+	return resolveScopedAgentId(c, requestedDreamAgentId(c, body), resolveDaemonAgentId());
 }
 
 async function togglePipelinePause(c: Context, paused: boolean): Promise<Response> {
@@ -529,14 +538,23 @@ export function registerPipelineRoutes(app: Hono): void {
 		});
 	});
 
+	// External Dreaming agents get only the cited apply seam with a scoped
+	// agent credential. Administrative status, trigger, and requeue controls
+	// remain admin-only.
+	app.use("/api/dream/operations", async (c, next) => {
+		return requirePermission("modify", authConfig)(c, next);
+	});
 	app.use("/api/dream/*", async (c, next) => {
+		if (c.req.path === "/api/dream/operations") return next();
 		return requirePermission("admin", authConfig)(c, next);
 	});
 
 	app.get("/api/dream/status", (c) => {
 		const cfg = loadMemoryConfig(AGENTS_DIR);
 		const accessor = getDbAccessor();
-		const agentId = resolveDreamRequestAgentId(c);
+		const scopedAgent = resolveScopedDreamAgent(c);
+		if (scopedAgent.error) return c.json({ error: scopedAgent.error }, 403);
+		const agentId = scopedAgent.agentId;
 
 		const state = getDreamingState(accessor, agentId);
 		const episodicTokensPending = getDreamingEpisodicTokenBacklog(accessor, agentId);
@@ -574,7 +592,9 @@ export function registerPipelineRoutes(app: Hono): void {
 		}
 		const sourceId = readString(body, "sourceId");
 		if (!sourceId) return c.json({ error: "Missing episodic source id" }, 400);
-		const agentId = resolveDreamRequestAgentId(c, body);
+		const scopedAgent = resolveScopedDreamAgent(c, body);
+		if (scopedAgent.error) return c.json({ error: scopedAgent.error }, 403);
+		const agentId = scopedAgent.agentId;
 		const requeued = requestDreamingEvidenceRequeue(getDbAccessor(), agentId, sourceKind, sourceId);
 		if (!requeued) return c.json({ error: "Dreaming evidence exclusion not found" }, 404);
 		return c.json({ requeued: true, agentId, sourceKind, sourceId });
@@ -591,7 +611,9 @@ export function registerPipelineRoutes(app: Hono): void {
 		const body = asRecord(raw);
 		const operations = readArray(body, "operations");
 		if (!operations || operations.length === 0) return c.json({ error: "operations are required" }, 400);
-		const agentId = resolveDreamRequestAgentId(c, body);
+		const scopedAgent = resolveScopedDreamAgent(c, body);
+		if (scopedAgent.error) return c.json({ error: scopedAgent.error }, 403);
+		const agentId = scopedAgent.agentId;
 		const actor = readString(body, "actor") ?? c.req.header("x-signet-actor") ?? "dreaming-agent";
 		const result = applyDreamingOperations({
 			accessor: getDbAccessor(),
@@ -631,7 +653,9 @@ export function registerPipelineRoutes(app: Hono): void {
 				mode = "compact";
 			}
 		}
-		const agentId = resolveDreamRequestAgentId(c, body);
+		const scopedAgent = resolveScopedDreamAgent(c, body);
+		if (scopedAgent.error) return c.json({ error: scopedAgent.error }, 403);
+		const agentId = scopedAgent.agentId;
 
 		let passId: string;
 		try {
