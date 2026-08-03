@@ -20,7 +20,6 @@
  * - No direct table SQL lives here; all persistence goes through the reused
  *   modules, which already enforce agent scoping and evidence provenance.
  */
-import { ONTOLOGY_PROPOSAL_OPERATIONS } from "@signet/core";
 import * as Type from "typebox";
 import type { TSchema } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -34,10 +33,10 @@ import {
 	getAttributesForAspectFiltered,
 	listKnowledgeEntities,
 } from "../knowledge-graph";
-import { applyOntologyOperationBatchInTx, type OntologyOperationInput } from "../ontology-proposals";
 import { getOntologyClaimEvidence } from "../ontology-claim-evidence";
 import { getOntologyLinkEvidence } from "../ontology-link-evidence";
 import type { DreamingAgentEvidence } from "./dreaming-evidence";
+import { applyDreamingOperations } from "./dreaming-operations";
 
 export type { DreamingAgentEvidence } from "./dreaming-evidence";
 
@@ -56,68 +55,6 @@ function textResult(payload: DreamingAgentToolResult): { readonly type: "text"; 
 	return { type: "text", text: JSON.stringify(payload) };
 }
 
-/**
- * Find the evidence record backing a quoted citation. A quote is accepted only
- * when it is an exact substring of a supplied evidence record's content.
- */
-function matchEvidenceQuote(evidence: readonly DreamingAgentEvidence[], citation: unknown): DreamingAgentEvidence | null {
-	if (typeof citation !== "object" || citation === null || Array.isArray(citation)) return null;
-	const value = citation as Record<string, unknown>;
-	const sourceRef = typeof value.source_ref === "string" ? value.source_ref.trim() : "";
-	const sourceKind = typeof value.source_kind === "string" ? value.source_kind.trim() : "";
-	const sourceId = typeof value.source_id === "string" ? value.source_id.trim() : "";
-	const sourcePath = typeof value.source_path === "string" ? value.source_path.trim() : null;
-	const quote = typeof value.quote === "string" ? value.quote.trim() : "";
-	if (!sourceRef || !sourceKind || !sourceId || !quote) return null;
-	return (
-		evidence.find(
-			(record) =>
-			record.sourceRef === sourceRef &&
-				record.sourceKind === sourceKind &&
-				record.sourceId === sourceId &&
-				(sourcePath === null || record.sourcePath === sourcePath) &&
-				record.content.includes(quote),
-		) ?? null
-	);
-}
-
-/**
- * Validate an operation's evidence citations against the supplied evidence and
- * return the ontology-proposals provenance tuple for the operation. Mirrors
- * dreaming.ts provenance selection: prefer a matched source that owns a
- * configured Signet source entry id so derived rows stay purgeable by source.
- */
-function provenanceForEvidence(
-	operation: { readonly evidence?: readonly unknown[] },
-	evidence: readonly DreamingAgentEvidence[],
-): {
-	readonly evidence: readonly unknown[];
-	readonly sourceKind: string | null;
-	readonly sourceId: string | null;
-	readonly sourcePath: string | null;
-	readonly sourceRoot: string;
-} | null {
-	const cited = operation.evidence ?? [];
-	if (cited.length === 0) return null;
-	const matched: DreamingAgentEvidence[] = [];
-	const acceptedEvidence: unknown[] = [];
-	for (const item of cited) {
-		const record = matchEvidenceQuote(evidence, item);
-		if (record === null) return null;
-		matched.push(record);
-		// Preserve the original citation object verbatim; only its quote was gated.
-		acceptedEvidence.push(item);
-	}
-	const provenance = matched.find((source) => source.sourceEntryId !== null) ?? matched[0];
-	return {
-		evidence: acceptedEvidence,
-		sourceKind: provenance.sourceKind,
-		sourceId: provenance.sourceEntryId ?? provenance.sourceId,
-		sourcePath: provenance.sourcePath,
-		sourceRoot: "dreaming",
-	};
-}
-
 export interface CreateDreamingAgentToolsParams {
 	readonly accessor: DbAccessor;
 	readonly agentId: string;
@@ -133,7 +70,6 @@ export interface CreateDreamingAgentToolsParams {
 export function createDreamingAgentTools(params: CreateDreamingAgentToolsParams): readonly ToolDefinition<TSchema>[] {
 	const { accessor, agentId, actor } = params;
 	const evidence = params.evidence ?? [];
-	const allowedOperations = new Set<string>(ONTOLOGY_PROPOSAL_OPERATIONS);
 
 	const searchEntities: ToolDefinition<TSchema> = {
 		name: "search_entities",
@@ -414,104 +350,14 @@ export function createDreamingAgentTools(params: CreateDreamingAgentToolsParams)
 				};
 			}
 
-			// Validate operation vocabulary against the full core constant up
-			// front, before opening a write transaction, so an unknown op never
-			// partially mutates the graph.
-			const validated: OntologyOperationInput[] = [];
-			for (const op of p.operations) {
-				if (!allowedOperations.has(op.operation)) {
-					return {
-						content: [
-							textResult({
-								tool: "apply_ontology_ops",
-								ok: false,
-								error: `Unsupported ontology proposal operation: ${op.operation}`,
-							}),
-						],
-						details: { tool: "apply_ontology_ops" },
-					};
-				}
-				const provenance = provenanceForEvidence(op, evidence);
-				if (provenance === null) {
-					return {
-						content: [
-							textResult({
-								tool: "apply_ontology_ops",
-								ok: false,
-								error:
-									"Every operation must cite at least one evidence quote that exactly matches a supplied evidence record",
-							}),
-						],
-						details: { tool: "apply_ontology_ops" },
-					};
-				}
-				if (
-					op.confidence !== undefined &&
-					(!Number.isFinite(op.confidence) || op.confidence < 0 || op.confidence > 1)
-				) {
-					return {
-						content: [
-							textResult({
-								tool: "apply_ontology_ops",
-								ok: false,
-								error: "confidence must be a finite number between 0 and 1",
-							}),
-						],
-						details: { tool: "apply_ontology_ops" },
-					};
-				}
-				validated.push({
-					operation: op.operation,
-					payload: op.payload,
-					reason: op.reason,
-					evidence: provenance.evidence,
-					confidence: op.confidence,
-					risk: op.risk ?? null,
-					sourceKind: provenance.sourceKind,
-					sourceId: provenance.sourceId,
-					sourcePath: provenance.sourcePath,
-					sourceRoot: provenance.sourceRoot,
-				});
-			}
-
-			// Caller-owned write transaction. Each op runs under its own
-			// SAVEPOINT so a failure rolls back only that op; successful ops
-			// before and after remain applied and the batch result records the
-			// per-op outcome. This keeps a single bad payload from voiding a
-			// whole batch of valid mutations.
-			const items: Array<{ readonly index: number; readonly ok: boolean; readonly proposal?: unknown; readonly result?: unknown; readonly error?: string }> = [];
-			accessor.withWriteTx((db) => {
-				for (let index = 0; index < validated.length; index += 1) {
-					const savepoint = `signet_dream_op_${index}`;
-					db.exec(`SAVEPOINT ${savepoint}`);
-					try {
-						const batch = applyOntologyOperationBatchInTx(db, {
-							agentId,
-							actor,
-							operations: [validated[index]],
-						});
-						db.exec(`RELEASE SAVEPOINT ${savepoint}`);
-						items.push({ index, ok: true, proposal: batch.items[0]?.proposal, result: batch.items[0]?.result });
-					} catch (err) {
-						db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
-						db.exec(`RELEASE SAVEPOINT ${savepoint}`);
-						items.push({
-							index,
-							ok: false,
-							error: err instanceof Error ? err.message : String(err),
-						});
-					}
-				}
-			});
-
-			const applied = items.filter((item) => item.ok).length;
+			const result = applyDreamingOperations({ accessor, agentId, actor, operations: p.operations, allowedEvidence: evidence });
 			return {
 				content: [
 					textResult({
 						tool: "apply_ontology_ops",
-						ok: applied > 0,
-						...(applied === 0 ? { error: "No ontology operations applied" } : {}),
-						items,
+						ok: result.ok,
+						...(result.error ? { error: result.error } : {}),
+						items: result.items,
 					}),
 				],
 				details: { tool: "apply_ontology_ops" },

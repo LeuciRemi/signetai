@@ -154,7 +154,7 @@ describe("dreaming-agent-tools", () => {
 			),
 		);
 		expect(res.ok).toBe(false);
-		expect(res.error).toContain("evidence quote");
+		expect(res.error).toContain("exact quote");
 	});
 
 	it("rejects operations when no evidence is supplied to the session", async () => {
