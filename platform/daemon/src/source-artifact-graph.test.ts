@@ -6,6 +6,7 @@ import type { DreamingConfig } from "@signet/core";
 import { closeDbAccessor, getDbAccessor, initDbAccessor } from "./db-accessor";
 import { indexSourceArtifactStructure, purgeSourceArtifactStructure } from "./source-artifact-graph";
 import { purgeSourceOwnedRows } from "./source-purge";
+import { txIngestEnvelope } from "./transactions";
 import { runDreamingAgentPass } from "./pipeline/dreaming";
 
 const DREAMING_CONFIG: DreamingConfig = {
@@ -193,6 +194,28 @@ describe("source artifact graph structure", () => {
 					 VALUES ('derived-entity', 'Derived', 'derived', 'project', 'default', 0, datetime('now'), datetime('now'))`,
 				)
 				.run();
+			txIngestEnvelope(write, {
+				id: "derived-claim",
+				content: "dreaming-derived claim",
+				normalizedContent: "dreaming-derived claim",
+				contentHash: "semantic-attribute:derived-claim",
+				who: "dreaming",
+				why: "Derived semantic attribute",
+				project: null,
+				importance: 0.5,
+				type: "semantic",
+				tags: "semantic,attribute",
+				pinned: 0,
+				extractionStatus: "completed",
+				updatedBy: "dreaming",
+				memoryKind: null,
+				sourceType: "dreaming",
+				sourceId: "obsidian:signet",
+				sourcePath: "vault/derived.md",
+				agentId: "default",
+				visibility: "global",
+				createdAt: new Date().toISOString(),
+			});
 			write
 				.prepare(
 					`INSERT INTO entity_aspects (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
@@ -208,6 +231,7 @@ describe("source artifact graph structure", () => {
 					  0.8, 0.5, 'active', 'general', 'target', 1, datetime('now'), datetime('now'), 'obsidian:signet', 'dreaming')`,
 				)
 				.run();
+			write.prepare("UPDATE entity_attributes SET memory_id = ? WHERE id = ?").run("derived-claim", "derived-claim");
 			write
 				.prepare(
 					`INSERT INTO entities (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
@@ -244,8 +268,11 @@ describe("source artifact graph structure", () => {
 					count: number;
 				}
 			).count,
+			semanticMemory: (
+				read.prepare("SELECT is_deleted FROM memories WHERE id = ?").get("derived-claim") as { is_deleted: number }
+			).is_deleted,
 		}));
-		expect(counts).toEqual({ derived: 0, other: 1 });
+		expect(counts).toEqual({ derived: 0, other: 1, semanticMemory: 1 });
 	});
 
 	it("stamps source-backed Dreaming writes with the purge key end to end", async () => {

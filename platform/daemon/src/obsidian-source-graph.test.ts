@@ -9,6 +9,7 @@ import {
 	purgeObsidianSourceFileStructure,
 	purgeObsidianSourceStructure,
 } from "./obsidian-source-graph";
+import { txIngestEnvelope } from "./transactions";
 
 describe("Obsidian source graph structure", () => {
 	let dir = "";
@@ -272,6 +273,53 @@ describe("Obsidian source graph structure", () => {
 				content: readFileSync(filePath, "utf-8"),
 			});
 		}
+		getDbAccessor().withWriteTx((db) => {
+			const aspect = db
+				.prepare(
+					`SELECT attr.aspect_id
+					 FROM entity_attributes attr
+					 WHERE attr.agent_id = ? AND attr.source_path = ? LIMIT 1`,
+				)
+				.get("obsidian-graph-agent", doc) as { aspect_id: string };
+			txIngestEnvelope(db, {
+				id: "removed-dreaming-claim",
+				content: "The removed note contains this semantic claim.",
+				normalizedContent: "the removed note contains this semantic claim.",
+				contentHash: "semantic-attribute:removed-dreaming-claim",
+				who: "dreaming",
+				why: "Derived semantic attribute",
+				project: null,
+				importance: 0.5,
+				type: "semantic",
+				tags: "semantic,attribute",
+				pinned: 0,
+				extractionStatus: "completed",
+				updatedBy: "dreaming",
+				memoryKind: null,
+				sourceType: "dreaming",
+				sourceId: "obsidian:test-vault",
+				sourcePath: doc,
+				agentId: "obsidian-graph-agent",
+				visibility: "global",
+				createdAt: new Date().toISOString(),
+			});
+			db.prepare(
+				`INSERT INTO entity_attributes
+				 (id, aspect_id, agent_id, kind, content, normalized_content, confidence, importance, status,
+				  group_key, claim_key, version, memory_id, created_at, updated_at, source_id, source_root, source_path)
+				 VALUES (?, ?, ?, 'attribute', ?, ?, 0.9, 0.5, 'active', 'general', 'removed_dreaming_claim', 1, ?,
+				         datetime('now'), datetime('now'), ?, 'dreaming', ?)`,
+			).run(
+				"removed-dreaming-claim",
+				aspect.aspect_id,
+				"obsidian-graph-agent",
+				"The removed note contains this semantic claim.",
+				"the removed note contains this semantic claim.",
+				"removed-dreaming-claim",
+				"obsidian:test-vault",
+				doc,
+			);
+		});
 
 		const purged = purgeObsidianSourceFileStructure({
 			agentId: "obsidian-graph-agent",
@@ -302,11 +350,17 @@ describe("Obsidian source graph structure", () => {
 					.prepare("SELECT COUNT(*) AS count FROM entity_attributes WHERE agent_id = ? AND source_path = ?")
 					.get("obsidian-graph-agent", sibling) as { count: number }
 			).count,
+			removedSemanticMemory: (
+				db.prepare("SELECT is_deleted FROM memories WHERE id = ?").get("removed-dreaming-claim") as {
+					is_deleted: number;
+				}
+			).is_deleted,
 		}));
 		expect(remaining.removedEntities).toBe(0);
 		expect(remaining.removedAttrs).toBe(0);
 		expect(remaining.siblingEntities).toBeGreaterThan(0);
 		expect(remaining.siblingAttrs).toBeGreaterThan(0);
+		expect(remaining.removedSemanticMemory).toBe(1);
 	});
 
 	it("keeps same-agent vaults with identical relative paths isolated by source id", () => {
