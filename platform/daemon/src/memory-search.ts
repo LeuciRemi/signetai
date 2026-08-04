@@ -658,6 +658,23 @@ function memorySupersessionSql(
 	return currentness.length > 0 ? ` AND ${currentness.join(" AND ")}` : "";
 }
 
+/**
+ * Lifecycle predicate for surfacing memories: deleted, superseded, and stale
+ * rows must never reach a caller. Mirrors the gate `authorizeScoredCandidates`
+ * applies to standard recall candidates so similarity-search routes (e.g.
+ * GET /memory/similar) do not drift from recall semantics.
+ *
+ * Returns a SQL fragment starting with ` AND ...` (empty when the memories
+ * table predates the lifecycle columns). `is_deleted` is unconditional — it
+ * has shipped since migration 002 and every accessor runs migrations.
+ */
+export function memoryLifecycleSql(
+	db: { prepare: (sql: string) => { all: () => Array<{ name?: unknown }> } },
+	alias = "m",
+): string {
+	return ` AND ${alias}.is_deleted = 0${memorySupersessionSql(db, alias)}`;
+}
+
 function authorizeScoredCandidates(
 	scored: ReadonlyArray<{ id: string; score: number; source: string }>,
 	filter: FilterClause,

@@ -21,7 +21,13 @@ import {
 import { getInferenceRouterOrNull } from "../inference-router";
 import { logger } from "../logger";
 import { type ResolvedMemoryConfig, loadMemoryConfig } from "../memory-config";
-import { type RecallParams, type RecallResponse, buildAgentScopeClause, hybridRecall } from "../memory-search";
+import {
+	type RecallParams,
+	type RecallResponse,
+	buildAgentScopeClause,
+	hybridRecall,
+	memoryLifecycleSql,
+} from "../memory-search";
 import { recordMemorySearchTelemetry } from "../memory-search-telemetry";
 import { resolveMemorySearchTelemetryProject } from "../memory-search-telemetry-project";
 import { buildMemoryTimeline } from "../memory-timeline";
@@ -2958,9 +2964,12 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 			const searchData = getDbAccessor().withReadDb((db) => {
 				const embeddingRow = db
 					.prepare(`
-        SELECT vector
-        FROM embeddings
-        WHERE source_type = 'memory' AND source_id = ?
+        SELECT e.vector
+        FROM embeddings e
+        INNER JOIN memories m ON m.id = e.source_id
+        WHERE e.source_type = 'memory' AND e.source_id = ?
+        AND COALESCE(m.source_type, '') != 'aggregate-recall'
+        ${memoryLifecycleSql(db)}
         LIMIT 1
       `)
 					.get(id) as { vector: Buffer } | undefined;
@@ -2977,6 +2986,7 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 				return vectorSearch(db, queryVector, {
 					limit: k + 1,
 					type,
+					excludeAggregateRecall: true,
 				});
 			});
 
@@ -2998,8 +3008,8 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 					db
 						.prepare(`
         SELECT id, content, type, tags, confidence, created_at
-        FROM memories
-        WHERE id IN (${placeholders})
+        FROM memories m
+        WHERE id IN (${placeholders})${memoryLifecycleSql(db)}
       `)
 						.all(...ids) as Array<{
 						id: string;
