@@ -87,14 +87,6 @@ export const PIPELINE_SEARCH_NUMS = [
 
 export const PIPELINE_WORKER_NUMS = [
 	{
-		key: "workerPollMs",
-		label: "Worker poll (ms)",
-		desc: "How often the worker polls for pending jobs.",
-		min: 100,
-		max: 60000,
-		step: 100,
-	},
-	{
 		key: "workerMaxRetries",
 		label: "Worker max retries",
 		desc: "Max retry attempts before a job goes to dead-letter.",

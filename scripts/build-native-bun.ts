@@ -95,7 +95,6 @@ const hermesPluginDir = join(root, "integrations", "hermes-agent", "connector", 
 
 const workerEntries = [
 	["synthesis-render-worker", "platform/daemon/src/synthesis-render-worker.ts"],
-	["extraction-thread", "platform/daemon/src/pipeline/extraction-thread.ts"],
 	// Native ONNX embedding runs in a worker so model download / WASM compile /
 	// inference can never block the daemon's main event loop (see
 	// embedding-worker.ts). Transformers is bundled into this asset; the ONNX
@@ -205,10 +204,7 @@ const wasmAssets = ["ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"]
 // at runtime and cannot resolve node_modules paths in a compiled binary).
 writeFileSync(
 	join(buildDir, "embedding-worker-transformers-runtime.ts"),
-	`import * as onnxRuntime from ${JSON.stringify(onnxRuntimeWebWasmPath)};\n` +
-		`globalThis[Symbol.for("onnxruntime")] = onnxRuntime.default ?? onnxRuntime;\n` +
-		`const transformers = await import(${JSON.stringify(patchedTransformersWebRuntimePath)});\n` +
-		`export const { env, pipeline } = transformers;\n`,
+	`import * as onnxRuntime from ${JSON.stringify(onnxRuntimeWebWasmPath)};\nglobalThis[Symbol.for("onnxruntime")] = onnxRuntime.default ?? onnxRuntime;\nconst transformers = await import(${JSON.stringify(patchedTransformersWebRuntimePath)});\nexport const { env, pipeline } = transformers;\n`,
 );
 runBunBuild([
 	"--target=bun",

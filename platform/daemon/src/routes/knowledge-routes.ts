@@ -20,12 +20,11 @@ import {
 	listEntityClaims,
 	listEntityGroups,
 	listKnowledgeEntities,
-	pinEntity,
 	resolveNamedEntity,
-	unpinEntity,
 } from "../knowledge-graph";
 import { getKnowledgeHygieneReport } from "../knowledge-graph-hygiene";
 import { type ResolvedMemoryConfig, loadMemoryConfig } from "../memory-config";
+import { OntologyProposalError, applyOntologyOperation } from "../ontology-proposals";
 import { getTraversalStatus, resolveFocalEntities, traverseKnowledgeGraph } from "../pipeline/graph-traversal";
 import { AGENTS_DIR, authConfig } from "./state";
 import { resolveScopedAgentId, resolveScopedProject } from "./utils";
@@ -175,12 +174,18 @@ export function registerKnowledgeRoutes(app: Hono): void {
 		if (denied) return denied;
 
 		const agentId = c.req.query("agent_id") ?? "default";
-		pinEntity(getDbAccessor(), c.req.param("id"), agentId);
-		const entity = getKnowledgeEntityDetail(getDbAccessor(), c.req.param("id"), agentId);
-		if (!entity?.entity.pinnedAt) {
-			return c.json({ error: "Entity not found" }, 404);
+		try {
+			const { result } = applyOntologyOperation(getDbAccessor(), {
+				agentId,
+				actor: c.req.header("x-signet-actor") ?? "operator",
+				operation: "pin_entity",
+				payload: { id: c.req.param("id") },
+			});
+			return c.json({ pinned: true, pinnedAt: result?.pinnedAt });
+		} catch (err) {
+			if (err instanceof OntologyProposalError && err.status === 404) return c.json({ error: "Entity not found" }, 404);
+			throw err;
 		}
-		return c.json({ pinned: true, pinnedAt: entity.entity.pinnedAt });
 	});
 
 	app.delete("/api/knowledge/entities/:id/pin", async (c) => {
@@ -188,7 +193,17 @@ export function registerKnowledgeRoutes(app: Hono): void {
 		if (denied) return denied;
 
 		const agentId = c.req.query("agent_id") ?? "default";
-		unpinEntity(getDbAccessor(), c.req.param("id"), agentId);
+		try {
+			applyOntologyOperation(getDbAccessor(), {
+				agentId,
+				actor: c.req.header("x-signet-actor") ?? "operator",
+				operation: "unpin_entity",
+				payload: { id: c.req.param("id") },
+			});
+		} catch (err) {
+			if (err instanceof OntologyProposalError && err.status === 404) return c.json({ pinned: false });
+			throw err;
+		}
 		return c.json({ pinned: false });
 	});
 

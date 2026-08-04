@@ -1,5 +1,11 @@
-import { type Api, type Model, type OAuthCredentials, getModels, getProviders } from "@earendil-works/pi-ai";
-import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
+import {
+	type Api,
+	type Model,
+	type OAuthCredentials,
+	type ThinkingLevel,
+	getSupportedThinkingLevels,
+} from "@earendil-works/pi-ai";
+import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
 import type { PipelineClaudeCodeConfig, RoutingAccountConfig, RoutingConfig } from "@signet/core";
 import { type PiExecutorKind, createPiModelProvider } from "./pipeline/pi-provider";
 import type { AcpxHooksMode, StreamCapableLlmProvider } from "./pipeline/provider";
@@ -10,6 +16,8 @@ export interface CreateRoutingProviderOptions {
 	readonly targetId: string;
 	readonly modelId: string;
 	readonly acpxHooks?: AcpxHooksMode;
+	/** Per-run ACPX arguments (for example, a scoped ephemeral MCP config). */
+	readonly acpxExtraArgs?: readonly string[];
 	readonly claudeCode?: PipelineClaudeCodeConfig;
 	resolveCredential(account: RoutingAccountConfig | undefined): Promise<ResolvedInferenceCredential | undefined>;
 }
@@ -28,18 +36,25 @@ const FOLDED_EXECUTORS = new Set(["claude-code", "codex", "opencode", "command"]
 
 const CUSTOM_PI_EXECUTORS = new Set(["anthropic", "openrouter", "ollama", "llama-cpp", "openai-compatible"]);
 
-function catalogModel(
-	providerFamily: string,
-	modelId: string,
-	credential: ResolvedInferenceCredential | undefined,
-): Model<Api> | undefined {
-	if (!(getProviders() as readonly string[]).includes(providerFamily)) return undefined;
-	let models = (getModels as (provider: string) => Model<Api>[])(providerFamily);
-	const oauthProvider = getOAuthProvider(providerFamily);
-	if (oauthProvider?.modifyModels && credential?.oauthCredentials) {
-		models = oauthProvider.modifyModels(models, credential.oauthCredentials);
-	}
+function catalogModel(providerFamily: string, modelId: string): Model<Api> | undefined {
+	if (!(getBuiltinProviders() as readonly string[]).includes(providerFamily)) return undefined;
+	const models = getBuiltinModels(providerFamily as Parameters<typeof getBuiltinModels>[0]) as Model<Api>[];
 	return models.find((candidate) => candidate.id === modelId);
+}
+
+function resolveProviderReasoning(
+	target: RoutingConfig["targets"][string],
+	model: NonNullable<RoutingConfig["targets"][string]>["models"][string],
+	piModel: Model<Api> | undefined,
+): ThinkingLevel | undefined {
+	if (target.openrouter?.reasoning?.enabled) return "medium";
+	if (model.reasoning === "high") return "high";
+	if (model.reasoning !== "low") return undefined;
+	// Pi raises a requested low level to high when a model has no low mode.
+	// Omit reasoning for a latency-sensitive low target in that case: Pi then
+	// emits the model's native disabled-thinking representation rather than
+	// silently spending its higher-reasoning tier.
+	return piModel && !getSupportedThinkingLevels(piModel).includes("low") ? undefined : "low";
 }
 
 export async function createRoutingProvider(opts: CreateRoutingProviderOptions): Promise<StreamCapableLlmProvider> {
@@ -54,6 +69,7 @@ export async function createRoutingProvider(opts: CreateRoutingProviderOptions):
 		return createAcpxProvider({
 			...target.acpx,
 			...(opts.acpxHooks ? { hooks: opts.acpxHooks } : {}),
+			extraArgs: [...(target.acpx.extraArgs ?? []), ...(opts.acpxExtraArgs ?? [])],
 			model: model.model,
 		});
 	}
@@ -66,14 +82,18 @@ export async function createRoutingProvider(opts: CreateRoutingProviderOptions):
 
 	const account = target.account ? opts.config.accounts[target.account] : undefined;
 	const providerFamily = account?.providerFamily ?? target.executor;
-	if (!CUSTOM_PI_EXECUTORS.has(target.executor) && !(getProviders() as readonly string[]).includes(providerFamily)) {
+	if (
+		!CUSTOM_PI_EXECUTORS.has(target.executor) &&
+		!(getBuiltinProviders() as readonly string[]).includes(providerFamily)
+	) {
 		throw new Error(`Unsupported routing executor "${target.executor}" for target ${opts.targetId}`);
 	}
 
 	const credential = await opts.resolveCredential(account);
-	const piModel = CUSTOM_PI_EXECUTORS.has(target.executor)
-		? undefined
-		: catalogModel(providerFamily, model.model, credential);
+	// A custom transport can still use a Pi catalog model's protocol metadata.
+	// This matters for compatible gateways whose model needs a non-generic tool
+	// or thinking wire format, while the target endpoint remains authoritative.
+	const piModel = catalogModel(providerFamily, model.model);
 	if (!piModel && !CUSTOM_PI_EXECUTORS.has(target.executor)) {
 		throw new Error(`Unknown pi-ai model "${model.model}" for provider "${providerFamily}"`);
 	}
@@ -83,7 +103,9 @@ export async function createRoutingProvider(opts: CreateRoutingProviderOptions):
 		providerFamily,
 		model: model.model,
 		piModel,
-		skipAvailabilityProbe: piModel !== undefined,
+		// Catalog targets use their provider's known endpoint. A custom endpoint
+		// still needs a reachability probe even when its model has catalog metadata.
+		skipAvailabilityProbe: piModel !== undefined && !target.endpoint,
 		baseUrl: target.endpoint,
 		apiKey: credential?.apiKey,
 		// Map routing intent to a pi-ai ThinkingLevel (forwarded per-call as
@@ -94,7 +116,7 @@ export async function createRoutingProvider(opts: CreateRoutingProviderOptions):
 		// the documented OpenRouter reasoning block, or a deliberately-set
 		// "high" depth. Previously this compared to a nonexistent "deep"
 		// value (TS2367) and never produced a usable level.
-		reasoning: target.openrouter?.reasoning?.enabled ? "medium" : model.reasoning === "high" ? "high" : undefined,
+		reasoning: resolveProviderReasoning(target, model, piModel),
 		contextWindow: model.contextWindow,
 		name: `${target.executor}:${model.model}`,
 		defaultTimeoutMs: 60_000,

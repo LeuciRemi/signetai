@@ -425,17 +425,7 @@ describe("getDaemonStatus", () => {
 							blockedReason: null,
 						},
 					},
-					pipeline: {
-						extraction: {
-							running: true,
-							overloaded: true,
-							loadPerCpu: 1.82,
-							maxLoadPerCpu: 0.8,
-							overloadBackoffMs: 30000,
-							overloadSince: "2026-03-26T00:00:02.000Z",
-							nextTickInMs: 28000,
-						},
-					},
+					pipeline: {},
 				});
 			}
 			return new Response("not found", { status: 404 });
@@ -462,15 +452,6 @@ describe("getDaemonStatus", () => {
 			ready: true,
 			blockedReason: null,
 			hasWorkloadState: true,
-		});
-		expect(status.extractionWorker).toEqual({
-			running: true,
-			overloaded: true,
-			loadPerCpu: 1.82,
-			maxLoadPerCpu: 0.8,
-			overloadBackoffMs: 30000,
-			overloadSince: "2026-03-26T00:00:02.000Z",
-			nextTickInMs: 28000,
 		});
 		expect(status.resources).toEqual({
 			rss: 169,

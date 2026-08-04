@@ -90,7 +90,9 @@ evidence.
 
 ### POST /api/hooks/session-end
 
-Called at session end. Triggers memory extraction from the transcript.
+Called at session end. Captures immutable episodic transcript evidence for
+later summary and Dreaming work; it does not save the raw transcript as a
+retrieval memory.
 Releases the session's runtime path claim.
 
 **Request body**
@@ -101,17 +103,20 @@ Releases the session's runtime path claim.
   "sessionKey": "session-uuid",
   "sessionId": "session-uuid",
   "transcriptPath": "/tmp/signet/session-transcript.txt",
+  "capturedAt": "2026-08-03T20:00:00.000Z",
   "runtimePath": "plugin"
 }
 ```
 
 `harness` is required.
 `transcriptPath` or inline `transcript` may be provided for transcript
-capture. Signet stores a cleaned conversation-only transcript in memory
-surfaces and may retain raw auditable traces separately in daemon logs.
+capture. `capturedAt` is optional for live hooks; importers should supply the
+original ISO-8601 event time so temporal reasoning retains source chronology.
+Signet stores a cleaned conversation-only transcript as episodic evidence and
+may retain raw auditable traces separately in daemon logs.
 
-When transcript text is available, the daemon first writes the canonical
-conversation transcript as JSONL at
+When transcript text is available, the daemon queues a capture receipt and
+then writes the canonical conversation transcript as JSONL at
 `$SIGNET_WORKSPACE/memory/{harness}/transcripts/transcript.jsonl` and records
 lineage through the session manifest. Existing markdown transcript artifacts
 remain readable for backward compatibility and are backfilled into the JSONL
@@ -120,6 +125,9 @@ history.
 The manifest is mutable and may later gain a `compaction_path`; the JSONL
 transcript is the forward source of truth. The async summary worker later writes
 the matching immutable `--summary.md` artifact for normal `session-end` jobs.
+The response includes `transcriptCaptureJobId` when transcript capture was
+queued. Poll `GET /api/hooks/transcript-capture/:jobId?agentId=<agent>` until
+the status is `completed`; the receipt never exposes transcript content.
 
 ### POST /api/hooks/remember
 

@@ -152,9 +152,9 @@ describe("GET /health/ready", () => {
 
 	test("returns a structured 503 (not a 500) when loadMemoryConfig throws on a misconfigured agent.yaml", async () => {
 		// Regression guard: checkInference calls loadMemoryConfig on every probe.
-		// A misconfigured pipeline (extraction.provider='command' with no command
-		// block) throws PipelineConfigValidationError; without a try/catch this
-		// turned /health/ready into an unhandled 500. It must stay a structured 503.
+		// A retired command extraction configuration throws
+		// PipelineConfigValidationError; without a try/catch this turned
+		// /health/ready into an unhandled 500. It must stay a structured 503.
 		writeFileSync(
 			join(dir, "agent.yaml"),
 			"memory:\n  pipelineV2:\n    enabled: true\n    extraction:\n      provider: command\n",

@@ -235,6 +235,12 @@ export function registerReflectionRoutes(app: Hono, deps: ReflectionRouteDeps = 
 					type: "reflection",
 					tags: "reflection,answered",
 					pinned: 0,
+					// Reflection answers are primary episodic evidence (input),
+					// matching migration 094's classification of `reflection-answer`
+					// source_type as episodic. Daemon-derived rows (extract,
+					// aggregate-recall, session_end, checkpoint) remain non-episodic
+					// by omitting memoryKind.
+					memoryKind: "episodic",
 					sourceType: "reflection-answer",
 					sourceId: id,
 					agentId,

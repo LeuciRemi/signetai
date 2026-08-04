@@ -89,7 +89,7 @@ export function resolveExtractionEndpoint(agent: unknown): string {
  * that should mirror a routing target so pipeline logs, telemetry, and the
  * `extraction_model` DB column report the model actually in use instead of the
  * `qwen3:4b` default (#1017). Routing is authoritative post-#947; this label is
- * purely informational and feeds `compileLegacyRoutingConfig`.
+ * purely informational; inference routing remains canonical.
  *
  * Returns the value to write for each key, or `undefined` to delete it (e.g.
  * when the backend is cleared, or when the executor is a provider family the

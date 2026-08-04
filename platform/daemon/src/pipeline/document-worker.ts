@@ -358,6 +358,10 @@ async function processDocument(deps: DocumentWorkerDeps, job: DocumentJobRow): P
 					embeddingModel: canStoreVector ? embeddingCfg.model : null,
 					extractionModel: null,
 					updatedBy: "document-worker",
+					// Ingested document source material is primary episodic evidence
+					// (input), matching migration 094's classification of `document`
+					// source_type as episodic.
+					memoryKind: "episodic",
 					sourceType: "document",
 					sourceId: docId,
 					agentId: documentScope.agentId,

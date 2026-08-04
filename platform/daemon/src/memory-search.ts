@@ -22,11 +22,11 @@ import {
 	vectorSearch,
 } from "@signet/core";
 import { getDbAccessor, prepareTypedStatement } from "./db-accessor";
+import type { EmbeddingRole } from "./embedding-profile";
 import { getLlmProvider } from "./llm";
 import { logger } from "./logger";
 import { buildAgentScopeClause } from "./memory-access-scope";
 import type { EmbeddingConfig, MemorySearchConfig, ResolvedMemoryConfig } from "./memory-config";
-import type { EmbeddingRole } from "./embedding-profile";
 import { NATIVE_MEMORY_BRIDGE_SOURCE_NODE_ID } from "./native-memory-constants";
 import { constructContextBlocks } from "./pipeline/context-construction";
 import { DEFAULT_DAMPENING, type ScoredRow, applyDampening } from "./pipeline/dampening";
@@ -652,7 +652,27 @@ function memorySupersessionSql(
 	db: { prepare: (sql: string) => { all: () => Array<{ name?: unknown }> } },
 	alias = "m",
 ): string {
-	return hasColumn(db, "memories", "superseded_by") ? ` AND ${alias}.superseded_by IS NULL` : "";
+	const currentness: string[] = [];
+	if (hasColumn(db, "memories", "superseded_by")) currentness.push(`${alias}.superseded_by IS NULL`);
+	if (hasColumn(db, "memories", "stale_at")) currentness.push(`${alias}.stale_at IS NULL`);
+	return currentness.length > 0 ? ` AND ${currentness.join(" AND ")}` : "";
+}
+
+/**
+ * Lifecycle predicate for surfacing memories: deleted, superseded, and stale
+ * rows must never reach a caller. Mirrors the gate `authorizeScoredCandidates`
+ * applies to standard recall candidates so similarity-search routes (e.g.
+ * GET /memory/similar) do not drift from recall semantics.
+ *
+ * Returns a SQL fragment starting with ` AND ...` (empty when the memories
+ * table predates the lifecycle columns). `is_deleted` is unconditional — it
+ * has shipped since migration 002 and every accessor runs migrations.
+ */
+export function memoryLifecycleSql(
+	db: { prepare: (sql: string) => { all: () => Array<{ name?: unknown }> } },
+	alias = "m",
+): string {
+	return ` AND ${alias}.is_deleted = 0${memorySupersessionSql(db, alias)}`;
 }
 
 function authorizeScoredCandidates(

@@ -6,14 +6,17 @@
 
 import type { DreamingConfig } from "@signet/core";
 import type { DbAccessor } from "../db-accessor";
-import { getSynthesisProvider } from "../llm";
+import { getQueueHealth } from "../diagnostics";
+import { getOrCreateInferenceRouter } from "../inference-router";
 import { logger } from "../logger";
 import {
 	type DreamingMode,
+	type DreamingAgentExecutor,
 	createDreamingPass,
-	getDreamingState,
+	enqueueDreamingHygieneAttention,
+	getDreamingEpisodicTokenBacklog,
 	recordDreamingFailure,
-	runDreamingPass,
+	runDreamingAgentPass,
 	shouldTriggerDreaming,
 } from "./dreaming";
 
@@ -48,7 +51,22 @@ export interface DreamingWorkerHandle {
 	readonly activePass: Promise<unknown> | null;
 }
 
+export interface DreamingWorkerOptions {
+	/** Test seam; production always uses the configured inference router. */
+	readonly executorFactory?: (agentId: string) => DreamingAgentExecutor;
+	/** Scoped connection details for ACPX's temporary MCP server. */
+	readonly acpxMcp?: {
+		readonly daemonUrl: string;
+		readonly authorizationTokenForAgent?: (agentId: string) => string | undefined;
+	};
+}
+
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 min
+
+/** Dreaming is deferrable work. Yield an entire sweep while live queues are under pressure. */
+export function shouldDeferDreamingSweep(accessor: DbAccessor): boolean {
+	return accessor.withReadDb((db) => getQueueHealth(db).status !== "healthy");
+}
 
 function normalizeAgentId(agentId: string | undefined, fallback: string): string {
 	const trimmed = agentId?.trim();
@@ -69,6 +87,12 @@ export function getDreamingWorkerAgentIds(accessor: DbAccessor, defaultAgentId: 
 				 UNION
 				 SELECT DISTINCT agent_id AS id FROM session_summaries
 				 UNION
+				 SELECT DISTINCT agent_id AS id FROM memory_artifacts WHERE is_deleted = 0
+				 UNION
+				 SELECT DISTINCT agent_id AS id FROM session_transcripts
+				 UNION
+				 SELECT DISTINCT agent_id AS id FROM dreaming_attention WHERE resolved_at IS NULL
+				 UNION
 				 SELECT DISTINCT agent_id AS id FROM entities`,
 			)
 			.all() as Array<{ id: string | null }>;
@@ -86,12 +110,55 @@ export function startDreamingWorker(
 	cfg: DreamingConfig,
 	agentsDir: string,
 	defaultAgentId: string,
+	options: DreamingWorkerOptions = {},
 ): DreamingWorkerHandle {
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let active = false;
 	let activeAgent: string | null = null;
 	let stopped = false;
 	let activePassPromise: Promise<unknown> | null = null;
+	const router = options.executorFactory ? null : getOrCreateInferenceRouter(agentsDir);
+	const executorForAgent = (agentId: string): DreamingAgentExecutor =>
+		options.executorFactory?.(agentId) ?? {
+			async run(input) {
+				const result = await router!.runAgent(
+					{
+						agentId,
+						operation: "memory_extraction",
+						promptPreview: input.prompt.slice(0, 8000),
+					},
+					input.prompt,
+					input.tools,
+					{
+						timeoutMs: input.timeoutMs,
+						maxTokens: input.maxTokens,
+						...(options.acpxMcp
+							? {
+									acpxMcp: {
+										agentId,
+										passId: input.passId,
+										daemonUrl: options.acpxMcp.daemonUrl,
+										authorizationToken: options.acpxMcp.authorizationTokenForAgent?.(agentId),
+									},
+								}
+							: {}),
+					},
+				);
+				if (!result.ok) {
+					const attempts = Array.isArray(result.error.details?.attempts)
+						? result.error.details.attempts
+							.map((attempt) => {
+								if (!attempt || typeof attempt !== "object") return "unknown target";
+								const value = attempt as { targetRef?: unknown; error?: unknown };
+								return `${typeof value.targetRef === "string" ? value.targetRef : "unknown"}: ${typeof value.error === "string" ? value.error : "failed"}`;
+							})
+							.join("; ")
+						: "";
+					throw new Error(attempts ? `${result.error.message} (${attempts})` : result.error.message);
+				}
+				return { summary: `Dreaming agent completed through ${result.value.decision.targetRef}` };
+			},
+		};
 
 	// Sweep orphaned passes from unclean shutdown: any 'running' record
 	// was left by a crash or forced stop — mark it failed
@@ -117,10 +184,17 @@ export function startDreamingWorker(
 		existingPassId?: string,
 	): Promise<{ passId: string; applied: number; skipped: number; failed: number; summary: string }> {
 		if (active) throw new AlreadyRunningError();
-		const synth = getSynthesisProvider();
 		active = true;
 		activeAgent = runAgentId;
-		const p = runDreamingPass(accessor, synth.generate.bind(synth), cfg, agentsDir, runAgentId, mode, existingPassId);
+		const p = runDreamingAgentPass(
+			accessor,
+			executorForAgent(runAgentId),
+			cfg,
+			agentsDir,
+			runAgentId,
+			mode,
+			existingPassId,
+		);
 		activePassPromise = p;
 		try {
 			return await p;
@@ -136,30 +210,44 @@ export function startDreamingWorker(
 
 	async function check(): Promise<void> {
 		if (stopped || active) return;
+		if (shouldDeferDreamingSweep(accessor)) {
+			logger.info("dreaming-worker", "Deferring dreaming sweep while queues are under pressure");
+			return;
+		}
 
 		for (const runAgentId of getDreamingWorkerAgentIds(accessor, defaultAgentId)) {
 			if (stopped || active) return;
+			let attemptedPass = false;
 			try {
-				const state = getDreamingState(accessor, runAgentId);
-				const isFirst = state.lastPassAt === null && cfg.backfillOnFirstRun;
-				const mode: DreamingMode = isFirst ? "compact" : "incremental";
+				enqueueDreamingHygieneAttention(accessor, runAgentId);
+				const episodicTokens = getDreamingEpisodicTokenBacklog(accessor, runAgentId);
+				if (!shouldTriggerDreaming(accessor, cfg, runAgentId, Date.now(), episodicTokens)) continue;
+				// A first backfill integrates the full episodic window. Compact mode is
+				// an explicit maintenance action, not an automatic substitute for it.
+				const mode: DreamingMode = "incremental";
 
-				if (!shouldTriggerDreaming(accessor, cfg, runAgentId)) continue;
-
-				logger.info("dreaming-worker", "Token threshold reached, starting dreaming pass", {
+				logger.info("dreaming-worker", "Episodic evidence threshold reached, starting dreaming pass", {
 					agentId: runAgentId,
-					tokens: state.tokensSinceLastPass,
+					episodicTokens,
 					threshold: cfg.tokenThreshold,
 					mode,
 				});
 
+				attemptedPass = true;
 				await runPass(runAgentId, mode);
+				// Keep one expensive, deferrable pass per five-minute sweep. The
+				// next tick advances another eligible agent without burst-starting
+				// every backlogged workspace at once.
+				return;
 			} catch (e) {
 				if (e instanceof AlreadyRunningError) return;
 				logger.error("dreaming-worker", "Dreaming check failed", undefined, {
 					agentId: runAgentId,
 					error: e instanceof Error ? e.message : String(e),
 				});
+				// A provider failure is still an expensive attempt. Do not turn one
+				// unhealthy sweep into a burst across every remaining agent.
+				if (attemptedPass) return;
 			}
 		}
 	}
@@ -173,6 +261,9 @@ export function startDreamingWorker(
 	}
 
 	// Start the periodic check
+	for (const agentId of getDreamingWorkerAgentIds(accessor, defaultAgentId)) {
+		enqueueDreamingHygieneAttention(accessor, agentId);
+	}
 	schedule();
 
 	logger.info("dreaming-worker", "Dreaming worker started", {
@@ -198,11 +289,10 @@ export function startDreamingWorker(
 		triggerAsync(mode: DreamingMode, agentId?: string): string {
 			if (active) throw new AlreadyRunningError();
 			const runAgentId = normalizeAgentId(agentId, defaultAgentId);
-			const synth = getSynthesisProvider();
 			const passId = createDreamingPass(accessor, runAgentId, mode);
 			active = true;
 			activeAgent = runAgentId;
-			const p = runDreamingPass(accessor, synth.generate.bind(synth), cfg, agentsDir, runAgentId, mode, passId);
+			const p = runDreamingAgentPass(accessor, executorForAgent(runAgentId), cfg, agentsDir, runAgentId, mode, passId);
 			activePassPromise = p;
 			p.catch((e) => {
 				recordDreamingFailure(accessor, runAgentId);

@@ -220,7 +220,7 @@ export function buildKnowledgeMapFromConstellation(
 	if (
 		dreaming &&
 		nodes.length < limit &&
-		(dreaming.latestPass || dreaming.lastPassId || dreaming.tokensSinceLastPass > 0)
+		(dreaming.latestPass || dreaming.lastPassId || dreaming.episodicTokensPending > 0)
 	) {
 		const target = entityNodes.values().next().value ?? null;
 		const dreamingNode = toDreamingNode(dreaming, target);
@@ -549,7 +549,7 @@ function toDreamingNode(
 	const failed = latest?.mutationsFailed ?? 0;
 	const status = latest
 		? `${latest.status} ${latest.mode}`
-		: `${formatCount(dreaming.tokensSinceLastPass)} tokens queued`;
+		: `${formatCount(dreaming.episodicTokensPending)} episodic tokens queued`;
 	const x = target ? target.x - 260 : -260;
 	const y = target ? target.y - 220 : -220;
 	return {
@@ -560,18 +560,18 @@ function toDreamingNode(
 		sublabel: status,
 		preview: latest
 			? `${applied} applied / ${skipped} skipped / ${failed} failed`
-			: `${formatCount(dreaming.tokensSinceLastPass)} summary tokens queued for consolidation`,
+			: `${formatCount(dreaming.episodicTokensPending)} episodic tokens queued for consolidation`,
 		status: failed > 0 || dreaming.consecutiveFailures > 0 ? "conflict" : "current",
 		weight: latest ? Math.min(1, Math.max(0.2, (applied + skipped + failed) / 12)) : 0.35,
 		counts: {
 			applied,
 			skipped,
 			failed,
-			tokens: dreaming.tokensSinceLastPass,
+			tokens: dreaming.episodicTokensPending,
 		},
 		details: [
 			{ label: "Status", value: status },
-			{ label: "Tokens", value: formatCount(dreaming.tokensSinceLastPass) },
+			{ label: "Episodic tokens", value: formatCount(dreaming.episodicTokensPending) },
 			...(dreaming.lastPassAt ? [{ label: "Last pass", value: dreaming.lastPassAt }] : []),
 			...(latest ? [{ label: "Mutations", value: `${applied} / ${skipped} / ${failed}` }] : []),
 		],

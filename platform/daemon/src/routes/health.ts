@@ -11,7 +11,6 @@ import {
 } from "../diagnostics";
 import { getAllFeatureFlags } from "../feature-flags";
 import { loadMemoryConfig } from "../memory-config";
-import { getPipelineWorkerStatus } from "../pipeline";
 import { getResourceSnapshot } from "../resource-monitor";
 import { getUpdateState } from "../update-system";
 import {
@@ -156,9 +155,8 @@ function checkInference(): { ok: boolean; detail: InferenceCheck; reason: string
 		};
 	}
 	const extraction = getExtractionWorkloadState({
-		enabled: cfg.pipelineV2.enabled,
+		enabled: false,
 		paused: cfg.pipelineV2.paused,
-		workerRunning: getPipelineWorkerStatus().extraction.running,
 	});
 	const detail: InferenceCheck = {
 		status: extraction.status,
@@ -186,13 +184,6 @@ export function mountHealthRoutes(app: Hono): void {
 				dbOk = true;
 			});
 		} catch {}
-		const workers = getPipelineWorkerStatus();
-		const extraction = workers.extraction;
-		const stalled =
-			extraction.running &&
-			extraction.stats !== undefined &&
-			extraction.stats.pending > 0 &&
-			Date.now() - extraction.stats.lastProgressAt > 60_000;
 
 		return c.json({
 			status: shuttingDown ? "shutting_down" : "healthy",
@@ -205,12 +196,6 @@ export function mountHealthRoutes(app: Hono): void {
 			shuttingDown,
 			updateAvailable: us.lastCheck?.updateAvailable ?? false,
 			pendingRestart: us.pendingRestartVersion !== null,
-			pipeline: {
-				extractionRunning: extraction.running,
-				extractionStalled: stalled,
-				extractionPending: extraction.stats?.pending ?? 0,
-				extractionBackoffMs: extraction.stats?.backoffMs ?? 0,
-			},
 			resources: getResourceSnapshot(),
 		});
 	});

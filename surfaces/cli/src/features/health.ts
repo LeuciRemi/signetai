@@ -50,15 +50,6 @@ interface DaemonStatus {
 		readonly blockedReason: string | null;
 		readonly hasWorkloadState: boolean;
 	} | null;
-	readonly extractionWorker: {
-		readonly running: boolean;
-		readonly overloaded: boolean;
-		readonly loadPerCpu: number | null;
-		readonly maxLoadPerCpu: number | null;
-		readonly overloadBackoffMs: number | null;
-		readonly overloadSince: string | null;
-		readonly nextTickInMs: number | null;
-	} | null;
 	readonly transcripts: {
 		readonly pending: number;
 		readonly failed: number;
@@ -293,7 +284,7 @@ export async function showStatus(options: { path?: string; json?: boolean }, dep
 		}
 	}
 
-	// Issue #901 — pipeline queue block (memory / summary / extraction).
+	// Queue diagnostics include the live memory and summary workers.
 	if (report.daemon.running) {
 		await renderPipelineQueuesBlock(deps);
 	}
@@ -358,7 +349,6 @@ interface PipelineQueueDisplayReport {
 	readonly queues: {
 		readonly memory: QueueCountsForDisplay;
 		readonly summary: QueueCountsForDisplay;
-		readonly extraction: QueueCountsForDisplay;
 	};
 }
 
@@ -401,19 +391,15 @@ export async function renderPipelineQueuesBlock(deps: { defaultPort: number }): 
 	const base = getDaemonBaseUrl(deps.defaultPort);
 	const report = await fetchPipelineQueueReport(base);
 	if (!report?.queues) return;
-	const { memory, summary, extraction } = report.queues;
-	if (!memory || !summary || !extraction) return;
-	const deadTotal = memory.dead + summary.dead + extraction.dead;
+	const { memory, summary } = report.queues;
+	if (!memory || !summary) return;
+	const deadTotal = memory.dead + summary.dead;
 	const heading = deadTotal > 0 ? chalk.yellow("Pipeline queues (dead jobs present)") : "Pipeline queues";
 	console.log("");
 	console.log(`  ${heading}`);
 	console.log(renderQueueRow("memory", memory));
 	console.log(renderQueueRow("summary", summary));
-	console.log(renderQueueRow("extraction", extraction));
-	if (summary.lastError || extraction.lastError) {
-		const err = summary.lastError ?? extraction.lastError;
-		if (err) console.log(chalk.dim(`    last error: ${String(err).slice(0, 120)}`));
-	}
+	if (summary.lastError) console.log(chalk.dim(`    last error: ${String(summary.lastError).slice(0, 120)}`));
 	console.log(chalk.dim("    (use 'signet repair queue {requeue|cancel|prune} [--apply]' to clean up)"));
 }
 
@@ -430,7 +416,7 @@ export function getExtractionStatusNotice(
 				? "Pipeline paused"
 				: extraction.status === "blocked"
 					? "Extraction blocked"
-					: "Extraction worker stopped";
+					: "Extraction unavailable";
 		return {
 			level: extraction.status === "blocked" ? "error" : "warn",
 			title,
@@ -458,22 +444,6 @@ export function getExtractionStatusNotice(
 			level: "warn",
 			title: "Extraction degraded",
 			detail: `configured: ${extraction.configured ?? "unknown"}, effective: ${extraction.effective ?? "unknown"}${extraction.reason ? ` — ${extraction.reason}` : ""}`,
-		};
-	}
-
-	const extractionWorker = daemon.extractionWorker;
-	if (extractionWorker && daemon.running && extractionWorker.running && extractionWorker.overloaded) {
-		const load = typeof extractionWorker.loadPerCpu === "number" ? extractionWorker.loadPerCpu.toFixed(2) : "unknown";
-		const threshold =
-			typeof extractionWorker.maxLoadPerCpu === "number" ? extractionWorker.maxLoadPerCpu.toFixed(2) : "unknown";
-		const nextTickSecs =
-			typeof extractionWorker.nextTickInMs === "number"
-				? Math.max(0, Math.ceil(extractionWorker.nextTickInMs / 1000))
-				: null;
-		return {
-			level: "warn",
-			title: "Pipeline load-shedding",
-			detail: `load/core ${load} > threshold ${threshold}${nextTickSecs !== null ? ` — next tick in ${nextTickSecs}s` : ""}`,
 		};
 	}
 

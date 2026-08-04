@@ -25,7 +25,6 @@ import {
 	releaseStaleLeases,
 	requeueDeadJobs,
 	resyncVectorIndex,
-	structuralBackfill,
 	triggerRetentionSweep,
 } from "./repair-actions";
 
@@ -112,10 +111,6 @@ const TEST_CFG: PipelineV2Config = {
 		maintenanceMode: "observe",
 	},
 	telemetryEnabled: false,
-	structural: {
-		...DEFAULT_PIPELINE_V2.structural,
-		enabled: false,
-	},
 };
 
 const TEST_EMBEDDING_CFG: EmbeddingConfig = {
@@ -153,13 +148,14 @@ function insertJob(
 	leasedAt?: string,
 	attempts = 0,
 	maxAttempts = 3,
+	jobType = "document_ingest",
 ): void {
 	const now = new Date().toISOString();
 	db.prepare(
 		`INSERT INTO memory_jobs
 		 (id, memory_id, job_type, status, attempts, max_attempts, leased_at, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-	).run(id, memId, "extract", status, attempts, maxAttempts, leasedAt ?? null, now, now);
+	).run(id, memId, jobType, status, attempts, maxAttempts, leasedAt ?? null, now, now);
 }
 
 function ensureVecTable(db: Database): void {
@@ -426,25 +422,6 @@ describe("pruneGenericEntities", () => {
 	});
 });
 
-describe("structuralBackfill", () => {
-	it("does not enqueue LLM structural jobs while structural workers are disabled", () => {
-		const db = new Database(":memory:");
-		runMigrations(db as unknown as Parameters<typeof runMigrations>[0]);
-		const accessor = asAccessor(db);
-		const limiter = createRateLimiter();
-
-		try {
-			const result = structuralBackfill(accessor, TEST_CFG, CTX_OPERATOR, limiter);
-
-			expect(result.success).toBe(true);
-			expect(result.affected).toBe(0);
-			expect(result.message).toContain("structural backfill disabled");
-		} finally {
-			db.close();
-		}
-	});
-});
-
 // ---------------------------------------------------------------------------
 // requeueDeadJobs
 // ---------------------------------------------------------------------------
@@ -494,6 +471,17 @@ describe("requeueDeadJobs", () => {
 
 		const remaining = db.prepare("SELECT COUNT(*) as n FROM memory_jobs WHERE status = 'dead'").get() as { n: number };
 		expect(remaining.n).toBe(2);
+	});
+
+	it("does not resurrect retired extraction jobs", () => {
+		insertMemory(db, "mem-retired");
+		insertJob(db, "job-retired", "mem-retired", "dead", undefined, 3, 3, "extract");
+
+		const result = requeueDeadJobs(accessor, TEST_CFG, CTX_OPERATOR, createRateLimiter());
+
+		expect(result.success).toBe(true);
+		expect(result.affected).toBe(0);
+		expect(db.prepare("SELECT status FROM memory_jobs WHERE id = 'job-retired'").get()).toEqual({ status: "dead" });
 	});
 });
 

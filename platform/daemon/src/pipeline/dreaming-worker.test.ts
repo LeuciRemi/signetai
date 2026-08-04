@@ -3,16 +3,16 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { DreamingConfig, LlmProvider } from "@signet/core";
+import type { DreamingConfig } from "@signet/core";
 import { runMigrations } from "../../../core/src/migrations";
 import type { DbAccessor } from "../db-accessor";
-import { closeInferenceProviderResolver, initInferenceProviderResolver } from "../llm";
-import { getDreamingWorkerAgentIds, startDreamingWorker } from "./dreaming-worker";
+import { getDreamingWorkerAgentIds, shouldDeferDreamingSweep, startDreamingWorker } from "./dreaming-worker";
 
 function defaultCfg(overrides?: Partial<DreamingConfig>): DreamingConfig {
 	return {
 		enabled: true,
 		tokenThreshold: 100_000,
+		maxInterval: 6 * 60 * 60 * 1_000,
 		maxInputTokens: 32_000,
 		maxOutputTokens: 16_000,
 		timeout: 300_000,
@@ -40,18 +40,6 @@ function wrapDb(db: Database): DbAccessor {
 	} as unknown as DbAccessor;
 }
 
-function makeProvider(): LlmProvider {
-	return {
-		name: "test",
-		async available() {
-			return true;
-		},
-		async generate() {
-			return JSON.stringify({ summary: "noop", mutations: [] });
-		},
-	};
-}
-
 describe("dreaming worker agent scope", () => {
 	let db: Database;
 	let accessor: DbAccessor;
@@ -62,11 +50,9 @@ describe("dreaming worker agent scope", () => {
 		runMigrations(db as unknown as Parameters<typeof runMigrations>[0]);
 		accessor = wrapDb(db);
 		agentsDir = mkdtempSync(join(tmpdir(), "dreaming-worker-"));
-		initInferenceProviderResolver(() => makeProvider());
 	});
 
 	afterEach(() => {
-		closeInferenceProviderResolver();
 		rmSync(agentsDir, { recursive: true, force: true });
 		db.close();
 	});
@@ -89,14 +75,36 @@ describe("dreaming worker agent scope", () => {
 			`INSERT INTO dreaming_state (agent_id, tokens_since_last_pass)
 			 VALUES (?, 500)`,
 		).run("state-agent");
+		db.prepare(
+			`INSERT INTO memory_artifacts
+			 (agent_id, source_path, source_sha256, source_kind, session_id, session_token, captured_at, content, updated_at, is_deleted)
+			 VALUES (?, 'sources/agent.md', 'artifact-agent', 'source_markdown', 'artifact-session', 'artifact-token', ?, 'agent artifact', ?, 0)`,
+		).run("artifact-agent", now, now);
+		db.prepare(
+			`INSERT INTO session_transcripts (session_key, content, harness, agent_id, created_at, updated_at)
+			 VALUES ('transcript-agent', 'agent transcript', 'pi', ?, ?, ?)`,
+		).run("transcript-agent", now, now);
 
 		expect(getDreamingWorkerAgentIds(accessor, "default")).toEqual([
+			"artifact-agent",
 			"default",
 			"memory-agent",
 			"noam",
 			"state-agent",
 			"summary-agent",
+			"transcript-agent",
 		]);
+	});
+
+	it("defers a sweep while the shared queue health watermark is exceeded", () => {
+		const now = new Date().toISOString();
+		for (let index = 0; index <= 50; index += 1) {
+			db.prepare(
+				`INSERT INTO memory_jobs (id, memory_id, job_type, status, created_at, updated_at)
+				 VALUES (?, ?, 'index', 'pending', ?, ?)`,
+			).run(`pressure-${index}`, `memory-${index}`, now, now);
+		}
+		expect(shouldDeferDreamingSweep(accessor)).toBe(true);
 	});
 
 	it("writes manual async trigger passes to the requested agent", async () => {
@@ -116,6 +124,169 @@ describe("dreaming worker agent scope", () => {
 					count: number;
 				},
 			).toEqual({ count: 0 });
+		} finally {
+			worker.stop();
+		}
+	});
+
+	it("seeds deterministic hygiene attention for legacy graph rows at worker startup", () => {
+		db.prepare(
+			`INSERT INTO entities
+			 (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+			 VALUES ('legacy-husk', 'Legacy Husk', 'legacy husk', 'project', 'default', 5, datetime('now'), datetime('now'))`,
+		).run();
+		const worker = startDreamingWorker(accessor, defaultCfg(), agentsDir, "default");
+		try {
+			expect(
+				db.prepare("SELECT kind, subject_ref FROM dreaming_attention WHERE agent_id = ?").get("default"),
+			).toEqual({ kind: "hygiene", subject_ref: "entity:legacy-husk" });
+		} finally {
+			worker.stop();
+		}
+	});
+
+	it("keeps multi-agent check-cycle passes and semantic rows agent-isolated (#946)", async () => {
+		// Behavioral regression: one worker check cycle over two agents must
+		// produce a separate pass per agent, each consolidating only its own
+		// evidence into its own agent-scoped semantic rows. The agent_id is
+		// the hard boundary; no cross-agent evidence leaks into another
+		// agent's prompt or derived graph. This mirrors the private check()
+		// loop: getDreamingWorkerAgentIds -> one runPass(runAgentId, mode) per
+		// discovered agent, using a deterministic provider.
+		const ALPHA = "alpha";
+		const BETA = "beta";
+		const alphaEvidence = "Alpha is building the Apex platform.";
+		const betaEvidence = "Beta is building the Zenith platform.";
+
+		// Seed distinct episodic evidence for each agent.
+		db.prepare(
+			`INSERT INTO session_summaries
+			 (id, agent_id, content, token_count, depth, kind, source_type, earliest_at, latest_at, created_at)
+			 VALUES ('summary-alpha', ?, ?, 10, 0, 'session', 'summary',
+			         datetime('now'), datetime('now'), datetime('now'))`,
+		).run(ALPHA, alphaEvidence);
+		db.prepare(
+			`INSERT INTO session_summaries
+			 (id, agent_id, content, token_count, depth, kind, source_type, earliest_at, latest_at, created_at)
+			 VALUES ('summary-beta', ?, ?, 10, 0, 'session', 'summary',
+			         datetime('now'), datetime('now'), datetime('now'))`,
+		).run(BETA, betaEvidence);
+
+		// Deterministic provider: inspect the prompt to emit an operation that
+		// cites only the evidence present in THIS agent's prompt. Since each
+		// pass is bound to one agent_id, only that agent's summary appears.
+		const seenPrompts: string[] = [];
+		const executorFactory = () => ({
+			async run(input: { prompt: string; tools: ReadonlyArray<{ name: string; execute: (...args: unknown[]) => Promise<unknown> }> }) {
+				const prompt = input.prompt;
+				seenPrompts.push(prompt);
+				const apply = input.tools.find((tool) => tool.name === "apply_ontology_ops");
+				if (!apply) throw new Error("Missing apply_ontology_ops");
+				if (prompt.includes(alphaEvidence) && !prompt.includes(betaEvidence)) {
+					await apply.execute("call", {
+						operations: [
+							{
+								operation: "create_entity",
+								payload: { name: "Apex", entity_type: "project" },
+								reason: "The evidence identifies the Apex project.",
+								confidence: 0.9,
+								evidence: [
+									{
+										source_ref: "summary:summary-alpha",
+										source_kind: "summary",
+										source_id: "summary-alpha",
+										quote: alphaEvidence,
+									},
+								],
+							},
+						],
+					});
+					return { summary: "Consolidated alpha evidence" };
+				}
+				if (prompt.includes(betaEvidence) && !prompt.includes(alphaEvidence)) {
+					await apply.execute("call", {
+						operations: [
+							{
+								operation: "create_entity",
+								payload: { name: "Zenith", entity_type: "project" },
+								reason: "The evidence identifies the Zenith project.",
+								confidence: 0.9,
+								evidence: [
+									{
+										source_ref: "summary:summary-beta",
+										source_kind: "summary",
+										source_id: "summary-beta",
+										quote: betaEvidence,
+									},
+								],
+							},
+						],
+					});
+					return { summary: "Consolidated beta evidence" };
+				}
+				return { summary: "No recognized evidence" };
+			},
+		});
+
+		// Mirror one check cycle: discover agents, run one pass per agent.
+		const worker = startDreamingWorker(
+			accessor,
+			defaultCfg({ tokenThreshold: 1, backfillOnFirstRun: true }),
+			agentsDir,
+			"default",
+			{ executorFactory },
+		);
+		try {
+			for (const agentId of getDreamingWorkerAgentIds(accessor, "default")) {
+				// Only alpha and beta have episodic evidence worth consolidating.
+				if (agentId !== ALPHA && agentId !== BETA) continue;
+				await worker.trigger("incremental", agentId);
+			}
+
+			// Two passes recorded, one per agent.
+			const alphaPass = db
+				.prepare("SELECT agent_id, status, mode FROM dreaming_passes WHERE agent_id = ?")
+			.get(ALPHA) as { agent_id: string; status: string; mode: string };
+			const betaPass = db
+				.prepare("SELECT agent_id, status, mode FROM dreaming_passes WHERE agent_id = ?")
+			.get(BETA) as { agent_id: string; status: string; mode: string };
+			expect(alphaPass).toEqual({ agent_id: ALPHA, status: "completed", mode: "incremental" });
+			expect(betaPass).toEqual({ agent_id: BETA, status: "completed", mode: "incremental" });
+
+			// Each pass saw only its own agent's evidence (no cross-agent leak).
+			expect(seenPrompts).toHaveLength(2);
+			const alphaPrompt = seenPrompts.find((p) => p.includes(alphaEvidence));
+			const betaPrompt = seenPrompts.find((p) => p.includes(betaEvidence));
+			expect(alphaPrompt).toBeDefined();
+			expect(betaPrompt).toBeDefined();
+			expect(alphaPrompt).not.toContain(betaEvidence);
+			expect(betaPrompt).not.toContain(alphaEvidence);
+
+			// Semantic rows are agent-isolated: each agent only owns its entity.
+			const alphaEntities = (
+				db.prepare("SELECT canonical_name FROM entities WHERE agent_id = ? ORDER BY canonical_name").all(ALPHA) as Array<{
+				canonical_name: string;
+			}>
+			).map((r) => r.canonical_name);
+			const betaEntities = (
+				db.prepare("SELECT canonical_name FROM entities WHERE agent_id = ? ORDER BY canonical_name").all(BETA) as Array<{
+				canonical_name: string;
+			}>
+			).map((r) => r.canonical_name);
+			expect(alphaEntities).toEqual(["apex"]);
+			expect(betaEntities).toEqual(["zenith"]);
+
+			// No entity was written to the wrong agent.
+			expect(
+				(db.prepare("SELECT COUNT(*) AS n FROM entities WHERE agent_id = ? AND canonical_name = 'zenith'").get(ALPHA) as {
+					n: number;
+				}).n,
+			).toBe(0);
+			expect(
+				(db.prepare("SELECT COUNT(*) AS n FROM entities WHERE agent_id = ? AND canonical_name = 'apex'").get(BETA) as {
+					n: number;
+				}).n,
+			).toBe(0);
 		} finally {
 			worker.stop();
 		}

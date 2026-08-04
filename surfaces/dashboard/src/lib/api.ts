@@ -3271,7 +3271,7 @@ export interface ConstellationProposal {
 }
 
 export interface ConstellationDreamingSummary {
-	tokensSinceLastPass: number;
+	episodicTokensPending: number;
 	consecutiveFailures: number;
 	lastPassAt: string | null;
 	lastPassId: string | null;
@@ -3422,7 +3422,6 @@ export interface DiagnosticsReport {
 	predictor: DiagnosticsDomain & { alpha?: number; successRate?: number };
 	mutation: DiagnosticsDomain;
 	graph: DiagnosticsDomain & {
-		extractionWritesEnabled?: boolean | null;
 		entityCount?: number;
 		edgeCount?: number;
 		communityCount?: number;

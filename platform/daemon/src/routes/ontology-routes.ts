@@ -1,7 +1,7 @@
 import type { Context, Hono } from "hono";
 import { requirePermission } from "../auth";
 import { getDbAccessor } from "../db-accessor";
-import { archiveEntityAlias, createEntityAlias, listEntityAliases } from "../knowledge-graph";
+import { listEntityAliases } from "../knowledge-graph";
 import { getInferenceProviderOrNull } from "../llm";
 import {
 	OntologyAssertionError,
@@ -199,31 +199,52 @@ export function registerOntologyRoutes(app: Hono): void {
 		const alias = readString(body, "alias");
 		if (!alias) return c.json({ error: "alias is required" }, 400);
 		try {
-			const item = createEntityAlias(getDbAccessor(), {
+			const { result } = applyOntologyOperation(getDbAccessor(), {
+				agentId: scoped.agentId,
+				actor: readString(body, "created_by") ?? c.req.header("x-signet-actor") ?? "operator",
+				operation: "create_entity_alias",
+				payload: {
+					entity_id: c.req.param("id"),
+					alias,
+					confidence: readNumber(body, "confidence"),
+					source: readString(body, "source") ?? null,
+				},
+			});
+			const item = listEntityAliases(getDbAccessor(), {
 				agentId: scoped.agentId,
 				entityId: c.req.param("id"),
-				alias,
-				confidence: readNumber(body, "confidence"),
-				source: readString(body, "source") ?? null,
-			});
+				status: "all",
+			}).find((row) => row.id === result?.aliasId);
 			return c.json({ item }, 201);
 		} catch (err) {
 			const message = messageForError(err);
 			if (message.includes("UNIQUE")) return c.json({ error: "alias already exists" }, 409);
-			if (message === "Entity not found") return c.json({ error: message }, 404);
-			return c.json({ error: message }, 400);
+			return c.json({ error: message }, statusForError(err));
 		}
 	});
 
 	app.delete("/api/ontology/entities/:id/aliases/:aliasId", (c) => {
 		const scoped = resolveAgent(c, c.req.query("agent_id"));
 		if (scoped.response) return scoped.response;
-		const item = archiveEntityAlias(getDbAccessor(), {
+		try {
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: scoped.agentId,
+				actor: c.req.header("x-signet-actor") ?? "operator",
+				operation: "archive_entity_alias",
+				payload: {
+					entity_id: c.req.param("id"),
+					alias_id: c.req.param("aliasId"),
+				},
+			});
+		} catch (err) {
+			if (err instanceof OntologyProposalError && err.status === 404) return c.json({ error: "Alias not found" }, 404);
+			return c.json({ error: messageForError(err) }, statusForError(err));
+		}
+		const item = listEntityAliases(getDbAccessor(), {
 			agentId: scoped.agentId,
 			entityId: c.req.param("id"),
-			aliasId: c.req.param("aliasId"),
-		});
-		if (!item) return c.json({ error: "Alias not found" }, 404);
+			status: "all",
+		}).find((row) => row.id === c.req.param("aliasId"));
 		return c.json({ item });
 	});
 

@@ -98,6 +98,18 @@ import { up as jobCancellations } from "./089-job-cancellations";
 import { up as jobArchive } from "./090-job-archive";
 import { up as embeddingIndexGenerations } from "./091-embedding-index-generations";
 import { up as embeddingStagingStore } from "./092-embedding-staging-store";
+import { up as dreamingEvidenceCursor } from "./093-dreaming-evidence-cursor";
+import { up as memoryKind } from "./094-memory-kind";
+import { up as compactionRecallProjections } from "./095-compaction-recall-projections";
+import { up as retireLegacyIngestion } from "./096-retire-legacy-ingestion";
+import { up as dreamingFailureBackoff } from "./097-dreaming-failure-backoff";
+import { up as dreamingEvidenceExclusions } from "./098-dreaming-evidence-exclusions";
+import { up as dreamingToolCalls } from "./099-dreaming-tool-calls";
+import { up as dreamingRunbook } from "./100-dreaming-runbook";
+import { up as dreamingAttention } from "./101-dreaming-attention";
+import { up as attributeSemanticMemories } from "./102-attribute-semantic-memories";
+import { up as semanticMemoryKind } from "./103-semantic-memory-kind";
+import { up as derivedMemoryProvenance } from "./104-derived-memory-provenance";
 
 // -- Public interface consumed by Database.init() --
 
@@ -215,7 +227,6 @@ export const MIGRATIONS: readonly Migration[] = [
 		name: "ingestion-tracking",
 		up: ingestionTracking,
 		artifacts: {
-			tables: ["ingestion_jobs"],
 			columns: [
 				{ table: "memories", column: "source_path" },
 				{ table: "memories", column: "source_section" },
@@ -878,6 +889,87 @@ export const MIGRATIONS: readonly Migration[] = [
 		name: "embedding-staging-store",
 		up: embeddingStagingStore,
 		artifacts: { tables: ["embeddings_staging"] },
+	},
+	{
+		version: 93,
+		name: "dreaming-evidence-cursor",
+		up: dreamingEvidenceCursor,
+		artifacts: { columns: [{ table: "dreaming_state", column: "evidence_cursor" }] },
+	},
+	{
+		version: 94,
+		name: "memory-kind",
+		up: memoryKind,
+		artifacts: {
+			columns: [
+				{ table: "memories", column: "memory_kind" },
+				{ table: "memories", column: "evidence_meta" },
+			],
+		},
+	},
+	{
+		version: 95,
+		name: "compaction-recall-projections",
+		up: compactionRecallProjections,
+	},
+	{
+		version: 96,
+		name: "retire-legacy-ingestion",
+		up: retireLegacyIngestion,
+	},
+	{
+		version: 97,
+		name: "dreaming-failure-backoff",
+		up: dreamingFailureBackoff,
+		artifacts: { columns: [{ table: "dreaming_state", column: "last_failure_at" }] },
+	},
+	{
+		version: 98,
+		name: "dreaming-evidence-exclusions",
+		up: dreamingEvidenceExclusions,
+		artifacts: { tables: ["dreaming_evidence_exclusions"] },
+	},
+	{
+		version: 99,
+		name: "dreaming-tool-calls",
+		up: dreamingToolCalls,
+		artifacts: { tables: ["dreaming_tool_calls"] },
+	},
+	{
+		version: 100,
+		name: "dreaming-runbook",
+		up: dreamingRunbook,
+		artifacts: {
+			columns: [
+				{ table: "dreaming_passes", column: "evidence_window_json" },
+				{ table: "dreaming_passes", column: "runbook_json" },
+			],
+		},
+	},
+	{
+		version: 101,
+		name: "dreaming-attention",
+		up: dreamingAttention,
+		artifacts: { tables: ["dreaming_attention"] },
+	},
+	{
+		version: 102,
+		name: "attribute-semantic-memories",
+		up: attributeSemanticMemories,
+	},
+	{
+		version: 103,
+		name: "semantic-memory-kind",
+		up: semanticMemoryKind,
+	},
+	{
+		version: 104,
+		name: "derived-memory-provenance",
+		up: derivedMemoryProvenance,
+		artifacts: {
+			tables: ["derived_memory_sources"],
+			columns: [{ table: "memories", column: "stale_at" }],
+		},
 	},
 ];
 

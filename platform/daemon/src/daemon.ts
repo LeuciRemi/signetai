@@ -33,12 +33,13 @@ import { watch } from "chokidar";
 import { Hono } from "hono";
 import { resolveDaemonAgentId } from "./agent-id";
 import { yieldEvery } from "./async-yield";
-import { requirePermission } from "./auth";
+import { createToken, requirePermission } from "./auth";
 import { bindWithRetry } from "./bind-with-retry";
 import {
 	migrateConfig,
 	migrateInferenceProviders,
 	migrateLegacyRoutingToRegistry,
+	migrateRetiredExtractionWriterConfig,
 	migrateSessionSynthesisRoute,
 } from "./config-migration";
 import { listConnectors } from "./connectors/registry";
@@ -48,7 +49,6 @@ import { fetchEmbedding } from "./embedding-fetch";
 import { type EmbeddingIndexMigrationHandle, startEmbeddingIndexMigration } from "./embedding-index-migration";
 import { resolveActiveEmbeddingConfig } from "./embedding-index-state";
 import { type EmbeddingTrackerHandle, startEmbeddingTracker } from "./embedding-tracker";
-import { firstCandidateBlockedBy } from "./extraction-status";
 import { initFeatureFlags } from "./feature-flags";
 import { writeFileIfChangedAsync } from "./file-sync";
 import { createSignetHttpServer } from "./http-server";
@@ -56,7 +56,7 @@ import { syncAgentWorkspaces } from "./identity-sync";
 import { type InferenceStatusSummary, getOrCreateInferenceRouter } from "./inference-router.js";
 import { closeInferenceProviderResolver, getInferenceProvider, initInferenceProviderResolver } from "./llm";
 import { logger } from "./logger";
-import { type ResolvedMemoryConfig, loadMemoryConfig, shouldWarnGraphExtractionWritesDisabled } from "./memory-config";
+import { type ResolvedMemoryConfig, loadMemoryConfig } from "./memory-config";
 import { registerGlobalMiddleware } from "./middleware";
 import {
 	type NativeMemoryBridgeHandle,
@@ -74,12 +74,11 @@ import {
 	stopPipeline,
 } from "./pipeline";
 import { type DreamingWorkerHandle, startDreamingWorker } from "./pipeline/dreaming-worker";
-import type { WorkerInit } from "./pipeline/extraction-thread-protocol";
+import { retireLegacyExtractionJobs } from "./pipeline/extraction-fallback";
 import { invalidateTraversalCache } from "./pipeline/graph-traversal";
 import { stopModelRegistry } from "./pipeline/model-registry";
 import { configureLlmConcurrency } from "./pipeline/provider";
 import { startReconciler } from "./pipeline/skill-reconciler";
-import { type RepairContext, structuralBackfill } from "./repair-actions";
 import { logFdSnapshot, startEventLoopMonitor, startFdPollMonitor, stopResourceMonitors } from "./resource-monitor";
 import {
 	AGENTS_DIR,
@@ -96,6 +95,7 @@ import {
 	type RuntimeSynthesisProviderName,
 	analyticsCollector,
 	authConfig,
+	authSecret,
 	bindAbort,
 	invalidateDiagnosticsCache,
 	providerRuntimeResolution,
@@ -189,10 +189,10 @@ let httpServer: import("node:net").Server | null = null;
 let dreamingWorkerHandle: DreamingWorkerHandle | null = null;
 let embeddingTrackerHandle: EmbeddingTrackerHandle | null = null;
 let embeddingIndexMigrationHandle: EmbeddingIndexMigrationHandle | null = null;
+let embeddingPromotionRestart: Promise<void> | null = null;
 let skillReconcilerHandle: ReturnType<typeof startReconciler> | null = null;
 let schedulerHandle: { stop(): Promise<void> } | null = null;
 let transcriptCaptureWorkerHandle: TranscriptCaptureWorkerHandle | null = null;
-let structuralBackfillTimer: ReturnType<typeof setTimeout> | null = null;
 // These are mirrored into state.ts via setters for read access by
 // route modules. Only daemon.ts should assign or clear them.
 let telemetryRef: TelemetryCollector | undefined;
@@ -1127,15 +1127,7 @@ function readPipelineMode(cfg: ResolvedMemoryConfig["pipelineV2"]): string {
 	return "controlled-write";
 }
 
-function clearStructuralBackfillTimer(): void {
-	if (!structuralBackfillTimer) return;
-	clearTimeout(structuralBackfillTimer);
-	structuralBackfillTimer = null;
-}
-
 async function stopPipelineRuntime(): Promise<void> {
-	clearStructuralBackfillTimer();
-
 	if (skillReconcilerHandle) {
 		try {
 			await Promise.resolve(skillReconcilerHandle.stop());
@@ -1201,6 +1193,30 @@ async function restartPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry
 	await startPipelineRuntime(memoryCfg, telemetry);
 }
 
+function restartAfterEmbeddingPromotion(telemetry?: TelemetryCollector): void {
+	if (embeddingPromotionRestart) return;
+	const activePass = dreamingWorkerHandle?.activePass;
+	embeddingPromotionRestart = (async () => {
+		// An embedding-index promotion changes recall infrastructure, not the
+		// evidence window already being reasoned over. Let that bounded pass
+		// finish instead of orphaning it during the broad worker restart.
+		if (activePass) {
+			logger.info("embedding", "Deferring embedding worker restart until Dreaming pass completes");
+			await activePass.catch(() => undefined);
+		}
+		if (shuttingDown) return;
+		await restartPipelineRuntime(loadMemoryConfig(AGENTS_DIR), telemetry);
+	})()
+		.catch((error) => {
+			logger.error("embedding", "Promoted index but could not restart embedding workers", undefined, {
+				error: error instanceof Error ? error.message : String(error),
+			});
+		})
+		.finally(() => {
+			embeddingPromotionRestart = null;
+		});
+}
+
 export async function stopDaemonRuntimeForTests(): Promise<void> {
 	await stopPipelineRuntime();
 }
@@ -1215,15 +1231,6 @@ function executorForTargetRef(
 	const parsed = parseRoutingTargetRef(targetRef);
 	if (!parsed.ok) return null;
 	return (statusValue.targets[parsed.value.targetId]?.executor as RuntimeProviderName | undefined) ?? null;
-}
-
-function runtimeReasonForTarget(
-	decision: Awaited<ReturnType<RouterHandle["explain"]>> | null,
-	targetRef: string | undefined,
-): string | null {
-	if (!targetRef || !decision?.ok) return null;
-	const candidate = decision.value.trace.candidates.find((entry) => entry.targetRef === targetRef);
-	return candidate?.blockedBy[0] ?? candidate?.runtime.unavailableReason ?? null;
 }
 
 function syncAgentRoster(agentsDir: string): void {
@@ -1266,16 +1273,25 @@ function syncAgentRoster(agentsDir: string): void {
 
 async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?: TelemetryCollector): Promise<void> {
 	const pipelinePaused = memoryCfg.pipelineV2.paused;
+	logger.info("dreaming", "Dreaming owns all semantic writes; legacy extraction is retired");
+	// Terminalize every pre-existing legacy `extract` job. The source keeps its
+	// provenance and memory kind, so only already-episodic evidence remains
+	// reachable by the Dreaming cursor; derived rows are never reclassified.
+	// Leased rows are terminalized too because no legacy worker remains. Runs on
+	// cold boot and live-reload config transitions (#913).
+	if (!pipelinePaused) {
+		const deadLettered = retireLegacyExtractionJobs(getDbAccessor(), {
+			reason: "Dreaming cutover: legacy extraction worker not started",
+		});
+		if (deadLettered > 0) {
+			logger.info("dreaming", "Retired legacy extraction jobs", {
+				count: deadLettered,
+			});
+		}
+	}
+
 	const activeEmbeddingCfg = getDbAccessor().withReadDb((db) => resolveActiveEmbeddingConfig(db, memoryCfg.embedding));
 	configureLlmConcurrency(memoryCfg.pipelineV2.worker.maxLlmConcurrency);
-	clearStructuralBackfillTimer();
-	if (shouldWarnGraphExtractionWritesDisabled(memoryCfg)) {
-		logger.warn("pipeline", "Graph extraction writes are disabled while graph reads are enabled", {
-			graphEnabled: memoryCfg.pipelineV2.graph.enabled,
-			extractionWritesEnabled: memoryCfg.pipelineV2.graph.extractionWritesEnabled,
-			hint: "Set memory.pipelineV2.graph.extractionWritesEnabled: true to persist entities extracted by the background worker.",
-		});
-	}
 	logger.info("config", "Resolved embedding config", {
 		provider: memoryCfg.embedding.provider,
 		model: memoryCfg.embedding.model,
@@ -1313,49 +1329,13 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 
 	const routerStatus = await router.status(false);
 	const statusValue = routerStatus.ok ? routerStatus.value : null;
-	const explicitInference = statusValue?.source === "explicit";
-	const commandExtractionConfigured = memoryCfg.pipelineV2.extraction.provider === "command";
-	const commandExtractionMode = memoryCfg.pipelineV2.enabled && commandExtractionConfigured;
-	const extractionWorkloadConfigured = commandExtractionConfigured || (await router.hasWorkload("memory_extraction"));
+	const extractionWorkloadConfigured = await router.hasWorkload("memory_extraction");
 	const synthesisWorkloadConfigured = await router.hasWorkload("session_synthesis");
-	const extractionDecision =
-		!commandExtractionConfigured && extractionWorkloadConfigured
-			? await router.explain({ agentId: defaultAgentId, operation: "memory_extraction" })
-			: null;
 	const synthesisDecision =
 		!pipelinePaused && synthesisWorkloadConfigured
 			? await router.explain({ agentId: defaultAgentId, operation: "session_synthesis" })
 			: null;
-	const extractionAvailable = commandExtractionConfigured || Boolean(extractionDecision?.ok);
 	const synthesisAvailable = Boolean(synthesisDecision?.ok);
-	const extractionBinding = statusValue?.workloadBindings.memoryExtraction;
-	const extractionSelectedRef = extractionDecision?.ok ? extractionDecision.value.targetRef : undefined;
-	const extractionSelectedRuntime = extractionSelectedRef
-		? statusValue?.runtimeSnapshot.targets[extractionSelectedRef]
-		: undefined;
-	const extractionFallbackApplied = Boolean(
-		extractionSelectedRef && extractionBinding?.includes("/") && extractionSelectedRef !== extractionBinding,
-	);
-	const extractionDegraded = extractionFallbackApplied || extractionSelectedRuntime?.health === "degraded";
-	const extractionStatus = !memoryCfg.pipelineV2.enabled
-		? "disabled"
-		: pipelinePaused
-			? "paused"
-			: !extractionWorkloadConfigured
-				? "disabled"
-				: extractionDecision?.ok
-					? extractionDegraded
-						? "degraded"
-						: "active"
-					: "blocked";
-	const statusSince =
-		extractionStatus === "active" || extractionStatus === "disabled" ? null : new Date().toISOString();
-	const extractionResolved = commandExtractionConfigured
-		? "command"
-		: ((statusValue && executorForTargetRef(statusValue, extractionSelectedRef)) ??
-			(statusValue && executorForTargetRef(statusValue, extractionBinding)) ??
-			"none");
-	const extractionEffective = extractionAvailable ? extractionResolved : "none";
 	const synthesisEffective =
 		(statusValue &&
 			(executorForTargetRef(
@@ -1363,51 +1343,20 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 				synthesisDecision?.ok ? synthesisDecision.value.targetRef : undefined,
 			) as RuntimeSynthesisProviderName | null)) ??
 		(synthesisAvailable ? "inference" : null);
-	// After #949, the retired flat pipelineV2.extraction.fallbackProvider field
-	// was dropped from this status object, which made `signet status` print
-	// "fallback: unknown". Restore the field with runtime-derived semantics:
-	// when a fallback is in use (fallbackApplied), `effective` is the fallback
-	// executor; otherwise report "none". (The decision's fallbackTargetRefs is
-	// NOT the right source — it holds candidates remaining AFTER selection, so
-	// it is empty when the fallback became the selected target.) NOTE: this is
-	// an applied-vs-configured semantic shift from pre-#949 — in the "blocked"
-	// case the field reports "none" even if a fallback was configured but also
-	// failed, because the decision carries no candidates when blocked. The
-	// `reason` field carries the failure detail in that case.
-	const extractionFallbackProvider: RuntimeProviderName = extractionFallbackApplied ? extractionEffective : "none";
+	// Dreaming owns all semantic writes (#913 hard cutover). Legacy extraction
+	// is always disabled; the memory_extraction workload binding is still
+	// resolved by the router because Dreaming uses it for inference calls.
 	providerRuntimeResolution.extraction = {
-		// Configured/resolved now derive from the routing registry (the workload
-		// binding's target executor), not the retired legacy flat fields.
-		configured: commandExtractionConfigured
-			? "command"
-			: statusValue
-				? executorForTargetRef(statusValue, extractionBinding)
-				: null,
-		resolved: extractionResolved,
-		effective: extractionEffective,
-		fallbackProvider: commandExtractionConfigured ? "none" : extractionFallbackProvider,
-		status: extractionStatus,
-		degraded: extractionDegraded,
-		fallbackApplied: extractionFallbackApplied,
-		reason: !memoryCfg.pipelineV2.enabled
-			? "Pipeline disabled"
-			: pipelinePaused
-				? "Pipeline paused"
-				: extractionStatus === "disabled"
-					? "No inference workload is configured for memoryExtraction"
-					: extractionStatus === "blocked"
-						? extractionDecision && !extractionDecision.ok
-							? extractionDecision.error.message
-							: "No memoryExtraction route available"
-						: extractionFallbackApplied
-							? (runtimeReasonForTarget(extractionDecision, extractionBinding) ??
-								`Configured extraction provider unavailable; using ${extractionEffective} fallback`)
-							: (extractionSelectedRuntime?.unavailableReason ?? null),
-		blockedBy:
-			extractionStatus === "blocked" && extractionDecision && !extractionDecision.ok
-				? firstCandidateBlockedBy(extractionDecision.error.details)
-				: [],
-		since: statusSince,
+		configured: null,
+		resolved: "none",
+		effective: "none",
+		fallbackProvider: "none",
+		status: "disabled",
+		degraded: false,
+		fallbackApplied: false,
+		reason: "Dreaming owns semantic writes",
+		blockedBy: [],
+		since: null,
 	};
 	providerRuntimeResolution.synthesis = {
 		configured: synthesisAvailable
@@ -1421,64 +1370,35 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 	};
 
 	logger.info("config", "Inference router workloads", {
-		extraction: extractionAvailable,
+		extraction: extractionWorkloadConfigured,
 		synthesis: synthesisAvailable,
 		interactive: await router.hasWorkload("interactive"),
 		default: await router.hasWorkload("default"),
 	});
 
 	// Summary worker — shared infrastructure, owned here not by startPipeline.
-	// Both pipelineV2 and dreaming consume session summaries. Command-mode
-	// extraction also checkpoints through summary_jobs and remains runnable
-	// without synthesis; all other queued work requires an effective route.
+	// The summary worker produces session summaries for DAG/continuity.
+	// Dreaming consumes these summaries for consolidation. Requires an
+	// effective session_synthesis route.
 	const isSummarySynthesisAvailable = async (): Promise<boolean> =>
 		(await router.explain({ agentId: defaultAgentId, operation: "session_synthesis" }, true)).ok;
-	const hasSummaryConsumers = memoryCfg.pipelineV2.enabled || memoryCfg.dreaming.enabled;
-	const summarySynthesisAvailable = hasSummaryConsumers ? await isSummarySynthesisAvailable() : false;
-	if (hasSummaryConsumers && !pipelinePaused && (commandExtractionMode || summarySynthesisAvailable)) {
+	const summarySynthesisAvailable = await isSummarySynthesisAvailable();
+	if (!pipelinePaused && summarySynthesisAvailable) {
 		ensureSummaryWorker(getDbAccessor(), {
 			isSynthesisAvailable: isSummarySynthesisAvailable,
 		});
-	} else if (hasSummaryConsumers) {
+	} else {
 		ensureSummaryRecovery(getDbAccessor(), {
 			workerOptions: { isSynthesisAvailable: isSummarySynthesisAvailable },
 			shouldStartWorker: async () => {
 				const liveCfg = loadMemoryConfig(AGENTS_DIR);
-				if ((!liveCfg.pipelineV2.enabled && !liveCfg.dreaming.enabled) || liveCfg.pipelineV2.paused) return false;
-				return (
-					(liveCfg.pipelineV2.enabled && liveCfg.pipelineV2.extraction.provider === "command") ||
-					(await isSummarySynthesisAvailable())
-				);
+				if (liveCfg.pipelineV2.paused) return false;
+				return await isSummarySynthesisAvailable();
 			},
 		});
 	}
 
-	if (memoryCfg.pipelineV2.enabled && !pipelinePaused && extractionAvailable) {
-		const workerInit: WorkerInit | undefined = memoryCfg.pipelineV2.worker.threadedExtraction
-			? {
-					dbPath: MEMORY_DB,
-					vecExtensionPath: getVectorRuntimeStatus().extensionPath ?? "",
-					agentsDir: AGENTS_DIR,
-					agentId: defaultAgentId,
-					embeddingConfig: {
-						provider: activeEmbeddingCfg.provider,
-						model: activeEmbeddingCfg.model,
-						dimensions: activeEmbeddingCfg.dimensions ?? 768,
-						base_url: activeEmbeddingCfg.base_url,
-						api_key: activeEmbeddingCfg.api_key,
-					},
-					pipelineConfig: memoryCfg.pipelineV2 as unknown as Record<string, unknown>,
-					searchConfig: memoryCfg.search as unknown as Record<string, unknown>,
-					// Resolve native asset paths on the main thread, where
-					// globalThis.__SIGNET_NATIVE_RUNTIME_ASSETS__ is registered.
-					// The extraction worker thread has an isolated globalThis
-					// and cannot resolve these itself (#922). Null in source mode.
-					nativeEmbeddingWorkerPath: resolveEmbeddedWorkerPath("embedding-worker"),
-					nativeWasmDir: materializeEmbeddedWasmAssets(),
-					nativeTransformersRuntimePath: resolveEmbeddedWorkerPath("embedding-worker-transformers-runtime"),
-				}
-			: undefined;
-
+	if (memoryCfg.pipelineV2.enabled && !pipelinePaused) {
 		startPipeline(
 			getDbAccessor(),
 			memoryCfg.pipelineV2,
@@ -1489,14 +1409,11 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 			providerTracker,
 			analyticsCollector,
 			telemetry,
-			workerInit,
 		);
 
 		// Configure the main thread's own native embedding handle with the
-		// same pre-resolved asset paths. This is not strictly necessary on
-		// the main thread (it has the asset globals), but it ensures
-		// consistency and makes the main thread path identical to the
-		// extraction-thread path (#922).
+		// pre-resolved asset paths. This ensures consistency with any
+		// background embedding consumers (tracker, index migration).
 		const { configureNativeEmbeddingAssets } = await import("./native-embedding");
 		configureNativeEmbeddingAssets({
 			embeddingWorkerPath: resolveEmbeddedWorkerPath("embedding-worker"),
@@ -1527,53 +1444,32 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 			pollMs: memoryCfg.pipelineV2.embeddingTracker.pollMs,
 			batchSize: memoryCfg.pipelineV2.embeddingTracker.batchSize,
 			onPromoted: () => {
-				// The tracker and extraction worker hold their embedding config at
-				// construction time. Recreate them only after the new generation is
-				// committed, never while the active slot is still serving recall.
-				void restartPipelineRuntime(loadMemoryConfig(AGENTS_DIR), telemetry).catch((error) => {
-					logger.error("embedding", "Promoted index but could not restart embedding workers", undefined, {
-						error: error instanceof Error ? error.message : String(error),
-					});
-				});
+				restartAfterEmbeddingPromotion(telemetry);
 			},
 		});
 	}
 
-	if (memoryCfg.dreaming.enabled && !pipelinePaused && !memoryCfg.pipelineV2.mutationsFrozen) {
+	if (!pipelinePaused && !memoryCfg.pipelineV2.mutationsFrozen) {
 		try {
-			dreamingWorkerHandle = startDreamingWorker(getDbAccessor(), memoryCfg.dreaming, AGENTS_DIR, defaultAgentId);
+			dreamingWorkerHandle = startDreamingWorker(getDbAccessor(), memoryCfg.dreaming, AGENTS_DIR, defaultAgentId, {
+				acpxMcp: {
+					daemonUrl: `http://${INTERNAL_SELF_HOST}:${PORT}`,
+					authorizationTokenForAgent: (agentId) =>
+						authSecret
+							? createToken(
+								authSecret,
+								{ sub: `dreaming:${agentId}`, role: "agent", scope: { agent: agentId } },
+								Math.max(900, Math.ceil(memoryCfg.dreaming.timeout / 1000) + 60),
+							)
+							: undefined,
+				},
+			});
 			setDreamingWorker(dreamingWorkerHandle);
 		} catch (err) {
 			logger.warn("dreaming", "Failed to start dreaming worker (non-fatal)", {
 				error: err instanceof Error ? err.message : String(err),
 			});
 		}
-	}
-
-	if (memoryCfg.pipelineV2.graph.enabled && memoryCfg.pipelineV2.structural.enabled && !pipelinePaused) {
-		const backfillCtx: RepairContext = {
-			reason: "post-upgrade structural backfill",
-			actor: "daemon",
-			actorType: "daemon",
-		};
-		structuralBackfillTimer = setTimeout(() => {
-			structuralBackfillTimer = null;
-			try {
-				const result = structuralBackfill(getDbAccessor(), memoryCfg.pipelineV2, backfillCtx, repairLimiter, {
-					batchSize: 50,
-				});
-				if (result.affected > 0) {
-					logger.info("pipeline", "Structural backfill completed", {
-						affected: result.affected,
-						message: result.message,
-					});
-				}
-			} catch (err) {
-				logger.warn("pipeline", "Structural backfill failed (non-fatal)", {
-					error: err instanceof Error ? err.message : String(err),
-				});
-			}
-		}, 10_000);
 	}
 
 	if (memoryCfg.pipelineV2.procedural.enabled && !pipelinePaused) {
@@ -1741,6 +1637,20 @@ async function main() {
 	mkdirSync(DAEMON_DIR, { recursive: true });
 	mkdirSync(LOG_DIR, { recursive: true });
 
+	// Config migrations must precede every initialization path that resolves
+	// memory config, including DB setup below.
+	try {
+		migrateConfig(AGENTS_DIR);
+		migrateInferenceProviders(AGENTS_DIR);
+		migrateLegacyRoutingToRegistry(AGENTS_DIR);
+		migrateSessionSynthesisRoute(AGENTS_DIR);
+		migrateRetiredExtractionWriterConfig(AGENTS_DIR);
+	} catch (err) {
+		logger.warn("config-migration", "Config migration failed; continuing startup", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+	}
+
 	await initDbAccessorAsync(MEMORY_DB, { agentsDir: AGENTS_DIR });
 	startSessionCleanup();
 	logFdSnapshot("post-db-init");
@@ -1821,17 +1731,6 @@ async function main() {
 
 	writeFileSync(PID_FILE, process.pid.toString());
 	logger.info("daemon", "Process ID", { pid: process.pid });
-
-	try {
-		migrateConfig(AGENTS_DIR);
-		migrateInferenceProviders(AGENTS_DIR);
-		migrateLegacyRoutingToRegistry(AGENTS_DIR);
-		migrateSessionSynthesisRoute(AGENTS_DIR);
-	} catch (err) {
-		logger.warn("config-migration", "Config migration failed; continuing startup", {
-			error: err instanceof Error ? err.message : String(err),
-		});
-	}
 
 	if (ensureWorkspaceGitignore()) {
 		scheduleAutoCommit(join(AGENTS_DIR, ".gitignore"));

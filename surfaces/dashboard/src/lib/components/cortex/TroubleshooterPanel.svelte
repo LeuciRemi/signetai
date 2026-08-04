@@ -79,7 +79,6 @@ const groupDefs: readonly GroupDef[] = [
 			{ label: "Requeue Dead", kind: "api", method: "POST", path: "/api/repair/requeue-dead" },
 			{ label: "Release Leases", kind: "api", method: "POST", path: "/api/repair/release-leases" },
 			{ label: "Backfill Skipped", kind: "api", method: "POST", path: "/api/repair/backfill-skipped" },
-			{ label: "Reclassify", kind: "api", method: "POST", path: "/api/repair/reclassify-entities" },
 			{ label: "Prune Chunks", kind: "api", method: "POST", path: "/api/repair/prune-chunk-groups" },
 			{ label: "Prune Singletons", kind: "api", method: "POST", path: "/api/repair/prune-singleton-entities" },
 			{ label: "Stop Daemon", kind: "cli", key: "daemon-stop" },

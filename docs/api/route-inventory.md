@@ -113,7 +113,6 @@ silently disappear from the API reference.
 | GET | `/api/os/agent-sessions` | platform/daemon/src/routes/os-agent.ts |
 | POST | `/api/os/chat` | platform/daemon/src/routes/os-chat.ts |
 | GET | `/api/home/greeting` | platform/daemon/src/routes/pipeline-routes.ts |
-| POST | `/api/dream/promote` | platform/daemon/src/routes/pipeline-routes.ts |
 | GET | `/api/reflections/today` | platform/daemon/src/routes/reflection-routes.ts |
 | GET | `/api/reflections` | platform/daemon/src/routes/reflection-routes.ts |
 | POST | `/api/reflections/generate` | platform/daemon/src/routes/reflection-routes.ts |
@@ -123,17 +122,14 @@ silently disappear from the API reference.
 | POST | `/api/diagnostics/openclaw/heartbeat` | platform/daemon/src/routes/pipeline-routes.ts |
 | GET | `/api/diagnostics/openclaw` | platform/daemon/src/routes/pipeline-routes.ts |
 | GET | `/api/diagnostics/transcripts` | platform/daemon/src/routes/pipeline-routes.ts |
-| POST | `/api/pipeline/nudge` | platform/daemon/src/routes/pipeline-routes.ts |
 | GET | `/api/pipeline/models` | platform/daemon/src/routes/pipeline-routes.ts |
 | GET | `/api/pipeline/models/by-provider` | platform/daemon/src/routes/pipeline-routes.ts |
 | POST | `/api/pipeline/models/refresh` | platform/daemon/src/routes/pipeline-routes.ts |
 | POST | `/api/repair/resync-vec` | platform/daemon/src/routes/repair-routes.ts |
 | POST | `/api/repair/backfill-skipped` | platform/daemon/src/routes/repair-routes.ts |
-| POST | `/api/repair/reclassify-entities` | platform/daemon/src/routes/repair-routes.ts |
 | POST | `/api/repair/prune-chunk-groups` | platform/daemon/src/routes/repair-routes.ts |
 | POST | `/api/repair/prune-singleton-entities` | platform/daemon/src/routes/repair-routes.ts |
 | POST | `/api/repair/prune-generic-entities` | platform/daemon/src/routes/repair-routes.ts |
-| POST | `/api/repair/structural-backfill` | platform/daemon/src/routes/repair-routes.ts |
 | GET | `/api/repair/cold-stats` | platform/daemon/src/routes/repair-routes.ts |
 | POST | `/api/repair/cluster-entities` | platform/daemon/src/routes/repair-routes.ts |
 | POST | `/api/repair/relink-entities` | platform/daemon/src/routes/repair-routes.ts |

@@ -15,6 +15,10 @@ import { up as threadHeadsMigration } from "./048-thread-heads";
 import { up as ontologyControlPlaneState } from "./070-ontology-control-plane-state";
 import { up as documentScopeColumns } from "./080-document-scope-columns";
 import { up as memoryLifecycleRepair } from "./083-memory-lifecycle-repair";
+import { up as memoryKind } from "./094-memory-kind";
+import { up as compactionRecallProjections } from "./095-compaction-recall-projections";
+import { up as retireLegacyIngestion } from "./096-retire-legacy-ingestion";
+import { up as dreamingRunbook } from "./100-dreaming-runbook";
 import { MIGRATIONS, hasPendingMigrations, runMigrations } from "./index";
 
 function createFreshDb(): Database {
@@ -235,8 +239,11 @@ describe("migration framework", () => {
 		expect(tableNames).toContain("scheduled_tasks");
 		expect(tableNames).toContain("task_runs");
 
-		// v13 tables
-		expect(tableNames).toContain("ingestion_jobs");
+		// v96 retires the unscoped legacy ingestion ledger.
+		expect(tableNames).not.toContain("ingestion_jobs");
+
+		// v99 keeps Pi Dreaming capability traces local and pass-scoped.
+		expect(tableNames).toContain("dreaming_tool_calls");
 
 		// v14 tables
 		expect(tableNames).toContain("telemetry_events");
@@ -1546,5 +1553,157 @@ describe("migration framework", () => {
 				.all("refresh")
 				.map((row) => row.id),
 		).toContain("mem-fts-access");
+	});
+
+	test("migration 094 adds memory_kind and backfills episodic evidence via exclusion", () => {
+		db = createFreshDb();
+		db.exec(`
+			CREATE TABLE memories (
+				id TEXT PRIMARY KEY,
+				content TEXT NOT NULL,
+				source_type TEXT,
+				is_deleted INTEGER DEFAULT 0
+			);
+		`);
+		// Real user/tool/plugin input — various client sourceTypes, all episodic.
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-manual",
+			"manual evidence",
+			"manual",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-chunk",
+			"chunked evidence",
+			"chunk",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-codex",
+			"codex native memory",
+			"codex_native_memory",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-hermes",
+			"hermes plugin log",
+			"hermes-memory",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-custom",
+			"custom tool input",
+			"my-tool-v2",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-null",
+			"pre-pipeline row",
+			null,
+		);
+		// Deleted evidence is still backfilled so kind survives recovery.
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-deleted",
+			"deleted manual",
+			"manual",
+		);
+		db.prepare("UPDATE memories SET is_deleted = 1 WHERE id = ?").run("mem-deleted");
+		// Daemon-derived rows — NOT episodic.
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-extract",
+			"derived fact",
+			"extract",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-aggregate",
+			"synthesized recall",
+			"aggregate-recall",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-session-end",
+			"session summary fact",
+			"session_end",
+		);
+		db.prepare("INSERT INTO memories (id, content, source_type) VALUES (?, ?, ?)").run(
+			"mem-checkpoint",
+			"checkpoint-derived fact",
+			"checkpoint",
+		);
+
+		memoryKind(db as unknown as Parameters<typeof memoryKind>[0]);
+		memoryKind(db as unknown as Parameters<typeof memoryKind>[0]);
+
+		const rows = db
+			.query<{ id: string; memory_kind: string | null }, []>("SELECT id, memory_kind FROM memories ORDER BY id")
+			.all();
+		const byId = new Map(rows.map((r) => [r.id, r.memory_kind]));
+		// Real input classified episodic.
+		expect(byId.get("mem-manual")).toBe("episodic");
+		expect(byId.get("mem-chunk")).toBe("episodic");
+		expect(byId.get("mem-codex")).toBe("episodic");
+		expect(byId.get("mem-hermes")).toBe("episodic");
+		expect(byId.get("mem-custom")).toBe("episodic");
+		expect(byId.get("mem-null")).toBe("episodic");
+		expect(byId.get("mem-deleted")).toBe("episodic");
+		// Daemon-derived left NULL.
+		expect(byId.get("mem-extract")).toBeNull();
+		expect(byId.get("mem-aggregate")).toBeNull();
+		expect(byId.get("mem-session-end")).toBeNull();
+		expect(byId.get("mem-checkpoint")).toBeNull();
+	});
+
+	test("migration 095 reclassifies compaction recall projections as derived", () => {
+		db = createFreshDb();
+		db.exec(`
+			CREATE TABLE memories (
+				id TEXT PRIMARY KEY,
+				type TEXT,
+				memory_kind TEXT
+			);
+		`);
+		db.prepare("INSERT INTO memories (id, type, memory_kind) VALUES (?, ?, ?)").run(
+			"compaction-projection",
+			"session_summary",
+			"episodic",
+		);
+		db.prepare("INSERT INTO memories (id, type, memory_kind) VALUES (?, ?, ?)").run(
+			"user-evidence",
+			"fact",
+			"episodic",
+		);
+
+		compactionRecallProjections(db as unknown as Parameters<typeof compactionRecallProjections>[0]);
+
+		const rows = db
+			.query<{ id: string; memory_kind: string | null }, []>("SELECT id, memory_kind FROM memories ORDER BY id")
+			.all();
+		const byId = new Map(rows.map((row) => [row.id, row.memory_kind]));
+		expect(byId.get("compaction-projection")).toBeNull();
+		expect(byId.get("user-evidence")).toBe("episodic");
+	});
+
+	test("migration 096 drops only the retired ingestion ledger", () => {
+		db = createFreshDb();
+		db.exec(`
+			CREATE TABLE memories (id TEXT PRIMARY KEY, content TEXT, memory_kind TEXT);
+			CREATE TABLE ingestion_jobs (id TEXT PRIMARY KEY, file_hash TEXT);
+			INSERT INTO memories (id, content, memory_kind) VALUES ('legacy-ingestion', 'preserved recall row', NULL);
+			INSERT INTO ingestion_jobs (id, file_hash) VALUES ('ingestion-job', 'old-hash');
+		`);
+
+		retireLegacyIngestion(db as unknown as Parameters<typeof retireLegacyIngestion>[0]);
+		retireLegacyIngestion(db as unknown as Parameters<typeof retireLegacyIngestion>[0]);
+
+		expect(
+			db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ingestion_jobs'").get(),
+		).toBeNull();
+		expect(db.prepare("SELECT content, memory_kind FROM memories WHERE id = 'legacy-ingestion'").get()).toEqual({
+			content: "preserved recall row",
+			memory_kind: null,
+		});
+	});
+
+	test("migration 100 adds Dreaming runbook columns to an existing pass table idempotently", () => {
+		db = createFreshDb();
+		db.exec("CREATE TABLE dreaming_passes (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, status TEXT NOT NULL)");
+		dreamingRunbook(db as unknown as Parameters<typeof dreamingRunbook>[0]);
+		dreamingRunbook(db as unknown as Parameters<typeof dreamingRunbook>[0]);
+		const columns = db.query("PRAGMA table_info(dreaming_passes)").all() as Array<{ name: string }>;
+		expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining(["evidence_window_json", "runbook_json"]));
 	});
 });

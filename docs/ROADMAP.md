@@ -76,15 +76,22 @@ One memory engine
 
 ---
 
-Extraction works, but the pipeline and dreaming are two half-systems. They're converging into one: same queue, same graph operations, two ways to drive it.
+Episodic evidence now has one shared aggregation path. Dreaming is the only
+automatic semantic writer; document ingestion, summaries, retention, and
+source-native topology remain separate non-semantic responsibilities.
 
 **[wip] Unify pipeline and dreaming (#913)**
 
-One ingest queue for everything — summaries, transcripts, imported sources. Pipeline distillation and agentic dreaming both read from it and write the same ontology operations. You turn one on, the other off, or run both. The unification PR (#946) is the biggest refactor in flight; dreaming replaces pipeline v02. Sources keep their job: preserve episodic evidence with provenance, feed the passes.
+One selector covers summaries, transcripts, imported content, compactions, and
+explicit episodic memory. Dreaming reasons over that evidence and applies
+audited graph operations; semantic-first retrieval remains available over the
+derived layer.
 
-**[wip] Dreaming as a real agent inside the daemon (#947)**
+**[wip] Dreaming as a proper agent inside the daemon (#947 B)**
 
-Pi embedded in the daemon gives the dreaming pass auth, model selection, and 30+ providers, plus real graph tools — recall, session/source search, batched ontology ops, entity merge — instead of five chained LLM calls. PR #981 open.
+Dreaming now uses the daemon router with isolated Pi AgentSessions and scoped
+ACPX MCP sessions. Remaining work is quality evaluation, live scope-matrix
+proof, and safe boundary splitting for oversized evidence.
 
 **[next] Temporal claims (#945)**
 

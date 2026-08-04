@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { arch, platform } from "node:process";
 import { fileURLToPath } from "node:url";
+import { isDaemonDerivedMemorySourceType } from "./memory-provenance";
 import { runMigrations } from "./migrations/index";
 import type { Conversation, Embedding, Memory } from "./types";
 import type { MemoryHistory, MemoryJob } from "./types";
@@ -259,8 +260,8 @@ export class Database {
 				 (id, type, category, content, confidence, source_id,
 				  source_type, source_path, runtime_path, idempotency_key,
 				  tags, created_at, updated_at, updated_by, vector_clock,
-				  manual_override)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				  manual_override, memory_kind)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			)
 			.run(
 				id,
@@ -279,6 +280,7 @@ export class Database {
 				memory.updatedBy,
 				JSON.stringify(memory.vectorClock),
 				memory.manualOverride ? 1 : 0,
+				isDaemonDerivedMemorySourceType(memory.sourceType) ? null : "episodic",
 			);
 
 		return id;
