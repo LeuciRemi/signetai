@@ -1,5 +1,8 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { DreamingConfig } from "@signet/core";
 import { runMigrations } from "../../../core/src/migrations";
 import type { DbAccessor } from "../db-accessor";
@@ -205,6 +208,50 @@ describe("Dreaming", () => {
 		expect(prompt).toContain("<semantic_attention>");
 		expect(prompt).toContain("entity:aster");
 		expect(getDreamingAttention(accessor, AGENT)).toEqual([]);
+	});
+
+	it("uses identity only as optional context and keeps claims entity-scoped", async () => {
+		seedSummary(db, "identity-shape", "Signet is a memory system.", 10);
+		let prompt = "";
+		await runDreamingAgentPass(
+			accessor,
+			{
+				async run(input) {
+					prompt = input.prompt;
+					return { summary: "Reviewed entity-scoped evidence" };
+				},
+			},
+			defaultCfg(),
+			"/tmp/no-identity-files",
+			AGENT,
+			"incremental",
+		);
+		expect(prompt).toContain("Identity files, when present, are contextual priors, never schema");
+		expect(prompt).toContain("attach each claim to its entity and aspect");
+		expect(prompt).not.toContain("person described in the identity context");
+	});
+
+	it("records an existing but unreadable identity entry as degraded pass context", async () => {
+		const agentsDir = mkdtempSync(join(tmpdir(), "dreaming-identity-error-"));
+		try {
+			writeFileSync(
+				join(agentsDir, "agent.yaml"),
+				"identity:\n  startup:\n    load:\n      - path: unreadable.md\n        role: broken_context\n",
+			);
+			mkdirSync(join(agentsDir, "unreadable.md"));
+			seedSummary(db, "identity-read-error", "Signet is a memory system.", 10);
+			const result = await runDreamingAgentPass(
+				accessor,
+				{ async run() { return { summary: "Completed despite unreadable optional context" }; } },
+				defaultCfg(),
+				agentsDir,
+				AGENT,
+				"incremental",
+			);
+			expect(result.summary).toContain("identity context degraded: unreadable unreadable.md");
+		} finally {
+			rmSync(agentsDir, { recursive: true, force: true });
+		}
 	});
 
 	it("turns deterministic graph hygiene into scoped attention without episodic evidence", () => {

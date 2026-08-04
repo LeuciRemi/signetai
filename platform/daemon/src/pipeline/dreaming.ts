@@ -9,7 +9,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	type DreamingConfig,
@@ -548,26 +548,44 @@ function fetchEpisodicEvidence(
 // Prompt construction
 // ---------------------------------------------------------------------------
 
-function readIdentityFile(dir: string, entry: IdentityContextFileEntry): string {
+interface RenderedIdentityBlock {
+	readonly content: string;
+	readonly unreadablePaths: readonly string[];
+}
+
+function readIdentityFile(
+	dir: string,
+	entry: IdentityContextFileEntry,
+): { readonly content: string; readonly unreadable: boolean } {
+	const path = join(dir, entry.path);
+	// Identity files are optional context. A missing file is ordinary, not a
+	// degraded pass or a reason to fill the daemon logs every five minutes.
+	if (!existsSync(path)) return { content: "", unreadable: false };
 	try {
-		const raw = readFileSync(join(dir, entry.path), "utf-8").trim();
-		if (!raw) return "";
+		const raw = readFileSync(path, "utf-8").trim();
+		if (!raw) return { content: "", unreadable: false };
 		const budget = entry.budget ?? 4_000;
-		return raw.length <= budget ? raw : `${raw.slice(0, budget)}\n[truncated]`;
+		return {
+			content: raw.length <= budget ? raw : `${raw.slice(0, budget)}\n[truncated]`,
+			unreadable: false,
+		};
 	} catch (err) {
 		logger.warn("dreaming", "Could not read identity file", { name: entry.path, error: String(err) });
-		return "";
+		return { content: "", unreadable: true };
 	}
 }
 
-function renderIdentityBlock(dir: string, entries: readonly IdentityContextFileEntry[]): string {
-	return entries
+function renderIdentityBlock(dir: string, entries: readonly IdentityContextFileEntry[]): RenderedIdentityBlock {
+	const unreadablePaths: string[] = [];
+	const content = entries
 		.map((entry) => {
-			const content = readIdentityFile(dir, entry);
-			return content ? `## ${entry.role ?? entry.path}\n\n${content}` : "";
+			const result = readIdentityFile(dir, entry);
+			if (result.unreadable) unreadablePaths.push(entry.path);
+			return result.content ? `## ${entry.role ?? entry.path}\n\n${result.content}` : "";
 		})
-		.filter((s) => s.length > 0)
+		.filter((item) => item.length > 0)
 		.join("\n\n---\n\n");
+	return { content, unreadablePaths };
 }
 
 function buildDreamingPrompt(
@@ -586,6 +604,7 @@ function buildDreamingPrompt(
 	readonly renderedEvidence: readonly EpisodicSourceRecord[];
 	readonly completedEvidence: readonly EpisodicSourceRecord[];
 	readonly renderedFragments: readonly DreamingEvidenceFragment[];
+	readonly unreadableIdentityPaths: readonly string[];
 } {
 	const startupEntries = resolveStartupIdentityFiles(agentsDir);
 	const startupMemoryEntry = startupEntries.find((entry) => entry.path.split(/[\\/]/).pop() === "MEMORY.md");
@@ -594,7 +613,14 @@ function buildDreamingPrompt(
 		startupEntries.filter((entry) => entry !== startupMemoryEntry),
 	);
 	const dreamingPrompt = renderIdentityBlock(agentsDir, resolveSpecialIdentityFiles(agentsDir, "dreaming"));
-	const memoryMd = startupMemoryEntry ? readIdentityFile(agentsDir, startupMemoryEntry) : "";
+	const memoryMd = startupMemoryEntry
+		? readIdentityFile(agentsDir, startupMemoryEntry)
+		: { content: "", unreadable: false };
+	const unreadableIdentityPaths = [
+		...identity.unreadablePaths,
+		...dreamingPrompt.unreadablePaths,
+		...(memoryMd.unreadable ? [startupMemoryEntry?.path ?? "MEMORY.md"] : []),
+	];
 
 	let evidenceText = "";
 	// Keep substantial room for identity, instructions, and the structured result.
@@ -637,15 +663,15 @@ function buildDreamingPrompt(
 
 	return {
 		prompt: `<identity>
-${identity}
+${identity.content}
 </identity>
 
 <working_memory>
-${memoryMd}
+${memoryMd.content}
 </working_memory>
 
-${dreamingPrompt ? `<dreaming_prompt>\n${dreamingPrompt}\n</dreaming_prompt>\n\n` : ""}<task>
-Maintain durable semantic understanding of the person described in the identity context as their life and work change over time. Use the episodic evidence to update what is currently understood.
+${dreamingPrompt.content ? `<dreaming_prompt>\n${dreamingPrompt.content}\n</dreaming_prompt>\n\n` : ""}<task>
+Maintain durable, evidence-cited semantic understanding as the relevant entities, relationships, and claims change over time. Identity files, when present, are contextual priors, never schema; attach each claim to its entity and aspect rather than treating any user profile as global truth.
 </task>
 
 ${evidenceText ? `<episodic_evidence>\n${evidenceText}\n</episodic_evidence>` : ""}
@@ -659,6 +685,7 @@ ${attention.length > 0 ? `<semantic_attention>\nThis is scoped semantic work to 
 		renderedEvidence,
 		completedEvidence,
 		renderedFragments,
+		unreadableIdentityPaths,
 	};
 }
 
@@ -701,7 +728,15 @@ export async function runDreamingAgentPass(
 			return { passId, applied: 0, skipped: 0, failed: 0, summary };
 		}
 
-		const { prompt, lastCursorEvidence, lastCursorFragmentOffset, renderedEvidence, completedEvidence, renderedFragments } = buildDreamingPrompt(
+		const {
+			prompt,
+			lastCursorEvidence,
+			lastCursorFragmentOffset,
+			renderedEvidence,
+			completedEvidence,
+			renderedFragments,
+			unreadableIdentityPaths,
+		} = buildDreamingPrompt(
 			mode,
 			evidence,
 			attention,
@@ -764,7 +799,11 @@ export async function runDreamingAgentPass(
 			promptChars: prompt.length,
 		});
 		const outcome = await executor.run({ passId, prompt, tools, timeoutMs: cfg.timeout, maxTokens: cfg.maxOutputTokens });
-		const summary = outcome.summary?.trim() || "Agentic Dreaming pass completed";
+		const summary = `${outcome.summary?.trim() || "Agentic Dreaming pass completed"}${
+			unreadableIdentityPaths.length > 0
+				? ` (identity context degraded: unreadable ${unreadableIdentityPaths.join(", ")})`
+				: ""
+		}`;
 		const tokensConsumed = countTokens(prompt);
 		accessor.withWriteTx((db) => {
 			db.prepare(
