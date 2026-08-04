@@ -109,6 +109,7 @@ import { up as dreamingRunbook } from "./100-dreaming-runbook";
 import { up as dreamingAttention } from "./101-dreaming-attention";
 import { up as attributeSemanticMemories } from "./102-attribute-semantic-memories";
 import { up as semanticMemoryKind } from "./103-semantic-memory-kind";
+import { up as derivedMemoryProvenance } from "./104-derived-memory-provenance";
 
 // -- Public interface consumed by Database.init() --
 
@@ -960,6 +961,15 @@ export const MIGRATIONS: readonly Migration[] = [
 		version: 103,
 		name: "semantic-memory-kind",
 		up: semanticMemoryKind,
+	},
+	{
+		version: 104,
+		name: "derived-memory-provenance",
+		up: derivedMemoryProvenance,
+		artifacts: {
+			tables: ["derived_memory_sources"],
+			columns: [{ table: "memories", column: "stale_at" }],
+		},
 	},
 ];
 

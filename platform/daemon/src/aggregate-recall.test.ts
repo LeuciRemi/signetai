@@ -310,11 +310,11 @@ describe("aggregateRecall", () => {
 		const links = getDbAccessor().withReadDb((db) =>
 			db
 				.prepare(
-					"SELECT source_memory_id FROM aggregate_memory_sources WHERE aggregate_memory_id = ? ORDER BY source_memory_id",
+					"SELECT source_id FROM derived_memory_sources WHERE derived_memory_id = ? AND source_kind = 'memory' ORDER BY source_id",
 				)
 				.all("aggregate-1"),
-		) as Array<{ source_memory_id: string }>;
-		expect(links.map((link) => link.source_memory_id)).toEqual(["mem-1", "mem-2", "mem-3"]);
+		) as Array<{ source_id: string }>;
+		expect(links.map((link) => link.source_id)).toEqual(["mem-1", "mem-2", "mem-3"]);
 
 		const hint = getDbAccessor().withReadDb(
 			(db) => db.prepare("SELECT hint FROM memory_hints WHERE memory_id = ?").get("aggregate-1") as { hint: string },
@@ -403,7 +403,10 @@ memory:
 			const headers = new Headers(init?.headers);
 			seen.push({ url, authorization: headers.get("authorization") });
 			if (url.endsWith("/models")) {
-				return Promise.resolve(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+				// OpenAI-compatible gateways may not implement discovery. The shared
+				// Pi provider deliberately treats a reachable 404 as available and
+				// lets the actual completion request establish compatibility.
+				return Promise.resolve(new Response("not found", { status: 404 }));
 			}
 			chatCalls += 1;
 			const content =
@@ -418,6 +421,7 @@ memory:
 			return Promise.resolve(new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }));
 		}) as unknown as typeof fetch;
 
+		const directRouter = getOrCreateInferenceRouter(dir);
 		const result = await aggregateRecall(
 			{
 				query: "can aggregate recall use direct API models",
@@ -429,7 +433,7 @@ memory:
 			},
 			loadMemoryConfig(dir),
 			{
-				router: getOrCreateInferenceRouter(dir),
+				router: directRouter,
 				embedFn: async () => null,
 				logger: quietLogger(),
 				hybridRecall: async (params: RecallParams) =>
@@ -548,6 +552,54 @@ memory:
 				db.prepare("SELECT hint FROM memory_hints WHERE memory_id = ?").all("aggregate-1") as Array<{ hint: string }>,
 		);
 		expect(hints.map((hint) => hint.hint)).toEqual(["what happened"]);
+	});
+
+	it("rederives a stale aggregate instead of returning its superseded snapshot", async () => {
+		const params: RecallParams = {
+			query: "what happened",
+			aggregate: true,
+			agentId: "agent-a",
+			readPolicy: "isolated",
+		};
+		const deps = {
+			embedFn: async () => null,
+			logger: quietLogger(),
+			now: () => new Date("2026-05-20T12:00:00.000Z"),
+			idFactory: () => "aggregate-stale",
+			hybridRecall: async (input: RecallParams) => response(input.query, [row("mem-1", "Corrected evidence")]),
+		};
+
+		await aggregateRecall(params, loadMemoryConfig(dir), {
+			...deps,
+			router: new StaticRouter("Old aggregate snapshot."),
+		});
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare("UPDATE memories SET stale_at = ? WHERE id = ?").run("2026-05-21T00:00:00.000Z", "aggregate-stale");
+		});
+
+		const refreshed = await aggregateRecall(params, loadMemoryConfig(dir), {
+			...deps,
+			router: new StaticRouter("Current aggregate answer."),
+		});
+
+		expect(refreshed.results[0]).toMatchObject({ id: "aggregate-stale", content: "Current aggregate answer." });
+		expect(refreshed.aggregate?.deduped).toBe(false);
+		const memoryRow = getDbAccessor().withReadDb((db) =>
+			db.prepare("SELECT content, stale_at FROM memories WHERE id = ?").get("aggregate-stale"),
+		) as { content: string; stale_at: string | null };
+		expect(memoryRow).toEqual({ content: "Current aggregate answer.", stale_at: null });
+		const history = getDbAccessor().withReadDb((db) =>
+			db
+				.prepare(
+					"SELECT event, old_content, new_content FROM memory_history WHERE memory_id = ? ORDER BY created_at DESC",
+				)
+				.get("aggregate-stale"),
+		) as { event: string; old_content: string; new_content: string };
+		expect(history).toEqual({
+			event: "rederived",
+			old_content: "Old aggregate snapshot.",
+			new_content: "Current aggregate answer.",
+		});
 	});
 
 	it("runs planned follow-up recalls concurrently", async () => {
@@ -699,16 +751,16 @@ memory:
 				visibility: string;
 			};
 			const evidence = db
-				.prepare(
-					"SELECT source_kind, source_id, source_path FROM aggregate_evidence_sources WHERE aggregate_memory_id = ?",
-				)
+				.prepare("SELECT source_kind, source_id, source_path FROM derived_memory_sources WHERE derived_memory_id = ?")
 				.all(result.aggregate?.savedMemoryId) as Array<{
 				source_kind: string;
 				source_id: string;
 				source_path: string | null;
 			}>;
 			const memory = db
-				.prepare("SELECT COUNT(*) AS n FROM aggregate_memory_sources WHERE aggregate_memory_id = ?")
+				.prepare(
+					"SELECT COUNT(*) AS n FROM derived_memory_sources WHERE derived_memory_id = ? AND source_kind = 'memory'",
+				)
 				.get(result.aggregate?.savedMemoryId) as { n: number };
 			return { evidence, memory, saved };
 		});
@@ -929,11 +981,11 @@ memory:
 			(db) =>
 				db
 					.prepare(
-						"SELECT source_memory_id FROM aggregate_memory_sources WHERE aggregate_memory_id = ? ORDER BY source_memory_id",
+						"SELECT source_id FROM derived_memory_sources WHERE derived_memory_id = ? AND source_kind = 'memory' ORDER BY source_id",
 					)
-					.all("aggregate-sources") as Array<{ source_memory_id: string }>,
+					.all("aggregate-sources") as Array<{ source_id: string }>,
 		);
-		expect(links.map((link) => link.source_memory_id)).toEqual(["mem-1"]);
+		expect(links.map((link) => link.source_id)).toEqual(["mem-1"]);
 	});
 
 	it("marks every recall during aggregate synthesis to exclude aggregate-created memories", async () => {
@@ -1236,7 +1288,7 @@ memory:
 				.prepare(
 					`SELECT
 						(SELECT COUNT(*) FROM memories WHERE id = 'aggregate-loser') AS loser_count,
-						(SELECT COUNT(*) FROM aggregate_memory_sources WHERE aggregate_memory_id = 'aggregate-race-winner') AS link_count,
+						(SELECT COUNT(*) FROM derived_memory_sources WHERE derived_memory_id = 'aggregate-race-winner') AS link_count,
 						(SELECT COUNT(*) FROM memory_jobs WHERE memory_id = 'aggregate-race-winner' AND job_type = 'extract' AND status = 'pending') AS pending_extract_count`,
 				)
 				.get(),

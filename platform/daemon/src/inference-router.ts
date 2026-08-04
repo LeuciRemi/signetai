@@ -30,6 +30,8 @@ import { isOAuthProvider, resolveOAuthCredential } from "./inference-oauth";
 import { type ResolvedInferenceCredential, createRoutingProvider } from "./inference-provider-factory";
 import { logger } from "./logger";
 import { loadMemoryConfig } from "./memory-config";
+import { createDreamingAcpxMcpConfig } from "./pipeline/acpx-dreaming-mcp";
+import { isPiAgentSessionProvider } from "./pipeline/pi-provider";
 import {
 	type AcpxHooksMode,
 	type LlmProviderStreamEvent,
@@ -37,8 +39,6 @@ import {
 	type StreamCapableLlmProvider,
 	generateWithTracking,
 } from "./pipeline/provider";
-import { isPiAgentSessionProvider } from "./pipeline/pi-provider";
-import { createDreamingAcpxMcpConfig } from "./pipeline/acpx-dreaming-mcp";
 import { getSecret } from "./secrets";
 
 const SNAPSHOT_TTL_MS = 15_000;
@@ -292,7 +292,6 @@ export class InferenceRouter {
 		}
 	}
 
-
 	resumeBackgroundInference(): void {
 		this.backgroundAdmissionsOpen = true;
 	}
@@ -413,7 +412,12 @@ export class InferenceRouter {
 	): void {
 		if (signature === this.lastValidationSignature) return;
 		this.lastValidationSignature = signature;
-		logger.error("inference", `Routing config failed to load: ${error.message}`, undefined, error.details as Record<string, unknown> | undefined);
+		logger.error(
+			"inference",
+			`Routing config failed to load: ${error.message}`,
+			undefined,
+			error.details as Record<string, unknown> | undefined,
+		);
 	}
 
 	private resetRuntimeCaches(): void {
@@ -765,7 +769,7 @@ export class InferenceRouter {
 		},
 	): Promise<RouterResult<InferenceExecutionResult>> {
 		const background = this.beginBackgroundExecution(request.operation);
-		if (!background) {
+		if (background === null) {
 			return {
 				ok: false,
 				error: { code: "execution-failed", message: "Background inference is paused." },
@@ -806,10 +810,10 @@ export class InferenceRouter {
 		},
 	): Promise<RouterResult<InferenceAgentExecutionResult>> {
 		const background = this.beginBackgroundExecution(request.operation);
-		if (!background) {
+		if (background === null) {
 			return { ok: false, error: { code: "execution-failed", message: "Background inference is paused." } };
 		}
-		const backgroundExecutionId = background.id;
+		const backgroundExecutionId = background?.id;
 		try {
 			const loaded = await this.loadConfig();
 			if (!loaded.ok) return loaded;

@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeDbAccessor, getDbAccessor, initDbAccessor } from "./db-accessor";
+import { linkDerivedMemorySourcesInTx } from "./derived-memory-provenance";
 import { listEpistemicAssertions } from "./ontology-assertions";
 import { getOntologyClaimEvidence } from "./ontology-claim-evidence";
 import { consolidateOntologyProposals } from "./ontology-consolidation";
@@ -25,6 +26,7 @@ import {
 	proposeDuplicateEntityMerges,
 	rejectOntologyProposal,
 } from "./ontology-proposals";
+import { txIngestEnvelope } from "./transactions";
 
 describe("ontology proposals", () => {
 	let dir = "";
@@ -161,7 +163,7 @@ describe("ontology proposals", () => {
 							source_type: string;
 							source_id: string;
 							mentions: number;
-						  }
+					  }
 					| undefined,
 		);
 		expect(projection).toMatchObject({
@@ -174,6 +176,100 @@ describe("ontology proposals", () => {
 			mentions: 1,
 		});
 		expect(JSON.parse(row?.proposal_evidence ?? "[]")).toEqual([{ source: "transcript:test", message_ids: ["m1"] }]);
+	});
+
+	it("records canonical episodic lineage and stales aggregate snapshots when a claim changes", () => {
+		const initial = applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "set_claim_value",
+			payload: {
+				entity: "Signet",
+				entity_type: "project",
+				aspect: "architecture",
+				group_key: "core",
+				claim_key: "purpose",
+				value: "Signet is a local-first memory system.",
+			},
+			evidence: [
+				{
+					source_ref: "memory:episodic-source",
+					source_kind: "manual",
+					source_id: "episodic-source",
+					quote: "Signet is a local-first memory system.",
+				},
+			],
+			sourceKind: "manual",
+			sourceId: "episodic-source",
+		});
+		const claimId = initial.result?.attributeId;
+		expect(typeof claimId).toBe("string");
+
+		getDbAccessor().withWriteTx((db) => {
+			txIngestEnvelope(db, {
+				id: "aggregate-snapshot",
+				content: "Signet is a local-first memory system.",
+				contentHash: "aggregate-snapshot",
+				who: "signet",
+				why: "aggregate recall",
+				project: null,
+				importance: 0.7,
+				type: "semantic",
+				tags: "aggregate,recall",
+				pinned: 0,
+				sourceType: "aggregate-recall",
+				sourceId: "aggregate-snapshot",
+				agentId: "ant",
+				visibility: "private",
+				createdAt: "2026-08-04T00:00:00.000Z",
+			});
+			linkDerivedMemorySourcesInTx(db, {
+				derivedMemoryId: "aggregate-snapshot",
+				agentId: "ant",
+				sources: [{ sourceKind: "ontology_claim", sourceId: claimId as string }],
+				createdAt: "2026-08-04T00:00:00.000Z",
+			});
+		});
+
+		const lineage = getDbAccessor().withReadDb(
+			(db) =>
+				db
+					.prepare(
+						"SELECT source_kind, source_id FROM derived_memory_sources WHERE derived_memory_id = ? ORDER BY source_kind",
+					)
+					.all(claimId) as Array<{ source_kind: string; source_id: string }>,
+		);
+		expect(lineage).toEqual([{ source_kind: "memory", source_id: "episodic-source" }]);
+
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "set_claim_value",
+			payload: {
+				entity: "Signet",
+				entity_type: "project",
+				aspect: "architecture",
+				group_key: "core",
+				claim_key: "purpose",
+				value: "Signet is a local-first memory system with a semantic layer.",
+			},
+			evidence: [
+				{
+					source_ref: "memory:episodic-source",
+					source_kind: "manual",
+					source_id: "episodic-source",
+					quote: "Signet is a local-first memory system with a semantic layer.",
+				},
+			],
+			sourceKind: "manual",
+			sourceId: "episodic-source",
+		});
+
+		expect(
+			getDbAccessor().withReadDb((db) =>
+				db.prepare("SELECT stale_at FROM memories WHERE id = ? AND agent_id = ?").get("aggregate-snapshot", "ant"),
+			),
+		).toMatchObject({ stale_at: expect.any(String) });
 	});
 
 	it("rejects generic entity labels before creating ontology entities", () => {
@@ -1425,11 +1521,13 @@ describe("ontology proposals", () => {
 					 WHERE e.agent_id = 'default' AND e.name = 'Signet' AND asp.name = 'policy'`,
 				)
 				.get(),
-			action: db.prepare("SELECT entity_type FROM entities WHERE agent_id = 'default' AND name = 'Deploy release'").get(),
-			interface: db.prepare("SELECT entity_type FROM entities WHERE agent_id = 'default' AND name = 'Memory provider'").get(),
-			link: db
-				.prepare("SELECT dependency_type FROM entity_dependencies WHERE agent_id = 'default'")
+			action: db
+				.prepare("SELECT entity_type FROM entities WHERE agent_id = 'default' AND name = 'Deploy release'")
 				.get(),
+			interface: db
+				.prepare("SELECT entity_type FROM entities WHERE agent_id = 'default' AND name = 'Memory provider'")
+				.get(),
+			link: db.prepare("SELECT dependency_type FROM entity_dependencies WHERE agent_id = 'default'").get(),
 		}));
 		expect(graph.policy).toMatchObject({ kind: "constraint", group_key: "policy", claim_key: "storage" });
 		expect(graph.action).toMatchObject({ entity_type: "action" });
@@ -1675,10 +1773,10 @@ describe("ontology proposals", () => {
 				db
 					.prepare("SELECT id, is_deleted, superseded_by FROM memories WHERE id IN (?, ?)")
 					.all(shown?.id, v3.result?.attributeId) as Array<{
-						id: string;
-						is_deleted: number;
-						superseded_by: string | null;
-					}>,
+					id: string;
+					is_deleted: number;
+					superseded_by: string | null;
+				}>,
 		);
 		expect(restoredMemoryState.find((memory) => memory.id === shown?.id)).toMatchObject({
 			is_deleted: 0,
@@ -1725,7 +1823,10 @@ describe("ontology proposals", () => {
 		expect(active.n).toBe(0);
 		expect(versions.items[0]?.status).toBe("deleted");
 		const memory = getDbAccessor().withReadDb(
-			(db) => db.prepare("SELECT is_deleted FROM memories WHERE id = ?").get(attributeId) as { is_deleted: number } | undefined,
+			(db) =>
+				db.prepare("SELECT is_deleted FROM memories WHERE id = ?").get(attributeId) as
+					| { is_deleted: number }
+					| undefined,
 		);
 		expect(memory?.is_deleted).toBe(1);
 	});

@@ -11,6 +11,7 @@ import {
 } from "@signet/core";
 import type { DbAccessor, ReadDb, WriteDb } from "./db-accessor";
 import { requireDependencyReason } from "./dependency-history";
+import { linkDerivedMemorySourcesInTx, markDerivedMemoriesStaleForSourceInTx } from "./derived-memory-provenance";
 import { classifyEntityQuality } from "./entity-quality";
 import {
 	type OntologyEvidenceItem,
@@ -518,6 +519,31 @@ function proposalAuditEvidence(proposal: ProposalRow): readonly unknown[] {
 	return parseJsonArray(proposal.evidence);
 }
 
+/**
+ * The graph keeps connector/source ownership separately on its rows. Derived
+ * memory lineage instead keys on the immutable record named by source_ref, so
+ * corrections to that record can invalidate every dependent semantic row.
+ */
+function derivedMemorySourcesForProposal(proposal: ProposalRow): readonly {
+	readonly sourceKind: string;
+	readonly sourceId: string;
+	readonly sourcePath: string | null;
+}[] {
+	const sources: Array<{ sourceKind: string; sourceId: string; sourcePath: string | null }> = [];
+	for (const ref of proposalEvidenceRefs(toProposal(proposal))) {
+		if (typeof ref.reference !== "object" || ref.reference === null || Array.isArray(ref.reference)) continue;
+		const sourceRef = readString(ref.reference as Readonly<Record<string, unknown>>, "source_ref");
+		if (sourceRef === null) continue;
+		const separator = sourceRef.indexOf(":");
+		if (separator <= 0 || separator === sourceRef.length - 1) continue;
+		const sourceKind = sourceRef.slice(0, separator);
+		const sourceId = sourceRef.slice(separator + 1);
+		if (!(["memory", "artifact", "transcript", "summary"] as const).includes(sourceKind as "memory")) continue;
+		sources.push({ sourceKind, sourceId, sourcePath: ref.sourcePath });
+	}
+	return sources;
+}
+
 function canonicalKey(value: string | null): string | null {
 	if (value === null) return null;
 	const key = canonical(value).replace(/\s+/g, "_");
@@ -660,7 +686,8 @@ function applyCreateEntity(
 	if (name === null) throw new OntologyProposalError("payload.name is required", 400);
 	const existingEntityId = resolveEntity(db, agentId, name);
 	const entityId =
-		existingEntityId ?? resolveOrCreateEntity(db, agentId, name, normalizeEntityType(readString(payload, "entity_type")));
+		existingEntityId ??
+		resolveOrCreateEntity(db, agentId, name, normalizeEntityType(readString(payload, "entity_type")));
 	const proposalEvidence = JSON.stringify(proposalAuditEvidence(proposal));
 	if (existingEntityId !== null) {
 		// Never turn a previously user-owned or differently sourced entity into a
@@ -782,9 +809,9 @@ function materializeAttributeMemoryInTx(
 		readonly proposal: ProposalRow;
 	},
 ): string {
-	const existing = db
-		.prepare("SELECT id FROM memories WHERE id = ?")
-		.get(input.attributeId) as { id: string } | undefined;
+	const existing = db.prepare("SELECT id FROM memories WHERE id = ?").get(input.attributeId) as
+		| { id: string }
+		| undefined;
 	if (!existing) {
 		txIngestEnvelope(db, {
 			id: input.attributeId,
@@ -825,6 +852,12 @@ function materializeAttributeMemoryInTx(
 		 SET mentions = (SELECT COUNT(*) FROM memory_entity_mentions WHERE entity_id = entities.id)
 		 WHERE id = ? AND agent_id = ?`,
 	).run(input.entityId, input.agentId);
+	linkDerivedMemorySourcesInTx(db, {
+		derivedMemoryId: input.attributeId,
+		agentId: input.agentId,
+		sources: derivedMemorySourcesForProposal(input.proposal),
+		createdAt: now(),
+	});
 	return input.attributeId;
 }
 
@@ -843,14 +876,15 @@ function supersedeAttributeMemoryInTx(
 	if (result.status !== "superseded" && result.status !== "already_superseded") {
 		throw new OntologyProposalError(`Unable to supersede semantic memory: ${result.status}`, 409);
 	}
+	markDerivedMemoriesStaleForSourceInTx(db, {
+		sourceKind: "ontology_claim",
+		sourceId: input.memoryId,
+		agentId: input.proposal.agent_id,
+		staleAt: now(),
+	});
 }
 
-function archiveAttributeMemoryInTx(
-	db: WriteDb,
-	memoryId: string | null,
-	proposal: ProposalRow,
-	force: boolean,
-): void {
+function archiveAttributeMemoryInTx(db: WriteDb, memoryId: string | null, proposal: ProposalRow, force: boolean): void {
 	if (!memoryId) return;
 	const result = txForgetMemory(db, {
 		memoryId,
@@ -865,13 +899,19 @@ function archiveAttributeMemoryInTx(
 	if (result.status !== "deleted" && result.status !== "already_deleted") {
 		throw new OntologyProposalError(`Unable to archive semantic memory: ${result.status}`, 409);
 	}
+	markDerivedMemoriesStaleForSourceInTx(db, {
+		sourceKind: "ontology_claim",
+		sourceId: memoryId,
+		agentId: proposal.agent_id,
+		staleAt: now(),
+	});
 }
 
 function restoreAttributeMemoryInTx(db: WriteDb, memoryId: string | null, proposal: ProposalRow): void {
 	if (!memoryId) return;
-	const memory = db
-		.prepare("SELECT id, content, is_deleted, superseded_by FROM memories WHERE id = ?")
-		.get(memoryId) as { id: string; content: string; is_deleted: number; superseded_by: string | null } | undefined;
+	const memory = db.prepare("SELECT id, content, is_deleted, superseded_by FROM memories WHERE id = ?").get(memoryId) as
+		| { id: string; content: string; is_deleted: number; superseded_by: string | null }
+		| undefined;
 	if (!memory) return;
 	if (memory.is_deleted === 0 && memory.superseded_by === null) return;
 	const changedAt = now();
@@ -1144,7 +1184,9 @@ function applySupersedeClaimValue(
 	filters.push("COALESCE(group_key, 'general') = ?");
 	args.push(groupKey);
 
-	const rows = db.prepare(`SELECT id, memory_id FROM entity_attributes WHERE ${filters.join(" AND ")}`).all(...args) as Array<{
+	const rows = db
+		.prepare(`SELECT id, memory_id FROM entity_attributes WHERE ${filters.join(" AND ")}`)
+		.all(...args) as Array<{
 		id: string;
 		memory_id: string | null;
 	}>;
@@ -1262,7 +1304,8 @@ function applyArchiveEntity(
 			 WHERE asp.entity_id = ? AND attr.agent_id = ? AND attr.status = 'active'`,
 		)
 		.all(entity.id, agentId) as Array<{ memory_id: string | null }>;
-	for (const attribute of attributeMemories) archiveAttributeMemoryInTx(db, attribute.memory_id, proposal, truthy(payload.force));
+	for (const attribute of attributeMemories)
+		archiveAttributeMemoryInTx(db, attribute.memory_id, proposal, truthy(payload.force));
 	db.prepare(
 		`UPDATE entities
 		 SET status = 'archived', archived_at = datetime('now'), archived_by = ?,
@@ -1358,7 +1401,8 @@ function applyArchiveAspect(
 	const attributeMemories = db
 		.prepare("SELECT memory_id FROM entity_attributes WHERE aspect_id = ? AND agent_id = ? AND status = 'active'")
 		.all(aspect.id, agentId) as Array<{ memory_id: string | null }>;
-	for (const attribute of attributeMemories) archiveAttributeMemoryInTx(db, attribute.memory_id, proposal, truthy(payload.force));
+	for (const attribute of attributeMemories)
+		archiveAttributeMemoryInTx(db, attribute.memory_id, proposal, truthy(payload.force));
 	db.prepare(
 		`UPDATE entity_aspects
 		 SET status = 'archived', archived_at = datetime('now'), archived_by = ?,
@@ -1447,7 +1491,9 @@ function applyRestoreClaimVersion(
 			   AND COALESCE(group_key, 'general') = COALESCE(?, 'general')
 			   AND claim_key = ? AND status = 'active' AND id != ?`,
 		)
-		.all(agentId, row.aspect_id, row.kind, row.group_key, row.claim_key, attributeId) as Array<{ memory_id: string | null }>;
+		.all(agentId, row.aspect_id, row.kind, row.group_key, row.claim_key, attributeId) as Array<{
+		memory_id: string | null;
+	}>;
 	restoreAttributeMemoryInTx(db, row.memory_id, proposal);
 	for (const active of activeMemories) {
 		supersedeAttributeMemoryInTx(db, { memoryId: active.memory_id, replacementMemoryId: attributeId, proposal });
@@ -1833,7 +1879,8 @@ function applyOperation(db: WriteDb, proposal: ProposalRow, actor: string): Read
 	if (proposal.operation === "update_link") return applyUpdateLink(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "archive_link") return applyArchiveLink(db, proposal.agent_id, proposal, payload, actor);
 	if (proposal.operation === "create_policy") return applyCreatePolicy(db, proposal.agent_id, proposal, payload);
-	if (proposal.operation === "create_action_type") return applyCreateActionType(db, proposal.agent_id, proposal, payload);
+	if (proposal.operation === "create_action_type")
+		return applyCreateActionType(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "create_interface") return applyCreateInterface(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "attach_interface") return applyAttachInterface(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "pin_entity") return applyPinEntity(db, proposal.agent_id, proposal, payload);
@@ -2397,8 +2444,12 @@ function duplicateMergeCandidates(
 	}
 
 	return [...groups.entries()]
-		.filter(([key, group]) =>
-			key.length > 0 && group.length > 1 && (scopedCanonicalName === null || key === scopedCanonicalName) && (includePending || !existing.has(key)),
+		.filter(
+			([key, group]) =>
+				key.length > 0 &&
+				group.length > 1 &&
+				(scopedCanonicalName === null || key === scopedCanonicalName) &&
+				(includePending || !existing.has(key)),
 		)
 		.map(([key, group]) => {
 			const ordered = [...group].sort(compareDuplicateTargets);

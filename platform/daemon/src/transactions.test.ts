@@ -160,7 +160,9 @@ describe("transactions: txModifyMemory + txForgetMemory + txRecoverMemory", () =
 			contentHash: "semantic-claim-hash",
 			type: "semantic",
 		});
-		db.prepare("UPDATE memories SET memory_kind = 'derived', source_type = 'dreaming' WHERE id = ?").run("semantic-claim");
+		db.prepare("UPDATE memories SET memory_kind = 'derived', source_type = 'dreaming' WHERE id = ?").run(
+			"semantic-claim",
+		);
 		db.prepare(
 			`INSERT INTO entity_attributes
 			 (id, memory_id, agent_id, kind, content, normalized_content, confidence, importance, status)
@@ -402,7 +404,7 @@ describe("transactions: txModifyMemory + txForgetMemory + txRecoverMemory", () =
 		]);
 	});
 
-	it("removes aggregate provenance links when a linked memory is forgotten", () => {
+	it("stales dependents while retaining source lineage when a memory is forgotten", () => {
 		insertMemory(db, {
 			id: "mem-aggregate",
 			content: "Aggregate content",
@@ -426,9 +428,9 @@ describe("transactions: txModifyMemory + txForgetMemory + txRecoverMemory", () =
 
 		const now = new Date().toISOString();
 		const link = db.prepare(
-			`INSERT INTO aggregate_memory_sources (
-				aggregate_memory_id, source_memory_id, agent_id, created_at
-			) VALUES (?, ?, 'default', ?)`,
+			`INSERT INTO derived_memory_sources (
+				derived_memory_id, source_kind, source_id, source_path, agent_id, created_at
+			) VALUES (?, 'memory', ?, NULL, 'default', ?)`,
 		);
 		link.run("mem-aggregate", "mem-source", now);
 		link.run("mem-other-aggregate", "mem-aggregate", now);
@@ -445,15 +447,19 @@ describe("transactions: txModifyMemory + txForgetMemory + txRecoverMemory", () =
 		expect(result.status).toBe("deleted");
 		const linkedRows = db
 			.prepare(
-				`SELECT aggregate_memory_id, source_memory_id
-				 FROM aggregate_memory_sources
-				 WHERE aggregate_memory_id = ? OR source_memory_id = ?`,
+				`SELECT derived_memory_id, source_id
+				 FROM derived_memory_sources
+				 WHERE derived_memory_id = ? OR source_id = ?
+				 ORDER BY derived_memory_id, source_id`,
 			)
 			.all("mem-aggregate", "mem-aggregate");
-		expect(linkedRows).toEqual([]);
-
-		const remaining = db.prepare("SELECT COUNT(*) AS count FROM aggregate_memory_sources").get() as { count: number };
-		expect(remaining.count).toBe(1);
+		expect(linkedRows).toEqual([
+			{ derived_memory_id: "mem-aggregate", source_id: "mem-source" },
+			{ derived_memory_id: "mem-other-aggregate", source_id: "mem-aggregate" },
+		]);
+		expect(db.prepare("SELECT stale_at FROM memories WHERE id = ?").get("mem-other-aggregate")).toMatchObject({
+			stale_at: now,
+		});
 	});
 
 	it("recovers a soft-deleted memory within retention window", () => {

@@ -7,13 +7,8 @@
  */
 
 import type { WriteDb } from "./db-accessor";
-import {
-	syncVecDeleteBySourceExceptHash,
-	syncVecDeleteBySourceId,
-	syncVecInsert,
-	tableExists,
-	vectorToBlob,
-} from "./db-helpers";
+import { syncVecDeleteBySourceExceptHash, syncVecDeleteBySourceId, syncVecInsert, vectorToBlob } from "./db-helpers";
+import { markDerivedMemoriesStaleForSourceInTx } from "./derived-memory-provenance";
 import { isActiveEmbeddingConfig, resolveActiveEmbeddingConfig } from "./embedding-index-state";
 import type { EmbeddingConfig } from "./memory-config";
 
@@ -240,12 +235,18 @@ export function insertHistoryEvent(
 	);
 }
 
-function deleteAggregateMemorySourceLinks(db: WriteDb, memoryId: string): void {
-	if (!tableExists(db, "aggregate_memory_sources")) return;
-	db.prepare(
-		`DELETE FROM aggregate_memory_sources
-		 WHERE aggregate_memory_id = ? OR source_memory_id = ?`,
-	).run(memoryId, memoryId);
+function invalidateDerivedMemoriesForMemoryInTx(
+	db: WriteDb,
+	memoryId: string,
+	agentId: string,
+	changedAt: string,
+): void {
+	markDerivedMemoriesStaleForSourceInTx(db, {
+		sourceKind: "memory",
+		sourceId: memoryId,
+		agentId,
+		staleAt: changedAt,
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -359,11 +360,9 @@ export function txModifyMemory(db: WriteDb, input: ModifyMemoryTxInput): ModifyM
 		existing.memory_kind === "derived" &&
 		// Attribute projections deliberately share the attribute id, so this is a
 		// primary-key lookup rather than a scan across the graph.
-		(db.prepare("SELECT 1 FROM entity_attributes WHERE id = ? AND memory_id = ? AND agent_id = ?").get(
-			existing.id,
-			existing.id,
-			existing.agent_id,
-		) !== undefined);
+		db
+			.prepare("SELECT 1 FROM entity_attributes WHERE id = ? AND memory_id = ? AND agent_id = ?")
+			.get(existing.id, existing.id, existing.agent_id) !== undefined;
 	if (
 		isAttributeProjection &&
 		((input.patch.content !== undefined && input.patch.content !== existing.content) ||
@@ -492,6 +491,7 @@ export function txModifyMemory(db: WriteDb, input: ModifyMemoryTxInput): ModifyM
 	db.prepare(`UPDATE memories SET ${updates.join(", ")} WHERE id = ?`).run(...args);
 
 	if (contentChanged) {
+		invalidateDerivedMemoriesForMemoryInTx(db, input.memoryId, existing.agent_id ?? "default", input.changedAt);
 		const newHash = input.patch.contentHash ?? null;
 		if (newHash) {
 			syncVecDeleteBySourceExceptHash(db, "memory", input.memoryId, newHash);
@@ -562,7 +562,7 @@ export function txModifyMemory(db: WriteDb, input: ModifyMemoryTxInput): ModifyM
 export function txForgetMemory(db: WriteDb, input: ForgetMemoryTxInput): ForgetMemoryTxResult {
 	const existing = db
 		.prepare(
-			`SELECT id, content, pinned, version, is_deleted
+			`SELECT id, content, pinned, version, is_deleted, agent_id
 			 FROM memories
 			 WHERE id = ?`,
 		)
@@ -573,6 +573,7 @@ export function txForgetMemory(db: WriteDb, input: ForgetMemoryTxInput): ForgetM
 				pinned: number;
 				version: number;
 				is_deleted: number;
+				agent_id: string | null;
 		  }
 		| undefined;
 
@@ -634,7 +635,7 @@ export function txForgetMemory(db: WriteDb, input: ForgetMemoryTxInput): ForgetM
 		input.changedAt,
 		input.memoryId,
 	);
-	deleteAggregateMemorySourceLinks(db, input.memoryId);
+	invalidateDerivedMemoriesForMemoryInTx(db, input.memoryId, existing.agent_id ?? "default", input.changedAt);
 
 	insertHistoryEvent(db, {
 		memoryId: input.memoryId,
@@ -753,6 +754,7 @@ export function txSupersedeMemory(db: WriteDb, input: SupersedeMemoryTxInput): S
 		     version = version + 1
 		 WHERE id = ?`,
 	).run(input.supersededBy, input.changedAt, input.reason, input.changedAt, input.changedBy, input.memoryId);
+	invalidateDerivedMemoriesForMemoryInTx(db, input.memoryId, existing.agent_id ?? "default", input.changedAt);
 
 	insertHistoryEvent(db, {
 		memoryId: input.memoryId,

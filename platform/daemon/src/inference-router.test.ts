@@ -122,9 +122,7 @@ describe("InferenceRouter legacy API credentials", () => {
 			expect(result.ok).toBe(true);
 			if (!result.ok) return;
 			expect(result.value.decision.targetRef).toBe("dreaming/default");
-			expect(result.value.attempts).toEqual([
-				expect.objectContaining({ targetRef: "dreaming/default", ok: true }),
-			]);
+			expect(result.value.attempts).toEqual([expect.objectContaining({ targetRef: "dreaming/default", ok: true })]);
 
 			const args = readFileSync(fixture.argsPath, "utf8").trim().split("\n");
 			expect(args).toContain("--mcp-config");
@@ -354,8 +352,9 @@ describe("InferenceRouter legacy API credentials", () => {
 		// Regression guard for the reasoning fix: on `main`, the factory derived
 		// reasoning from `=== "deep"` (TS2367, never matched) and pi-provider.ts
 		// never forwarded options.reasoning, so thinking was always off. With the
-		// fix, OpenRouter reasoning.enabled produces reasoning: { effort: "medium" }
-		// on the wire. This test fails on main and passes at HEAD.
+		// fix, OpenRouter reasoning.enabled produces a non-disabled reasoning
+		// effort on the wire. This model's current Pi catalog maps medium to no
+		// wire value and supports high, so Pi correctly clamps it to high.
 		const dir = mkdtempSync(join(tmpdir(), "signet-router-openrouter-reasoning-on-"));
 		try {
 			mkdirSync(join(dir, "memory"), { recursive: true });
@@ -419,7 +418,7 @@ describe("InferenceRouter legacy API credentials", () => {
 			// The fix forwards options.reasoning; pi-ai's openrouter thinkingFormat
 			// emits it as { effort: <level> }. Before the fix this was { effort: "none" }
 			// (disabled) or absent.
-			expect(requestBody?.reasoning).toEqual({ effort: "medium" });
+			expect(requestBody?.reasoning).toEqual({ effort: "high" });
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -649,9 +648,9 @@ describe("InferenceRouter background quiescence", () => {
 				timedOut: false,
 			});
 			expect((await active).ok).toBe(false);
-			expect((await router.execute({ operation: "memory_extraction", promptPreview: "blocked" }, "Must not start")).ok).toBe(
-				false,
-			);
+			expect(
+				(await router.execute({ operation: "memory_extraction", promptPreview: "blocked" }, "Must not start")).ok,
+			).toBe(false);
 			expect(chatRequests).toBe(1);
 
 			completeChat = true;
