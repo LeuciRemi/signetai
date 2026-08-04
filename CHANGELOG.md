@@ -6,6 +6,12 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-08-04
+- Features: queue auditable graph hygiene; materialize attributes as semantic memories; measure semantic structure quality; add scoped semantic attention; retain scoped pass runbooks; expose deterministic guard capabilities; add semantic quality report; trace agent capability calls; route agent passes through Pi and ACPX; add bounded agent execution path; expose cited agent operation endpoint; complete core operation handlers; unified ingest queue for dreaming and agentic dreaming [wip].
+- Bug fixes: gate similarity route by memory lifecycle; invalidate stale derived snapshots; protect semantic claim projections; treat identity context as optional; defer low-volume consolidation safely; join concurrent dreaming passes; purge derived memories with sources; synchronize semantic memory lifecycle; keep source topology out of constellation; show derived semantic graph in constellation; allow complete benchmark agent passes; configure dreaming pass timeout; preserve active pass during embedding promotion; normalize chat completion endpoints; finalize dreaming after capture indexing; ingest dreaming sessions as episodic evidence; scope Dreaming status polling; preserve catalog metadata for compatible targets; prioritize material evidence changes; upgrade Pi agent runtime; centralize Zod compatibility boundary; expose ontology operation contracts; bound daemon agent tool calls; satisfy capability result contract; preserve Dreaming source provenance; resume oversized episodic evidence; retain rejected agent evidence; integrate first episodic backfill; retain rejected operation evidence; quarantine oversized episodic evidence; use persistent time-based retry backoff; isolate orphan cleanup to purge targets; exclude skill topology from context; preserve derived provenance boundary; route concrete diagnostics handlers; drop retired extraction worker asset; deduplicate temporal evidence; exclude archived episodic evidence; preserve empty initial cursor; retain cursor across idle passes; retain repeated compaction artifacts; offer applicable semantic operations; emit direct ontology payloads; purge Dreaming-derived semantic rows on disconnect; retire pre-existing pending legacy extract jobs on Dreaming cutover; gate legacy extract enqueue when Dreaming owns semantic writes; stamp derived semantics with configured source entry id; validate explicit evidence provenance; claim apply ownership before side effects; authorize and scope agentic routes; retain legacy state and bind plans to leases; preserve forgotten-source cancellation after rebase; escape table-cell backslashes.
+- Refactoring: slim prompt and enrich contract; navigate semantic state through tools; unify capability bindings; remove static prompt contract; remove static generation path; centralize cited operation application; require canonical citation references; derive agent citations from canonical evidence; share canonical evidence rendering; add daemon-owned agent tools; add shared episodic evidence search; add isolated Pi agent sessions; remove implicit legacy routing; remove legacy semantic decision path; remove legacy graph mutation helpers; retire legacy entity reclassification; audit feedback graph updates; remove structural backfill surface; retire unscoped legacy ingestion; remove retired extraction surfaces; complete legacy semantic write cutover; remove orphan extraction/graph transaction code; retire skill-graph direct semantic extraction; retire dependency-synthesis direct writer; retire direct retroactive supersession sweep; surface harness provenance and add multi-agent isolation tests; complete episodic-remember cutover with evidence citation; delete legacy extraction runtime and realign config/CLI/docs; remove retired structural classify/dependency producers; retire structural worker under Dreaming; drop unused reflection-worker wiring and worker re-exports; remove dead remember handler and pendingRemembers plumbing; consolidate memory_artifacts upsert into shared helper; route interactive pin/alias mutations through audited apply path; complete semantic writer cutover; apply audited semantic operations; expose transactional operation apply; consolidate episodic source selection; complete legacy dreaming schema cutover; remove legacy dreaming execution; stop shipping legacy dreaming worker; retire legacy dream routes; retire legacy dream CLI.
+- Docs: reflect Dreaming cutover; clarify inline linking boundary; align pipeline with Dreaming cutover; describe summary lineage cutover.
+
 ### 2026-08-03
 - Bug fixes: prefer native install over wrapper; close hook stdin after read timeout.
 - Docs: refresh roadmap and vision for August 2026; add tests, regression tests, and evals policy.
@@ -31,10 +37,137 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Features: show ASCII brand banner on bare signet invocation.
 - Bug fixes: refuse migration on vec dimension mismatch + harden backfill; add migration backfill; guard checkInference and complete workload-state contract; separate extraction workload state.
 
-### 2026-07-25
-- Refactoring: consolidate workspace path resolution (#956).
-
 ## Release Ledger
+
+## [0.158.0] - 2026-08-04
+
+Release summary: 13 features, 53 bug fixes, 43 refactors, and 4 docs updates.
+Tag range: `v0.157.5..v0.158.0`.
+
+### Features
+
+- **dreaming**: queue auditable graph hygiene
+- **dreaming**: materialize attributes as semantic memories
+- **dreaming**: measure semantic structure quality
+- **dreaming**: add scoped semantic attention
+- **dreaming**: retain scoped pass runbooks
+- **dreaming**: expose deterministic guard capabilities
+- **dreaming**: add semantic quality report
+- **dreaming**: trace agent capability calls
+- **dreaming**: route agent passes through Pi and ACPX
+- **dreaming**: add bounded agent execution path
+- **dreaming**: expose cited agent operation endpoint
+- **ontology**: complete core operation handlers
+- **ingest**: unified ingest queue for dreaming and agentic dreaming [wip]
+
+### Bug Fixes
+
+- **memory**: gate similarity route by memory lifecycle
+- **memory**: invalidate stale derived snapshots
+- **memory**: protect semantic claim projections
+- **dreaming**: treat identity context as optional
+- **dreaming**: defer low-volume consolidation safely
+- **memorybench**: join concurrent dreaming passes
+- **dreaming**: purge derived memories with sources
+- **dreaming**: synchronize semantic memory lifecycle
+- **ontology**: keep source topology out of constellation
+- **ontology**: show derived semantic graph in constellation
+- **dreaming**: allow complete benchmark agent passes
+- **memorybench**: configure dreaming pass timeout
+- **dreaming**: preserve active pass during embedding promotion
+- **inference**: normalize chat completion endpoints
+- **memorybench**: finalize dreaming after capture indexing
+- **memorybench**: ingest dreaming sessions as episodic evidence
+- **memorybench**: scope Dreaming status polling
+- **inference**: preserve catalog metadata for compatible targets
+- **dreaming**: prioritize material evidence changes
+- **inference**: upgrade Pi agent runtime
+- **mcp**: centralize Zod compatibility boundary
+- **dreaming**: expose ontology operation contracts
+- **inference**: bound daemon agent tool calls
+- **dreaming**: satisfy capability result contract
+- **ontology**: preserve Dreaming source provenance
+- **dreaming**: resume oversized episodic evidence
+- **dreaming**: retain rejected agent evidence
+- **dreaming**: integrate first episodic backfill
+- **dreaming**: retain rejected operation evidence
+- **dreaming**: quarantine oversized episodic evidence
+- **dreaming**: use persistent time-based retry backoff
+- **retention**: isolate orphan cleanup to purge targets
+- **dreaming**: exclude skill topology from context
+- **dreaming**: preserve derived provenance boundary
+- **diagnostics**: route concrete diagnostics handlers
+- **build**: drop retired extraction worker asset
+- **dreaming**: deduplicate temporal evidence
+- **dreaming**: exclude archived episodic evidence
+- **dreaming**: preserve empty initial cursor
+- **dreaming**: retain cursor across idle passes
+- **lineage**: retain repeated compaction artifacts
+- **dreaming**: offer applicable semantic operations
+- **dreaming**: emit direct ontology payloads
+- **obsidian**: purge Dreaming-derived semantic rows on disconnect
+- **pipeline**: retire pre-existing pending legacy extract jobs on Dreaming cutover (#946)
+- **pipeline**: gate legacy extract enqueue when Dreaming owns semantic writes (#946)
+- **dreaming**: stamp derived semantics with configured source entry id
+- **dreaming**: validate explicit evidence provenance
+- **ingest**: claim apply ownership before side effects
+- **ingest**: authorize and scope agentic routes
+- **ingest**: retain legacy state and bind plans to leases
+- **ingest**: preserve forgotten-source cancellation after rebase
+- **ingest**: escape table-cell backslashes
+
+### Refactoring
+
+- **dreaming**: slim prompt and enrich contract
+- **dreaming**: navigate semantic state through tools
+- **dreaming**: unify capability bindings
+- **dreaming**: remove static prompt contract
+- **dreaming**: remove static generation path
+- **dreaming**: centralize cited operation application
+- **dreaming**: require canonical citation references
+- **dreaming**: derive agent citations from canonical evidence
+- **dreaming**: share canonical evidence rendering
+- **dreaming**: add daemon-owned agent tools
+- **dreaming**: add shared episodic evidence search
+- **inference**: add isolated Pi agent sessions
+- **inference**: remove implicit legacy routing
+- **dreaming**: remove legacy semantic decision path
+- **dreaming**: remove legacy graph mutation helpers
+- **dreaming**: retire legacy entity reclassification
+- **dreaming**: audit feedback graph updates
+- **dreaming**: remove structural backfill surface
+- **ingest**: retire unscoped legacy ingestion
+- **dreaming**: remove retired extraction surfaces
+- **dreaming**: complete legacy semantic write cutover (#946)
+- **pipeline**: remove orphan extraction/graph transaction code (#946)
+- **pipeline**: retire skill-graph direct semantic extraction (#946)
+- **pipeline**: retire dependency-synthesis direct writer (#946)
+- **pipeline**: retire direct retroactive supersession sweep (#946)
+- **dreaming**: surface harness provenance and add multi-agent isolation tests
+- **memory**: complete episodic-remember cutover with evidence citation (#946)
+- **pipeline**: delete legacy extraction runtime and realign config/CLI/docs (#946)
+- **pipeline**: remove retired structural classify/dependency producers (#946)
+- **daemon**: retire structural worker under Dreaming (#946)
+- **pipeline**: drop unused reflection-worker wiring and worker re-exports
+- **continuity**: remove dead remember handler and pendingRemembers plumbing
+- **memory**: consolidate memory_artifacts upsert into shared helper
+- **ontology**: route interactive pin/alias mutations through audited apply path
+- **dreaming**: complete semantic writer cutover
+- **dreaming**: apply audited semantic operations
+- **ontology**: expose transactional operation apply
+- **dreaming**: consolidate episodic source selection
+- **ingest**: complete legacy dreaming schema cutover
+- **ingest**: remove legacy dreaming execution
+- **ingest**: stop shipping legacy dreaming worker
+- **ingest**: retire legacy dream routes
+- **ingest**: retire legacy dream CLI
+
+### Docs
+
+- **roadmap**: reflect Dreaming cutover
+- **memory**: clarify inline linking boundary
+- **memory**: align pipeline with Dreaming cutover
+- **hooks**: describe summary lineage cutover
 
 ## [0.157.5] - 2026-08-03
 
