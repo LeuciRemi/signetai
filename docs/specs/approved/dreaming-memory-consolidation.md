@@ -119,6 +119,7 @@ memory:
   dreaming:
     enabled: true
     tokenThreshold: 100000    # trigger after ~100k tokens of episodic evidence
+    maxInterval: 21600000     # never leave a non-empty low-volume backlog for more than 6h
     maxInputTokens: 128000    # context budget per pass
     backfillOnFirstRun: true  # integrate available episodic evidence on first pass
 ```

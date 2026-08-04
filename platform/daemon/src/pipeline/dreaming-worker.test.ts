@@ -6,12 +6,13 @@ import { join } from "node:path";
 import type { DreamingConfig } from "@signet/core";
 import { runMigrations } from "../../../core/src/migrations";
 import type { DbAccessor } from "../db-accessor";
-import { getDreamingWorkerAgentIds, startDreamingWorker } from "./dreaming-worker";
+import { getDreamingWorkerAgentIds, shouldDeferDreamingSweep, startDreamingWorker } from "./dreaming-worker";
 
 function defaultCfg(overrides?: Partial<DreamingConfig>): DreamingConfig {
 	return {
 		enabled: true,
 		tokenThreshold: 100_000,
+		maxInterval: 6 * 60 * 60 * 1_000,
 		maxInputTokens: 32_000,
 		maxOutputTokens: 16_000,
 		timeout: 300_000,
@@ -93,6 +94,17 @@ describe("dreaming worker agent scope", () => {
 			"summary-agent",
 			"transcript-agent",
 		]);
+	});
+
+	it("defers a sweep while the shared queue health watermark is exceeded", () => {
+		const now = new Date().toISOString();
+		for (let index = 0; index <= 50; index += 1) {
+			db.prepare(
+				`INSERT INTO memory_jobs (id, memory_id, job_type, status, created_at, updated_at)
+				 VALUES (?, ?, 'index', 'pending', ?, ?)`,
+			).run(`pressure-${index}`, `memory-${index}`, now, now);
+		}
+		expect(shouldDeferDreamingSweep(accessor)).toBe(true);
 	});
 
 	it("writes manual async trigger passes to the requested agent", async () => {

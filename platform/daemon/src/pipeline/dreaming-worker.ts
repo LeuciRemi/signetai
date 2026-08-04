@@ -6,6 +6,7 @@
 
 import type { DreamingConfig } from "@signet/core";
 import type { DbAccessor } from "../db-accessor";
+import { getQueueHealth } from "../diagnostics";
 import { getOrCreateInferenceRouter } from "../inference-router";
 import { logger } from "../logger";
 import {
@@ -61,6 +62,11 @@ export interface DreamingWorkerOptions {
 }
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 min
+
+/** Dreaming is deferrable work. Yield an entire sweep while live queues are under pressure. */
+export function shouldDeferDreamingSweep(accessor: DbAccessor): boolean {
+	return accessor.withReadDb((db) => getQueueHealth(db).status !== "healthy");
+}
 
 function normalizeAgentId(agentId: string | undefined, fallback: string): string {
 	const trimmed = agentId?.trim();
@@ -204,9 +210,14 @@ export function startDreamingWorker(
 
 	async function check(): Promise<void> {
 		if (stopped || active) return;
+		if (shouldDeferDreamingSweep(accessor)) {
+			logger.info("dreaming-worker", "Deferring dreaming sweep while queues are under pressure");
+			return;
+		}
 
 		for (const runAgentId of getDreamingWorkerAgentIds(accessor, defaultAgentId)) {
 			if (stopped || active) return;
+			let attemptedPass = false;
 			try {
 				enqueueDreamingHygieneAttention(accessor, runAgentId);
 				const episodicTokens = getDreamingEpisodicTokenBacklog(accessor, runAgentId);
@@ -222,13 +233,21 @@ export function startDreamingWorker(
 					mode,
 				});
 
+				attemptedPass = true;
 				await runPass(runAgentId, mode);
+				// Keep one expensive, deferrable pass per five-minute sweep. The
+				// next tick advances another eligible agent without burst-starting
+				// every backlogged workspace at once.
+				return;
 			} catch (e) {
 				if (e instanceof AlreadyRunningError) return;
 				logger.error("dreaming-worker", "Dreaming check failed", undefined, {
 					agentId: runAgentId,
 					error: e instanceof Error ? e.message : String(e),
 				});
+				// A provider failure is still an expensive attempt. Do not turn one
+				// unhealthy sweep into a burst across every remaining agent.
+				if (attemptedPass) return;
 			}
 		}
 	}

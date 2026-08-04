@@ -11,6 +11,7 @@ import { runDreamingAgentPass } from "./pipeline/dreaming";
 
 const DREAMING_CONFIG: DreamingConfig = {
 	tokenThreshold: 1,
+	maxInterval: 6 * 60 * 60 * 1_000,
 	maxInputTokens: 32_000,
 	maxOutputTokens: 1_000,
 	timeout: 30_000,
@@ -300,8 +301,8 @@ describe("source artifact graph structure", () => {
 							operations: [
 								{
 									operation: "create_entity",
-									payload: { name: "Nightly Drift Detection", entity_type: "process" },
-									reason: "The source names a durable operational process.",
+									payload: { name: "Nightly Drift Detection", entity_type: "workflow" },
+									reason: "The source names a durable operational workflow.",
 									evidence: [
 										{
 											source_ref: "artifact:sources/nightly.md",

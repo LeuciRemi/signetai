@@ -9,6 +9,7 @@ import {
 	MAX_PROMPT_SUBMIT_EMBEDDING_TIMEOUT_MS,
 	MIN_LLAMACPP_MAX_INPUT_TOKENS,
 	MIN_PROMPT_SUBMIT_EMBEDDING_TIMEOUT_MS,
+	loadDreamingConfig,
 	loadMemoryConfig,
 	loadPipelineConfig,
 } from "./memory-config";
@@ -21,6 +22,16 @@ afterEach(() => {
 		if (!dir) continue;
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+describe("loadDreamingConfig", () => {
+	it("defaults and bounds the low-volume backlog maximum wait", () => {
+		expect(loadDreamingConfig({}).maxInterval).toBe(6 * 60 * 60 * 1_000);
+		expect(loadDreamingConfig({ memory: { dreaming: { maxInterval: 1 } } }).maxInterval).toBe(5 * 60 * 1_000);
+		expect(loadDreamingConfig({ memory: { dreaming: { maxInterval: 9 * 24 * 60 * 60 * 1_000 } } }).maxInterval).toBe(
+			7 * 24 * 60 * 60 * 1_000,
+		);
+	});
 });
 
 function makeTempAgentsDir(): string {

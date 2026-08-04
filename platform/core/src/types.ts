@@ -477,6 +477,8 @@ export interface PipelineReflectionsConfig {
 
 export interface DreamingConfig {
 	readonly tokenThreshold: number;
+	/** Maximum time that non-empty episodic evidence may wait below the token threshold. */
+	readonly maxInterval: number;
 	readonly timeout: number;
 	readonly maxInputTokens: number;
 	readonly maxOutputTokens: number;

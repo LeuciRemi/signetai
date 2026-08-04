@@ -843,5 +843,11 @@ export function shouldTriggerDreaming(
 	// First run only backfills actual episodic evidence, except for explicit
 	// scoped attention that has been queued for a Dreaming review.
 	if (cfg.backfillOnFirstRun && state.lastPassAt === null) return episodicTokens > 0 || hasAttention;
-	return hasAttention || episodicTokens >= cfg.tokenThreshold;
+	if (hasAttention || episodicTokens >= cfg.tokenThreshold) return true;
+
+	// A low-volume stream must not wait indefinitely for the batch ceiling.
+	// This is deliberately a maximum wait rather than an unconditional cron:
+	// empty ledgers never trigger a pass.
+	const lastPassMs = state.lastPassAt === null ? Number.NaN : Date.parse(state.lastPassAt);
+	return episodicTokens > 0 && Number.isFinite(lastPassMs) && nowMs - lastPassMs >= cfg.maxInterval;
 }

@@ -29,6 +29,7 @@ const AGENT = "default";
 function defaultCfg(overrides?: Partial<DreamingConfig>): DreamingConfig {
 	return {
 		tokenThreshold: 100_000,
+		maxInterval: 6 * 60 * 60 * 1_000,
 		maxInputTokens: 32_000,
 		maxOutputTokens: 16_000,
 		timeout: 300_000,
@@ -157,6 +158,20 @@ describe("Dreaming", () => {
 		expect(shouldTriggerDreaming(accessor, cfg, AGENT, failedAt + 10 * 60 * 1000 - 1)).toBe(false);
 		seedSummary(db, "later", "episodic source ".repeat(3_000), 3_000);
 		expect(shouldTriggerDreaming(accessor, cfg, AGENT, failedAt + 10 * 60 * 1000)).toBe(true);
+	});
+
+	it("runs a low-volume episodic backlog once its maximum wait elapses", () => {
+		const now = Date.now();
+		seedSummary(db, "trickle", "small episodic source", 10);
+		accessor.withWriteTx((tx) => {
+			tx.prepare(
+				`INSERT INTO dreaming_state (agent_id, last_pass_at)
+				 VALUES (?, ?)`,
+			).run(AGENT, new Date(now - 6 * 60 * 60 * 1_000).toISOString());
+		});
+		const cfg = defaultCfg({ tokenThreshold: 100_000, maxInterval: 6 * 60 * 60 * 1_000, backfillOnFirstRun: false });
+		expect(shouldTriggerDreaming(accessor, cfg, AGENT, now - 1)).toBe(false);
+		expect(shouldTriggerDreaming(accessor, cfg, AGENT, now)).toBe(true);
 	});
 
 	it("runs and resolves scoped semantic attention without new episodic evidence", async () => {

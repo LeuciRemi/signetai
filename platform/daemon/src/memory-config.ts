@@ -46,6 +46,7 @@ export type { PipelineFlag, PipelineV2Config, DreamingConfig };
 
 export const DEFAULT_DREAMING: DreamingConfig = {
 	tokenThreshold: 100_000,
+	maxInterval: 6 * 60 * 60 * 1_000,
 	timeout: 300_000,
 	maxInputTokens: 128_000,
 	maxOutputTokens: 16_000,
@@ -929,6 +930,7 @@ export function loadDreamingConfig(yaml: Record<string, unknown>): DreamingConfi
 	const dd = DEFAULT_DREAMING;
 	return {
 		tokenThreshold: clampWarn("tokenThreshold", raw.tokenThreshold, 10_000, 1_000_000, dd.tokenThreshold),
+		maxInterval: clampWarn("maxInterval", raw.maxInterval, 5 * 60 * 1_000, 7 * 24 * 60 * 60 * 1_000, dd.maxInterval),
 		timeout: clampWarn("timeout", raw.timeout, 30_000, 1_800_000, dd.timeout),
 		maxInputTokens: clampWarn("maxInputTokens", raw.maxInputTokens, 8_000, 1_000_000, dd.maxInputTokens),
 		maxOutputTokens: clampWarn("maxOutputTokens", raw.maxOutputTokens, 1_000, 128_000, dd.maxOutputTokens),
