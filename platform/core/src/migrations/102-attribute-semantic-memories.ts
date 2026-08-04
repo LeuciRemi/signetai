@@ -38,7 +38,7 @@ export function up(db: MigrationDb): void {
 		       attr.importance, 'semantic', 'semantic,attribute', 0,
 		       CASE WHEN attr.status = 'active' THEN 0 ELSE 1 END, 'completed',
 		       attr.created_at, attr.updated_at, 'dreaming', 'dreaming', attr.source_id, attr.source_path,
-		       attr.agent_id, 'global', NULL
+		       attr.agent_id, 'global', 'derived'
 		FROM entity_attributes attr
 		WHERE attr.memory_id IS NULL
 	`);

@@ -6,12 +6,17 @@
  * capability schema so Pi, MCP, and CLI callers do not need to discover them
  * by failed mutations.
  */
-import { ATTRIBUTE_KINDS, DEPENDENCY_TYPES, ONTOLOGY_PROPOSAL_OPERATIONS } from "@signet/core";
+import { ATTRIBUTE_KINDS, DEPENDENCY_TYPES, ENTITY_TYPES, ONTOLOGY_PROPOSAL_OPERATIONS } from "@signet/core";
 import { z } from "zod";
 
 const text = z.string().min(1);
 const score = z.number().finite();
 const bool = z.union([z.boolean(), z.literal(0), z.literal(1), z.literal("0"), z.literal("1"), z.literal("true")]);
+const entityType = z.enum(ENTITY_TYPES).describe("The entity's ontology type. Choose the most specific supported type.");
+const entityName = text.describe("A stable, human-readable entity name.");
+const aspectName = text.describe("The specific domain of knowledge this claim belongs to.");
+const claimValue = text.describe("A complete atomic assertion that is understandable on its own.");
+const claimKey = text.describe("A stable semantic slot key for versions of the same claim.");
 
 function oneOf(keys: readonly string[]): (value: Record<string, unknown>) => boolean {
 	return (value) => keys.some((key) => typeof value[key] === "string" && value[key].trim().length > 0);
@@ -36,12 +41,12 @@ const aspectSelector = {
 };
 
 const claimPayload = {
-	entity: text,
-	aspect: text,
-	claim_key: text.optional(),
+	entity: entityName,
+	aspect: aspectName,
+	claim_key: claimKey.optional(),
 	claim: text.optional(),
-	value: text,
-	entity_type: text.optional(),
+	value: claimValue,
+	entity_type: entityType.optional(),
 	group_key: text.optional(),
 	group: text.optional(),
 	kind: z.enum(ATTRIBUTE_KINDS).optional(),
@@ -59,8 +64,8 @@ const aspectSelectionMessage = "Provide one of selector, aspect, aspect_id, or n
  * the source of behavioral truth and still validate graph state.
  */
 export const DREAMING_ONTOLOGY_PAYLOAD_SCHEMAS = {
-	create_entity: payload({ name: text, entity_type: text.optional() }),
-	add_claim_value: payload({ ...claimPayload, claim_key: text }),
+	create_entity: payload({ name: entityName, entity_type: entityType.optional() }),
+	add_claim_value: payload({ ...claimPayload, claim_key: claimKey }),
 	set_claim_value: payload(claimPayload).refine(
 		(value) => oneOf(["claim_key", "claim"])(value),
 		"Provide claim_key or claim",
@@ -73,7 +78,7 @@ export const DREAMING_ONTOLOGY_PAYLOAD_SCHEMAS = {
 		(value) => oneOf(["selector", "entity", "entity_id", "name"])(value),
 		entitySelectionMessage,
 	),
-	create_aspect: payload({ entity: text.optional(), entity_id: text.optional(), name: text.optional(), aspect: text.optional() })
+	create_aspect: payload({ entity: entityName.optional(), entity_id: text.optional(), name: aspectName.optional(), aspect: aspectName.optional() })
 		.refine((value) => oneOf(["entity", "entity_id"])(value), "Provide entity or entity_id")
 		.refine((value) => oneOf(["name", "aspect"])(value), "Provide name or aspect"),
 	rename_aspect: payload({ ...entitySelector, ...aspectSelector, new_name: text }).refine(
@@ -94,8 +99,8 @@ export const DREAMING_ONTOLOGY_PAYLOAD_SCHEMAS = {
 		reason: text.optional(),
 		strength: score.optional(),
 		confidence: score.optional(),
-		source_type: text.optional(),
-		target_type: text.optional(),
+		source_type: entityType.optional(),
+		target_type: entityType.optional(),
 	}).refine((value) => oneOf(["source_entity", "source_entity_id"])(value), "Provide source_entity or source_entity_id")
 		.refine((value) => oneOf(["target_entity", "target_entity_id"])(value), "Provide target_entity or target_entity_id"),
 	update_link: payload({
@@ -147,7 +152,7 @@ export const DREAMING_ONTOLOGY_PAYLOAD_SCHEMAS = {
 		superseded_by: text.optional(),
 		confidence: score.optional(),
 		importance: score.optional(),
-		entity_type: text.optional(),
+		entity_type: entityType.optional(),
 	}).refine((value) => oneOf(["attribute_id", "old_value"])(value), "Provide attribute_id or old_value"),
 	create_policy: payload({
 		target_entity: text.optional(),
@@ -155,7 +160,7 @@ export const DREAMING_ONTOLOGY_PAYLOAD_SCHEMAS = {
 		entity_id: text.optional(),
 		kind: text,
 		content: text,
-		entity_type: text.optional(),
+		entity_type: entityType.optional(),
 		confidence: score.optional(),
 		importance: score.optional(),
 	}).refine((value) => oneOf(["target_entity", "entity", "entity_id"])(value), "Provide target_entity, entity, or entity_id"),

@@ -168,7 +168,7 @@ describe("ontology proposals", () => {
 			attribute_id: projection?.memory_id,
 			content: "Ontology extraction preserves provenance before mutating semantic state.",
 			type: "semantic",
-			memory_kind: null,
+			memory_kind: "derived",
 			source_type: "dreaming",
 			source_id: "transcript:test",
 			mentions: 1,

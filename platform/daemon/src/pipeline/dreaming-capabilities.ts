@@ -303,7 +303,7 @@ export function createDreamingCapabilities(params: CreateDreamingCapabilitiesPar
 		capability(
 			"runbook_write",
 			"Write Dreaming runbook",
-			"Store a short structured note on the current scoped Dreaming pass for future passes to review.",
+			"Before finishing a Dreaming pass, store one short structured note for future passes to review.",
 			false,
 			z.object({
 				summary: z.string().trim().min(1).max(2_000),
@@ -321,7 +321,7 @@ export function createDreamingCapabilities(params: CreateDreamingCapabilitiesPar
 		capability(
 			"apply_ontology_ops",
 			"Apply ontology operations",
-			"Apply cited ontology operations through the daemon audit seam. The operation schema lists every supported operation and payload. Every quote must be exact evidence.",
+			"Apply every semantic write through the daemon audit seam. Inspect relevant scoped graph state first; every operation needs an exact quote and source_ref from canonical episodic evidence.",
 			false,
 			z.object({ operations: z.array(DREAMING_ONTOLOGY_OPERATION_SCHEMA).min(1).max(100) }),
 			async ({ operations }) => {

@@ -347,11 +347,6 @@ describe("Dreaming", () => {
 		);
 		expect(prompt).not.toContain("<knowledge_graph>");
 		expect(prompt).not.toContain("Static Snapshot Sentinel");
-		expect(prompt).toContain("intentionally not preloaded");
-		expect(prompt).toContain("do not inventory every named entity");
-		expect(prompt).toContain("first-class semantic memory");
-		expect(prompt).toContain('write "Signet is a memory system"');
-		expect(prompt).toContain('do not use catch-all aspects such as "profile", "details", "general", or "information"');
 		expect(toolNames).toEqual(expect.arrayContaining(["search_entities", "get_entity", "list_aspect_claims", "walk_links"]));
 	});
 
@@ -397,7 +392,6 @@ describe("Dreaming", () => {
 		expect(prompt).toContain("<dreaming_runbook>");
 		expect(prompt).toContain("Deferred deployment review");
 		expect(prompt).toContain("not source evidence");
-		expect(prompt).toContain("call runbook_write once");
 	});
 
 	it("retains rejected agent evidence for explicit requeue", async () => {

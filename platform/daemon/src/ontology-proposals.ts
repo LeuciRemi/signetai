@@ -802,7 +802,7 @@ function materializeAttributeMemoryInTx(
 			pinned: 0,
 			extractionStatus: "completed",
 			updatedBy: "dreaming",
-			memoryKind: null,
+			memoryKind: "derived",
 			sourceType: "dreaming",
 			sourceId: input.proposal.source_id,
 			sourcePath: input.proposal.source_path,

@@ -108,6 +108,7 @@ import { up as dreamingToolCalls } from "./099-dreaming-tool-calls";
 import { up as dreamingRunbook } from "./100-dreaming-runbook";
 import { up as dreamingAttention } from "./101-dreaming-attention";
 import { up as attributeSemanticMemories } from "./102-attribute-semantic-memories";
+import { up as semanticMemoryKind } from "./103-semantic-memory-kind";
 
 // -- Public interface consumed by Database.init() --
 
@@ -954,6 +955,11 @@ export const MIGRATIONS: readonly Migration[] = [
 		version: 102,
 		name: "attribute-semantic-memories",
 		up: attributeSemanticMemories,
+	},
+	{
+		version: 103,
+		name: "semantic-memory-kind",
+		up: semanticMemoryKind,
 	},
 ];
 
