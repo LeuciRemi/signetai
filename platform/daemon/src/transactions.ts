@@ -97,6 +97,7 @@ export type ModifyMemoryTxStatus =
 	| "version_conflict"
 	| "duplicate_content_hash"
 	| "episodic_content_immutable"
+	| "semantic_projection_content_immutable"
 	| "no_changes";
 
 export interface ModifyMemoryTxResult {
@@ -345,6 +346,31 @@ export function txModifyMemory(db: WriteDb, input: ModifyMemoryTxInput): ModifyM
 	) {
 		return {
 			status: "episodic_content_immutable",
+			memoryId: input.memoryId,
+			currentVersion: existing.version,
+		};
+	}
+
+	// Attribute projections are retrievable views of ontology state. Letting the
+	// generic memory route rewrite their content would silently split the same
+	// semantic claim between `memories` and `entity_attributes`. All claim
+	// content changes therefore stay on the daemon-owned ontology apply path.
+	const isAttributeProjection =
+		existing.memory_kind === "derived" &&
+		// Attribute projections deliberately share the attribute id, so this is a
+		// primary-key lookup rather than a scan across the graph.
+		(db.prepare("SELECT 1 FROM entity_attributes WHERE id = ? AND memory_id = ? AND agent_id = ?").get(
+			existing.id,
+			existing.id,
+			existing.agent_id,
+		) !== undefined);
+	if (
+		isAttributeProjection &&
+		((input.patch.content !== undefined && input.patch.content !== existing.content) ||
+			(input.patch.type !== undefined && input.patch.type !== existing.type))
+	) {
+		return {
+			status: "semantic_projection_content_immutable",
 			memoryId: input.memoryId,
 			currentVersion: existing.version,
 		};

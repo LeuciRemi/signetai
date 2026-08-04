@@ -2194,6 +2194,17 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 					},
 					409,
 				);
+			case "semantic_projection_content_immutable":
+				return c.json(
+					{
+						id: txResult.memoryId,
+						status: txResult.status,
+						currentVersion: txResult.currentVersion,
+						error:
+							"Semantic claim projections are managed by the ontology. Use an audited ontology operation to change claim content or type.",
+					},
+					409,
+				);
 		}
 
 		return c.json({ error: "Unknown mutation result" }, 500);

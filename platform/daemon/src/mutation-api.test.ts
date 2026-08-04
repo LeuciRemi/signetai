@@ -1131,6 +1131,49 @@ memory:
 		expect(metaJson.status).toBe("updated");
 	});
 
+	it("PATCH /api/memory/:id keeps materialized semantic claims on the ontology path", async () => {
+		const now = new Date().toISOString();
+		getDbAccessor().withWriteTx((db) => {
+			txIngestEnvelope(db, {
+				id: "semantic-claim-api",
+				content: "Signet is a memory system.",
+				normalizedContent: "signet is a memory system.",
+				contentHash: "semantic-claim-api-hash",
+				who: "dreaming",
+				why: "test",
+				project: null,
+				importance: 0.9,
+				type: "semantic",
+				tags: "semantic,attribute",
+				pinned: 0,
+				isDeleted: 0,
+				extractionStatus: "completed",
+				embeddingModel: null,
+				extractionModel: null,
+				updatedBy: "dreaming",
+				memoryKind: "derived",
+				sourceType: "dreaming",
+				sourceId: null,
+				createdAt: now,
+			});
+			db.prepare(
+				`INSERT INTO entity_attributes
+				 (id, memory_id, agent_id, kind, content, normalized_content, confidence, importance, status)
+				 VALUES ('semantic-claim-api', 'semantic-claim-api', 'default', 'fact', ?, ?, 0.9, 0.9, 'active')`,
+			).run("Signet is a memory system.", "signet is a memory system.");
+		});
+
+		const response = await app.request("http://localhost/api/memory/semantic-claim-api", {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ content: "Signet is a search engine.", reason: "attempt bypass" }),
+		});
+		expect(response.status).toBe(409);
+		expect((await response.json()) as { status?: string }).toMatchObject({
+			status: "semantic_projection_content_immutable",
+		});
+	});
+
 	it("PATCH /api/memory/:id enforces if_version optimistic concurrency", async () => {
 		seedMemory({
 			id: "mem-2",

@@ -153,6 +153,37 @@ describe("transactions: txModifyMemory + txForgetMemory + txRecoverMemory", () =
 		expect(history.reason).toBe("manual correction");
 	});
 
+	it("keeps a materialized semantic claim on the ontology write path", () => {
+		insertMemory(db, {
+			id: "semantic-claim",
+			content: "Signet is a memory system.",
+			contentHash: "semantic-claim-hash",
+			type: "semantic",
+		});
+		db.prepare("UPDATE memories SET memory_kind = 'derived', source_type = 'dreaming' WHERE id = ?").run("semantic-claim");
+		db.prepare(
+			`INSERT INTO entity_attributes
+			 (id, memory_id, agent_id, kind, content, normalized_content, confidence, importance, status)
+			 VALUES ('semantic-claim', 'semantic-claim', 'default', 'fact', ?, ?, 0.9, 0.9, 'active')`,
+		).run("Signet is a memory system.", "signet is a memory system.");
+
+		const result = txModifyMemory(asWriteDb(db), {
+			memoryId: "semantic-claim",
+			patch: {
+				content: "Signet is a search engine.",
+				normalizedContent: "signet is a search engine.",
+				contentHash: "semantic-claim-rewrite",
+			},
+			reason: "manual correction",
+			changedBy: "operator",
+			changedAt: new Date().toISOString(),
+		});
+		expect(result.status).toBe("semantic_projection_content_immutable");
+		expect(db.prepare("SELECT content FROM memories WHERE id = ?").get("semantic-claim")).toEqual({
+			content: "Signet is a memory system.",
+		});
+	});
+
 	it("returns duplicate_content_hash when another active memory already has the hash", () => {
 		insertMemory(db, {
 			id: "mem-a",
