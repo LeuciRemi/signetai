@@ -189,6 +189,11 @@ export const DREAMING_ONTOLOGY_PAYLOAD_SCHEMAS = {
 const operationBase = {
 	reason: z.string().optional(),
 	evidence: z.array(z.unknown()).optional(),
+	provenance: z
+		.string()
+		.min(1)
+		.describe("For a flagged hygiene archive, use attention:<id>; content-bearing writes require episodic evidence.")
+		.optional(),
 	confidence: z.number().finite().optional(),
 	risk: z.string().nullable().optional(),
 };

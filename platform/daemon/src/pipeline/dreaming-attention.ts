@@ -56,7 +56,11 @@ function promptJson(value: unknown): string {
 	return JSON.stringify(value).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e").replaceAll("&", "\\u0026");
 }
 
-function getDreamingAttentionSnapshotsInDb(db: ReadDb, agentId: string, limit = 20): readonly DreamingAttentionSnapshot[] {
+function getDreamingAttentionSnapshotsInDb(
+	db: ReadDb,
+	agentId: string,
+	limit = 20,
+): readonly DreamingAttentionSnapshot[] {
 	const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
 	return db
 		.prepare(
@@ -95,6 +99,38 @@ export function getDreamingAttention(
 	return accessor.withReadDb((db) => getDreamingAttentionInDb(db, agentId, limit));
 }
 
+export function getDreamingAttentionById(
+	accessor: DbAccessor,
+	input: { readonly agentId: string; readonly id: string },
+): DreamingAttention | null {
+	return accessor.withReadDb((db) => {
+		const row = db
+			.prepare(
+				`SELECT id, kind, subject_ref AS subjectRef, details_json AS detailsJson, priority, created_at AS createdAt
+				 FROM dreaming_attention WHERE id = ? AND agent_id = ? AND resolved_at IS NULL`,
+			)
+			.get(input.id, input.agentId) as
+			| {
+					id: string;
+					kind: DreamingAttentionKind;
+					subjectRef: string;
+					detailsJson: string;
+					priority: number;
+					createdAt: string;
+			  }
+			| undefined;
+		if (!row) return null;
+		return {
+			id: row.id,
+			kind: row.kind,
+			subjectRef: row.subjectRef,
+			details: parseDetails(row.detailsJson),
+			priority: row.priority,
+			createdAt: row.createdAt,
+		};
+	});
+}
+
 export function getDreamingAttentionSnapshots(
 	accessor: DbAccessor,
 	agentId: string,
@@ -111,6 +147,8 @@ export function enqueueDreamingAttentionInTx(
 		readonly subjectRef: string;
 		readonly details?: Readonly<Record<string, string>>;
 		readonly priority?: number;
+		/** Leave unchanged deterministic work resolved; reopen it if its state changes or it is explicitly requeued. */
+		readonly reopen?: boolean;
 	},
 ): void {
 	if (!DREAMING_ATTENTION_KINDS.includes(input.kind)) {
@@ -118,6 +156,7 @@ export function enqueueDreamingAttentionInTx(
 	}
 	const subjectRef = normalizedSubjectRef(input.subjectRef);
 	const details = JSON.stringify(normalizedDetails(input.details));
+	const reopen = input.reopen !== false ? 1 : 0;
 	db.prepare(
 		`INSERT INTO dreaming_attention
 		 (id, agent_id, kind, subject_ref, details_json, priority)
@@ -125,10 +164,20 @@ export function enqueueDreamingAttentionInTx(
 		 ON CONFLICT(agent_id, kind, subject_ref) DO UPDATE SET
 		   details_json = excluded.details_json,
 		   priority = MAX(dreaming_attention.priority, excluded.priority),
-		   generation = dreaming_attention.generation + 1,
-		   resolved_at = NULL,
-		   resolved_by_pass_id = NULL`,
-	).run(randomUUID(), input.agentId, input.kind, subjectRef, details, boundedPriority(input.priority));
+		   generation = CASE WHEN ? = 1 OR dreaming_attention.details_json <> excluded.details_json THEN dreaming_attention.generation + 1 ELSE dreaming_attention.generation END,
+		   resolved_at = CASE WHEN ? = 1 OR dreaming_attention.details_json <> excluded.details_json THEN NULL ELSE dreaming_attention.resolved_at END,
+		   resolved_by_pass_id = CASE WHEN ? = 1 OR dreaming_attention.details_json <> excluded.details_json THEN NULL ELSE dreaming_attention.resolved_by_pass_id END`,
+	).run(
+		randomUUID(),
+		input.agentId,
+		input.kind,
+		subjectRef,
+		details,
+		boundedPriority(input.priority),
+		reopen,
+		reopen,
+		reopen,
+	);
 }
 
 export function resolveDreamingAttentionInTx(
@@ -150,7 +199,7 @@ export function renderDreamingAttentionForPrompt(attention: readonly DreamingAtt
 	return attention
 		.map(
 			(item) =>
-				`- ${promptJson({ kind: item.kind, subjectRef: item.subjectRef, details: item.details, priority: item.priority })}`,
+				`- ${promptJson({ id: item.id, kind: item.kind, subjectRef: item.subjectRef, details: item.details, priority: item.priority })}`,
 		)
 		.join("\n");
 }

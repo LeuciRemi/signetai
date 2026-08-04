@@ -24,6 +24,7 @@ import {
 	readEpisodicSource,
 	readRecentEpisodicSources,
 } from "../episodic-sources";
+import { getDreamingHygieneCandidatesInDb } from "../knowledge-graph-hygiene";
 import { logger } from "../logger";
 import { createDreamingAgentTools } from "./dreaming-agent-tools";
 import {
@@ -59,6 +60,24 @@ export interface DreamingState {
 	readonly evidenceCursor: EpisodicCursor | null;
 	readonly lastPassId: string | null;
 	readonly lastPassMode: string | null;
+}
+
+/** Queue bounded deterministic graph cleanup work for the next Dreaming pass. */
+export function enqueueDreamingHygieneAttention(accessor: DbAccessor, agentId: string, limit = 50): number {
+	return accessor.withWriteTx((db) => {
+		const candidates = getDreamingHygieneCandidatesInDb(db, { agentId, limit });
+		for (const candidate of candidates) {
+			enqueueDreamingAttentionInTx(db, {
+				agentId,
+				kind: "hygiene",
+				subjectRef: candidate.subjectRef,
+				details: candidate.details,
+				priority: candidate.priority,
+				reopen: false,
+			});
+		}
+		return candidates.length;
+	});
 }
 
 function parseEpisodicCursor(value: string | null): EpisodicCursor | null {

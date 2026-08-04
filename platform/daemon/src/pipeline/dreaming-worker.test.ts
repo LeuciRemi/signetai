@@ -117,6 +117,22 @@ describe("dreaming worker agent scope", () => {
 		}
 	});
 
+	it("seeds deterministic hygiene attention for legacy graph rows at worker startup", () => {
+		db.prepare(
+			`INSERT INTO entities
+			 (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+			 VALUES ('legacy-husk', 'Legacy Husk', 'legacy husk', 'project', 'default', 5, datetime('now'), datetime('now'))`,
+		).run();
+		const worker = startDreamingWorker(accessor, defaultCfg(), agentsDir, "default");
+		try {
+			expect(
+				db.prepare("SELECT kind, subject_ref FROM dreaming_attention WHERE agent_id = ?").get("default"),
+			).toEqual({ kind: "hygiene", subject_ref: "entity:legacy-husk" });
+		} finally {
+			worker.stop();
+		}
+	});
+
 	it("keeps multi-agent check-cycle passes and semantic rows agent-isolated (#946)", async () => {
 		// Behavioral regression: one worker check cycle over two agents must
 		// produce a separate pass per agent, each consolidating only its own

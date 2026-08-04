@@ -7,6 +7,7 @@ import {
 	_testParseEpisodicCursor,
 	getDreamingEpisodicTokenBacklog,
 	getDreamingEvidenceExclusions,
+	enqueueDreamingHygieneAttention,
 	getDreamingPasses,
 	getDreamingState,
 	getDreamingToolCalls,
@@ -15,7 +16,12 @@ import {
 	runDreamingAgentPass,
 	shouldTriggerDreaming,
 } from "./dreaming";
-import { enqueueDreamingAttentionInTx, getDreamingAttention } from "./dreaming-attention";
+import {
+	enqueueDreamingAttentionInTx,
+	getDreamingAttention,
+	getDreamingAttentionSnapshots,
+	resolveDreamingAttentionInTx,
+} from "./dreaming-attention";
 import { readDreamingRunbook } from "./dreaming-runbook";
 
 const AGENT = "default";
@@ -128,7 +134,10 @@ describe("Dreaming", () => {
 		expect(prompts.every((prompt) => sentences.some((sentence) => prompt.includes(sentence)))).toBe(true);
 		const allPromptEvidence = prompts.join("\n");
 		for (const sentence of sentences) expect(allPromptEvidence).toContain(sentence);
-		expect(getDreamingState(accessor, AGENT).evidenceCursor).toMatchObject({ id: "oversized-summary", kind: "summary" });
+		expect(getDreamingState(accessor, AGENT).evidenceCursor).toMatchObject({
+			id: "oversized-summary",
+			kind: "summary",
+		});
 		expect(getDreamingState(accessor, AGENT).evidenceCursor?.fragmentOffset).toBeUndefined();
 		expect(getDreamingEvidenceExclusions(accessor, AGENT)).not.toContainEqual(
 			expect.objectContaining({ sourceId: "oversized-summary", reason: "oversized_prompt_budget" }),
@@ -183,6 +192,63 @@ describe("Dreaming", () => {
 		expect(getDreamingAttention(accessor, AGENT)).toEqual([]);
 	});
 
+	it("turns deterministic graph hygiene into scoped attention without episodic evidence", () => {
+		db.prepare(
+			`INSERT INTO entities
+			 (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+			 VALUES ('legacy-husk', 'Legacy Husk', 'legacy husk', 'project', ?, 5, datetime('now'), datetime('now'))`,
+		).run(AGENT);
+		expect(enqueueDreamingHygieneAttention(accessor, AGENT)).toBeGreaterThan(0);
+		expect(getDreamingAttention(accessor, AGENT)).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "hygiene",
+					subjectRef: "entity:legacy-husk",
+					details: expect.objectContaining({ reason: "zero_active_attributes" }),
+				}),
+			]),
+		);
+		expect(shouldTriggerDreaming(accessor, defaultCfg(), AGENT)).toBe(true);
+		const snapshots = getDreamingAttentionSnapshots(accessor, AGENT);
+		accessor.withWriteTx((tx) => resolveDreamingAttentionInTx(tx, AGENT, "pass-hygiene", snapshots));
+		enqueueDreamingHygieneAttention(accessor, AGENT);
+		expect(getDreamingAttention(accessor, AGENT)).toEqual([]);
+		db.prepare("UPDATE entities SET name = 'Renamed legacy husk' WHERE id = 'legacy-husk'").run();
+		enqueueDreamingHygieneAttention(accessor, AGENT);
+		expect(getDreamingAttention(accessor, AGENT)).toContainEqual(
+			expect.objectContaining({
+				subjectRef: "entity:legacy-husk",
+				details: expect.objectContaining({ name: "Renamed legacy husk" }),
+			}),
+		);
+	});
+
+	it("reopens duplicate hygiene attention when group membership changes", () => {
+		for (const [id, name] of [
+			["acme-a", "Acme"],
+			["acme-b", "ACME"],
+		] as const) {
+			db.prepare(
+				`INSERT INTO entities
+				 (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+				 VALUES (?, ?, 'acme', 'project', ?, 1, datetime('now'), datetime('now'))`,
+			).run(id, name, AGENT);
+		}
+		enqueueDreamingHygieneAttention(accessor, AGENT);
+		const snapshots = getDreamingAttentionSnapshots(accessor, AGENT);
+		accessor.withWriteTx((tx) => resolveDreamingAttentionInTx(tx, AGENT, "pass-duplicates", snapshots));
+		db.prepare("DELETE FROM entities WHERE id = 'acme-b'").run();
+		db.prepare(
+			`INSERT INTO entities
+			 (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+			 VALUES ('acme-c', 'Acme Inc.', 'acme', 'project', ?, 1, datetime('now'), datetime('now'))`,
+		).run(AGENT);
+		enqueueDreamingHygieneAttention(accessor, AGENT);
+		expect(getDreamingAttention(accessor, AGENT)).toContainEqual(
+			expect.objectContaining({ subjectRef: "duplicate:acme", details: expect.objectContaining({ count: "2" }) }),
+		);
+	});
+
 	it("keeps semantic attention pending when its pass fails", async () => {
 		accessor.withWriteTx((tx) => {
 			enqueueDreamingAttentionInTx(tx, {
@@ -196,7 +262,11 @@ describe("Dreaming", () => {
 		await expect(
 			runDreamingAgentPass(
 				accessor,
-				{ async run() { throw new Error("provider unavailable"); } },
+				{
+					async run() {
+						throw new Error("provider unavailable");
+					},
+				},
 				defaultCfg(),
 				"/tmp",
 				AGENT,
@@ -302,7 +372,9 @@ describe("Dreaming", () => {
 			"incremental",
 		);
 		expect(result).toMatchObject({ applied: 1, failed: 0, summary: "Created Aster" });
-		expect(db.prepare("SELECT proposal_id FROM entities WHERE agent_id = ? AND name = 'Aster'").get(AGENT)).toMatchObject({
+		expect(
+			db.prepare("SELECT proposal_id FROM entities WHERE agent_id = ? AND name = 'Aster'").get(AGENT),
+		).toMatchObject({
 			proposal_id: expect.any(String),
 		});
 		const calls = getDreamingToolCalls(accessor, AGENT, result.passId);
@@ -347,7 +419,9 @@ describe("Dreaming", () => {
 		);
 		expect(prompt).not.toContain("<knowledge_graph>");
 		expect(prompt).not.toContain("Static Snapshot Sentinel");
-		expect(toolNames).toEqual(expect.arrayContaining(["search_entities", "get_entity", "list_aspect_claims", "walk_links"]));
+		expect(toolNames).toEqual(
+			expect.arrayContaining(["search_entities", "get_entity", "list_aspect_claims", "walk_links"]),
+		);
 	});
 
 	it("carries scoped runbook history and exact evidence windows into a later pass", async () => {
@@ -360,7 +434,11 @@ describe("Dreaming", () => {
 					if (!write) throw new Error("Missing runbook_write");
 					await write.execute(
 						"runbook",
-						{ summary: "Deferred deployment review", openQuestions: ["Who owns the review?"], deferred: ["Link owner after confirmation"] },
+						{
+							summary: "Deferred deployment review",
+							openQuestions: ["Who owns the review?"],
+							deferred: ["Link owner after confirmation"],
+						},
 						undefined,
 						undefined,
 						{} as never,
@@ -373,17 +451,26 @@ describe("Dreaming", () => {
 			AGENT,
 			"incremental",
 		);
-		const stored = db.prepare("SELECT evidence_window_json, runbook_json FROM dreaming_passes WHERE id = ?").get(first.passId) as {
+		const stored = db
+			.prepare("SELECT evidence_window_json, runbook_json FROM dreaming_passes WHERE id = ?")
+			.get(first.passId) as {
 			evidence_window_json: string;
 			runbook_json: string;
 		};
-		expect(JSON.parse(stored.evidence_window_json)).toMatchObject({ sources: [{ sourceRef: "summary:runbook-summary" }] });
+		expect(JSON.parse(stored.evidence_window_json)).toMatchObject({
+			sources: [{ sourceRef: "summary:runbook-summary" }],
+		});
 		expect(JSON.parse(stored.runbook_json)).toMatchObject({ openQuestions: ["Who owns the review?"] });
 
 		let prompt = "";
 		await runDreamingAgentPass(
 			accessor,
-			{ async run(input) { prompt = input.prompt; return { summary: "Reviewed prior runbook" }; } },
+			{
+				async run(input) {
+					prompt = input.prompt;
+					return { summary: "Reviewed prior runbook" };
+				},
+			},
 			defaultCfg(),
 			"/tmp",
 			AGENT,
@@ -435,7 +522,11 @@ describe("Dreaming", () => {
 		);
 		expect(result).toMatchObject({ applied: 0, failed: 1 });
 		expect(getDreamingEvidenceExclusions(accessor, AGENT)).toContainEqual(
-			expect.objectContaining({ sourceKind: "summary", sourceId: "rejected-summary", reason: "semantic_operation_rejected" }),
+			expect.objectContaining({
+				sourceKind: "summary",
+				sourceId: "rejected-summary",
+				reason: "semantic_operation_rejected",
+			}),
 		);
 	});
 
@@ -443,7 +534,12 @@ describe("Dreaming", () => {
 		let invoked = false;
 		const empty = await runDreamingAgentPass(
 			accessor,
-			{ async run() { invoked = true; return { summary: "unexpected" }; } },
+			{
+				async run() {
+					invoked = true;
+					return { summary: "unexpected" };
+				},
+			},
 			defaultCfg(),
 			"/tmp",
 			AGENT,
@@ -456,7 +552,11 @@ describe("Dreaming", () => {
 		await expect(
 			runDreamingAgentPass(
 				accessor,
-				{ async run() { throw new Error("agent timeout"); } },
+				{
+					async run() {
+						throw new Error("agent timeout");
+					},
+				},
 				defaultCfg(),
 				"/tmp",
 				AGENT,
