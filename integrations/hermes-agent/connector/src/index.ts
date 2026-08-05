@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BaseConnector, type InstallResult, type UninstallResult } from "@signet/connector-base";
+import { BaseConnector, type InstallResult, type UninstallResult, resolveSignetApiKey } from "@signet/connector-base";
 import { expandHome, resolveHermesHomePath, resolveHermesRepoPath } from "@signet/core";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -627,7 +627,7 @@ function sanitizedEnv(name: string): string {
 }
 
 function sanitizedAuthTokenEnv(): string {
-	return sanitizedEnv("SIGNET_API_KEY") || sanitizedEnv("SIGNET_TOKEN");
+	return resolveSignetApiKey() ?? "";
 }
 
 function trustedOriginForDaemonUrl(daemonUrl: string): string | null {

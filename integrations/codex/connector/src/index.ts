@@ -9,6 +9,8 @@ import {
 	type UninstallResult,
 	atomicWriteJson,
 	readTrimmedEnv,
+	resolveRemoteDaemonUrl,
+	resolveSignetApiKey,
 	resolveSignetCliCommand,
 	resolveSignetMcpCommand,
 } from "@signet/connector-base";
@@ -16,7 +18,6 @@ import {
 	expandHome,
 	resolvePromptSubmitTimeoutMs,
 	resolveSessionStartTimeoutMs,
-	resolveSignetDaemonUrl,
 } from "@signet/core";
 
 export type SignetMcpConfig =
@@ -96,12 +97,6 @@ function resolveSignetMcp(runtime: string | null = null): SignetMcpConfig {
 	const mcpEntry = entry ? join(dirname(entry), "..", "dist", "mcp-stdio.js") : null;
 	if (runtime && mcpEntry && existsSync(mcpEntry)) return { command: runtime, args: [mcpEntry] };
 	return resolveSignetMcpCommand();
-}
-
-function resolveRemoteDaemonUrl(): string | null {
-	const explicit = readTrimmedEnv("SIGNET_DAEMON_URL");
-	if (!explicit) return null;
-	return resolveSignetDaemonUrl();
 }
 
 const CODEX_DESKTOP_APP_PATHS = [join(homedir(), "Applications", "Codex.app"), "/Applications/Codex.app"];
@@ -382,7 +377,7 @@ function cmdEnvQuote(value: string): string {
 }
 
 function readAuthTokenEnv(): string | undefined {
-	return readTrimmedEnv("SIGNET_API_KEY") ?? readTrimmedEnv("SIGNET_TOKEN");
+	return resolveSignetApiKey();
 }
 
 function withRemoteDaemonEnv(command: string, remoteDaemonUrl: string | null): string {
