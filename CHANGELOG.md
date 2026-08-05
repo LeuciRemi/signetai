@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-05
-- Bug fixes: stop surfacing the retired extraction pipeline in status output; let the agent cite and mint hygiene attention provenance.
+- Bug fixes: accept redundant selectors that name the flagged entity in hygiene archives; stop surfacing the retired extraction pipeline in status output; let the agent cite and mint hygiene attention provenance.
 
 ### 2026-08-04
 - Features: automatic startup recovery for crash-loop damage; startup grace period to prevent worker thundering herd; gate all background workers on system pressure; system-pressure signal and yielding write-batch primitive; queue auditable graph hygiene; materialize attributes as semantic memories; measure semantic structure quality; add scoped semantic attention; retain scoped pass runbooks; expose deterministic guard capabilities; add semantic quality report; trace agent capability calls; route agent passes through Pi and ACPX; add bounded agent execution path; expose cited agent operation endpoint; complete core operation handlers; unified ingest queue for dreaming and agentic dreaming [wip].
@@ -37,6 +37,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: add plan-driven setup redesign draft spec.
 
 ## Release Ledger
+
+## [0.159.12] - 2026-08-05
+
+Release summary: 1 bug fix.
+Tag range: `v0.159.11..v0.159.12`.
+
+### Bug Fixes
+
+- **dreaming**: accept redundant selectors that name the flagged entity in hygiene archives
 
 ## [0.159.11] - 2026-08-05
 
