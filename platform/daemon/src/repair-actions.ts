@@ -2337,12 +2337,24 @@ export function cancelObsoleteJobs(
 			readonly rows: readonly CancelPruneMatchRow[];
 			readonly totalMatching: number;
 		}> = [];
+		// `--max-batch` is an aggregate cap across ALL selected tables, not a
+		// per-table cap. Select memory first, then hand only the remaining
+		// budget to summary so a both-queue operation can never exceed the
+		// requested blast radius (issue #1053).
+		let remaining = Math.min(selection.maxBatch ?? MAX_BATCH_HARD_CAP, MAX_BATCH_HARD_CAP);
 		if (wantsMemory) {
-			const r = buildCancelPruneSql(db, "memory_jobs", ["dead", "completed"], selection);
+			const r = buildCancelPruneSql(db, "memory_jobs", ["dead", "completed"], {
+				...selection,
+				maxBatch: remaining,
+			});
 			targets.push({ table: "memory_jobs", rows: r.rows, totalMatching: r.totalMatching });
+			remaining = Math.max(0, remaining - r.rows.length);
 		}
 		if (wantsSummary) {
-			const r = buildCancelPruneSql(db, "summary_jobs", ["dead", "completed"], selection);
+			const r = buildCancelPruneSql(db, "summary_jobs", ["dead", "completed"], {
+				...selection,
+				maxBatch: remaining,
+			});
 			targets.push({ table: "summary_jobs", rows: r.rows, totalMatching: r.totalMatching });
 		}
 
@@ -2480,15 +2492,20 @@ export function pruneTerminalJobs(
 			readonly totalMatching: number;
 		}> = [];
 		let totalMatching = 0;
+		// `--max-batch` is an aggregate cap across ALL selected tables; the
+		// remaining budget carries across tables so a both-queue prune can
+		// never exceed the requested blast radius (issue #1053).
+		let remaining = Math.min(options.maxBatch ?? MAX_BATCH_HARD_CAP, MAX_BATCH_HARD_CAP);
 		for (const t of targets) {
 			const selection: JobFilterOptions = {
 				...options,
 				olderThanMs: t.cutoff,
-				maxBatch: options.maxBatch ?? MAX_BATCH_HARD_CAP,
+				maxBatch: remaining,
 			};
 			const r = buildCancelPruneSql(db, t.table, t.statusList, selection);
 			perTable.push({ rows: r.rows, totalMatching: r.totalMatching });
 			totalMatching += r.totalMatching;
+			remaining = Math.max(0, remaining - r.rows.length);
 		}
 
 		if (dryRun) {
