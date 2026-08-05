@@ -39,6 +39,13 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ## Release Ledger
 
+## [0.163.4] - 2026-08-05
+
+Release summary: internal maintenance release with no conventional commit entries captured.
+Tag range: `v0.163.3..v0.163.4`.
+
+No notable changes were captured from conventional commit subjects for this release.
+
 ## [0.163.3] - 2026-08-05
 
 Release summary: 1 bug fix.
