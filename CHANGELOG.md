@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-08-05
 - Features: redesign daily brief generation; disable stub nav tabs and secrets gate, rename account label; secrets vault, data-driven daily brief, and parity polish; replace Svelte dashboard with React + shadcn/ui; raise the pass timeout to 10 minutes; one universe pass over every agent scope, agentId threaded per operation; bounded agent surface — lean prompt, 11 tools, flag ops, search-on-demand.
-- Bug fixes: reject invalid invocations; stop skill orphan loop; set safe Linux executable name; unblock compiled embedding runtime; alternate hygiene/content pass modes; unblock docker smoke build (dashboard tsconfig, native-bun 4.2.0 patch); persist disconnect config changes; register bundled OAuth flows; surface real daemon failures; aspect-first husk scan; assert native smoke on React dashboard assets; cap concurrent prompt-submit work with 503 backpressure; bound dreaming agent-scope discovery and halt after repeated failures; hoist entity-context hot paths; stop skill reconciler hot-loop; retire LLM enrichment, agent-scope entity names; synthesize a default policy when none is configured; never use the harness name as an agent scope; scan recent sources before narrowing — ingest steps list new evidence first; accept ids in get_evidence claim paths and derive citation kind/id from source_ref; accept redundant selectors that name the flagged entity in hygiene archives; stop surfacing the retired extraction pipeline in status output; let the agent cite and mint hygiene attention provenance.
+- Bug fixes: queue repair exits non-zero when the daemon request fails; reject invalid invocations; stop skill orphan loop; set safe Linux executable name; unblock compiled embedding runtime; alternate hygiene/content pass modes; unblock docker smoke build (dashboard tsconfig, native-bun 4.2.0 patch); persist disconnect config changes; register bundled OAuth flows; surface real daemon failures; aspect-first husk scan; assert native smoke on React dashboard assets; cap concurrent prompt-submit work with 503 backpressure; bound dreaming agent-scope discovery and halt after repeated failures; hoist entity-context hot paths; stop skill reconciler hot-loop; retire LLM enrichment, agent-scope entity names; synthesize a default policy when none is configured; never use the harness name as an agent scope; scan recent sources before narrowing — ingest steps list new evidence first; accept ids in get_evidence claim paths and derive citation kind/id from source_ref; accept redundant selectors that name the flagged entity in hygiene archives; stop surfacing the retired extraction pipeline in status output; let the agent cite and mint hygiene attention provenance.
 
 ### 2026-08-04
 - Features: automatic startup recovery for crash-loop damage; startup grace period to prevent worker thundering herd; gate all background workers on system pressure; system-pressure signal and yielding write-batch primitive; queue auditable graph hygiene; materialize attributes as semantic memories; measure semantic structure quality; add scoped semantic attention; retain scoped pass runbooks; expose deterministic guard capabilities; add semantic quality report; trace agent capability calls; route agent passes through Pi and ACPX; add bounded agent execution path; expose cited agent operation endpoint; complete core operation handlers; unified ingest queue for dreaming and agentic dreaming [wip].
@@ -38,6 +38,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: add plan-driven setup redesign draft spec.
 
 ## Release Ledger
+
+## [0.163.6] - 2026-08-05
+
+Release summary: 1 bug fix.
+Tag range: `v0.163.5..v0.163.6`.
+
+### Bug Fixes
+
+- **repair**: queue repair exits non-zero when the daemon request fails (#1110)
 
 ## [0.163.5] - 2026-08-05
 
