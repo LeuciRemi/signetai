@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-08-05
+- Bug fixes: let the agent cite and mint hygiene attention provenance.
+
 ### 2026-08-04
 - Features: automatic startup recovery for crash-loop damage; startup grace period to prevent worker thundering herd; gate all background workers on system pressure; system-pressure signal and yielding write-batch primitive; queue auditable graph hygiene; materialize attributes as semantic memories; measure semantic structure quality; add scoped semantic attention; retain scoped pass runbooks; expose deterministic guard capabilities; add semantic quality report; trace agent capability calls; route agent passes through Pi and ACPX; add bounded agent execution path; expose cited agent operation endpoint; complete core operation handlers; unified ingest queue for dreaming and agentic dreaming [wip].
 - Bug fixes: defer hygiene scan from startup to first check tick; flock-based single-instance enforcement; gate native embedding warmup on provider=native; remove WAL checkpoint from startup recovery; make startup recovery fully synchronous; resolve sqlite-vec extension for bun global native binary installs; address code quality review — unused import/variable, dead comparison; critical recovery fixes — WAL checkpoint, migration guard; extend startup deadline and poll /health/live for liveness; re-check pressure before embedding tracker write; harden pressure signal purity and fix test leak; gate similarity route by memory lifecycle; invalidate stale derived snapshots; protect semantic claim projections; treat identity context as optional; defer low-volume consolidation safely; join concurrent dreaming passes; purge derived memories with sources; synchronize semantic memory lifecycle; keep source topology out of constellation; show derived semantic graph in constellation; allow complete benchmark agent passes; configure dreaming pass timeout; preserve active pass during embedding promotion; normalize chat completion endpoints; finalize dreaming after capture indexing; ingest dreaming sessions as episodic evidence; scope Dreaming status polling; preserve catalog metadata for compatible targets; prioritize material evidence changes; upgrade Pi agent runtime; centralize Zod compatibility boundary; expose ontology operation contracts; bound daemon agent tool calls; satisfy capability result contract; preserve Dreaming source provenance; resume oversized episodic evidence; retain rejected agent evidence; integrate first episodic backfill; retain rejected operation evidence; quarantine oversized episodic evidence; use persistent time-based retry backoff; isolate orphan cleanup to purge targets; exclude skill topology from context; preserve derived provenance boundary; route concrete diagnostics handlers; drop retired extraction worker asset; deduplicate temporal evidence; exclude archived episodic evidence; preserve empty initial cursor; retain cursor across idle passes; retain repeated compaction artifacts; offer applicable semantic operations; emit direct ontology payloads; purge Dreaming-derived semantic rows on disconnect; retire pre-existing pending legacy extract jobs on Dreaming cutover; gate legacy extract enqueue when Dreaming owns semantic writes; stamp derived semantics with configured source entry id; validate explicit evidence provenance; claim apply ownership before side effects; authorize and scope agentic routes; retain legacy state and bind plans to leases; preserve forgotten-source cancellation after rebase; escape table-cell backslashes.
@@ -33,11 +36,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: absolutize native smoke binary override path.
 - Docs: add plan-driven setup redesign draft spec.
 
-### 2026-07-26
-- Features: show ASCII brand banner on bare signet invocation.
-- Bug fixes: refuse migration on vec dimension mismatch + harden backfill; add migration backfill; guard checkInference and complete workload-state contract; separate extraction workload state.
-
 ## Release Ledger
+
+## [0.159.10] - 2026-08-05
+
+Release summary: 1 bug fix.
+Tag range: `v0.159.9..v0.159.10`.
+
+### Bug Fixes
+
+- **dreaming**: let the agent cite and mint hygiene attention provenance (#1069)
 
 ## [0.159.9] - 2026-08-04
 
