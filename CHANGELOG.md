@@ -7,6 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-05
+- Features: bounded agent surface — lean prompt, 11 tools, flag ops, search-on-demand.
 - Bug fixes: accept redundant selectors that name the flagged entity in hygiene archives; stop surfacing the retired extraction pipeline in status output; let the agent cite and mint hygiene attention provenance.
 
 ### 2026-08-04
@@ -37,6 +38,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: add plan-driven setup redesign draft spec.
 
 ## Release Ledger
+
+## [0.160.0] - 2026-08-05
+
+Release summary: 1 feature.
+Tag range: `v0.159.12..v0.160.0`.
+
+### Features
+
+- **dreaming**: bounded agent surface — lean prompt, 11 tools, flag ops, search-on-demand
 
 ## [0.159.12] - 2026-08-05
 
