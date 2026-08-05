@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-05
-- Features: raise the pass timeout to 10 minutes; one universe pass over every agent scope, agentId threaded per operation; bounded agent surface — lean prompt, 11 tools, flag ops, search-on-demand.
+- Features: disable stub nav tabs and secrets gate, rename account label; secrets vault, data-driven daily brief, and parity polish; replace Svelte dashboard with React + shadcn/ui; raise the pass timeout to 10 minutes; one universe pass over every agent scope, agentId threaded per operation; bounded agent surface — lean prompt, 11 tools, flag ops, search-on-demand.
 - Bug fixes: cap concurrent prompt-submit work with 503 backpressure; bound dreaming agent-scope discovery and halt after repeated failures; hoist entity-context hot paths; stop skill reconciler hot-loop; retire LLM enrichment, agent-scope entity names; synthesize a default policy when none is configured; never use the harness name as an agent scope; scan recent sources before narrowing — ingest steps list new evidence first; accept ids in get_evidence claim paths and derive citation kind/id from source_ref; accept redundant selectors that name the flagged entity in hygiene archives; stop surfacing the retired extraction pipeline in status output; let the agent cite and mint hygiene attention provenance.
 
 ### 2026-08-04
@@ -38,6 +38,17 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: add plan-driven setup redesign draft spec.
 
 ## Release Ledger
+
+## [0.162.0] - 2026-08-05
+
+Release summary: 3 features.
+Tag range: `v0.161.4..v0.162.0`.
+
+### Features
+
+- **dashboard**: disable stub nav tabs and secrets gate, rename account label
+- **dashboard**: secrets vault, data-driven daily brief, and parity polish
+- **dashboard**: replace Svelte dashboard with React + shadcn/ui (#948)
 
 ## [0.161.4] - 2026-08-05
 
