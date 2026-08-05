@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-08-05
 - Features: raise the pass timeout to 10 minutes; one universe pass over every agent scope, agentId threaded per operation; bounded agent surface — lean prompt, 11 tools, flag ops, search-on-demand.
-- Bug fixes: scan recent sources before narrowing — ingest steps list new evidence first; accept ids in get_evidence claim paths and derive citation kind/id from source_ref; accept redundant selectors that name the flagged entity in hygiene archives; stop surfacing the retired extraction pipeline in status output; let the agent cite and mint hygiene attention provenance.
+- Bug fixes: synthesize a default policy when none is configured; never use the harness name as an agent scope; scan recent sources before narrowing — ingest steps list new evidence first; accept ids in get_evidence claim paths and derive citation kind/id from source_ref; accept redundant selectors that name the flagged entity in hygiene archives; stop surfacing the retired extraction pipeline in status output; let the agent cite and mint hygiene attention provenance.
 
 ### 2026-08-04
 - Features: automatic startup recovery for crash-loop damage; startup grace period to prevent worker thundering herd; gate all background workers on system pressure; system-pressure signal and yielding write-batch primitive; queue auditable graph hygiene; materialize attributes as semantic memories; measure semantic structure quality; add scoped semantic attention; retain scoped pass runbooks; expose deterministic guard capabilities; add semantic quality report; trace agent capability calls; route agent passes through Pi and ACPX; add bounded agent execution path; expose cited agent operation endpoint; complete core operation handlers; unified ingest queue for dreaming and agentic dreaming [wip].
@@ -38,6 +38,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: add plan-driven setup redesign draft spec.
 
 ## Release Ledger
+
+## [0.161.2] - 2026-08-05
+
+Release summary: 2 bug fixes.
+Tag range: `v0.161.1..v0.161.2`.
+
+### Bug Fixes
+
+- **routing**: synthesize a default policy when none is configured (#1072)
+- **hermes**: never use the harness name as an agent scope (#1084)
 
 ## [0.161.1] - 2026-08-05
 
