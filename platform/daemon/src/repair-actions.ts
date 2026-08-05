@@ -2350,7 +2350,7 @@ export function cancelObsoleteJobs(
 			targets.push({ table: "memory_jobs", rows: r.rows, totalMatching: r.totalMatching });
 			remaining = Math.max(0, remaining - r.rows.length);
 		}
-		if (wantsSummary && remaining > 0) {
+		if (wantsSummary) {
 			const r = buildCancelPruneSql(db, "summary_jobs", ["dead", "completed"], {
 				...selection,
 				maxBatch: remaining,
@@ -2497,7 +2497,6 @@ export function pruneTerminalJobs(
 		// never exceed the requested blast radius (issue #1053).
 		let remaining = Math.min(options.maxBatch ?? MAX_BATCH_HARD_CAP, MAX_BATCH_HARD_CAP);
 		for (const t of targets) {
-			if (remaining <= 0) break;
 			const selection: JobFilterOptions = {
 				...options,
 				olderThanMs: t.cutoff,

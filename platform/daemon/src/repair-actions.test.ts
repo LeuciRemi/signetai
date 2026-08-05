@@ -588,6 +588,7 @@ describe("repair --max-batch aggregate cap (#1053)", () => {
 
 			expect(result.success).toBe(true);
 			expect(result.affected).toBe(0);
+			expect(result.totalMatching).toBe(2002);
 			expect(result.preview?.length ?? 0).toBeLessThanOrEqual(50);
 			// Preview ids come only from the memory queue (the first table),
 			// matching the apply-time selection order.
@@ -650,6 +651,7 @@ describe("repair --max-batch aggregate cap (#1053)", () => {
 
 			expect(result.success).toBe(true);
 			expect(result.affected).toBe(0);
+			expect(result.totalMatching).toBe(2002);
 			expect(result.preview?.length ?? 0).toBeLessThanOrEqual(50);
 			expect(result.preview?.every((id) => id.startsWith("memory_jobs:mem-job-"))).toBe(true);
 			expect(countMemoryByStatus("dead")).toBe(1001);
