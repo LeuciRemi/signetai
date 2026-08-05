@@ -251,7 +251,9 @@ describe("compiled native embedding runtime", () => {
 				expect(dashboard.headers.get("content-type")).toContain("text/html");
 				const dashboardHtml = await dashboard.text();
 				expect(dashboardHtml.toLowerCase()).toContain("<!doctype html>");
-				expect(dashboardHtml).toContain("/_app/immutable/");
+				// React dashboard (Vite) serves root-relative hashed assets; the
+				// SvelteKit marker ("/_app/immutable/") was retired with #948.
+				expect(dashboardHtml).toContain("/assets/");
 
 				const db = new Database(join(workspace, "memory", "memories.db"), { readonly: true });
 				const applied = db.query("SELECT version FROM schema_migrations ORDER BY version").all() as Array<{
