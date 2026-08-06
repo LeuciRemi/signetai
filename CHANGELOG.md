@@ -7,6 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-06
+- Features: add GET /api/mode environment probe.
 - Bug fixes: sanitize auth env values; honor native embedding fallback; formal TTL-eviction lifecycle — checkpoint + idempotent finalization (#902); reflect live agent and pipeline state.
 - Refactoring: extract shared Signet runtime env builder; extract shared small helpers used by harness connectors (#957).
 
@@ -38,6 +39,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: resolve wrapper entry after skipped postinstall; harden desktop runtime migration; migrate stale desktop runtimes; remove session synthesis routing.
 
 ## Release Ledger
+
+## [0.164.0] - 2026-08-06
+
+Release summary: 1 feature.
+Tag range: `v0.163.19..v0.164.0`.
+
+### Features
+
+- **daemon**: add GET /api/mode environment probe
 
 ## [0.163.19] - 2026-08-06
 
