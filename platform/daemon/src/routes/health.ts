@@ -17,6 +17,7 @@ import {
 	AGENTS_DIR,
 	CURRENT_VERSION,
 	PORT,
+	authConfig,
 	getCurrentAgentsDir,
 	getExtractionWorkloadState,
 	providerRuntimeResolution,
@@ -279,5 +280,15 @@ export function mountHealthRoutes(app: Hono): void {
 
 	app.get("/api/features", (c) => {
 		return c.json(getAllFeatureFlags());
+	});
+
+	// Environment probe (issue #1001): deliberately lightweight and
+	// unauthenticated so the dashboard can distinguish "talking to a real
+	// daemon" (any hostname: localhost, Tailscale, .local, tunnel, LAN IP)
+	// from the marketing site or cloud app. `mode` reflects the daemon's
+	// auth mode; `requiresAuth` reflects whether data endpoints require a
+	// token in that mode.
+	app.get("/api/mode", (c) => {
+		return c.json({ mode: authConfig.mode, requiresAuth: authConfig.mode !== "local" });
 	});
 }
