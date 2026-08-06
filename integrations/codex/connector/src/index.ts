@@ -14,11 +14,7 @@ import {
 	resolveSignetCliCommand,
 	resolveSignetMcpCommand,
 } from "@signet/connector-base";
-import {
-	expandHome,
-	resolvePromptSubmitTimeoutMs,
-	resolveSessionStartTimeoutMs,
-} from "@signet/core";
+import { expandHome, resolvePromptSubmitTimeoutMs, resolveSessionStartTimeoutMs } from "@signet/core";
 
 export type SignetMcpConfig =
 	| { readonly command: string; readonly args: readonly string[] }

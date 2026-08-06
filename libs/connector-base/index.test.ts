@@ -511,6 +511,12 @@ describe("buildSignetRuntimeEnv", () => {
 		expect(buildSignetRuntimeEnv()).toEqual({ SIGNET_API_KEY: "token" });
 	});
 
+	it("strips embedded CR/LF from auth values before building the runtime env", () => {
+		process.env.SIGNET_API_KEY = " api\r\nkey ";
+		process.env.SIGNET_TOKEN = "token";
+		expect(buildSignetRuntimeEnv()).toEqual({ SIGNET_API_KEY: "apikey" });
+	});
+
 	it("omits the daemon URL unless explicitly set", () => {
 		expect(buildSignetRuntimeEnv()).not.toHaveProperty("SIGNET_DAEMON_URL");
 		process.env.SIGNET_DAEMON_URL = "http://daemon.local:3850";
