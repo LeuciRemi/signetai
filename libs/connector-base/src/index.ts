@@ -378,6 +378,36 @@ export function resolveSignetApiKey(): string | undefined {
 	return readManagedTrimmedEnv("SIGNET_API_KEY") ?? readManagedTrimmedEnv("SIGNET_TOKEN");
 }
 
+/**
+ * Build the standard Signet runtime env map for spawned processes, preserving
+ * "only set what is present" semantics: SIGNET_PATH only when a basePath is
+ * passed, SIGNET_DAEMON_URL only when explicitly configured, and the
+ * SIGNET_API_KEY ?? SIGNET_TOKEN fallback. Shared by harness connectors
+ * (forge, opencode, codex, hermes-agent) so the API-key/token precedence
+ * contract has one owner (#955).
+ */
+export function buildSignetRuntimeEnv(opts: { readonly basePath?: string } = {}): Record<string, string> {
+	const env: Record<string, string> = {};
+	if (opts.basePath) env.SIGNET_PATH = opts.basePath;
+	const daemonUrl = readManagedTrimmedEnv("SIGNET_DAEMON_URL");
+	const apiKey = resolveSignetApiKey();
+	const agentId = readManagedTrimmedEnv("SIGNET_AGENT_ID");
+	if (daemonUrl) env.SIGNET_DAEMON_URL = resolveSignetDaemonUrl();
+	if (apiKey) env.SIGNET_API_KEY = apiKey;
+	if (agentId) env.SIGNET_AGENT_ID = agentId;
+	return env;
+}
+
+/**
+ * Resolve the remote daemon URL for MCP/HTTP configs, or null when
+ * SIGNET_DAEMON_URL is not explicitly set. Unlike `resolveSignetDaemonUrl()`
+ * (which always returns a URL), this honors the "explicit remote only"
+ * contract connectors rely on (#955).
+ */
+export function resolveRemoteDaemonUrl(): string | null {
+	return readManagedTrimmedEnv("SIGNET_DAEMON_URL") ? resolveSignetDaemonUrl() : null;
+}
+
 export function buildManagedExtensionEnvBootstrap(env: {
 	readonly signetPath: string;
 	readonly daemonUrl: string;
