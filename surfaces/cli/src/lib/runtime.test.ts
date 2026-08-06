@@ -10,16 +10,15 @@ import {
 	didLaunchdDaemonStart,
 	didSystemdDaemonStart,
 	getDaemonStatus,
+	isDaemonEntrypointEnvironment,
 	isLaunchdDaemonLoaded,
 	launchdDaemonPlistPath,
 	macOSLaunchAgentAttributionNotice,
 	readDaemonStartFailureDiagnostics,
 	readManagedDaemonPid,
-	rebindDaemonIfNeeded,
 	resolveDaemonLaunchCommand,
 	resolveDaemonPaths,
 	resolveDaemonRuntimeCommand,
-	shouldRebindDaemon,
 } from "./runtime.js";
 
 const originalFetch = globalThis.fetch;
@@ -35,43 +34,10 @@ describe("resolveDaemonPaths", () => {
 	});
 });
 
-describe("daemon installation ownership", () => {
-	it("rebinds an npm-launched daemon when the native CLI is now active", () => {
-		const nativeExecutable = "/Users/test/.local/bin/signet";
-		const npmExecutable = "/opt/homebrew/lib/node_modules/signetai/native/signet";
-
-		expect(shouldRebindDaemon(`${npmExecutable} daemon`, nativeExecutable)).toBe(true);
-		expect(shouldRebindDaemon(`${nativeExecutable} daemon`, nativeExecutable)).toBe(false);
-	});
-
-	it("restarts a mismatched healthy daemon instead of leaving the old install in charge", async () => {
-		const calls: string[] = [];
-		const result = await rebindDaemonIfNeeded("/Users/test/.local/bin/signet", {
-			getDaemonStatus: async () => ({ running: true, pid: 42 }),
-			readCommand: () => "/opt/homebrew/lib/node_modules/signetai/native/signet daemon",
-			stopDaemon: async (pid) => {
-				calls.push(`stop:${pid}`);
-				return true;
-			},
-		});
-
-		expect(result).toBe("restarted");
-		expect(calls).toEqual(["stop:42"]);
-	});
-
-	it("does not restart a daemon already using the current executable", async () => {
-		let stopped = false;
-		const result = await rebindDaemonIfNeeded("/Users/test/.local/bin/signet", {
-			getDaemonStatus: async () => ({ running: true, pid: 42 }),
-			readCommand: () => "/Users/test/.local/bin/signet daemon",
-			stopDaemon: async () => {
-				stopped = true;
-				return true;
-			},
-		});
-
-		expect(result).toBe("already-current");
-		expect(stopped).toBe(false);
+describe("daemon entrypoint ownership", () => {
+	it("accepts the explicit daemon marker and rejects an unmarked CLI environment", () => {
+		expect(isDaemonEntrypointEnvironment("PATH=/usr/bin\u0000SIGNET_DAEMON_ENTRYPOINT=1\u0000")).toBe(true);
+		expect(isDaemonEntrypointEnvironment("PATH=/usr/bin\u0000")).toBe(false);
 	});
 });
 
@@ -312,9 +278,28 @@ describe("readManagedDaemonPid", () => {
 			daemonPaths: ["/opt/signet/dist/daemon.js"],
 			isAlive: () => true,
 			readCmd: () => "bun /opt/signet/dist/daemon.js",
+			readEnv: () => "SIGNET_DAEMON_ENTRYPOINT=1\u0000",
 		});
 
 		expect(pid).toBe(4242);
+
+		rmSync(root, { recursive: true, force: true });
+	});
+
+	it("rejects a daemon-path CLI process without the daemon entrypoint marker", () => {
+		const root = mkdtempSync(join(tmpdir(), "signet-runtime-test-"));
+		const dir = join(root, ".daemon");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "pid"), "6262\n");
+
+		const pid = readManagedDaemonPid(root, {
+			daemonPaths: ["/opt/signet/dist/daemon.js"],
+			isAlive: () => true,
+			readCmd: () => "bun /opt/signet/dist/daemon.js daemon start",
+			readEnv: () => "PATH=/usr/bin\u0000",
+		});
+
+		expect(pid).toBeNull();
 
 		rmSync(root, { recursive: true, force: true });
 	});
@@ -329,6 +314,7 @@ describe("readManagedDaemonPid", () => {
 			daemonPaths: ["/home/nicholai/.bun/install/global/node_modules/signetai/dist/daemon.js"],
 			isAlive: () => true,
 			readCmd: () => "bun /home/nicholai/.bun/install/cache/signetai@0.77.0/node_modules/signetai/dist/daemon.js",
+			readEnv: () => "SIGNET_DAEMON_ENTRYPOINT=1\u0000",
 		});
 
 		expect(pid).toBe(5252);
@@ -347,6 +333,7 @@ describe("readManagedDaemonPid", () => {
 			daemonPaths: ["/opt/signet/dist/daemon.js"],
 			isAlive: () => true,
 			readCmd: () => "/usr/bin/python3 /tmp/something-else.py",
+			readEnv: () => "PATH=/usr/bin\u0000",
 		});
 
 		expect(pid).toBeNull();
