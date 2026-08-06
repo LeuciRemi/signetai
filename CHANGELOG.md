@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-08-06
 - Features: add GET /api/mode environment probe.
-- Bug fixes: stop test temp-dir leak + unblock event loop on locked file reads; sanitize auth env values; honor native embedding fallback; formal TTL-eviction lifecycle — checkpoint + idempotent finalization (#902); reflect live agent and pipeline state.
+- Bug fixes: guard daemon ownership; stop test temp-dir leak + unblock event loop on locked file reads; sanitize auth env values; honor native embedding fallback; formal TTL-eviction lifecycle — checkpoint + idempotent finalization (#902); reflect live agent and pipeline state.
 - Refactoring: extract shared Signet runtime env builder; extract shared small helpers used by harness connectors (#957).
 
 ### 2026-08-05
@@ -39,6 +39,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: resolve wrapper entry after skipped postinstall; harden desktop runtime migration; migrate stale desktop runtimes; remove session synthesis routing.
 
 ## Release Ledger
+
+## [0.164.2] - 2026-08-06
+
+Release summary: 1 bug fix.
+Tag range: `v0.164.1..v0.164.2`.
+
+### Bug Fixes
+
+- **cli**: guard daemon ownership (#1137)
 
 ## [0.164.1] - 2026-08-06
 

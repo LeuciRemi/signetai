@@ -1,6 +1,6 @@
 [package]
 name = "signet-native"
-version = "0.164.1"
+version = "0.164.2"
 edition = "2021"
 license = "Apache-2.0"
 description = "Signet native accelerators (napi-rs)"
