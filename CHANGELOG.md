@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-06
-- Bug fixes: reflect live agent and pipeline state.
+- Bug fixes: honor native embedding fallback; formal TTL-eviction lifecycle — checkpoint + idempotent finalization (#902); reflect live agent and pipeline state.
 
 ### 2026-08-05
 - Features: redesign daily brief generation; disable stub nav tabs and secrets gate, rename account label; secrets vault, data-driven daily brief, and parity polish; replace Svelte dashboard with React + shadcn/ui; raise the pass timeout to 10 minutes; one universe pass over every agent scope, agentId threaded per operation; bounded agent surface — lean prompt, 11 tools, flag ops, search-on-demand.
@@ -37,6 +37,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: resolve wrapper entry after skipped postinstall; harden desktop runtime migration; migrate stale desktop runtimes; remove session synthesis routing.
 
 ## Release Ledger
+
+## [0.163.17] - 2026-08-06
+
+Release summary: 2 bug fixes.
+Tag range: `v0.163.16..v0.163.17`.
+
+### Bug Fixes
+
+- **daemon**: honor native embedding fallback
+- **daemon**: formal TTL-eviction lifecycle — checkpoint + idempotent finalization (#902) (#1127)
 
 ## [0.163.16] - 2026-08-06
 
