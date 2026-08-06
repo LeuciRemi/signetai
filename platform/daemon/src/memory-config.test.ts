@@ -41,6 +41,14 @@ function makeTempAgentsDir(): string {
 	return dir;
 }
 
+function restoreWarmNativeEnv(value: string | undefined): void {
+	if (value === undefined) {
+		Reflect.deleteProperty(process.env, "SIGNET_EMBEDDING_WARM_NATIVE");
+		return;
+	}
+	process.env.SIGNET_EMBEDDING_WARM_NATIVE = value;
+}
+
 describe("loadMemoryConfig", () => {
 	it("prefers agent.yaml embedding settings over config.yaml fallback", () => {
 		const agentsDir = makeTempAgentsDir();
@@ -65,6 +73,64 @@ describe("loadMemoryConfig", () => {
 		expect(cfg.embedding.provider).toBe("ollama");
 		expect(cfg.embedding.model).toBe("all-minilm");
 		expect(cfg.embedding.dimensions).toBe(384);
+	});
+
+	it("parses embedding.warmNative: false as the native kill-switch (#1073)", () => {
+		const agentsDir = makeTempAgentsDir();
+		writeFileSync(
+			join(agentsDir, "agent.yaml"),
+			`embedding:
+  provider: native
+  warmNative: false
+`,
+		);
+
+		const cfg = loadMemoryConfig(agentsDir);
+		expect(cfg.embedding.warmNative).toBe(false);
+	});
+
+	it("parses warmNative without requiring an explicit provider (#1073)", () => {
+		const agentsDir = makeTempAgentsDir();
+		const previous = process.env.SIGNET_EMBEDDING_WARM_NATIVE;
+		try {
+			Reflect.deleteProperty(process.env, "SIGNET_EMBEDDING_WARM_NATIVE");
+			writeFileSync(join(agentsDir, "agent.yaml"), "embedding:\n  warmNative: false\n");
+			expect(loadMemoryConfig(agentsDir).embedding.warmNative).toBe(false);
+		} finally {
+			restoreWarmNativeEnv(previous);
+		}
+	});
+
+	it("defaults warmNative to true when unset (#1073)", () => {
+		const agentsDir = makeTempAgentsDir();
+		writeFileSync(join(agentsDir, "agent.yaml"), "embedding:\n  provider: native\n");
+
+		const cfg = loadMemoryConfig(agentsDir);
+		expect(cfg.embedding.warmNative).toBe(true);
+	});
+
+	it("lets SIGNET_EMBEDDING_WARM_NATIVE override the yaml value (#1073)", () => {
+		const agentsDir = makeTempAgentsDir();
+		writeFileSync(join(agentsDir, "agent.yaml"), "embedding:\n  provider: native\n  warmNative: true\n");
+		const previous = process.env.SIGNET_EMBEDDING_WARM_NATIVE;
+		try {
+			process.env.SIGNET_EMBEDDING_WARM_NATIVE = "0";
+			const cfg = loadMemoryConfig(agentsDir);
+			expect(cfg.embedding.warmNative).toBe(false);
+		} finally {
+			restoreWarmNativeEnv(previous);
+		}
+	});
+
+	it("applies SIGNET_EMBEDDING_WARM_NATIVE when no config file exists (#1073)", () => {
+		const agentsDir = makeTempAgentsDir();
+		const previous = process.env.SIGNET_EMBEDDING_WARM_NATIVE;
+		try {
+			process.env.SIGNET_EMBEDDING_WARM_NATIVE = "0";
+			expect(loadMemoryConfig(agentsDir).embedding.warmNative).toBe(false);
+		} finally {
+			restoreWarmNativeEnv(previous);
+		}
 	});
 
 	it("falls back to AGENT.yaml memory.embeddings when agent.yaml is missing", () => {
