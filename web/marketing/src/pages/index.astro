@@ -3,7 +3,7 @@ import Footer from "../components/Footer.astro";
 import Nav from "../components/Nav.astro";
 import StructuredData from "../components/StructuredData.astro";
 import Benchmark from "../components/landing/Benchmark.astro";
-import CoreCapabilities from "../components/landing/CoreCapabilities.astro";
+import FeatureSections from "../components/landing/FeatureSections.astro";
 import Hero from "../components/landing/Hero.astro";
 import InstallCta from "../components/landing/InstallCta.astro";
 import Showcase from "../components/landing/Showcase.astro";
@@ -14,22 +14,22 @@ const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://signetai.s
 ---
 
 <Base
-  title="SignetAI | Self-Hosted AI Memory for Agents"
-  description="Self-hosted AI memory and portable context for Hermes Agent, OpenClaw, Claude Code, OpenCode, and Codex."
+  title="SignetAI | Local-First Memory &amp; Secrets for AI Agents"
+  description="Portable, source-backed memory and secrets across Claude Code, OpenCode, OpenClaw, Codex, Gemini CLI, Pi, Oh My Pi, and Hermes Agent."
 >
   <StructuredData data={{
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     name: 'SignetAI',
     url: siteUrl,
-    description: "Self-hosted memory and secrets for AI agents. Portable across models and harnesses including Hermes Agent and OpenClaw.",
+    description: "Local-first memory and secrets for AI agents. Portable across models and harnesses including Hermes Agent and OpenClaw.",
   }} />
   <StructuredData data={{
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
     name: 'Signet',
     url: siteUrl,
-    description: "Self-hosted AI memory and portable context for Hermes Agent, OpenClaw, Claude Code, OpenCode, and Codex.",
+    description: "Portable, source-backed memory and secrets across Claude Code, OpenCode, OpenClaw, Codex, Gemini CLI, Pi, Oh My Pi, and Hermes Agent.",
     applicationCategory: 'DeveloperApplication',
     operatingSystem: 'Linux, macOS',
     offers: {
@@ -43,12 +43,11 @@ const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://signetai.s
   <main class="landing-page">
     <Hero />
     <Showcase />
-    <CoreCapabilities />
+    <FeatureSections />
     <Benchmark />
     <InstallCta />
     <Footer />
   </main>
 
-  <script src="../scripts/theme.ts"></script>
   <script src="../scripts/interactions.ts"></script>
 </Base>

@@ -4,6 +4,7 @@ import sitemap from "@astrojs/sitemap";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
 import graphIndex from "./src/integrations/graph-index";
+import rehypeAdmonitions from "./src/lib/rehype-admonitions";
 import remarkMarkdownLinks from "./src/lib/remark-markdown-links";
 import remarkWikilinks from "./src/lib/remark-wikilinks";
 
@@ -12,6 +13,7 @@ export default defineConfig({
 	site: "https://signetai.sh",
 	markdown: {
 		remarkPlugins: [remarkMarkdownLinks, remarkWikilinks],
+		rehypePlugins: [rehypeAdmonitions],
 		shikiConfig: {
 			themes: {
 				light: "github-light",

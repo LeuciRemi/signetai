@@ -1,22 +1,33 @@
 ---
 const stats = [
-  { value: "87.5%", label: "Answer Accuracy", context: "LoCoMo long-conversation benchmark, 8-question full-stack sample" },
-  { value: "100%", label: "Hit@10 Retrieval", context: "Every relevant memory found in the top 10 candidates" },
-  { value: "0.615", label: "MRR", context: "Mean Reciprocal Rank — how high the right answer appears" },
-  { value: "LOCAL", label: "No LLM at Search Time", context: "Retrieval and ranking run entirely on-device" }
+	{
+		value: "97.6%",
+		label: "LongMemEval Answer Accuracy",
+		context:
+			"MemoryBench LongMemEval under the rules profile — averaged across the tracked local and canary score set.",
+	},
+	{
+		value: "LOCAL",
+		label: "No LLM at Search Time",
+		context: "Retrieval and ranking run entirely on-device; search never calls a model.",
+	},
+	{
+		value: "RECEIPT",
+		label: "Verified on a Shared Harness",
+		context: "Scores come from the MemoryBench eval harness with methodology attached — not self-invented numbers.",
+	},
 ];
-
 ---
 
 <section id="benchmark" class="container" style="border-top: 1px solid var(--color-border)">
   <div class="section-header reveal">
     <div class="crosshair"></div>
     <span class="section-label">BENCHMARK</span>
-    <span class="section-index">03 / 04</span>
+    <span class="section-index">06 / 07</span>
   </div>
 
   <p class="lp-label reveal" style="margin-bottom: var(--space-md);">
-    Early results on the LoCoMo long-conversation benchmark. Only local-first, open-source system in the top 10.
+    Signet's latest tracked MemoryBench run averages 97.6% LongMemEval answer accuracy under the rules profile — one of the only local-first memory systems with SOTA recall on a shared, verifiable eval harness.
   </p>
 
   <div class="benchmark-stats reveal">
@@ -30,7 +41,7 @@ const stats = [
   </div>
 
   <p class="benchmark-caveat reveal">
-    Larger evaluation runs in progress. These numbers will change.
+    The rules profile keeps the contract strict: memories are ingested through /api/memory/remember, recalled through /api/memory/recall, and answered from bounded daemon recall results.
   </p>
-  <a href="/docs/benchmarks" class="benchmark-link reveal">Methodology and full results &rarr;</a>
+  <a href="/docs/benchmarking/" class="benchmark-link reveal">Methodology and full results &rarr;</a>
 </section>

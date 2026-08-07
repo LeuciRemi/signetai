@@ -1,9 +1,18 @@
 ---
 import NavSearch from "./NavSearch.tsx";
+
+interface Props {
+	variant?: "floating" | "bar";
+}
+
+const { variant = "floating" } = Astro.props;
 ---
 
 <div id="nav-peek-zone" class="nav-peek-zone" aria-hidden="true"></div>
-<div id="nav-wrapper" class="site-nav-wrapper">
+<div
+  id="nav-wrapper"
+  class:list={["site-nav-wrapper", { "site-nav-wrapper--bar": variant === "bar" }]}
+>
   <nav class="site-nav" aria-label="Primary navigation">
     <a href="/" class="nav-brand" aria-label="Signet home">
       <img src="/Signet-Logo-White.png" alt="" class="nav-brand-logo" width="20" height="20" aria-hidden="true" />
@@ -20,15 +29,6 @@ import NavSearch from "./NavSearch.tsx";
     <div class="nav-divider" aria-hidden="true"></div>
 
     <NavSearch client:idle />
-
-    <div class="nav-theme-switch" role="group" aria-label="Theme mode">
-      <button type="button" class="nav-theme-dot nav-theme-dot--light" data-theme-value="light" aria-pressed="false" aria-label="Light mode">
-        <span class="nav-dot-ring"></span>
-      </button>
-      <button type="button" class="nav-theme-dot nav-theme-dot--dark" data-theme-value="dark" aria-pressed="false" aria-label="Dark mode">
-        <span class="nav-dot-fill"></span>
-      </button>
-    </div>
 
     <a href="/join" class="nav-join">Join</a>
 
@@ -52,14 +52,6 @@ import NavSearch from "./NavSearch.tsx";
         GitHub
         <svg class="nav-mobile-link-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17L17 7M17 7H7M17 7v10"/></svg>
       </a>
-    </div>
-    <div class="nav-mobile-footer">
-      <button type="button" class="nav-mobile-theme-toggle" data-theme-value="light" aria-label="Switch to light mode" aria-pressed="false">
-        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="10" cy="10" r="4"/><path d="M10 1v2M10 17v2M1 10h2M17 10h2M3.93 3.93l1.41 1.41M14.66 14.66l1.41 1.41M3.93 16.07l1.41-1.41M14.66 5.34l1.41-1.41"/></svg>
-      </button>
-      <button type="button" class="nav-mobile-theme-toggle" data-theme-value="dark" aria-label="Switch to dark mode" aria-pressed="false">
-        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M17.29 13.35A8 8 0 116.65 2.71a6 6 0 0010.64 10.64z"/></svg>
-      </button>
     </div>
   </div>
 </div>
@@ -91,43 +83,6 @@ import NavSearch from "./NavSearch.tsx";
     document.documentElement.classList.remove(NAV_OPEN_CLASS);
     menu.setAttribute('aria-hidden', 'true');
     toggle.setAttribute('aria-expanded', 'false');
-  }
-
-  function getCurrentTheme() {
-    return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-  }
-
-  function syncThemeButtons() {
-    const current = getCurrentTheme();
-    document.querySelectorAll<HTMLElement>('[data-theme-value]').forEach((button) => {
-      const value = button.dataset.themeValue;
-      const isActive = value === current;
-      button.classList.toggle('is-active', isActive);
-      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-    });
-  }
-
-  function setThemeFromNav(theme: string) {
-    if (typeof window.setTheme === 'function') {
-      window.setTheme(theme, true);
-    } else {
-      document.documentElement.setAttribute('data-theme', theme);
-      localStorage.setItem('signet-theme', theme);
-    }
-    syncThemeButtons();
-  }
-
-  function bindThemeButtons() {
-    document.querySelectorAll<HTMLElement>('[data-theme-value]').forEach((button) => {
-      if (button.dataset.boundTheme === 'true') return;
-      button.dataset.boundTheme = 'true';
-      button.addEventListener('click', () => {
-        const theme = button.dataset.themeValue;
-        if (!theme) return;
-        setThemeFromNav(theme);
-      });
-    });
-    syncThemeButtons();
   }
 
   function bindNavBehavior() {
@@ -212,8 +167,6 @@ import NavSearch from "./NavSearch.tsx";
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setMobileMenuOpen(false);
     };
-
-    bindThemeButtons();
 
     wrapper.addEventListener('mouseenter', pinVisible);
     wrapper.addEventListener('mouseleave', unpinVisible);

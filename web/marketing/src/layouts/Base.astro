@@ -12,8 +12,7 @@ interface Props {
 
 const SITE_NAME = "SignetAI";
 const DEFAULT_TITLE = "SignetAI | Memory & Secrets Outside the Harness";
-const DEFAULT_DESCRIPTION =
-	"Local-first memory and secrets for AI agents. Portable across models and harnesses.";
+const DEFAULT_DESCRIPTION = "Local-first memory and secrets for AI agents. Portable across models and harnesses.";
 const DEFAULT_IMAGE = "/signetposter-01.jpg";
 
 const {
@@ -92,42 +91,13 @@ const imageUrl = new URL(image, Astro.site ?? "https://signetai.sh");
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
 
-    <!-- Inline theme script prevents flash of wrong theme -->
-    <script is:inline>
-      (function () {
-        const THEME_KEY = 'signet-theme';
-
-        function getSavedTheme() {
-          const saved = localStorage.getItem(THEME_KEY);
-          return saved === 'dark' || saved === 'light' ? saved : null;
-        }
-
-        function applySavedTheme(targetDocument) {
-          const saved = getSavedTheme();
-          if (!saved) return;
-          targetDocument.documentElement.setAttribute('data-theme', saved);
-        }
-
-        applySavedTheme(document);
-
-      })();
-    </script>
   </head>
   <body>
-    <div class="site-canvas-bg" aria-hidden="true">
-      <canvas id="hero-bg-bars"></canvas>
-      <canvas id="ascii-dither"></canvas>
-      <canvas id="latent-topology"></canvas>
-    </div>
-
     <slot />
-
-    <script src="../scripts/canvas-animations.ts"></script>
-    <script src="../scripts/canvas-text-overlays.ts"></script>
 
     <!-- Reddit Pixel Conversion Events -->
     <script>

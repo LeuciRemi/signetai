@@ -10,14 +10,7 @@ export const SECTION_ORDER = [
 ] as const;
 
 /** Sections not shown in the public sidebar */
-const HIDDEN_SECTIONS = new Set([
-	"Specs",
-	"Research",
-	"Architecture",
-	"Development",
-	"Internal",
-	"Other",
-]);
+const HIDDEN_SECTIONS = new Set(["Specs", "Research", "Architecture", "Development", "Internal", "Other"]);
 
 export interface DocNavItem {
 	readonly title: string;
@@ -40,6 +33,18 @@ function sectionRank(section: string): number {
 
 export function toSlug(id: string): string {
 	return id.replace(/\.md$/, "").toLowerCase();
+}
+
+/**
+ * Whether a doc belongs to the public docs surface (sidebar + search).
+ * Specs, research, architecture, and other internal docs stay out of
+ * the public navigation and the site search index.
+ */
+export function isPublicDoc(doc: Pick<CollectionEntry<"docs">, "id" | "data">): boolean {
+	const slug = toSlug(doc.id);
+	if (slug.startsWith("specs/")) return false;
+	const section = doc.data.section ?? "Other";
+	return !HIDDEN_SECTIONS.has(section);
 }
 
 export function buildDocsNav(docs: readonly CollectionEntry<"docs">[]): {

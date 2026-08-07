@@ -7,16 +7,20 @@ import Base from "./Base.astro";
 import "../styles/docs.css";
 import "../styles/graph.css";
 
+interface TocHeading {
+	depth: number;
+	slug: string;
+	text: string;
+}
+
 interface Props {
 	title: string;
 	description?: string;
 	currentSlug?: string;
 	currentSection?: string;
-	toc?: {
-		depth: number;
-		slug: string;
-		text: string;
-	}[];
+	showSidebar?: boolean;
+	wide?: boolean;
+	toc?: TocHeading[];
 	previousDoc?: {
 		title: string;
 		url: string;
@@ -27,26 +31,55 @@ interface Props {
 	};
 }
 
-const { title, description, currentSlug, currentSection, toc, previousDoc, nextDoc } = Astro.props;
+const {
+	title,
+	description,
+	currentSlug,
+	currentSection,
+	showSidebar = true,
+	wide = false,
+	toc,
+	previousDoc,
+	nextDoc,
+} = Astro.props;
 
 const tocHeadings = toc?.filter((h) => h.depth === 2 || h.depth === 3) ?? [];
 const hasToc = tocHeadings.length > 2;
+
+interface TocGroup {
+	slug: string;
+	text: string;
+	subs: { slug: string; text: string }[];
+}
+
+const tocGroups: TocGroup[] = [];
+let currentGroup: TocGroup | null = null;
+for (const h of tocHeadings) {
+	if (h.depth === 2) {
+		currentGroup = { slug: h.slug, text: h.text, subs: [] };
+		tocGroups.push(currentGroup);
+	} else if (h.depth === 3 && currentGroup) {
+		currentGroup.subs.push({ slug: h.slug, text: h.text });
+	}
+}
 ---
 
 <Base title={`${title} — Signet Docs`} description={description}>
-  <Nav />
+  <Nav variant="bar" />
 
   <div class="docs-shell">
-    <div class="docs-content-grid">
+    <div class:list={["docs-content-grid", { "docs-content-grid--no-sidebar": !showSidebar }]}>
       <!-- Left rail: docs nav -->
-      <aside class="docs-rail">
-        <div class="docs-rail-sticky">
-          <Sidebar currentSlug={currentSlug} />
-        </div>
-      </aside>
+      {showSidebar ? (
+        <aside class="docs-rail">
+          <div class="docs-rail-sticky">
+            <Sidebar currentSlug={currentSlug} />
+          </div>
+        </aside>
+      ) : null}
 
       <!-- Main content -->
-      <main class="docs-main">
+      <main class:list={["docs-main", { "docs-main--wide": wide }]}>
         <header class="docs-article-header">
           <p class="docs-kicker">
             <a href="/docs">Docs</a>
@@ -60,9 +93,18 @@ const hasToc = tocHeadings.length > 2;
           <nav class="docs-toc-inline" aria-label="Table of contents">
             <p class="docs-rail-label">On this page</p>
             <ul class="docs-rail-toc-list">
-              {tocHeadings.map((h) => (
-                <li class:list={[{ "docs-rail-toc-sub": h.depth === 3 }]}>
-                  <a href={`#${h.slug}`}>{h.text}</a>
+              {tocGroups.map((g) => (
+                <li class="docs-toc-group">
+                  <a href={`#${g.slug}`} data-toc-link data-toc-h2>{g.text}</a>
+                  {g.subs.length > 0 ? (
+                    <ul class="docs-toc-subs">
+                      {g.subs.map((s) => (
+                        <li>
+                          <a href={`#${s.slug}`} data-toc-link data-toc-sub>{s.text}</a>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -94,24 +136,35 @@ const hasToc = tocHeadings.length > 2;
         <Footer />
       </main>
 
-      <!-- Right rail: TOC + graph -->
+      <!-- Right rail: graph widget + TOC -->
       {hasToc ? (
         <aside class="docs-toc-rail">
           <div class="docs-toc-rail-sticky">
+            {currentSlug ? (
+              <div class="docs-graph-widget">
+                <GraphViewer client:idle currentSlug={currentSlug} collection="docs" mode="local" />
+              </div>
+            ) : null}
+
             <nav aria-label="Table of contents">
               <p class="docs-rail-label">On this page</p>
               <ul class="docs-rail-toc-list">
-                {tocHeadings.map((h) => (
-                  <li class:list={[{ "docs-rail-toc-sub": h.depth === 3 }]}>
-                    <a href={`#${h.slug}`} data-toc-link>{h.text}</a>
+                {tocGroups.map((g) => (
+                  <li class="docs-toc-group">
+                    <a href={`#${g.slug}`} data-toc-link data-toc-h2>{g.text}</a>
+                    {g.subs.length > 0 ? (
+                      <ul class="docs-toc-subs">
+                        {g.subs.map((s) => (
+                          <li>
+                            <a href={`#${s.slug}`} data-toc-link data-toc-sub>{s.text}</a>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </li>
                 ))}
               </ul>
             </nav>
-
-            {currentSlug ? (
-              <GraphViewer client:idle currentSlug={currentSlug} collection="docs" mode="local" />
-            ) : null}
           </div>
         </aside>
       ) : null}
@@ -119,6 +172,46 @@ const hasToc = tocHeadings.length > 2;
   </div>
 
   <script>
+    function initCodeToolbars() {
+      document.querySelectorAll<HTMLPreElement>('.prose pre').forEach((pre) => {
+        if (pre.querySelector('.code-toolbar')) return;
+
+        const code = pre.querySelector('code');
+        const langMatch = code?.className.match(/language-([a-zA-Z0-9_+-]+)/);
+        const lang = langMatch ? langMatch[1] : 'shell';
+
+        const toolbar = document.createElement('div');
+        toolbar.className = 'code-toolbar';
+
+        const langLabel = document.createElement('span');
+        langLabel.className = 'code-toolbar-lang';
+        langLabel.textContent = lang;
+
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'code-copy';
+        copy.textContent = 'Copy';
+        copy.setAttribute('aria-label', 'Copy code block');
+        copy.addEventListener('click', async () => {
+          const text = code?.textContent ?? '';
+          try {
+            await navigator.clipboard.writeText(text);
+            copy.textContent = 'Copied';
+            copy.classList.add('is-copied');
+            setTimeout(() => {
+              copy.textContent = 'Copy';
+              copy.classList.remove('is-copied');
+            }, 1500);
+          } catch {
+            copy.textContent = 'Copy';
+          }
+        });
+
+        toolbar.append(langLabel, copy);
+        pre.prepend(toolbar);
+      });
+    }
+
     function initDocsScrollSpy() {
       const links = document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]');
       if (!links.length) return;
@@ -153,6 +246,13 @@ const hasToc = tocHeadings.length > 2;
             active = next;
           }
         }
+
+        // Expand only the group containing the active heading (H2-only default).
+        document.querySelectorAll<HTMLElement>('.docs-toc-group').forEach((group) => {
+          const hasActive =
+            group.querySelector<HTMLAnchorElement>(`[data-toc-link][href="#${current}"]`) !== null;
+          group.classList.toggle('is-expanded', hasActive);
+        });
       }
 
       let ticking = false;
@@ -166,7 +266,11 @@ const hasToc = tocHeadings.length > 2;
       update();
     }
 
+    initCodeToolbars();
     initDocsScrollSpy();
-    document.addEventListener('astro:after-swap', initDocsScrollSpy);
+    document.addEventListener('astro:after-swap', () => {
+      initCodeToolbars();
+      initDocsScrollSpy();
+    });
   </script>
 </Base>

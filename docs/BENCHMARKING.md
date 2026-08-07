@@ -1,3 +1,10 @@
+---
+title: "Benchmarks"
+description: "Signet's benchmark harness, methodology, and current LongMemEval score."
+section: "Reference"
+order: 60
+---
+
 # Benchmarking
 
 Signet memory benchmarks run through `memorybench/`. The benchmark harness owns

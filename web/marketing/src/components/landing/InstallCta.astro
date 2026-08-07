@@ -1,49 +1,77 @@
 ---
+const tabs = [
+	{
+		id: "install",
+		label: "01 · Install",
+		lines: [
+			{ type: "cmd", text: "curl -fsSL https://signetai.sh/install.sh | bash" },
+			{ type: "out", text: "✓ binary linked · workspace initialized · daemon started" },
+			{ type: "cmd", text: "signet status" },
+			{ type: "out", text: "● daemon running · memory pipeline healthy" },
+		],
+	},
+	{
+		id: "setup",
+		label: "02 · Setup",
+		lines: [
+			{ type: "cmd", text: "signet setup" },
+			{ type: "out", text: "agent name [atlas]: signet setup --identity-mode off" },
+			{ type: "out", text: "✓ harness detected: claude-code · hooks installed" },
+			{ type: "out", text: "✓ embedding provider: built-in (on-device)" },
+		],
+	},
+	{
+		id: "work",
+		label: "03 · Work",
+		lines: [
+			{ type: "cmd", text: 'signet remember "prefers bun over npm"' },
+			{ type: "out", text: "✓ memory saved · source-backed" },
+			{ type: "cmd", text: 'signet recall "package manager preference"' },
+			{ type: "out", text: "→ prefers bun over npm (source: transcript 2026-08-07)" },
+		],
+	},
+];
 ---
 
-<section id="install" class="container" style="border-top: 1px solid var(--color-border)">
+<section id="install" class="container install-final-section" style="border-top: 1px solid var(--color-border)">
   <div class="section-header reveal">
     <div class="crosshair"></div>
     <span class="section-label">GET STARTED</span>
-    <span class="section-index">04 / 04</span>
+    <span class="section-index">07 / 07</span>
   </div>
 
   <div class="install-final reveal">
     <h2 class="install-final-title">Persistent memory in five minutes.</h2>
+    <p class="install-final-sub">Install the binary, run the wizard, start working. No cloud account, no migration.</p>
 
-    <div class="install-final-grid">
-      <div class="install-final-step">
-        <span class="install-final-num">01</span>
-        <div class="install-final-content">
-          <h3 class="install-final-label">Install</h3>
-          <div class="install-box">
-            <span class="install-prompt">$</span>
-            <span class="install-cmd">curl -fsSL https://signetai.sh/install.sh | bash</span>
-            <button class="copy-btn push-right" data-copy="curl -fsSL https://signetai.sh/install.sh | bash" aria-label="Copy command">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
-            </button>
+    <div class="install-terminal">
+      <div class="install-terminal-tabs" role="tablist" aria-label="Getting started steps">
+        {tabs.map((tab, i) => (
+          <button
+            type="button"
+            class:list={["install-terminal-tab", { active: i === 0 }]}
+            role="tab"
+            aria-selected={i === 0 ? "true" : "false"}
+            data-tab={tab.id}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div class="install-terminal-body">
+        {tabs.map((tab, i) => (
+          <div class:list={["install-terminal-panel", { active: i === 0 }]} data-panel={tab.id} role="tabpanel">
+            {tab.lines.map((line) => (
+              line.type === "cmd" ? (
+                <div class="install-term-cmd">
+                  <span class="install-term-p">$</span> {line.text}
+                </div>
+              ) : (
+                <div class="install-term-out">{line.text}</div>
+              )
+            ))}
           </div>
-          <span class="install-final-alt">same binary via package managers: <code>npm i -g signetai</code> or <code>bun add -g signetai</code></span>
-        </div>
-      </div>
-
-      <div class="install-final-step">
-        <span class="install-final-num">02</span>
-        <div class="install-final-content">
-          <h3 class="install-final-label">Setup</h3>
-          <p class="install-final-desc">Run <code>signet setup</code>, pick your harness, and the daemon starts automatically. Memory hooks and workspace files are configured.</p>
-        </div>
-      </div>
-
-      <div class="install-final-step">
-        <span class="install-final-num">03</span>
-        <div class="install-final-content">
-          <h3 class="install-final-label">Work</h3>
-          <p class="install-final-desc">Open your coding agent and start a session. Memory extraction happens automatically. Next session, context is already there.</p>
-        </div>
+        ))}
       </div>
     </div>
 
@@ -65,14 +93,18 @@
 </section>
 
 <script>
-  document.querySelectorAll('.copy-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const text = btn.getAttribute('data-copy');
-      if (text) {
-        await navigator.clipboard.writeText(text);
-        btn.classList.add('is-copied');
-        setTimeout(() => btn.classList.remove('is-copied'), 1500);
-      }
+  document.querySelectorAll('.install-terminal-tabs').forEach((tabGroup) => {
+    const tabs = tabGroup.querySelectorAll('.install-terminal-tab');
+    const panels = tabGroup.parentElement.querySelectorAll('.install-terminal-panel');
+
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach((t) => {
+          t.classList.toggle('active', t === tab);
+          t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+        });
+        panels.forEach((p) => p.classList.toggle('active', p.dataset.panel === tab.dataset.tab));
+      });
     });
   });
 </script>

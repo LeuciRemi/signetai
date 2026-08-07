@@ -12,6 +12,8 @@ const specsSection = sections.find((section) => section.label === "Specs");
 <Docs
   title="Documentation"
   description="Everything you need to install, operate, and extend Signet."
+  showSidebar={false}
+  wide
 >
   <section class="docs-hub">
     <p>
@@ -24,16 +26,13 @@ const specsSection = sections.find((section) => section.label === "Specs");
         <section class="docs-hub-card">
           <h2>{section.label}</h2>
           <ul>
-            {section.items.slice(0, 5).map((item) => (
+            {section.items.map((item) => (
               <li>
                 <a href={item.url}>{item.title}</a>
                 {item.description ? <p>{item.description}</p> : null}
               </li>
             ))}
           </ul>
-          {section.items.length > 5 ? (
-            <p class="docs-hub-more">+ {section.items.length - 5} more pages</p>
-          ) : null}
         </section>
       ))}
     </div>

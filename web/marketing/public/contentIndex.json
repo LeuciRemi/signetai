@@ -64,7 +64,7 @@
     "collection": "docs"
   },
   "docs/benchmarking": {
-    "title": "benchmarking",
+    "title": "Benchmarks",
     "url": "/docs/benchmarking/",
     "tags": [],
     "links": [],
@@ -246,7 +246,6 @@
       "docs/daemon",
       "docs/pipeline",
       "docs/configuration",
-      "docs/knowledge-architecture",
       "docs/api"
     ],
     "collection": "docs"

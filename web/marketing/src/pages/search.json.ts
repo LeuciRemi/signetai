@@ -1,5 +1,6 @@
 import { getCollection } from "astro:content";
 import type { APIContext } from "astro";
+import { isPublicDoc } from "../lib/docs-nav";
 import { buildBlogSearchItems, buildDocSearchItems } from "../lib/search-index";
 
 export const prerender = true;
@@ -8,7 +9,9 @@ export async function GET(_context: APIContext) {
 	const docs = await getCollection("docs");
 	const blog = await getCollection("blog");
 
-	const docIndex = (await Promise.all(docs.filter((doc) => doc.data.title).map(buildDocSearchItems))).flat();
+	const docIndex = (
+		await Promise.all(docs.filter((doc) => doc.data.title && isPublicDoc(doc)).map(buildDocSearchItems))
+	).flat();
 
 	const blogIndex = blog.filter((post) => !post.data.draft).flatMap(buildBlogSearchItems);
 
