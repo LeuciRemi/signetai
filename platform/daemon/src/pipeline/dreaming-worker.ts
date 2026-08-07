@@ -8,6 +8,7 @@ import type { DreamingConfig } from "@signet/core";
 import type { DbAccessor } from "../db-accessor";
 import { getQueueHealth } from "../diagnostics";
 import { getOrCreateInferenceRouter } from "../inference-router";
+import type { GraphHygieneCaps } from "../knowledge-graph-hygiene";
 import { logger } from "../logger";
 import { isSystemPressureHigh } from "../system-pressure";
 import {
@@ -166,6 +167,7 @@ export function startDreamingWorker(
 	agentsDir: string,
 	defaultAgentId: string,
 	options: DreamingWorkerOptions = {},
+	caps?: GraphHygieneCaps,
 ): DreamingWorkerHandle {
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let active = false;
@@ -267,6 +269,7 @@ export function startDreamingWorker(
 			passScopes,
 			mode,
 			existingPassId,
+			caps,
 		);
 		activePassPromise = p;
 		try {
@@ -300,7 +303,7 @@ export function startDreamingWorker(
 			// episodic backlog read on every sweep: skip straight past it.
 			if (isDreamingHaltActive(accessor, scopeId)) continue;
 			try {
-				enqueueDreamingHygieneAttention(accessor, scopeId);
+				enqueueDreamingHygieneAttention(accessor, scopeId, undefined, caps);
 				const episodicTokens = getDreamingEpisodicTokenBacklog(accessor, scopeId);
 				if (!shouldTriggerDreaming(accessor, cfg, scopeId, Date.now(), episodicTokens)) continue;
 				triggered = true;
@@ -401,6 +404,7 @@ export function startDreamingWorker(
 				getDreamingWorkerAgentIds(accessor, defaultAgentId),
 				mode,
 				passId,
+				caps,
 			);
 			activePassPromise = p;
 			p.catch((e) => {

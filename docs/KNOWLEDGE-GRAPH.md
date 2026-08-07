@@ -225,6 +225,7 @@ The control plane applies or proposes graph operations such as:
 - `update_link`
 - `archive_link`
 - `merge_entities`
+- `merge_aspects`
 - `supersede_claim_value`
 - policy, action type, and interface operations
 

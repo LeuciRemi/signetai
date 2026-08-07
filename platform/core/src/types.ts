@@ -278,6 +278,8 @@ export interface PipelineTraversalConfig {
 	readonly primary: boolean;
 	readonly maxAspectsPerEntity: number;
 	readonly maxAttributesPerAspect: number;
+	readonly maxWriteAspectsPerEntity: number;
+	readonly maxWriteAttributesPerAspect: number;
 	readonly maxDependencyHops: number;
 	readonly minDependencyStrength: number;
 	readonly maxBranching: number;
@@ -879,6 +881,7 @@ export const ONTOLOGY_PROPOSAL_OPERATIONS = [
 	"update_link",
 	"archive_link",
 	"merge_entities",
+	"merge_aspects",
 	"supersede_claim_value",
 	"create_policy",
 	"create_action_type",

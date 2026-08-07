@@ -173,7 +173,8 @@ export type SupersedeMemoryTxStatus =
 	| "target_deleted"
 	| "self_supersede"
 	| "scope_mismatch"
-	| "already_superseded";
+	| "already_superseded"
+	| "already_superseded_by_other";
 
 export interface SupersedeMemoryTxResult {
 	status: SupersedeMemoryTxStatus;
@@ -713,6 +714,19 @@ export function txSupersedeMemory(db: WriteDb, input: SupersedeMemoryTxInput): S
 			status: "already_superseded",
 			memoryId: input.memoryId,
 			supersededBy: input.supersededBy,
+			currentVersion: existing.version,
+			currentSupersededBy: existing.superseded_by,
+		};
+	}
+	// #1147 review (finding 5): a memory already superseded by a DIFFERENT
+	// successor must not be re-superseded — overwriting the link forks the
+	// chain into two live heads (the previous successor keeps superseded_by
+	// NULL). Reject instead of corrupting lineage.
+	if (existing.superseded_by !== null && existing.superseded_by !== input.supersededBy) {
+		return {
+			status: "already_superseded_by_other",
+			memoryId: input.memoryId,
+			supersededBy: existing.superseded_by,
 			currentVersion: existing.version,
 			currentSupersededBy: existing.superseded_by,
 		};

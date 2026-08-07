@@ -22,7 +22,7 @@ import {
 } from "../knowledge-graph";
 import { getOntologyClaimEvidence } from "../ontology-claim-evidence";
 import { getOntologyLinkEvidence } from "../ontology-link-evidence";
-import { findDuplicateEntityMerges } from "../ontology-proposals";
+import { type GraphWriteCaps, findDuplicateEntityMerges } from "../ontology-proposals";
 import { detectProspectiveContradictionRisk } from "./antonyms";
 import { getDreamingAttentionAcrossScopes, getDreamingAttentionScoped } from "./dreaming-attention";
 import { nextDreamingEvidenceFragment, renderDreamingEvidence } from "./dreaming-evidence";
@@ -199,6 +199,8 @@ export interface CreateDreamingCapabilitiesParams {
 	readonly actor: string;
 	/** Present only for a live Dreaming pass; protects runbook writes. */
 	readonly passId?: string;
+	/** Write-path caps forwarded to applyDreamingOperations. */
+	readonly writeCaps?: GraphWriteCaps;
 	readonly onOperationsApplied?: (
 		result: ApplyDreamingOperationsResult,
 		operations: readonly DreamingOperationRequest[],
@@ -608,6 +610,7 @@ export function createDreamingCapabilities(params: CreateDreamingCapabilitiesPar
 					actor,
 					operations,
 					passId: params.passId,
+					writeCaps: params.writeCaps,
 				});
 				params.onOperationsApplied?.(result, operations);
 				return { ok: result.ok, ...(result.error ? { error: result.error } : {}), items: result.items };

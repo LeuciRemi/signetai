@@ -157,4 +157,76 @@ describe("knowledge graph hygiene report", () => {
 		expect(plan).toContain("SEARCH asp USING INDEX idx_entity_aspects_status (agent_id=? AND entity_id=?)");
 		expect(plan).not.toContain("SEARCH attr USING INDEX idx_entity_attributes_claim_version (agent_id=?)");
 	});
+
+	// #1138: over-cap detectors — the write gate rejects past the cap, so the
+	// hygiene pass must surface the over-cap set for consolidation.
+	function seedAspectWithAttributes(aspectId: string, entityId: string, name: string, count: number): void {
+		getDbAccessor().withWriteTx((db) => {
+			db.prepare(
+				`INSERT INTO entity_aspects
+				 (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
+				 VALUES (?, ?, 'default', ?, ?, 0.5, datetime('now'), datetime('now'))`,
+			).run(aspectId, entityId, name, name.toLowerCase());
+			for (let i = 0; i < count; i++) {
+				db.prepare(
+					`INSERT INTO entity_attributes
+					 (id, aspect_id, agent_id, kind, content, normalized_content, confidence, importance,
+					  status, group_key, claim_key, version, created_at, updated_at)
+					 VALUES (?, ?, 'default', 'fact', ?, ?, 0.9, 0.5, 'active', 'general', ?, 1, datetime('now'), datetime('now'))`,
+				).run(`attr-${aspectId}-${i}`, aspectId, `content ${i}`, `content ${i}`, `key-${i}`);
+			}
+		});
+	}
+
+	test("flags aspects over the attribute cap and entities over the aspect cap", () => {
+		dbPath = makeDbPath();
+		initDbAccessor(dbPath);
+		seedEntity("fat-entity", "Fat Entity", 5);
+		seedEntity("lean-entity", "Lean Entity", 5);
+		seedAspectWithAttributes("fat-aspect", "fat-entity", "status_history", 7);
+		seedAspectWithAttributes("lean-aspect", "lean-entity", "facts", 2);
+		// A second aspect pushes fat-entity over the aspect cap (2 > 1)
+		seedAspectWithAttributes("extra-aspect", "fat-entity", "extra", 1);
+
+		const caps = { maxAspectsPerEntity: 1, maxAttributesPerAspect: 5 };
+		const candidates = getDbAccessor().withReadDb((db) =>
+			getDreamingHygieneCandidatesInDb(db, { agentId: "default", limit: 20, caps }),
+		);
+
+		expect(candidates).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					subjectRef: "aspect:fat-aspect",
+					details: expect.objectContaining({
+						reason: "attribute_over_cap",
+						attributeCount: "7",
+						maxAttributesPerAspect: "5",
+					}),
+				}),
+				expect.objectContaining({
+					subjectRef: "entity:fat-entity",
+					details: expect.objectContaining({
+						reason: "aspect_over_cap",
+						aspectCount: "2",
+						maxAspectsPerEntity: "1",
+					}),
+				}),
+			]),
+		);
+		expect(candidates.some((candidate) => candidate.subjectRef === "aspect:lean-aspect")).toBe(false);
+		expect(candidates.some((candidate) => candidate.subjectRef === "entity:lean-entity")).toBe(false);
+	});
+
+	test("does not emit over-cap candidates when caps are omitted (backward compat)", () => {
+		dbPath = makeDbPath();
+		initDbAccessor(dbPath);
+		seedEntity("fat-entity", "Fat Entity", 5);
+		seedAspectWithAttributes("fat-aspect", "fat-entity", "status_history", 7);
+
+		const candidates = getDbAccessor().withReadDb((db) =>
+			getDreamingHygieneCandidatesInDb(db, { agentId: "default", limit: 20 }),
+		);
+		expect(candidates.some((candidate) => candidate.details.reason === "attribute_over_cap")).toBe(false);
+		expect(candidates.some((candidate) => candidate.details.reason === "aspect_over_cap")).toBe(false);
+	});
 });

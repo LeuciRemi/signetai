@@ -36,7 +36,14 @@ import { enqueueDocumentIngestJob } from "../pipeline";
 import { parseFeedback, recordAgentFeedback } from "../session-memories";
 import { upsertSessionTranscript } from "../session-transcripts";
 import { createTemporalEdgeId, normalizeTemporalTimestamp, validateTemporalTimeOptions } from "../temporal-recall";
-import { txForgetMemory, txIngestEnvelope, txModifyMemory, txRecoverMemory, txSupersedeMemory } from "../transactions";
+import {
+	type SupersedeMemoryTxStatus,
+	txForgetMemory,
+	txIngestEnvelope,
+	txModifyMemory,
+	txRecoverMemory,
+	txSupersedeMemory,
+} from "../transactions";
 import { cacheProjection, computeProjection, computeProjectionForQuery, getCachedProjection } from "../umap-projection";
 import {
 	AGENTS_DIR,
@@ -1129,6 +1136,10 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 			sourceCreatedAt?: string;
 			/** ISO timestamp; due-for-review marker for temporal claims (#945). */
 			reviewAfter?: string;
+			/** Id of the memory this write supersedes (vN -> vN+1 lineage). */
+			supersedes?: string;
+			/** Reason recorded on the superseded memory when supersedes is set. */
+			reason?: string;
 			scope?: string | null;
 			agentId?: string;
 			visibility?: "global" | "private" | "archived";
@@ -1185,6 +1196,10 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 		if (body.reviewAfter !== undefined && !requestedReviewAfter) {
 			return c.json({ error: "reviewAfter must be a valid ISO timestamp" }, 400);
 		}
+		const requestedSupersedes = body.supersedes?.trim();
+		if (body.supersedes !== undefined && !requestedSupersedes) {
+			return c.json({ error: "supersedes must be a memory id" }, 400);
+		}
 		const scope = body.scope ?? null;
 		const rowProvenance = parseRememberRowProvenance(body as Record<string, unknown>);
 		const agentId = resolveAgentId({ agentId: body.agentId, sessionKey: c.req.header("x-signet-session-key") });
@@ -1228,6 +1243,16 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 
 		// --- Auto-chunking for oversized memories ---
 		const guardrails = pipelineCfg.guardrails;
+		// supersedes is only meaningful for a single-row memory: chunked content
+		// produces several rows with no single head id to chain the predecessor
+		// to. Fail loudly instead of silently dropping the lineage request.
+		if (
+			requestedSupersedes !== undefined &&
+			"structured" in body === false &&
+			raw.length > guardrails.maxContentChars
+		) {
+			return c.json({ error: "supersedes cannot be combined with oversized content (auto-chunking)" }, 400);
+		}
 		if ("structured" in body) {
 			if (body.structured == null || typeof body.structured !== "object" || Array.isArray(body.structured)) {
 				return c.json({ error: "structured must be an object with entities and/or aspects arrays" }, 400);
@@ -1516,6 +1541,8 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 			return c.json({ error: "idempotencyKey already used for chunked content" }, 409);
 		}
 
+		let supersededStatus: SupersedeMemoryTxStatus | null = null;
+
 		try {
 			const result = getDbAccessor().withWriteTx((db) => {
 				// Check sourceId-based dedupe first (scope-aware)
@@ -1574,8 +1601,34 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 					inputs: temporalInputs.inputs ?? [],
 					now,
 				});
-				return { deduped: false as const };
+				// #1138: lineage at write time. When the caller names a
+				// supersedes target, mark it superseded in the same tx so the
+				// new row becomes the head of the chain atomically.
+				let superseded: SupersedeMemoryTxStatus | null = null;
+				if (requestedSupersedes !== undefined) {
+					const actor = resolveMutationActor(c, who);
+					const result = txSupersedeMemory(db, {
+						memoryId: requestedSupersedes,
+						supersededBy: id,
+						reason: body.reason ?? null,
+						changedBy: actor.changedBy,
+						changedAt: now,
+						ctx: { actorType: actor.actorType, sessionId: actor.sessionId, requestId: actor.requestId },
+					});
+					// Atomic lineage: an unusable supersedes target fails the
+					// whole write rather than silently producing an orphan. A
+					// target already superseded by a DIFFERENT successor is a
+					// lineage conflict, not idempotence.
+					if (result.status !== "superseded" && result.status !== "already_superseded") {
+						const statusLabel =
+							result.status === "already_superseded_by_other" ? "already superseded by another memory" : result.status;
+						throw new Error(`supersedes target rejected: ${statusLabel}`);
+					}
+					superseded = result.status;
+				}
+				return { deduped: false as const, superseded };
 			});
+			supersededStatus = result.deduped ? null : (result as { superseded: SupersedeMemoryTxStatus | null }).superseded;
 
 			if (result.deduped) {
 				getDbAccessor().withWriteTx((db) =>
@@ -1629,6 +1682,11 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 				}
 			}
 			logger.error("memory", "Failed to save memory", e as Error);
+			if (e instanceof Error && e.message.startsWith("supersedes target rejected:")) {
+				// Distinguish a caller error (bad supersedes target) from a
+				// server fault: the tx rolled back, nothing was written.
+				return c.json({ error: e.message }, 400);
+			}
 			return c.json({ error: "Failed to save memory" }, 500);
 		}
 
@@ -1745,6 +1803,7 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 			// Explicit non-silent indicator: structured input was retained as
 			// episodic evidence but NOT applied to the knowledge graph.
 			structured_applied: false,
+			...(supersededStatus !== null ? { superseded: supersededStatus } : {}),
 		});
 	});
 
@@ -1911,6 +1970,113 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 					requestId: row.request_id ?? undefined,
 				};
 			}),
+		});
+	});
+	// =========================================================================
+	// GET /api/memory/:id/lineage
+	// =========================================================================
+	app.get("/api/memory/:id/lineage", (c) => {
+		const memoryId = c.req.param("id")?.trim();
+		if (!memoryId) return c.json({ error: "memory id is required" }, 400);
+		const limit = Math.min(parseOptionalInt(c.req.query("limit")) ?? 50, 500);
+
+		// Same agent-scope isolation as GET /api/memory/:id: a chain is
+		// only readable by agents permitted to read its members.
+		const sessionKeyRaw = c.req.header("x-signet-session-key");
+		const agentId = resolveAgentId({
+			agentId: c.req.query("agentId") ?? c.req.query("agent_id") ?? c.req.header("x-signet-agent-id"),
+			sessionKey: sessionKeyRaw,
+		});
+		const agentScope = getAgentScope(agentId);
+		const access = buildAgentScopeClause(agentId, agentScope.readPolicy, agentScope.policyGroup);
+
+		type LineageRow = {
+			id: string;
+			content: string;
+			type: string;
+			importance: number;
+			version: number;
+			created_at: string;
+			updated_at: string;
+			superseded_by: string | null;
+			superseded_at: string | null;
+			superseded_reason: string | null;
+		};
+		const selectLineage = (
+			db: { prepare(sql: string): { get(...args: unknown[]): unknown } },
+			id: string,
+		): LineageRow | undefined =>
+			db
+				.prepare(
+					`SELECT m.id, m.content, m.type, m.importance, m.version, m.created_at, m.updated_at,
+					        m.superseded_by, m.superseded_at, m.superseded_reason
+					 FROM memories m
+					 WHERE m.id = ?
+					   AND (m.is_deleted = 0 OR m.is_deleted IS NULL)
+					   ${access.sql}`,
+				)
+				.get(id, ...access.args) as LineageRow | undefined;
+
+		const rows = getDbAccessor().withReadDb((db) => {
+			const head = selectLineage(db, memoryId);
+			if (!head) return [];
+			// #1147 review (finding 9): walk BOTH directions so lineage from
+			// any chain row — including the newest head — resolves the full
+			// history. Forward follows superseded_by to the head; backward
+			// finds rows that this row superseded (superseded_by = this id).
+			// Collect into a map then order oldest -> newest by version.
+			const seen = new Set<string>([head.id]);
+			const byId = new Map<string, LineageRow>([[head.id, head]]);
+			// Forward to the newest head.
+			let current = head;
+			while (current.superseded_by && !seen.has(current.superseded_by) && byId.size < limit) {
+				seen.add(current.superseded_by);
+				const next = selectLineage(db, current.superseded_by);
+				if (!next) break;
+				byId.set(next.id, next);
+				current = next;
+			}
+			// Backward to the oldest predecessor(s).
+			let cursor = head;
+			while (byId.size < limit) {
+				const predecessor = db
+					.prepare(
+						`SELECT m.id, m.content, m.type, m.importance, m.version, m.created_at, m.updated_at,
+						        m.superseded_by, m.superseded_at, m.superseded_reason
+						 FROM memories m
+						 WHERE m.superseded_by = ?
+						   AND (m.is_deleted = 0 OR m.is_deleted IS NULL)
+						   ${access.sql}
+						 ORDER BY m.created_at ASC
+						 LIMIT 1`,
+					)
+					.get(cursor.id, ...access.args) as LineageRow | undefined;
+				if (!predecessor || seen.has(predecessor.id)) break;
+				seen.add(predecessor.id);
+				byId.set(predecessor.id, predecessor);
+				cursor = predecessor;
+			}
+			// Order oldest -> newest by created_at: the superseded row's
+			// version is bumped (v1 -> v2) so version is NOT a reliable chain
+			// order — creation time is.
+			return [...byId.values()].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.version - b.version);
+		});
+
+		return c.json({
+			memoryId,
+			count: rows.length,
+			lineage: rows.map((row) => ({
+				id: row.id,
+				content: row.content,
+				type: row.type,
+				importance: row.importance,
+				version: row.version,
+				createdAt: row.created_at,
+				updatedAt: row.updated_at,
+				supersededBy: row.superseded_by,
+				supersededAt: row.superseded_at,
+				supersededReason: row.superseded_reason,
+			})),
 		});
 	});
 

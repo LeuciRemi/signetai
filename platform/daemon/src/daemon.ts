@@ -56,7 +56,7 @@ import { syncAgentWorkspaces } from "./identity-sync";
 import { type InferenceStatusSummary, getOrCreateInferenceRouter } from "./inference-router.js";
 import { closeInferenceProviderResolver, initInferenceProviderResolver } from "./llm";
 import { logger } from "./logger";
-import { type ResolvedMemoryConfig, loadMemoryConfig } from "./memory-config";
+import { type ResolvedMemoryConfig, graphWriteCaps, loadMemoryConfig } from "./memory-config";
 import { registerGlobalMiddleware } from "./middleware";
 import {
 	type NativeMemoryBridgeHandle,
@@ -1471,19 +1471,26 @@ async function startPipelineRuntime(memoryCfg: ResolvedMemoryConfig, telemetry?:
 
 	if (!pipelinePaused && !memoryCfg.pipelineV2.mutationsFrozen) {
 		try {
-			dreamingWorkerHandle = startDreamingWorker(getDbAccessor(), memoryCfg.dreaming, AGENTS_DIR, defaultAgentId, {
-				acpxMcp: {
-					daemonUrl: `http://${INTERNAL_SELF_HOST}:${PORT}`,
-					authorizationTokenForAgent: (agentId) =>
-						authSecret
-							? createToken(
-									authSecret,
-									{ sub: `dreaming:${agentId}`, role: "agent", scope: { agent: agentId } },
-									Math.max(900, Math.ceil(memoryCfg.dreaming.timeout / 1000) + 60),
-								)
-							: undefined,
+			dreamingWorkerHandle = startDreamingWorker(
+				getDbAccessor(),
+				memoryCfg.dreaming,
+				AGENTS_DIR,
+				defaultAgentId,
+				{
+					acpxMcp: {
+						daemonUrl: `http://${INTERNAL_SELF_HOST}:${PORT}`,
+						authorizationTokenForAgent: (agentId) =>
+							authSecret
+								? createToken(
+										authSecret,
+										{ sub: `dreaming:${agentId}`, role: "agent", scope: { agent: agentId } },
+										Math.max(900, Math.ceil(memoryCfg.dreaming.timeout / 1000) + 60),
+									)
+								: undefined,
+					},
 				},
-			});
+				graphWriteCaps(memoryCfg),
+			);
 			setDreamingWorker(dreamingWorkerHandle);
 		} catch (err) {
 			logger.warn("dreaming", "Failed to start dreaming worker (non-fatal)", {

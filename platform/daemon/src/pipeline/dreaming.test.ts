@@ -308,6 +308,41 @@ describe("Dreaming", () => {
 		);
 	});
 
+	it("enqueues over-cap attention rows when caps are supplied (#1138)", () => {
+		db.prepare(
+			`INSERT INTO entities
+			 (id, name, canonical_name, entity_type, agent_id, mentions, created_at, updated_at)
+			 VALUES ('fat-entity', 'Fat Entity', 'fat entity', 'project', ?, 5, datetime('now'), datetime('now'))`,
+		).run(AGENT);
+		db.prepare(
+			`INSERT INTO entity_aspects
+			 (id, entity_id, agent_id, name, canonical_name, weight, created_at, updated_at)
+			 VALUES ('fat-aspect', 'fat-entity', ?, 'status_history', 'status_history', 0.5, datetime('now'), datetime('now'))`,
+		).run(AGENT);
+		for (let i = 0; i < 7; i++) {
+			db.prepare(
+				`INSERT INTO entity_attributes
+				 (id, aspect_id, agent_id, kind, content, normalized_content, confidence, importance,
+				  status, group_key, claim_key, version, created_at, updated_at)
+				 VALUES (?, 'fat-aspect', ?, 'fact', ?, ?, 0.9, 0.5, 'active', 'general', ?, 1, datetime('now'), datetime('now'))`,
+			).run(`attr-${i}`, AGENT, `content ${i}`, `content ${i}`, `key-${i}`);
+		}
+
+		const caps = { maxAspectsPerEntity: 20, maxAttributesPerAspect: 5 };
+		enqueueDreamingHygieneAttention(accessor, AGENT, 50, caps);
+		expect(getDreamingAttention(accessor, AGENT)).toContainEqual(
+			expect.objectContaining({
+				kind: "hygiene",
+				subjectRef: "aspect:fat-aspect",
+				details: expect.objectContaining({
+					reason: "attribute_over_cap",
+					attributeCount: "7",
+					maxAttributesPerAspect: "5",
+				}),
+			}),
+		);
+	});
+
 	it("reopens duplicate hygiene attention when group membership changes", () => {
 		for (const [id, name] of [
 			["acme-a", "Acme"],

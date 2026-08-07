@@ -132,8 +132,10 @@ export const DEFAULT_PIPELINE_V2: ResolvedPipelineV2Config = {
 	traversal: {
 		enabled: true,
 		primary: true,
-		maxAspectsPerEntity: 10,
-		maxAttributesPerAspect: 20,
+		maxAspectsPerEntity: 20,
+		maxAttributesPerAspect: 50,
+		maxWriteAspectsPerEntity: 20,
+		maxWriteAttributesPerAspect: 50,
 		maxDependencyHops: 10,
 		minDependencyStrength: 0.3,
 		maxBranching: 4,
@@ -664,13 +666,25 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 				traversalRaw?.maxAspectsPerEntity,
 				1,
 				100,
-				d.traversal?.maxAspectsPerEntity ?? 10,
+				d.traversal?.maxAspectsPerEntity ?? 20,
 			),
 			maxAttributesPerAspect: clampPositive(
 				traversalRaw?.maxAttributesPerAspect,
 				1,
 				200,
-				d.traversal?.maxAttributesPerAspect ?? 20,
+				d.traversal?.maxAttributesPerAspect ?? 50,
+			),
+			maxWriteAspectsPerEntity: clampPositive(
+				traversalRaw?.maxWriteAspectsPerEntity,
+				1,
+				50,
+				d.traversal?.maxWriteAspectsPerEntity ?? 20,
+			),
+			maxWriteAttributesPerAspect: clampPositive(
+				traversalRaw?.maxWriteAttributesPerAspect,
+				1,
+				100,
+				d.traversal?.maxWriteAttributesPerAspect ?? 50,
 			),
 			maxDependencyHops: clampPositive(traversalRaw?.maxDependencyHops, 1, 200, d.traversal?.maxDependencyHops ?? 10),
 			minDependencyStrength: clampFraction(
@@ -974,6 +988,18 @@ export function loadDreamingConfig(yaml: Record<string, unknown>): DreamingConfi
 		maxInputTokens: clampWarn("maxInputTokens", raw.maxInputTokens, 8_000, 1_000_000, dd.maxInputTokens),
 		maxOutputTokens: clampWarn("maxOutputTokens", raw.maxOutputTokens, 1_000, 128_000, dd.maxOutputTokens),
 		backfillOnFirstRun: typeof raw.backfillOnFirstRun === "boolean" ? raw.backfillOnFirstRun : dd.backfillOnFirstRun,
+	};
+}
+
+/** Write-path graph caps from the traversal config, with defaults. */
+export function graphWriteCaps(cfg: ResolvedMemoryConfig): {
+	readonly maxAspectsPerEntity: number;
+	readonly maxAttributesPerAspect: number;
+} {
+	const traversal = cfg.pipelineV2.traversal;
+	return {
+		maxAspectsPerEntity: traversal?.maxWriteAspectsPerEntity ?? 20,
+		maxAttributesPerAspect: traversal?.maxWriteAttributesPerAspect ?? 50,
 	};
 }
 

@@ -24,8 +24,9 @@ import {
 	readEpisodicSource,
 	readRecentEpisodicSources,
 } from "../episodic-sources";
-import { getDreamingHygieneCandidatesInDb } from "../knowledge-graph-hygiene";
+import { type GraphHygieneCaps, getDreamingHygieneCandidatesInDb } from "../knowledge-graph-hygiene";
 import { logger } from "../logger";
+import type { GraphWriteCaps } from "../ontology-proposals";
 import { createDreamingAgentTools } from "./dreaming-agent-tools";
 import {
 	type DreamingAttention,
@@ -74,9 +75,14 @@ export interface DreamingState {
 }
 
 /** Queue bounded deterministic graph cleanup work for the next Dreaming pass. */
-export function enqueueDreamingHygieneAttention(accessor: DbAccessor, agentId: string, limit = 50): number {
+export function enqueueDreamingHygieneAttention(
+	accessor: DbAccessor,
+	agentId: string,
+	limit = 50,
+	caps?: GraphHygieneCaps,
+): number {
 	return accessor.withWriteTx((db) => {
-		const candidates = getDreamingHygieneCandidatesInDb(db, { agentId, limit });
+		const candidates = getDreamingHygieneCandidatesInDb(db, { agentId, limit, caps });
 		for (const candidate of candidates) {
 			enqueueDreamingAttentionInTx(db, {
 				agentId,
@@ -629,6 +635,7 @@ An install may have several agent scopes (listed in <agent_scopes> when there is
 2. Query the attention queue (attention_list, kind=hygiene, status=pending). Process ALL pending hygiene records first, before any content work:
    - Inspect the flagged target (get_entity — check aspects, claims, pinned).
    - Archive or merge it, citing its attention id (provenance: "attention:<uuid>", or attention:$<index> for a flag you minted in the same batch).
+   - \`attribute_over_cap\` / \`aspect_over_cap\` flags: the write gate rejects new claims or aspects past the cap, so consolidate the flagged target — merge_aspects to fold over-cap aspects together, supersede_claim_value to collapse duplicate claim keys, archive_claim_value for stale snapshots. Consolidation (merge_aspects) may exceed the attribute cap; it is the remedy the cap forces.
    - If you discover junk the queue did not flag, mint a flag op and archive in the same batch.
 3. Query attention_list with kind=review_due. For expired records, inspect the cited memory with search_evidence using its subjectRef, then supersede the matching active claim with supersede_claim_value. Use the supplied entityId, aspectId, attributeId, and claimKey when present. The replacement must state that the planned event remains unconfirmed; never rewrite it as if the event happened. Cite an exact quote from the original memory. Do not supersede approaching records. When creating or setting a future temporal claim, set payload.reviewAfter to the referenced ISO timestamp.
 4. Only when the hygiene queue is clear: find new evidence since the cutoff. First LIST recent sources with search_evidence — pass since and omit the query so it returns the newest sources; only after seeing what is there, narrow with a query if the list is large. Prefer evidence from completed sessions and their summaries; a transcript with completed: false is mid-stream — defer filing from it and note the deferral in the pass log, because its states may be contradicted by the session's end. For each new source:
@@ -862,6 +869,7 @@ export async function runDreamingAgentPass(
 	scopes: readonly string[],
 	mode: DreamingMode,
 	existingPassId?: string,
+	writeCaps?: GraphWriteCaps,
 ): Promise<{ passId: string; applied: number; skipped: number; failed: number; summary: string }> {
 	const passId = existingPassId ?? createDreamingPass(accessor, agentId, mode);
 	const passStartedAt = new Date().toISOString();
@@ -913,6 +921,7 @@ export async function runDreamingAgentPass(
 			agentId,
 			actor: "dreaming",
 			passId,
+			writeCaps,
 			onOperationsApplied(result, operations) {
 				applyCallbackReported = true;
 				applied += result.items.filter((item) => item.ok).length;

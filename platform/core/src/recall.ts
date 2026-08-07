@@ -164,6 +164,9 @@ export interface RememberRequestOptions {
 	readonly sourceCreatedAt?: string;
 	/** ISO timestamp; due-for-review marker for temporal claims (#945). */
 	readonly reviewAfter?: string;
+	/** Id of the memory this write supersedes. The old row is marked
+	 *  superseded in the same transaction, wiring vN -> vN+1 lineage. */
+	readonly supersedes?: string;
 	readonly hints?: readonly string[];
 	readonly transcript?: string;
 	readonly structured?: unknown;
@@ -464,6 +467,7 @@ export function buildRememberRequestBody(
 		validUntil: options.validUntil,
 		sourceCreatedAt: options.sourceCreatedAt,
 		reviewAfter: options.reviewAfter,
+		supersedes: options.supersedes,
 		hints: options.hints,
 		transcript: options.transcript,
 		structured: normalizeStructuredMemoryPayload(options.structured),

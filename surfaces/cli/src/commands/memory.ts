@@ -46,6 +46,7 @@ export function registerMemoryCommands(program: Command, deps: MemoryDeps): void
 		.option("--valid-from <iso>", "Start of validity window for this memory")
 		.option("--valid-until <iso>", "End of validity window for this memory")
 		.option("--review-after <iso>", "ISO timestamp when this temporal claim becomes due for review (issue #945)")
+		.option("--supersedes <id>", "Id of the memory this write supersedes (wires vN -> vN+1 lineage)")
 		.option("--private", "Set visibility to private", false)
 		.action(async (content: string, options) => {
 			if (!(await deps.ensureDaemonForSecrets())) return;
@@ -67,6 +68,7 @@ export function registerMemoryCommands(program: Command, deps: MemoryDeps): void
 					validFrom: options.validFrom,
 					validUntil: options.validUntil,
 					reviewAfter: options.reviewAfter,
+					supersedes: options.supersedes,
 					visibility: options.private ? "private" : undefined,
 				}),
 			);
