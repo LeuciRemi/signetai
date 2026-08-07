@@ -1720,12 +1720,15 @@ function applyMergeEntities(
 }
 
 /**
- * Fold source aspects into a target aspect on the same entity. All active
- * attributes of each source are repointed to the target, then the source
- * aspect is archived. The merged target may exceed the write-path attribute
- * cap: consolidation is the remedy the cap forces, so it is never blocked by
- * it. Claim-key collisions between source and target are preserved as
- * distinct rows — further dedup is the agent's job via supersede_claim_value.
+ * Fold source aspects into a target aspect on the same entity. Every
+ * attribute row (active, superseded, deleted) of each source is repointed to
+ * the target so claim version history stays with the merged aspect, then the
+ * source aspect is archived. The merged target may exceed the write-path
+ * attribute cap: consolidation is the remedy the cap forces, so it is never
+ * blocked by it. Claim-key collisions between source and target are preserved
+ * as distinct rows — further dedup is the agent's job via
+ * supersede_claim_value. Original proposal attribution on moved rows is
+ * preserved so claim-evidence drill-down still resolves the original write.
  */
 function applyMergeAspects(
 	db: WriteDb,
@@ -1767,15 +1770,19 @@ function applyMergeAspects(
 		if (seen.has(source.id)) continue;
 		seen.add(source.id);
 
+		// #1147 review (findings 10, 11): move EVERY attribute row (active,
+		// superseded, deleted) so version history stays with the merged
+		// aspect, and preserve each row's original proposal_id/proposal_evidence
+		// so claim-evidence drill-down still resolves the original write.
 		const attributes = db
-			.prepare("SELECT id FROM entity_attributes WHERE aspect_id = ? AND agent_id = ? AND status = 'active'")
+			.prepare("SELECT id FROM entity_attributes WHERE aspect_id = ? AND agent_id = ?")
 			.all(source.id, agentId) as Array<{ id: string }>;
 		for (const attribute of attributes) {
 			db.prepare(
 				`UPDATE entity_attributes
-				 SET aspect_id = ?, proposal_id = ?, proposal_evidence = ?, updated_at = datetime('now')
-				 WHERE id = ? AND agent_id = ? AND status = 'active'`,
-			).run(target.id, proposal.id, evidence, attribute.id, agentId);
+				 SET aspect_id = ?, updated_at = datetime('now')
+				 WHERE id = ? AND agent_id = ?`,
+			).run(target.id, attribute.id, agentId);
 		}
 		db.prepare(
 			`UPDATE entity_aspects

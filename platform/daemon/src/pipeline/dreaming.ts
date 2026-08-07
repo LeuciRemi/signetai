@@ -26,6 +26,7 @@ import {
 } from "../episodic-sources";
 import { type GraphHygieneCaps, getDreamingHygieneCandidatesInDb } from "../knowledge-graph-hygiene";
 import { logger } from "../logger";
+import type { GraphWriteCaps } from "../ontology-proposals";
 import { createDreamingAgentTools } from "./dreaming-agent-tools";
 import {
 	type DreamingAttention,
@@ -868,6 +869,7 @@ export async function runDreamingAgentPass(
 	scopes: readonly string[],
 	mode: DreamingMode,
 	existingPassId?: string,
+	writeCaps?: GraphWriteCaps,
 ): Promise<{ passId: string; applied: number; skipped: number; failed: number; summary: string }> {
 	const passId = existingPassId ?? createDreamingPass(accessor, agentId, mode);
 	const passStartedAt = new Date().toISOString();
@@ -919,6 +921,7 @@ export async function runDreamingAgentPass(
 			agentId,
 			actor: "dreaming",
 			passId,
+			writeCaps,
 			onOperationsApplied(result, operations) {
 				applyCallbackReported = true;
 				applied += result.items.filter((item) => item.ok).length;

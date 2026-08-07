@@ -269,6 +269,7 @@ export function startDreamingWorker(
 			passScopes,
 			mode,
 			existingPassId,
+			caps,
 		);
 		activePassPromise = p;
 		try {
@@ -403,6 +404,7 @@ export function startDreamingWorker(
 				getDreamingWorkerAgentIds(accessor, defaultAgentId),
 				mode,
 				passId,
+				caps,
 			);
 			activePassPromise = p;
 			p.catch((e) => {

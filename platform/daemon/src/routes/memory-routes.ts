@@ -1616,9 +1616,13 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 						ctx: { actorType: actor.actorType, sessionId: actor.sessionId, requestId: actor.requestId },
 					});
 					// Atomic lineage: an unusable supersedes target fails the
-					// whole write rather than silently producing an orphan.
+					// whole write rather than silently producing an orphan. A
+					// target already superseded by a DIFFERENT successor is a
+					// lineage conflict, not idempotence.
 					if (result.status !== "superseded" && result.status !== "already_superseded") {
-						throw new Error(`supersedes target rejected: ${result.status}`);
+						const statusLabel =
+							result.status === "already_superseded_by_other" ? "already superseded by another memory" : result.status;
+						throw new Error(`supersedes target rejected: ${statusLabel}`);
 					}
 					superseded = result.status;
 				}
@@ -2016,19 +2020,46 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 		const rows = getDbAccessor().withReadDb((db) => {
 			const head = selectLineage(db, memoryId);
 			if (!head) return [];
-			// Walk the superseded_by chain toward the newest head, then
-			// reverse into oldest -> newest order.
-			const chain: LineageRow[] = [head];
+			// #1147 review (finding 9): walk BOTH directions so lineage from
+			// any chain row — including the newest head — resolves the full
+			// history. Forward follows superseded_by to the head; backward
+			// finds rows that this row superseded (superseded_by = this id).
+			// Collect into a map then order oldest -> newest by version.
 			const seen = new Set<string>([head.id]);
+			const byId = new Map<string, LineageRow>([[head.id, head]]);
+			// Forward to the newest head.
 			let current = head;
-			while (current.superseded_by && !seen.has(current.superseded_by) && chain.length < limit) {
+			while (current.superseded_by && !seen.has(current.superseded_by) && byId.size < limit) {
 				seen.add(current.superseded_by);
 				const next = selectLineage(db, current.superseded_by);
 				if (!next) break;
-				chain.push(next);
+				byId.set(next.id, next);
 				current = next;
 			}
-			return chain.reverse();
+			// Backward to the oldest predecessor(s).
+			let cursor = head;
+			while (byId.size < limit) {
+				const predecessor = db
+					.prepare(
+						`SELECT m.id, m.content, m.type, m.importance, m.version, m.created_at, m.updated_at,
+						        m.superseded_by, m.superseded_at, m.superseded_reason
+						 FROM memories m
+						 WHERE m.superseded_by = ?
+						   AND (m.is_deleted = 0 OR m.is_deleted IS NULL)
+						   ${access.sql}
+						 ORDER BY m.created_at ASC
+						 LIMIT 1`,
+					)
+					.get(cursor.id, ...access.args) as LineageRow | undefined;
+				if (!predecessor || seen.has(predecessor.id)) break;
+				seen.add(predecessor.id);
+				byId.set(predecessor.id, predecessor);
+				cursor = predecessor;
+			}
+			// Order oldest -> newest by created_at: the superseded row's
+			// version is bumped (v1 -> v2) so version is NOT a reliable chain
+			// order — creation time is.
+			return [...byId.values()].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.version - b.version);
 		});
 
 		return c.json({

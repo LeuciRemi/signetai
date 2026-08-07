@@ -317,7 +317,7 @@ describe("memory curator routes", () => {
 		).toEqual({ superseded_by: null });
 	});
 
-	it("walks superseded_by lineage from any row in the chain", async () => {
+	it("walks superseded_by lineage from any row in the chain, oldest first", async () => {
 		seedMemory("mem-gen1", "genesis claim");
 		const app = makeApp();
 		const v2 = await app.request("/api/memory/remember", {
@@ -333,14 +333,61 @@ describe("memory curator routes", () => {
 		});
 		const v3Body = (await v3.json()) as { id: string };
 
-		// Drill from the oldest row: the chain must resolve forward to the head,
-		// newest first (v3 -> v2 -> v1).
-		const res = await app.request(`/api/memory/mem-gen1/lineage`);
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as { count: number; lineage: Array<{ id: string; supersededBy: string | null }> };
-		expect(body.count).toBe(3);
-		expect(body.lineage.map((row) => row.id)).toEqual([v3Body.id, v2Body.id, "mem-gen1"]);
-		expect(body.lineage[0]!.supersededBy).toBeNull();
-		expect(body.lineage[2]!.supersededBy).toBe(v2Body.id);
+		// #1147 review (finding 9): lineage resolves the full chain from ANY
+		// row — including the newest head — ordered oldest -> newest.
+		for (const start of ["mem-gen1", v2Body.id, v3Body.id]) {
+			const res = await app.request(`/api/memory/${start}/lineage`);
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as {
+				count: number;
+				lineage: Array<{ id: string; supersededBy: string | null }>;
+			};
+			expect(body.count).toBe(3);
+			expect(body.lineage.map((row) => row.id)).toEqual(["mem-gen1", v2Body.id, v3Body.id]);
+			expect(body.lineage[0]!.supersededBy).toBe(v2Body.id);
+			expect(body.lineage[2]!.supersededBy).toBeNull();
+		}
+	});
+
+	it("refuses to re-supersede a mid-chain memory with a different successor (no fork)", async () => {
+		seedMemory("mem-a", "genesis");
+		const app = makeApp();
+		// a -> (new v2 memory)
+		const r1 = await app.request("/api/memory/remember", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ content: "b", supersedes: "mem-a" }),
+		});
+		expect(r1.status).toBe(200);
+		const v2Id = ((await r1.json()) as { id: string }).id;
+		// Try to re-supersede a with a fresh memory c: must fail the write,
+		// and a's chain must still point at v2 (no second head).
+		const r2 = await app.request("/api/memory/remember", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ content: "c", supersedes: "mem-a" }),
+		});
+		expect(r2.status).toBe(400);
+		const aRow = getDbAccessor().withReadDb(
+			(db) =>
+				db.prepare("SELECT superseded_by FROM memories WHERE id = 'mem-a'").get("mem-a") as {
+					superseded_by: string | null;
+				},
+		);
+		expect(aRow.superseded_by).toBe(v2Id);
+		// The rejected write must not have created a memory.
+		const cCount = getDbAccessor().withReadDb(
+			(db) => db.prepare("SELECT COUNT(*) AS c FROM memories WHERE content = 'c'").get() as { c: number },
+		);
+		expect(cCount.c).toBe(0);
+		// And the old successor (v2) is still the only head of the chain:
+		// it is not superseded, and nothing else supersedes mem-a.
+		const v2Row = getDbAccessor().withReadDb(
+			(db) =>
+				db.prepare("SELECT superseded_by FROM memories WHERE id = ?").get(v2Id) as {
+					superseded_by: string | null;
+				},
+		);
+		expect(v2Row.superseded_by).toBeNull();
 	});
 });
