@@ -88,17 +88,25 @@ function formatCost(cost: number): string {
 
 /** One-line provider-reported token breakdown, or null when the pass recorded none. */
 function formatTokenUsage(pass: DreamPass): string | null {
-	if (pass.tokensInput == null && pass.tokensConsumed == null) return null;
-	const cost = pass.tokensCost != null ? `  cost ${formatCost(pass.tokensCost)}` : "";
-	return (
-		[
-			`in ${pass.tokensInput ?? 0}`,
-			`out ${pass.tokensOutput ?? 0}`,
-			`cacheRead ${pass.tokensCacheRead ?? 0}`,
-			`cacheWrite ${pass.tokensCacheWrite ?? 0}`,
-			`total ${pass.tokensConsumed ?? pass.tokensInput ?? 0}`,
-		].join("  ") + cost
-	);
+	if (pass.tokensInput != null) {
+		const cost = pass.tokensCost != null ? `  cost ${formatCost(pass.tokensCost)}` : "";
+		return (
+			[
+				`in ${pass.tokensInput}`,
+				`out ${pass.tokensOutput ?? 0}`,
+				`cacheRead ${pass.tokensCacheRead ?? 0}`,
+				`cacheWrite ${pass.tokensCacheWrite ?? 0}`,
+				`total ${pass.tokensConsumed ?? pass.tokensInput}`,
+			].join("  ") + cost
+		);
+	}
+	// No provider breakdown: acpx-backed passes (and pre-upgrade daemons)
+	// only carry the local prompt-token estimate. Label it instead of
+	// zero-filling the breakdown as if the provider reported it.
+	if (pass.tokensConsumed != null && pass.tokensConsumed > 0) {
+		return `total ${pass.tokensConsumed} (prompt estimate)`;
+	}
+	return null;
 }
 
 export function registerDreamCommands(program: Command, deps: DreamDeps): void {
