@@ -92,6 +92,12 @@ export interface DreamingHygieneCandidate {
 	readonly priority: number;
 }
 
+/** Write-path caps that drive the over-cap detectors (#1138). */
+export interface GraphHygieneCaps {
+	readonly maxAspectsPerEntity: number;
+	readonly maxAttributesPerAspect: number;
+}
+
 const GENERIC_ASPECTS = ["general", "properties", "overview", "profile", "details", "information"] as const;
 
 function normalize(value: string): string {
@@ -170,14 +176,83 @@ function membershipDigest(ids: readonly string[]): string {
  */
 export function getDreamingHygieneCandidatesInDb(
 	db: ReadDb,
-	input: { readonly agentId: string; readonly limit?: number },
+	input: { readonly agentId: string; readonly limit?: number; readonly caps?: GraphHygieneCaps },
 ): readonly DreamingHygieneCandidate[] {
 	const limit = Math.min(Math.max(Math.floor(input.limit ?? 50), 1), 100);
+	const caps = input.caps;
 	const candidates = new Map<string, DreamingHygieneCandidate>();
 	const add = (candidate: DreamingHygieneCandidate): void => {
 		const existing = candidates.get(candidate.subjectRef);
 		if (!existing || candidate.priority > existing.priority) candidates.set(candidate.subjectRef, candidate);
 	};
+
+	// #1138: over-cap detectors run first — these are the forcing function's
+	// targets. The write gate rejects new writes past the cap, so the agent
+	// must consolidate these before the graph can keep growing.
+	if (caps !== undefined) {
+		const overCapAspects = db
+			.prepare(
+				`SELECT asp.id, asp.entity_id, asp.name, COUNT(attr.id) AS attribute_count
+				 FROM entity_aspects asp
+				 JOIN entities e ON e.id = asp.entity_id AND e.agent_id = asp.agent_id
+				 LEFT JOIN entity_attributes attr ON attr.aspect_id = asp.id AND attr.agent_id = asp.agent_id AND attr.status = 'active'
+				 WHERE asp.agent_id = ? AND COALESCE(asp.status, 'active') = 'active' AND ${SEMANTIC_ENTITY_FRAGMENT}
+				 GROUP BY asp.id, asp.entity_id, asp.name
+				 HAVING attribute_count > ?
+				 ORDER BY attribute_count DESC
+				 LIMIT ?`,
+			)
+			.all(input.agentId, ...SOURCE_NATIVE_TOPOLOGY_ENTITY_TYPES, caps.maxAttributesPerAspect, limit) as Array<{
+			id: string;
+			entity_id: string;
+			name: string;
+			attribute_count: number;
+		}>;
+		for (const aspect of overCapAspects) {
+			add({
+				subjectRef: `aspect:${aspect.id}`,
+				details: {
+					aspectId: aspect.id,
+					entityId: aspect.entity_id,
+					name: aspect.name,
+					reason: "attribute_over_cap",
+					attributeCount: String(aspect.attribute_count),
+					maxAttributesPerAspect: String(caps.maxAttributesPerAspect),
+				},
+				priority: 100,
+			});
+		}
+
+		const overCapEntities = db
+			.prepare(
+				`SELECT e.id, e.name, COUNT(asp.id) AS aspect_count
+				 FROM entities e
+				 LEFT JOIN entity_aspects asp ON asp.entity_id = e.id AND asp.agent_id = e.agent_id AND COALESCE(asp.status, 'active') = 'active'
+				 WHERE e.agent_id = ? AND COALESCE(e.status, 'active') = 'active' AND ${SEMANTIC_ENTITY_FRAGMENT}
+				 GROUP BY e.id, e.name
+				 HAVING aspect_count > ?
+				 ORDER BY aspect_count DESC
+				 LIMIT ?`,
+			)
+			.all(input.agentId, ...SOURCE_NATIVE_TOPOLOGY_ENTITY_TYPES, caps.maxAspectsPerEntity, limit) as Array<{
+			id: string;
+			name: string;
+			aspect_count: number;
+		}>;
+		for (const entity of overCapEntities) {
+			add({
+				subjectRef: `entity:${entity.id}`,
+				details: {
+					entityId: entity.id,
+					name: entity.name,
+					reason: "aspect_over_cap",
+					aspectCount: String(entity.aspect_count),
+					maxAspectsPerEntity: String(caps.maxAspectsPerEntity),
+				},
+				priority: 95,
+			});
+		}
+	}
 
 	const entities = db
 		.prepare(
