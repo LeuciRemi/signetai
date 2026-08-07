@@ -7,8 +7,8 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-07
-- Features: export session transcripts for training/fine-tuning; supersedes lineage at remember-write time + lineage chain; hygiene over-cap detector flags consolidation targets; merge_aspects consolidation op + bump graph caps to 20/50; write-gate aspect/attribute caps that force supersession; redesign marketing site and docs system; review_after column + store surfaces for temporal-claim expiry (#945).
-- Bug fixes: watermark tracks surfaced evidence; close adversarial-review findings on #1148; surface daemon deaths with lifecycle record, exit-path logs, and concurrency load test; close remaining adversarial-review findings on #1147; close cap bypasses + lineage scope leak found in adversarial review; unshadow Astro home page from stale static index.html; drop vanished native-memory artifacts, back off failed reads (#1142); defer source tombstone cleanup to post-DB-init (#1143); reclaim SQLite free pages via auto_vacuum (#1139); content runbook defers mid-stream transcripts and supersedes contradictions.
+- Features: record provider-reported token usage on dreaming passes; export session transcripts for training/fine-tuning; supersedes lineage at remember-write time + lineage chain; hygiene over-cap detector flags consolidation targets; merge_aspects consolidation op + bump graph caps to 20/50; write-gate aspect/attribute caps that force supersession; redesign marketing site and docs system; review_after column + store surfaces for temporal-claim expiry (#945).
+- Bug fixes: label prompt-estimate tokens instead of zero-filling breakdown; watermark tracks surfaced evidence; close adversarial-review findings on #1148; surface daemon deaths with lifecycle record, exit-path logs, and concurrency load test; close remaining adversarial-review findings on #1147; close cap bypasses + lineage scope leak found in adversarial review; unshadow Astro home page from stale static index.html; drop vanished native-memory artifacts, back off failed reads (#1142); defer source tombstone cleanup to post-DB-init (#1143); reclaim SQLite free pages via auto_vacuum (#1139); content runbook defers mid-stream transcripts and supersedes contradictions.
 
 ### 2026-08-06
 - Features: add GET /api/mode environment probe.
@@ -40,6 +40,19 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Refactoring: focus public Signet language on memory and secrets; merge daemon-hosting and remote-daemon into one prompt; drop the 'Where is Signet running?' prompt from interactive setup; trim background-inference menu to four options; collapse passthrough into off; replace synthesis route with aggregate-recall provider; introduce SetupPlan seam (zod) with --schema introspection.
 
 ## Release Ledger
+
+## [0.168.0] - 2026-08-07
+
+Release summary: 1 feature and 1 bug fix.
+Tag range: `v0.167.0..v0.168.0`.
+
+### Features
+
+- **daemon**: record provider-reported token usage on dreaming passes
+
+### Bug Fixes
+
+- **cli**: label prompt-estimate tokens instead of zero-filling breakdown
 
 ## [0.167.0] - 2026-08-07
 
