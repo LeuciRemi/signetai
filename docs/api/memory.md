@@ -88,6 +88,8 @@ Body-level fields override prefix-parsed values.
   "validFrom": "2026-02-20T00:00:00.000Z",
   "validUntil": "2026-03-01T00:00:00.000Z",
   "reviewAfter": "2026-08-03T00:00:00.000Z",
+  "supersedes": "existing-memory-id",
+  "reason": "newer evidence replaces the old claim",
   "agentId": "alice",
   "visibility": "global"
 }
@@ -117,6 +119,13 @@ valid ISO timestamp; `validUntil` must be after `validFrom` when both are set.
 `reviewAfter` is an optional ISO timestamp for a future temporal claim. Dreaming
 uses it to surface the memory for review after the deadline instead of assuming
 that the planned event occurred.
+
+`supersedes` is an optional memory id. When set, the named memory is marked
+`superseded_by` = the new id in the same transaction (atomic lineage, no
+orphans). The new row becomes the head of a drillable chain; `reason` is
+recorded on the superseded row. A missing or cross-scope supersedes target
+fails the whole write. Chain history is readable from any row via
+`GET /api/memory/:id/lineage`, which walks `superseded_by` links newest-first.
 
 Row-level provenance fields are optional: `sourcePath`/`source_path` stores the
 original source path, `runtimePath`/`runtime_path` stores the runtime-relative
@@ -294,6 +303,32 @@ permission.
       "sessionId": null,
       "requestId": null
     }
+  ]
+}
+```
+
+### GET /api/memory/:id/lineage
+
+Supersession chain for a memory, newest first. Requires `recall` permission.
+Walks `superseded_by` links from any row in the chain to the head, so drilling
+from an old version surfaces the full v3 → v2 → v1 history.
+
+**Query parameters**
+
+| Parameter | Type    | Default | Description              |
+|-----------|---------|---------|--------------------------|
+| `limit`   | integer | 50      | Max chain rows (cap: 500) |
+
+**Response**
+
+```json
+{
+  "memoryId": "old-uuid",
+  "count": 3,
+  "lineage": [
+    { "id": "newest-uuid", "content": "newest claim", "type": "fact", "importance": 0.9, "version": 3, "createdAt": "...", "updatedAt": "...", "supersededBy": null, "supersededAt": null, "supersededReason": null },
+    { "id": "middle-uuid", "content": "middle claim", "type": "fact", "importance": 0.8, "version": 2, "createdAt": "...", "updatedAt": "...", "supersededBy": "newest-uuid", "supersededAt": "...", "supersededReason": "newer evidence" },
+    { "id": "old-uuid", "content": "original claim", "type": "fact", "importance": 0.7, "version": 1, "createdAt": "...", "updatedAt": "...", "supersededBy": "middle-uuid", "supersededAt": "...", "supersededReason": "newer evidence" }
   ]
 }
 ```

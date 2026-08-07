@@ -36,7 +36,14 @@ import { enqueueDocumentIngestJob } from "../pipeline";
 import { parseFeedback, recordAgentFeedback } from "../session-memories";
 import { upsertSessionTranscript } from "../session-transcripts";
 import { createTemporalEdgeId, normalizeTemporalTimestamp, validateTemporalTimeOptions } from "../temporal-recall";
-import { txForgetMemory, txIngestEnvelope, txModifyMemory, txRecoverMemory, txSupersedeMemory } from "../transactions";
+import {
+	type SupersedeMemoryTxStatus,
+	txForgetMemory,
+	txIngestEnvelope,
+	txModifyMemory,
+	txRecoverMemory,
+	txSupersedeMemory,
+} from "../transactions";
 import { cacheProjection, computeProjection, computeProjectionForQuery, getCachedProjection } from "../umap-projection";
 import {
 	AGENTS_DIR,
@@ -1129,6 +1136,10 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 			sourceCreatedAt?: string;
 			/** ISO timestamp; due-for-review marker for temporal claims (#945). */
 			reviewAfter?: string;
+			/** Id of the memory this write supersedes (vN -> vN+1 lineage). */
+			supersedes?: string;
+			/** Reason recorded on the superseded memory when supersedes is set. */
+			reason?: string;
 			scope?: string | null;
 			agentId?: string;
 			visibility?: "global" | "private" | "archived";
@@ -1184,6 +1195,10 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 		const requestedReviewAfter = parseOptionalIsoTimestamp(body.reviewAfter);
 		if (body.reviewAfter !== undefined && !requestedReviewAfter) {
 			return c.json({ error: "reviewAfter must be a valid ISO timestamp" }, 400);
+		}
+		const requestedSupersedes = body.supersedes?.trim();
+		if (body.supersedes !== undefined && !requestedSupersedes) {
+			return c.json({ error: "supersedes must be a memory id" }, 400);
 		}
 		const scope = body.scope ?? null;
 		const rowProvenance = parseRememberRowProvenance(body as Record<string, unknown>);
@@ -1516,6 +1531,8 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 			return c.json({ error: "idempotencyKey already used for chunked content" }, 409);
 		}
 
+		let supersededStatus: SupersedeMemoryTxStatus | null = null;
+
 		try {
 			const result = getDbAccessor().withWriteTx((db) => {
 				// Check sourceId-based dedupe first (scope-aware)
@@ -1574,8 +1591,30 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 					inputs: temporalInputs.inputs ?? [],
 					now,
 				});
-				return { deduped: false as const };
+				// #1138: lineage at write time. When the caller names a
+				// supersedes target, mark it superseded in the same tx so the
+				// new row becomes the head of the chain atomically.
+				let superseded: SupersedeMemoryTxStatus | null = null;
+				if (requestedSupersedes !== undefined) {
+					const actor = resolveMutationActor(c, who);
+					const result = txSupersedeMemory(db, {
+						memoryId: requestedSupersedes,
+						supersededBy: id,
+						reason: body.reason ?? null,
+						changedBy: actor.changedBy,
+						changedAt: now,
+						ctx: { actorType: actor.actorType, sessionId: actor.sessionId, requestId: actor.requestId },
+					});
+					// Atomic lineage: an unusable supersedes target fails the
+					// whole write rather than silently producing an orphan.
+					if (result.status !== "superseded" && result.status !== "already_superseded") {
+						throw new Error(`supersedes target rejected: ${result.status}`);
+					}
+					superseded = result.status;
+				}
+				return { deduped: false as const, superseded };
 			});
+			supersededStatus = result.deduped ? null : (result as { superseded: SupersedeMemoryTxStatus | null }).superseded;
 
 			if (result.deduped) {
 				getDbAccessor().withWriteTx((db) =>
@@ -1745,6 +1784,7 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 			// Explicit non-silent indicator: structured input was retained as
 			// episodic evidence but NOT applied to the knowledge graph.
 			structured_applied: false,
+			...(supersededStatus !== null ? { superseded: supersededStatus } : {}),
 		});
 	});
 
@@ -1911,6 +1951,73 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 					requestId: row.request_id ?? undefined,
 				};
 			}),
+		});
+	});
+	// =========================================================================
+	// GET /api/memory/:id/lineage
+	// =========================================================================
+	app.get("/api/memory/:id/lineage", (c) => {
+		const memoryId = c.req.param("id")?.trim();
+		if (!memoryId) return c.json({ error: "memory id is required" }, 400);
+		const limit = Math.min(parseOptionalInt(c.req.query("limit")) ?? 50, 500);
+
+		type LineageRow = {
+			id: string;
+			content: string;
+			type: string;
+			importance: number;
+			version: number;
+			created_at: string;
+			updated_at: string;
+			superseded_by: string | null;
+			superseded_at: string | null;
+			superseded_reason: string | null;
+		};
+		const selectLineage = (
+			db: { prepare(sql: string): { get(...args: string[]): unknown } },
+			id: string,
+		): LineageRow | undefined =>
+			db
+				.prepare(
+					`SELECT id, content, type, importance, version, created_at, updated_at, superseded_by, superseded_at, superseded_reason
+					 FROM memories
+					 WHERE id = ?`,
+				)
+				.get(id) as LineageRow | undefined;
+
+		const rows = getDbAccessor().withReadDb((db) => {
+			const head = selectLineage(db, memoryId);
+			if (!head) return [];
+			// Walk the superseded_by chain toward the newest head, then
+			// reverse into oldest -> newest order.
+			const chain: LineageRow[] = [head];
+			const seen = new Set<string>([head.id]);
+			let current = head;
+			while (current.superseded_by && !seen.has(current.superseded_by) && chain.length < limit) {
+				seen.add(current.superseded_by);
+				const next = selectLineage(db, current.superseded_by);
+				if (!next) break;
+				chain.push(next);
+				current = next;
+			}
+			return chain.reverse();
+		});
+
+		return c.json({
+			memoryId,
+			count: rows.length,
+			lineage: rows.map((row) => ({
+				id: row.id,
+				content: row.content,
+				type: row.type,
+				importance: row.importance,
+				version: row.version,
+				createdAt: row.created_at,
+				updatedAt: row.updated_at,
+				supersededBy: row.superseded_by,
+				supersededAt: row.superseded_at,
+				supersededReason: row.superseded_reason,
+			})),
 		});
 	});
 

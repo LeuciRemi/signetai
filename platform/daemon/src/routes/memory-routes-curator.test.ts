@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
@@ -12,6 +12,10 @@ let registerMemoryRoutes: ((app: Hono) => void) | undefined;
 
 process.env.SIGNET_PATH = agentsDir;
 mkdirSync(join(agentsDir, "memory"), { recursive: true });
+// Fast, dependency-free embedding: provider "none" makes fetchEmbedding
+// return null immediately instead of downloading nomic-embed at first use.
+mkdirSync(join(agentsDir, ".daemon"), { recursive: true });
+writeFileSync(join(agentsDir, "agent.yaml"), "embedding:\n  provider: none\n");
 
 beforeAll(async () => {
 	// Static import would capture AGENTS_DIR before this test installs its temp SIGNET_PATH.
@@ -53,7 +57,7 @@ afterAll(() => {
 function makeApp(): Hono {
 	if (!registerMemoryRoutes) throw new Error("memory routes were not loaded");
 	const app = new Hono();
-	registerMemoryRoutes(app);
+	registerMemoryRoutes(app, { fetchEmbedding: async () => undefined });
 	return app;
 }
 
@@ -231,5 +235,78 @@ describe("memory curator routes", () => {
 			{ id: "mem-contradicted", content: "contradicted memory", contradicted_count: 1 },
 		]);
 		expect(body.highUsed).toEqual([{ id: "mem-used", content: "useful memory", used_count: 1 }]);
+	});
+
+	// #1138: remember-with-supersedes — lineage at write time.
+	it("marks the supersedes target superseded atomically with the new memory", async () => {
+		seedMemory("mem-v1", "original claim");
+		const app = makeApp();
+
+		const res = await app.request("/api/memory/remember", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				content: "replacement claim",
+				supersedes: "mem-v1",
+				reason: "newer evidence",
+			}),
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { id: string; superseded: string };
+		expect(typeof body.id).toBe("string");
+		expect(body.superseded).toBe("superseded");
+
+		const oldRow = getDbAccessor().withReadDb(
+			(db) =>
+				db.prepare("SELECT superseded_by, version FROM memories WHERE id = ?").get("mem-v1") as {
+					superseded_by: string | null;
+					version: number;
+				},
+		);
+		expect(oldRow.superseded_by).toBe(body.id);
+		expect(oldRow.version).toBe(2);
+	});
+
+	it("fails the whole remember when the supersedes target is missing", async () => {
+		const app = makeApp();
+		const res = await app.request("/api/memory/remember", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ content: "orphan claim", supersedes: "does-not-exist" }),
+		});
+		expect(res.status).toBe(500);
+		// The new memory must not exist — atomic lineage, no orphan.
+		const count = getDbAccessor().withReadDb(
+			(db) =>
+				db.prepare("SELECT COUNT(*) AS count FROM memories WHERE content = 'orphan claim'").get() as { count: number },
+		);
+		expect(count.count).toBe(0);
+	});
+
+	it("walks superseded_by lineage from any row in the chain", async () => {
+		seedMemory("mem-gen1", "genesis claim");
+		const app = makeApp();
+		const v2 = await app.request("/api/memory/remember", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ content: "second claim", supersedes: "mem-gen1" }),
+		});
+		const v2Body = (await v2.json()) as { id: string };
+		const v3 = await app.request("/api/memory/remember", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ content: "third claim", supersedes: v2Body.id }),
+		});
+		const v3Body = (await v3.json()) as { id: string };
+
+		// Drill from the oldest row: the chain must resolve forward to the head,
+		// newest first (v3 -> v2 -> v1).
+		const res = await app.request(`/api/memory/mem-gen1/lineage`);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { count: number; lineage: Array<{ id: string; supersededBy: string | null }> };
+		expect(body.count).toBe(3);
+		expect(body.lineage.map((row) => row.id)).toEqual([v3Body.id, v2Body.id, "mem-gen1"]);
+		expect(body.lineage[0]!.supersededBy).toBeNull();
+		expect(body.lineage[2]!.supersededBy).toBe(v2Body.id);
 	});
 });

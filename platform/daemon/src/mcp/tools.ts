@@ -1090,6 +1090,12 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 					.string()
 					.optional()
 					.describe("ISO timestamp when this temporal claim becomes due for review (issue #945)"),
+				supersedes: z
+					.string()
+					.optional()
+					.describe(
+						"Id of an existing memory this write supersedes. The old row is marked superseded in the same transaction, wiring vN -> vN+1 lineage for drill-down history.",
+					),
 				transcript: z
 					.string()
 					.optional()
@@ -1170,6 +1176,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 			validFrom,
 			validUntil,
 			reviewAfter,
+			supersedes,
 		}) => {
 			const result = await fetchDaemon<unknown>(baseUrl, "/api/memory/remember", {
 				method: "POST",
@@ -1188,6 +1195,7 @@ export async function createMcpServer(opts?: McpServerOptions): Promise<McpServe
 					validFrom,
 					validUntil,
 					reviewAfter,
+					supersedes,
 				}),
 			});
 
