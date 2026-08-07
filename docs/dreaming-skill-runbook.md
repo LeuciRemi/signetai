@@ -56,10 +56,7 @@ signet ontology claim-evidence <entity> <aspect> <group> <claim> --status all --
 Use direct audited merges for clear duplicate cleanup:
 
 ```bash
-signet ontology entity merge "Canonical Entity" "Duplicate Entity" \
-  --reason "Same source-backed entity after canonicalization" \
-  --evidence-file evidence.json \
-  --json
+signet ontology entity merge "Canonical Entity" "Duplicate Entity" --json
 ```
 
 Use merge planning to inspect impact or to prepare a broad graph-refactor
@@ -69,6 +66,23 @@ proposal:
 signet ontology entity merge-plan "Canonical Entity" "Duplicate Entity" --json
 signet ontology entity merge-plan "Canonical Entity" "Duplicate Entity" --propose --json
 ```
+
+## Aspect Consolidation Path
+
+When an entity's aspect count or an aspect's attribute count reaches the write
+caps, consolidate instead of appending. Fold source aspects into a target
+aspect; attributes move to the target and the sources are archived:
+
+```bash
+signet ontology aspect merge "Project Atlas" "status_history" "changelog" \
+  --new-name "timeline" \
+  --reason "Fold changelog into status history" \
+  --json
+```
+
+A merged aspect may exceed the attribute cap: consolidation is the remedy the
+cap exists to force, so merging is never blocked by it. After merging, use
+`supersede_claim_value` to collapse duplicate claim keys that landed together.
 
 ## Refactor Proposal Path
 

@@ -1676,6 +1676,99 @@ function applyMergeEntities(
 	};
 }
 
+/**
+ * Fold source aspects into a target aspect on the same entity. All active
+ * attributes of each source are repointed to the target, then the source
+ * aspect is archived. The merged target may exceed the write-path attribute
+ * cap: consolidation is the remedy the cap forces, so it is never blocked by
+ * it. Claim-key collisions between source and target are preserved as
+ * distinct rows — further dedup is the agent's job via supersede_claim_value.
+ */
+function applyMergeAspects(
+	db: WriteDb,
+	agentId: string,
+	proposal: ProposalRow,
+	payload: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+	const entitySelector = readPayloadSelector(payload, "entity", "entity_id");
+	const targetSelector = readPayloadSelector(payload, "target", "target_aspect", "target_aspect_id", "aspect");
+	const rawSources = readStringArray(payload, "sources") ?? readStringArray(payload, "source_aspects");
+	if (entitySelector === null) throw new OntologyProposalError("payload.entity is required", 400);
+	if (targetSelector === null) throw new OntologyProposalError("payload.target is required", 400);
+	if (rawSources.length === 0) throw new OntologyProposalError("payload.sources is required", 400);
+
+	const entity = resolveEntityStrict(db, agentId, entitySelector);
+	const target = resolveAspectStrict(db, agentId, entity.id, targetSelector);
+	const newName = readString(payload, "new_name");
+	if (newName !== null) {
+		const key = canonical(newName);
+		const collision = db
+			.prepare(
+				`SELECT id FROM entity_aspects
+				 WHERE entity_id = ? AND agent_id = ? AND id != ?
+				   AND COALESCE(status, 'active') = 'active'
+				   AND (canonical_name = ? OR LOWER(name) = ?)
+				 LIMIT 1`,
+			)
+			.get(entity.id, agentId, target.id, key, key);
+		if (collision) throw new OntologyProposalError(`Aspect collides with "${newName}"`, 409);
+	}
+
+	const evidence = JSON.stringify(proposalAuditEvidence(proposal));
+	const moved: Array<{ readonly aspect: string; readonly attributes: number }> = [];
+	let totalMoved = 0;
+	const seen = new Set<string>([target.id]);
+	for (const raw of rawSources) {
+		if (typeof raw !== "string") throw new OntologyProposalError("payload.sources must be aspect selectors", 400);
+		const source = resolveAspectStrict(db, agentId, entity.id, raw);
+		if (seen.has(source.id)) continue;
+		seen.add(source.id);
+
+		const attributes = db
+			.prepare("SELECT id FROM entity_attributes WHERE aspect_id = ? AND agent_id = ? AND status = 'active'")
+			.all(source.id, agentId) as Array<{ id: string }>;
+		for (const attribute of attributes) {
+			db.prepare(
+				`UPDATE entity_attributes
+				 SET aspect_id = ?, proposal_id = ?, proposal_evidence = ?, updated_at = datetime('now')
+				 WHERE id = ? AND agent_id = ? AND status = 'active'`,
+			).run(target.id, proposal.id, evidence, attribute.id, agentId);
+		}
+		db.prepare(
+			`UPDATE entity_aspects
+			 SET status = 'archived', archived_at = datetime('now'), archived_by = ?,
+			     archive_reason = ?, proposal_id = ?, proposal_evidence = ?, updated_at = datetime('now')
+			 WHERE id = ? AND agent_id = ? AND COALESCE(status, 'active') = 'active'`,
+		).run(
+			proposal.created_by || "ontology-merge",
+			`Merged into aspect '${target.name}'`,
+			proposal.id,
+			evidence,
+			source.id,
+			agentId,
+		);
+		moved.push({ aspect: source.name, attributes: attributes.length });
+		totalMoved += attributes.length;
+	}
+	if (moved.length === 0) throw new OntologyProposalError("No distinct source aspects to merge", 400);
+
+	if (newName !== null) {
+		db.prepare(
+			`UPDATE entity_aspects
+			 SET name = ?, canonical_name = ?, proposal_id = ?, proposal_evidence = ?, updated_at = datetime('now')
+			 WHERE id = ? AND agent_id = ?`,
+		).run(newName, canonical(newName), proposal.id, evidence, target.id, agentId);
+	}
+
+	return {
+		entityId: entity.id,
+		targetAspectId: target.id,
+		targetAspect: newName ?? target.name,
+		mergedAspects: moved,
+		totalAttributesMoved: totalMoved,
+	};
+}
+
 function applyCreateLink(
 	db: WriteDb,
 	agentId: string,
@@ -1946,6 +2039,7 @@ function applyOperation(
 		return applyAddClaimValue(db, proposal.agent_id, proposal, payload, writeCaps);
 	if (proposal.operation === "set_claim_value") return applySetClaimValue(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "merge_entities") return applyMergeEntities(db, proposal.agent_id, payload);
+	if (proposal.operation === "merge_aspects") return applyMergeAspects(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "supersede_claim_value") {
 		return applySupersedeClaimValue(db, proposal.agent_id, proposal, payload);
 	}

@@ -394,4 +394,78 @@ describe("dreaming operations", () => {
 		expect(result.ok).toBe(false);
 		expect(result.error).toContain("Unsupported ontology proposal operation");
 	});
+
+	it("merges aspects through the hygiene seam with attention provenance", () => {
+		insertEntity("e-merge", "MergeCo", "mergeco");
+		insertAspect("a-target", "e-merge", "status_history");
+		insertAspect("a-source", "e-merge", "changelog");
+		getDbAccessor().withWriteTx((db) => {
+			for (const [aspectId, content] of [
+				["a-target", "status one"],
+				["a-source", "change one"],
+				["a-source", "change two"],
+			] as const) {
+				db.prepare(
+					`INSERT INTO entity_attributes
+					 (id, aspect_id, agent_id, kind, content, normalized_content, confidence, importance,
+					  status, group_key, claim_key, version, version_root_id, created_at, updated_at)
+					 VALUES (?, ?, ?, 'fact', ?, ?, 0.9, 0.9, 'active', 'general', 'k', 1, ?, datetime('now'), datetime('now'))`,
+				).run(`attr-${content}`, aspectId, "agent-a", content, content, `root-${content}`);
+			}
+		});
+
+		const result = applyDreamingOperations({
+			accessor: getDbAccessor(),
+			agentId: "agent-a",
+			actor: "dreaming",
+			passId: "pass-merge",
+			operations: [
+				flag({ subjectRef: "aspect:a-source", details: { aspectId: "a-source", reason: "aspect_over_cap" } }),
+				{
+					operation: "merge_aspects",
+					payload: {
+						entityId: "e-merge",
+						target: "a-target",
+						sources: ["a-source"],
+						newName: "timeline",
+						reason: "fold changelog into status history",
+					},
+					provenance: "attention:$0",
+				},
+			],
+		});
+		expect(result.ok).toBe(true);
+		expect(result.items[1]!.ok).toBe(true);
+		expect(result.items[1]!.result).toMatchObject({ targetAspect: "timeline", totalAttributesMoved: 2 });
+		// Source archived, target renamed, all attributes under the target
+		expect(
+			getDbAccessor().withReadDb((db) => db.prepare("SELECT status FROM entity_aspects WHERE id = ?").get("a-source")),
+		).toEqual({ status: "archived" });
+		expect(
+			getDbAccessor().withReadDb((db) =>
+				db
+					.prepare("SELECT COUNT(*) AS c FROM entity_attributes WHERE aspect_id = ? AND status = 'active'")
+					.get("a-target"),
+			),
+		).toEqual({ c: 3 });
+	});
+
+	it("requires attention provenance for merge_aspects like other hygiene ops", () => {
+		insertEntity("e-merge2", "MergeTwo", "mergetwo");
+		insertAspect("a-t2", "e-merge2", "target");
+		insertAspect("a-s2", "e-merge2", "source");
+		const result = applyDreamingOperations({
+			accessor: getDbAccessor(),
+			agentId: "agent-a",
+			actor: "dreaming",
+			operations: [
+				{
+					operation: "merge_aspects",
+					payload: { entityId: "e-merge2", target: "a-t2", sources: ["a-s2"] },
+				},
+			],
+		});
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain("Hygiene archives require attention provenance");
+	});
 });

@@ -59,6 +59,16 @@ export const DREAMING_ONTOLOGY_PAYLOAD_SCHEMAS = {
 		survivor: entityId.describe("The entity that survives the merge."),
 		...reasonField,
 	}),
+	merge_aspects: payload({
+		entityId,
+		target: aspectId.describe("The aspect that absorbs the sources. Use aspect_id."),
+		sources: z
+			.array(aspectId)
+			.min(1)
+			.describe("Aspect ids to fold into the target. Attributes are moved, sources are archived."),
+		newName: aspectName.describe("Optional new name for the merged aspect.").optional(),
+		...reasonField,
+	}),
 
 	// --- content-bearing ops: require evidence with exact quotes ---
 	create_entity: payload({ name: entityName, type: entityType }),
@@ -133,6 +143,7 @@ export const DREAMING_ONTOLOGY_OPERATION_SCHEMA = z.discriminatedUnion("operatio
 	operation("update_link"),
 	operation("archive_link"),
 	operation("merge_entities"),
+	operation("merge_aspects"),
 	operation("supersede_claim_value"),
 	operation("create_policy"),
 	operation("create_action_type"),

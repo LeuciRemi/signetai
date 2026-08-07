@@ -41,6 +41,7 @@ const HYGIENE_ARCHIVE_OPS = new Set([
 	"archive_claim_value",
 	"archive_link",
 	"merge_entities",
+	"merge_aspects",
 ]);
 
 function citationRecord(value: unknown): {
@@ -228,6 +229,17 @@ function attentionProvenance(
 			targets.every((id) => groupIds.has(id)) &&
 			targets.includes(survivor) &&
 			targets.some((id) => id !== survivor);
+	} else if (operation.operation === "merge_aspects") {
+		// The flag names the over-cap aspect; the merge must fold it into a target.
+		const sources = Array.isArray(payload.sources)
+			? payload.sources.filter((value): value is string => typeof value === "string")
+			: [];
+		const flaggedAspect = attention.details.aspectId ?? attention.subjectRef.replace(/^aspect:/, "");
+		expectedTarget =
+			attention.subjectRef.startsWith("aspect:") &&
+			typeof payload.target === "string" &&
+			sources.length >= 1 &&
+			sources.includes(flaggedAspect);
 	}
 	if (!expectedTarget) return null;
 
@@ -390,6 +402,16 @@ function toApplicatorPayload(
 			if (targets === null || survivor === null) return null;
 			const sourceIds = targets.filter((id) => id !== survivor);
 			return { target_entity_id: survivor, source_entity_ids: sourceIds };
+		}
+		case "merge_aspects": {
+			const entityId = stringField(payload, "entityId");
+			const target = stringField(payload, "target");
+			const sources = stringArrayField(payload, "sources");
+			if (entityId === null || target === null || sources === null || sources.length === 0) return null;
+			const name = lookupEntityName(accessor, agentId, entityId);
+			return name === null
+				? null
+				: { entity: name, target, sources, new_name: stringField(payload, "newName") ?? undefined };
 		}
 		case "create_entity": {
 			const name = stringField(payload, "name");

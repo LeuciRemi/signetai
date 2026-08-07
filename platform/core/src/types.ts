@@ -881,6 +881,7 @@ export const ONTOLOGY_PROPOSAL_OPERATIONS = [
 	"update_link",
 	"archive_link",
 	"merge_entities",
+	"merge_aspects",
 	"supersede_claim_value",
 	"create_policy",
 	"create_action_type",

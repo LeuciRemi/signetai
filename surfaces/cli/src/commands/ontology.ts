@@ -1567,6 +1567,24 @@ export function registerOntologyCommands(program: Command, deps: OntologyDeps): 
 		);
 		printOperationResult(data, options, "aspect archive");
 	});
+	addOperationOptions(
+		aspect
+			.command("merge")
+			.description("Fold source aspects into a target aspect (attributes move, sources archive)")
+			.argument("<entity>", "Entity selector")
+			.argument("<target>", "Target aspect selector")
+			.argument("<source...>", "Source aspect selectors")
+			.option("--new-name <name>", "Rename the merged aspect"),
+	).action(async (entityName: string, target: string, source: readonly string[], options) => {
+		if (!(await deps.ensureDaemonForSecrets())) return;
+		const data = await postOperation(
+			deps,
+			"merge_aspects",
+			{ entity: entityName, target, sources: source, new_name: options["new-name"] },
+			options,
+		);
+		printOperationResult(data, options, "aspect merge");
+	});
 
 	const link = ontology.command("link").description("Apply audited link operations");
 	addOperationOptions(

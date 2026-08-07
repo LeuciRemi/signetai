@@ -2601,4 +2601,111 @@ describe("ontology proposals", () => {
 		});
 		expect(result.result?.deduped).toBe(true);
 	});
+
+	// #1138: merge_aspects — consolidation must be possible regardless of caps
+	function seedAspectClaims(entity: string, aspect: string, count: number): void {
+		for (let i = 0; i < count; i++) {
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "add_claim_value",
+				payload: {
+					entity,
+					entity_type: "project",
+					aspect,
+					claim_key: `${aspect}_key_${i}`,
+					value: `${aspect} value number ${i}`,
+				},
+			});
+		}
+	}
+
+	function aspectRowCount(aspectName: string): number {
+		return getDbAccessor().withReadDb((db) => {
+			const aspect = db
+				.prepare(
+					"SELECT id FROM entity_aspects WHERE agent_id = ? AND name = ? AND COALESCE(status, 'active') = 'active'",
+				)
+				.get("ant", aspectName) as { id: string } | undefined;
+			if (aspect === undefined) return -1;
+			return (
+				db
+					.prepare(
+						"SELECT COUNT(*) AS c FROM entity_attributes WHERE aspect_id = ? AND agent_id = ? AND status = 'active'",
+					)
+					.get(aspect.id, "ant") as {
+					c: number;
+				}
+			).c;
+		});
+	}
+
+	it("merges aspects by moving attributes into the target and archiving sources", () => {
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "create_entity",
+			payload: { name: "MergeEnt", entity_type: "project" },
+		});
+		seedAspectClaims("MergeEnt", "status_history", 3);
+		seedAspectClaims("MergeEnt", "changelog", 4);
+
+		const result = applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "merge_aspects",
+			payload: {
+				entity: "MergeEnt",
+				target: "status_history",
+				sources: ["changelog"],
+				new_name: "timeline",
+			},
+		});
+
+		expect(result.result?.targetAspect).toBe("timeline");
+		expect(result.result?.totalAttributesMoved).toBe(4);
+		// All 7 attributes now live on the merged target
+		expect(aspectRowCount("timeline")).toBe(7);
+		// Source aspect is archived
+		const sourceStatus = getDbAccessor().withReadDb((db) =>
+			db.prepare("SELECT status FROM entity_aspects WHERE agent_id = ? AND name = ?").get("ant", "changelog"),
+		);
+		expect(sourceStatus).toEqual({ status: "archived" });
+	});
+
+	it("lets the merged aspect exceed the attribute cap (consolidation is exempt)", () => {
+		const cap = { maxAspectsPerEntity: 10, maxAttributesPerAspect: 5 };
+
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "create_entity",
+			payload: { name: "FatEnt", entity_type: "project" },
+		});
+		seedAspectClaims("FatEnt", "a", 5);
+		seedAspectClaims("FatEnt", "b", 5);
+
+		// Two at-cap aspects merged into one: 10 attributes on the target, cap is 5.
+		// Merging is the consolidation remedy, so it must not be blocked.
+		const result = applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "merge_aspects",
+			payload: { entity: "FatEnt", target: "a", sources: ["b"] },
+			writeCaps: cap,
+		});
+		expect(result.result?.totalAttributesMoved).toBe(5);
+		expect(aspectRowCount("a")).toBe(10);
+	});
+
+	it("rejects merge_aspects without entity, target, or sources", () => {
+		expect(() =>
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "merge_aspects",
+				payload: { entity: "Whatever", target: "x", sources: [] },
+			}),
+		).toThrow(/sources is required/);
+	});
 });
