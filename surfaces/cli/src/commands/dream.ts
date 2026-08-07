@@ -30,6 +30,11 @@ interface DreamPass {
 	readonly startedAt: string;
 	readonly completedAt: string | null;
 	readonly tokensConsumed: number | null;
+	readonly tokensInput: number | null;
+	readonly tokensOutput: number | null;
+	readonly tokensCacheRead: number | null;
+	readonly tokensCacheWrite: number | null;
+	readonly tokensCost: number | null;
 	readonly mutationsApplied: number | null;
 	readonly mutationsSkipped: number | null;
 	readonly mutationsFailed: number | null;
@@ -73,6 +78,35 @@ function reportDaemonUnavailable(reason: DaemonFetchFailure, status: number | un
 		return;
 	}
 	console.error(chalk.red(`${action} (is the daemon running?)`));
+}
+
+function formatCost(cost: number): string {
+	if (cost >= 1) return `$${cost.toFixed(2)}`;
+	if (cost >= 0.01) return `$${cost.toFixed(4)}`;
+	return `$${cost.toFixed(6)}`;
+}
+
+/** One-line provider-reported token breakdown, or null when the pass recorded none. */
+function formatTokenUsage(pass: DreamPass): string | null {
+	if (pass.tokensInput != null) {
+		const cost = pass.tokensCost != null ? `  cost ${formatCost(pass.tokensCost)}` : "";
+		return (
+			[
+				`in ${pass.tokensInput}`,
+				`out ${pass.tokensOutput ?? 0}`,
+				`cacheRead ${pass.tokensCacheRead ?? 0}`,
+				`cacheWrite ${pass.tokensCacheWrite ?? 0}`,
+				`total ${pass.tokensConsumed ?? pass.tokensInput}`,
+			].join("  ") + cost
+		);
+	}
+	// No provider breakdown: acpx-backed passes (and pre-upgrade daemons)
+	// only carry the local prompt-token estimate. Label it instead of
+	// zero-filling the breakdown as if the provider reported it.
+	if (pass.tokensConsumed != null && pass.tokensConsumed > 0) {
+		return `total ${pass.tokensConsumed} (prompt estimate)`;
+	}
+	return null;
 }
 
 export function registerDreamCommands(program: Command, deps: DreamDeps): void {
@@ -190,6 +224,8 @@ export function registerDreamCommands(program: Command, deps: DreamDeps): void {
 					console.log(
 						`  ${status.padEnd(12 + (status.length - pass.status.length))}${pass.mode.padEnd(14)}${mutations.padEnd(24)}${pass.startedAt}`,
 					);
+					const usage = formatTokenUsage(pass);
+					if (usage) console.log(`  ${chalk.dim("Tokens:")}    ${usage}`);
 					if (pass.summary) {
 						console.log(`  ${chalk.dim(pass.summary.slice(0, 100))}`);
 					}
@@ -305,6 +341,8 @@ export function registerDreamCommands(program: Command, deps: DreamDeps): void {
 			console.log(`  ${chalk.dim("Applied:")}    ${pass.mutationsApplied ?? 0} mutations`);
 			console.log(`  ${chalk.dim("Skipped:")}    ${pass.mutationsSkipped ?? 0} mutations`);
 			console.log(`  ${chalk.dim("Failed:")}     ${pass.mutationsFailed ?? 0} mutations`);
+			const usage = formatTokenUsage(pass);
+			if (usage) console.log(`  ${chalk.dim("Tokens:")}    ${usage}`);
 			if (pass.summary) console.log(`  ${chalk.dim("Summary:")}    ${pass.summary}`);
 			console.log();
 		});

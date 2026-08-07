@@ -113,6 +113,7 @@ function sumUsage(stages: readonly AggregateRecallUsageStage[]): LlmUsage {
 			outputTokens: addNullableNumbers(total.outputTokens, stage.outputTokens),
 			cacheReadTokens: addNullableNumbers(total.cacheReadTokens, stage.cacheReadTokens),
 			cacheCreationTokens: addNullableNumbers(total.cacheCreationTokens, stage.cacheCreationTokens),
+			totalTokens: addNullableNumbers(total.totalTokens, stage.totalTokens),
 			totalCost: addNullableNumbers(total.totalCost, stage.totalCost),
 			totalDurationMs: addNullableNumbers(total.totalDurationMs, stage.totalDurationMs),
 		}),
@@ -121,6 +122,7 @@ function sumUsage(stages: readonly AggregateRecallUsageStage[]): LlmUsage {
 			outputTokens: null,
 			cacheReadTokens: null,
 			cacheCreationTokens: null,
+			totalTokens: null,
 			totalCost: null,
 			totalDurationMs: null,
 		},
@@ -142,6 +144,7 @@ function usageStage(
 		outputTokens: usage?.outputTokens ?? null,
 		cacheReadTokens: usage?.cacheReadTokens ?? null,
 		cacheCreationTokens: usage?.cacheCreationTokens ?? null,
+		totalTokens: usage?.totalTokens ?? null,
 		totalCost: usage?.totalCost ?? null,
 		totalDurationMs: usage?.totalDurationMs ?? okAttempt?.durationMs ?? null,
 	};

@@ -112,6 +112,7 @@ import { up as semanticMemoryKind } from "./103-semantic-memory-kind";
 import { up as derivedMemoryProvenance } from "./104-derived-memory-provenance";
 import { up as agentScopedEntityName } from "./105-agent-scoped-entity-name";
 import { up as memoryReviewAfter } from "./106-memory-review-after";
+import { up as dreamingPassUsage } from "./107-dreaming-pass-usage";
 
 // -- Public interface consumed by Database.init() --
 
@@ -984,6 +985,20 @@ export const MIGRATIONS: readonly Migration[] = [
 		up: memoryReviewAfter,
 		artifacts: {
 			columns: [{ table: "memories", column: "review_after" }],
+		},
+	},
+	{
+		version: 107,
+		name: "dreaming-pass-usage",
+		up: dreamingPassUsage,
+		artifacts: {
+			columns: [
+				{ table: "dreaming_passes", column: "tokens_input" },
+				{ table: "dreaming_passes", column: "tokens_output" },
+				{ table: "dreaming_passes", column: "tokens_cache_read" },
+				{ table: "dreaming_passes", column: "tokens_cache_write" },
+				{ table: "dreaming_passes", column: "tokens_cost" },
+			],
 		},
 	},
 ];

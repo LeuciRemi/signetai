@@ -14,6 +14,7 @@ import { join } from "node:path";
 import {
 	type DreamingConfig,
 	type IdentityContextFileEntry,
+	type LlmUsage,
 	resolveSpecialIdentityFiles,
 	resolveStartupIdentityFiles,
 } from "@signet/core";
@@ -147,6 +148,11 @@ interface DreamingPassRow {
 	readonly startedAt: string;
 	readonly completedAt: string | null;
 	readonly tokensConsumed: number | null;
+	readonly tokensInput: number | null;
+	readonly tokensOutput: number | null;
+	readonly tokensCacheRead: number | null;
+	readonly tokensCacheWrite: number | null;
+	readonly tokensCost: number | null;
 	readonly mutationsApplied: number | null;
 	readonly mutationsSkipped: number | null;
 	readonly mutationsFailed: number | null;
@@ -187,7 +193,7 @@ export interface DreamingAgentExecutor {
 		readonly tools: ReturnType<typeof createDreamingAgentTools>;
 		readonly timeoutMs: number;
 		readonly maxTokens: number;
-	}): Promise<{ readonly summary?: string }>;
+	}): Promise<{ readonly summary?: string; readonly usage?: LlmUsage | null }>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -410,6 +416,9 @@ export function getDreamingPasses(accessor: DbAccessor, agentId: string, limit =
 			.prepare(
 				`SELECT id, mode, status, started_at AS startedAt,
 				        completed_at AS completedAt, tokens_consumed AS tokensConsumed,
+				        tokens_input AS tokensInput, tokens_output AS tokensOutput,
+				        tokens_cache_read AS tokensCacheRead, tokens_cache_write AS tokensCacheWrite,
+				        tokens_cost AS tokensCost,
 				        mutations_applied AS mutationsApplied,
 				        mutations_skipped AS mutationsSkipped,
 				        mutations_failed AS mutationsFailed,
@@ -1021,7 +1030,11 @@ export async function runDreamingAgentPass(
 			maxTokens: cfg.maxOutputTokens,
 		});
 		const summary = `${outcome.summary?.trim() || "Agentic Dreaming pass completed"}`;
-		const tokensConsumed = countTokens(prompt);
+		// Provider-reported aggregate when the executor surfaced it (pi-backed
+		// agent sessions); otherwise fall back to the local prompt estimate so
+		// acpx-backed passes keep a meaningful total.
+		const usage = outcome.usage ?? null;
+		const tokensConsumed = usage?.totalTokens ?? countTokens(prompt);
 		// The watermark advances only to what this pass actually surfaced: a
 		// pass that completes without surfacing (or deferring) pending
 		// evidence must not skip it for the next scan-first search (#1149).
@@ -1037,9 +1050,23 @@ export async function runDreamingAgentPass(
 		accessor.withWriteTx((db) => {
 			db.prepare(
 				`UPDATE dreaming_passes SET status = 'completed', completed_at = datetime('now'),
-				 tokens_consumed = ?, mutations_applied = ?, mutations_skipped = ?,
+				 tokens_consumed = ?, tokens_input = ?, tokens_output = ?,
+				 tokens_cache_read = ?, tokens_cache_write = ?, tokens_cost = ?,
+				 mutations_applied = ?, mutations_skipped = ?,
 				 mutations_failed = ?, summary = ? WHERE id = ?`,
-			).run(tokensConsumed, applied, 0, failed, summary, passId);
+			).run(
+				tokensConsumed,
+				usage?.inputTokens ?? null,
+				usage?.outputTokens ?? null,
+				usage?.cacheReadTokens ?? null,
+				usage?.cacheCreationTokens ?? null,
+				usage?.totalCost ?? null,
+				applied,
+				0,
+				failed,
+				summary,
+				passId,
+			);
 			recordDreamingEvidenceExclusionsInTx(db, agentId, passId, rejectedEvidence, "semantic_operation_rejected");
 			// The evidence queue resets to the pass watermark for EVERY scope
 			// the pass consumed evidence for: the next pass's backlog counts
