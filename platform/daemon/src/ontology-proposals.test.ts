@@ -2708,4 +2708,117 @@ describe("ontology proposals", () => {
 			}),
 		).toThrow(/sources is required/);
 	});
+
+	// #1147 adversarial review: cap bypasses via other write ops.
+	it("does not bypass the aspect cap via add_claim_value with a new aspect name (E1)", () => {
+		const cap = { maxAspectsPerEntity: 2, maxAttributesPerAspect: 25 };
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "create_entity",
+			payload: { name: "E1Ent", entity_type: "project" },
+		});
+		for (let i = 0; i < 2; i++) {
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "create_aspect",
+				payload: { entity: "E1Ent", name: `aspect_${i}` },
+				writeCaps: cap,
+			});
+		}
+		// add_claim_value with a THIRD new aspect name must hit the aspect cap.
+		expect(() =>
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "add_claim_value",
+				payload: {
+					entity: "E1Ent",
+					aspect: "aspect_overflow",
+					claim_key: "k",
+					value: "v",
+				},
+				writeCaps: cap,
+			}),
+		).toThrow(/aspect cap \(2\/2\)/);
+	});
+
+	it("does not bypass the attribute cap via set_claim_value with a new claim_key (E2)", () => {
+		const cap = { maxAspectsPerEntity: 10, maxAttributesPerAspect: 2 };
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "create_entity",
+			payload: { name: "E2Ent", entity_type: "project" },
+		});
+		for (let i = 0; i < 2; i++) {
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "set_claim_value",
+				payload: { entity: "E2Ent", aspect: "facts", claim_key: `k_${i}`, value: `v ${i}` },
+				writeCaps: cap,
+			});
+		}
+		expect(() =>
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "set_claim_value",
+				payload: { entity: "E2Ent", aspect: "facts", claim_key: "k_overflow", value: "v overflow" },
+				writeCaps: cap,
+			}),
+		).toThrow(/attribute cap \(2\/2\)/);
+	});
+
+	it("allows reactivating an archived aspect within cap but rejects a new aspect at cap (E3)", () => {
+		const cap = { maxAspectsPerEntity: 2, maxAttributesPerAspect: 25 };
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "create_entity",
+			payload: { name: "E3Ent", entity_type: "project" },
+		});
+		for (let i = 0; i < 2; i++) {
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "create_aspect",
+				payload: { entity: "E3Ent", name: `aspect_${i}` },
+				writeCaps: cap,
+			});
+		}
+		const aspect = getDbAccessor().withReadDb((db) =>
+			db.prepare("SELECT id FROM entity_aspects WHERE agent_id = ? AND name = ?").get("ant", "aspect_1"),
+		) as { id: string };
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "archive_aspect",
+			payload: { entity: "E3Ent", selector: aspect.id },
+		});
+		// Reactivating the archived aspect keeps the active count at 2 (cap)
+		// — the new helper only skips the cap when an ACTIVE row exists, and
+		// the count after reactivation is 2/2, so this is allowed.
+		expect(() =>
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "create_aspect",
+				payload: { entity: "E3Ent", name: "aspect_1" },
+				writeCaps: cap,
+			}),
+		).not.toThrow();
+		// But a genuinely new third aspect is still rejected at cap.
+		expect(() =>
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "create_aspect",
+				payload: { entity: "E3Ent", name: "aspect_new" },
+				writeCaps: cap,
+			}),
+		).toThrow(/aspect cap \(2\/2\)/);
+	});
 });

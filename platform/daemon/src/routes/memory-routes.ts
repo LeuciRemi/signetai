@@ -1243,6 +1243,16 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 
 		// --- Auto-chunking for oversized memories ---
 		const guardrails = pipelineCfg.guardrails;
+		// supersedes is only meaningful for a single-row memory: chunked content
+		// produces several rows with no single head id to chain the predecessor
+		// to. Fail loudly instead of silently dropping the lineage request.
+		if (
+			requestedSupersedes !== undefined &&
+			"structured" in body === false &&
+			raw.length > guardrails.maxContentChars
+		) {
+			return c.json({ error: "supersedes cannot be combined with oversized content (auto-chunking)" }, 400);
+		}
 		if ("structured" in body) {
 			if (body.structured == null || typeof body.structured !== "object" || Array.isArray(body.structured)) {
 				return c.json({ error: "structured must be an object with entities and/or aspects arrays" }, 400);
@@ -1668,6 +1678,11 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 				}
 			}
 			logger.error("memory", "Failed to save memory", e as Error);
+			if (e instanceof Error && e.message.startsWith("supersedes target rejected:")) {
+				// Distinguish a caller error (bad supersedes target) from a
+				// server fault: the tx rolled back, nothing was written.
+				return c.json({ error: e.message }, 400);
+			}
 			return c.json({ error: "Failed to save memory" }, 500);
 		}
 
@@ -1961,6 +1976,16 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 		if (!memoryId) return c.json({ error: "memory id is required" }, 400);
 		const limit = Math.min(parseOptionalInt(c.req.query("limit")) ?? 50, 500);
 
+		// Same agent-scope isolation as GET /api/memory/:id: a chain is
+		// only readable by agents permitted to read its members.
+		const sessionKeyRaw = c.req.header("x-signet-session-key");
+		const agentId = resolveAgentId({
+			agentId: c.req.query("agentId") ?? c.req.query("agent_id") ?? c.req.header("x-signet-agent-id"),
+			sessionKey: sessionKeyRaw,
+		});
+		const agentScope = getAgentScope(agentId);
+		const access = buildAgentScopeClause(agentId, agentScope.readPolicy, agentScope.policyGroup);
+
 		type LineageRow = {
 			id: string;
 			content: string;
@@ -1974,16 +1999,19 @@ export function registerMemoryRoutes(app: Hono, deps: MemoryRoutesDeps = {}): vo
 			superseded_reason: string | null;
 		};
 		const selectLineage = (
-			db: { prepare(sql: string): { get(...args: string[]): unknown } },
+			db: { prepare(sql: string): { get(...args: unknown[]): unknown } },
 			id: string,
 		): LineageRow | undefined =>
 			db
 				.prepare(
-					`SELECT id, content, type, importance, version, created_at, updated_at, superseded_by, superseded_at, superseded_reason
-					 FROM memories
-					 WHERE id = ?`,
+					`SELECT m.id, m.content, m.type, m.importance, m.version, m.created_at, m.updated_at,
+					        m.superseded_by, m.superseded_at, m.superseded_reason
+					 FROM memories m
+					 WHERE m.id = ?
+					   AND (m.is_deleted = 0 OR m.is_deleted IS NULL)
+					   ${access.sql}`,
 				)
-				.get(id) as LineageRow | undefined;
+				.get(id, ...access.args) as LineageRow | undefined;
 
 		const rows = getDbAccessor().withReadDb((db) => {
 			const head = selectLineage(db, memoryId);

@@ -973,6 +973,13 @@ function applyAddClaimValue(
 	if (value === null) throw new OntologyProposalError("payload.value is required", 400);
 
 	const entityId = resolveOrCreateEntity(db, agentId, entity, normalizeEntityType(readString(payload, "entity_type")));
+	// E1 fix (#1147 review): add_claim_value resolves-or-creates the aspect,
+	// so a new aspect name would bypass the aspect cap. Guard it the same way
+	// create_aspect does.
+	const addEntityRow = db.prepare("SELECT id, name FROM entities WHERE id = ?").get(entityId) as
+		| { id: string; name: string }
+		| undefined;
+	if (addEntityRow !== undefined) enforceAspectCapForNewAspect(db, addEntityRow, agentId, aspect, writeCaps);
 	const aspectId = resolveOrCreateAspect(db, entityId, agentId, aspect);
 	const groupKey = readString(payload, "group_key") ?? "general";
 	const kind = normalizeAttributeKind(readString(payload, "kind"));
@@ -1064,6 +1071,7 @@ function applySetClaimValue(
 	agentId: string,
 	proposal: ProposalRow,
 	payload: Readonly<Record<string, unknown>>,
+	writeCaps?: GraphWriteCaps,
 ): Readonly<Record<string, unknown>> {
 	const entity = readString(payload, "entity");
 	const aspect = readString(payload, "aspect");
@@ -1117,6 +1125,27 @@ function applySetClaimValue(
 	}
 
 	const previous = active[0] ?? slot[0] ?? null;
+	// E2 fix (#1147 review): set_claim_value with a brand-new claim_key
+	// inserts a new attribute row, bypassing the attribute cap. Replacing an
+	// existing active slot does not grow the count, so the guard only fires
+	// when this write would add a new row.
+	if (previous === null && writeCaps !== undefined) {
+		const attrCount = db
+			.prepare(
+				`SELECT COUNT(*) AS c FROM entity_attributes
+				 WHERE aspect_id = ? AND agent_id = ? AND status = 'active'`,
+			)
+			.get(aspectId, agentId) as { c: number };
+		if (attrCount.c >= writeCaps.maxAttributesPerAspect) {
+			const aspectName = db.prepare("SELECT name FROM entity_aspects WHERE id = ?").get(aspectId) as
+				| { name: string }
+				| undefined;
+			throw new OntologyProposalError(
+				`aspect '${aspectName?.name ?? aspectId}' is at attribute cap (${attrCount.c}/${writeCaps.maxAttributesPerAspect}) — supersede or expire an existing claim, or consolidate duplicates, before adding`,
+				409,
+			);
+		}
+	}
 	const version = previous === null ? 1 : Math.max(...slot.map((row) => row.version ?? 1)) + 1;
 	const rootId = previous?.version_root_id ?? previous?.id ?? crypto.randomUUID();
 	const id = version === 1 ? rootId : crypto.randomUUID();
@@ -1368,6 +1397,42 @@ function applyArchiveEntity(
 	return { entityId: entity.id, archived: true };
 }
 
+/**
+ * Reject aspect growth past the cap when the named aspect is not already
+ * active. Applies to both create_aspect and add_claim_value resolving a
+ * new aspect name: creating a fresh aspect OR reactivating an archived
+ * one grows the active set, so both count against the cap.
+ */
+function enforceAspectCapForNewAspect(
+	db: WriteDb,
+	entity: { readonly id: string; readonly name: string },
+	agentId: string,
+	name: string,
+	writeCaps?: GraphWriteCaps,
+): void {
+	if (writeCaps === undefined) return;
+	const key = canonical(name);
+	const activeAspect = db
+		.prepare(
+			`SELECT id FROM entity_aspects
+			 WHERE entity_id = ? AND agent_id = ? AND canonical_name = ? AND COALESCE(status, 'active') = 'active'`,
+		)
+		.get(entity.id, agentId, key);
+	if (activeAspect != null) return;
+	const aspectCount = db
+		.prepare(
+			`SELECT COUNT(*) AS c FROM entity_aspects
+			 WHERE entity_id = ? AND agent_id = ? AND COALESCE(status, 'active') = 'active'`,
+		)
+		.get(entity.id, agentId) as { c: number };
+	if (aspectCount.c >= writeCaps.maxAspectsPerEntity) {
+		throw new OntologyProposalError(
+			`entity '${entity.name}' is at aspect cap (${aspectCount.c}/${writeCaps.maxAspectsPerEntity}) — consolidate or archive an existing aspect before creating a new one`,
+			409,
+		);
+	}
+}
+
 function applyCreateAspect(
 	db: WriteDb,
 	agentId: string,
@@ -1381,29 +1446,7 @@ function applyCreateAspect(
 	if (name === null) throw new OntologyProposalError("payload.name is required", 400);
 	const entity = resolveEntityStrict(db, agentId, entitySelector);
 
-	if (writeCaps !== undefined) {
-		const key = canonical(name);
-		const existingAspect = db
-			.prepare(
-				`SELECT id FROM entity_aspects
-				 WHERE entity_id = ? AND agent_id = ? AND canonical_name = ?`,
-			)
-			.get(entity.id, agentId, key) as { id: string } | undefined;
-		if (existingAspect == null) {
-			const aspectCount = db
-				.prepare(
-					`SELECT COUNT(*) AS c FROM entity_aspects
-					 WHERE entity_id = ? AND agent_id = ? AND COALESCE(status, 'active') = 'active'`,
-				)
-				.get(entity.id, agentId) as { c: number };
-			if (aspectCount.c >= writeCaps.maxAspectsPerEntity) {
-				throw new OntologyProposalError(
-					`entity '${entity.name}' is at aspect cap (${aspectCount.c}/${writeCaps.maxAspectsPerEntity}) — consolidate or archive an existing aspect before creating a new one`,
-					409,
-				);
-			}
-		}
-	}
+	enforceAspectCapForNewAspect(db, entity, agentId, name, writeCaps);
 
 	const aspectId = resolveOrCreateAspect(db, entity.id, agentId, name);
 	db.prepare(
@@ -2037,7 +2080,8 @@ function applyOperation(
 		return applyArchiveAspect(db, proposal.agent_id, proposal, payload, actor);
 	if (proposal.operation === "add_claim_value")
 		return applyAddClaimValue(db, proposal.agent_id, proposal, payload, writeCaps);
-	if (proposal.operation === "set_claim_value") return applySetClaimValue(db, proposal.agent_id, proposal, payload);
+	if (proposal.operation === "set_claim_value")
+		return applySetClaimValue(db, proposal.agent_id, proposal, payload, writeCaps);
 	if (proposal.operation === "merge_entities") return applyMergeEntities(db, proposal.agent_id, payload);
 	if (proposal.operation === "merge_aspects") return applyMergeAspects(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "supersede_claim_value") {

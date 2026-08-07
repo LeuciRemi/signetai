@@ -274,13 +274,47 @@ describe("memory curator routes", () => {
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ content: "orphan claim", supersedes: "does-not-exist" }),
 		});
-		expect(res.status).toBe(500);
+		expect(res.status).toBe(400);
+		expect((await res.json()) as { error: string }).toMatchObject({
+			error: "supersedes target rejected: not_found",
+		});
 		// The new memory must not exist — atomic lineage, no orphan.
 		const count = getDbAccessor().withReadDb(
 			(db) =>
 				db.prepare("SELECT COUNT(*) AS count FROM memories WHERE content = 'orphan claim'").get() as { count: number },
 		);
 		expect(count.count).toBe(0);
+	});
+
+	it("rejects supersedes combined with oversized chunked content", async () => {
+		seedMemory("mem-chunked", "to be superseded");
+		const app = makeApp();
+		const res = await app.request("/api/memory/remember", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				content: "x".repeat(2000),
+				supersedes: "mem-chunked",
+			}),
+		});
+		expect(res.status).toBe(400);
+		expect((await res.json()) as { error: string }).toMatchObject({
+			error: "supersedes cannot be combined with oversized content (auto-chunking)",
+		});
+		// No chunks written, predecessor untouched.
+		const chunkCount = getDbAccessor().withReadDb(
+			(db) =>
+				db.prepare("SELECT COUNT(*) AS count FROM memories WHERE source_type = 'chunk'").get() as { count: number },
+		);
+		expect(chunkCount.count).toBe(0);
+		expect(
+			getDbAccessor().withReadDb(
+				(db) =>
+					db.prepare("SELECT superseded_by FROM memories WHERE id = 'mem-chunked'").get("mem-chunked") as {
+						superseded_by: string | null;
+					},
+			),
+		).toEqual({ superseded_by: null });
 	});
 
 	it("walks superseded_by lineage from any row in the chain", async () => {
