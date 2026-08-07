@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-08-07
+- Bug fixes: content runbook defers mid-stream transcripts and supersedes contradictions.
+
 ### 2026-08-06
 - Features: add GET /api/mode environment probe.
 - Bug fixes: guard daemon ownership; stop test temp-dir leak + unblock event loop on locked file reads; sanitize auth env values; honor native embedding fallback; formal TTL-eviction lifecycle — checkpoint + idempotent finalization (#902); reflect live agent and pipeline state.
@@ -35,10 +38,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: pass embedding migration typecheck; preserve aggregate recall routing; enforce production typecheck; handle missing Bun SQLite rows; allow nullable dependency reasons; preserve nullable dependency reasons; type source ingestion contracts; type query row boundaries; address review findings; harden provider route setup; keep the event loop alive during the OAuth login; OAuth login fails gracefully instead of quitting silently; run OAuth during the wizard (pi-ai login) before listing models; don't put the model key in extractionConnect; aggregate-recall uses pi-ai catalog + searchable models; wire the pi-ai catalog imports into the wizard (runtime crash); source providers + models from pi-ai, not a hand-rolled catalog; TDZ crash on interactive connect + model/catalog cleanups (autoreview); connect flow — accept all provider families, fix model + catalog (autoreview); make aggregate-recall provider resolvable + daemon-valid (autoreview); drop dead synthesisEndpoint read in wizard prompt; malformed daemon.url no longer bricks the CLI (autoreview); harden synthesis/agent validation (autoreview findings); schema/runtime contract parity, existing-install guard, stdin TTY.
 - Refactoring: focus public Signet language on memory and secrets; merge daemon-hosting and remote-daemon into one prompt; drop the 'Where is Signet running?' prompt from interactive setup; trim background-inference menu to four options; collapse passthrough into off; replace synthesis route with aggregate-recall provider; introduce SetupPlan seam (zod) with --schema introspection.
 
-### 2026-07-28
-- Bug fixes: resolve wrapper entry after skipped postinstall; harden desktop runtime migration; migrate stale desktop runtimes; remove session synthesis routing.
-
 ## Release Ledger
+
+## [0.164.3] - 2026-08-07
+
+Release summary: 1 bug fix.
+Tag range: `v0.164.2..v0.164.3`.
+
+### Bug Fixes
+
+- **dreaming**: content runbook defers mid-stream transcripts and supersedes contradictions (#1140)
 
 ## [0.164.2] - 2026-08-06
 
