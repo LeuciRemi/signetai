@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-07
-- Bug fixes: content runbook defers mid-stream transcripts and supersedes contradictions.
+- Bug fixes: defer source tombstone cleanup to post-DB-init (#1143); reclaim SQLite free pages via auto_vacuum (#1139); content runbook defers mid-stream transcripts and supersedes contradictions.
 
 ### 2026-08-06
 - Features: add GET /api/mode environment probe.
@@ -39,6 +39,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Refactoring: focus public Signet language on memory and secrets; merge daemon-hosting and remote-daemon into one prompt; drop the 'Where is Signet running?' prompt from interactive setup; trim background-inference menu to four options; collapse passthrough into off; replace synthesis route with aggregate-recall provider; introduce SetupPlan seam (zod) with --schema introspection.
 
 ## Release Ledger
+
+## [0.164.4] - 2026-08-07
+
+Release summary: 2 bug fixes.
+Tag range: `v0.164.3..v0.164.4`.
+
+### Bug Fixes
+
+- **daemon**: defer source tombstone cleanup to post-DB-init (#1143) (#1144)
+- **db**: reclaim SQLite free pages via auto_vacuum (#1139) (#1145)
 
 ## [0.164.3] - 2026-08-07
 
