@@ -3,6 +3,7 @@ import { requirePermission } from "../auth";
 import { getDbAccessor } from "../db-accessor";
 import { listEntityAliases } from "../knowledge-graph";
 import { getInferenceProviderOrNull } from "../llm";
+import { graphWriteCaps, loadMemoryConfig } from "../memory-config";
 import {
 	OntologyAssertionError,
 	archiveEpistemicAssertion,
@@ -41,7 +42,7 @@ import {
 	proposeDuplicateEntityMerges,
 	rejectOntologyProposal,
 } from "../ontology-proposals";
-import { authConfig } from "./state";
+import { AGENTS_DIR, authConfig } from "./state";
 import { parseBoundedInt, resolveScopedAgentId } from "./utils";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -604,6 +605,7 @@ export function registerOntologyRoutes(app: Hono): void {
 				applyOntologyOperation(getDbAccessor(), {
 					agentId: scoped.agentId,
 					actor: readString(body, "actor") ?? c.req.header("x-signet-actor") ?? "operator",
+					writeCaps: graphWriteCaps(loadMemoryConfig(AGENTS_DIR)),
 					operation,
 					payload,
 					reason: readString(body, "reason") ?? readString(body, "rationale"),
@@ -635,6 +637,7 @@ export function registerOntologyRoutes(app: Hono): void {
 				applyOntologyOperationBatch(getDbAccessor(), {
 					agentId: scoped.agentId,
 					actor,
+					writeCaps: graphWriteCaps(loadMemoryConfig(AGENTS_DIR)),
 					dryRun: readBoolean(body, "dry_run") ?? false,
 					propose: readBoolean(body, "propose") ?? false,
 					operations: operations.map((raw) => {
@@ -752,6 +755,7 @@ export function registerOntologyRoutes(app: Hono): void {
 					agentId: scoped.agentId,
 					id: c.req.param("id"),
 					actor: readString(body, "actor") ?? c.req.header("x-signet-actor") ?? "operator",
+					writeCaps: graphWriteCaps(loadMemoryConfig(AGENTS_DIR)),
 				}),
 			);
 		} catch (err) {

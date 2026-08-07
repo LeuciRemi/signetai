@@ -278,6 +278,8 @@ export interface PipelineTraversalConfig {
 	readonly primary: boolean;
 	readonly maxAspectsPerEntity: number;
 	readonly maxAttributesPerAspect: number;
+	readonly maxWriteAspectsPerEntity: number;
+	readonly maxWriteAttributesPerAspect: number;
 	readonly maxDependencyHops: number;
 	readonly minDependencyStrength: number;
 	readonly maxBranching: number;

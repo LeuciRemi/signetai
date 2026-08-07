@@ -133,7 +133,9 @@ export const DEFAULT_PIPELINE_V2: ResolvedPipelineV2Config = {
 		enabled: true,
 		primary: true,
 		maxAspectsPerEntity: 10,
-		maxAttributesPerAspect: 20,
+		maxAttributesPerAspect: 25,
+		maxWriteAspectsPerEntity: 10,
+		maxWriteAttributesPerAspect: 25,
 		maxDependencyHops: 10,
 		minDependencyStrength: 0.3,
 		maxBranching: 4,
@@ -670,7 +672,19 @@ export function loadPipelineConfig(yaml: Record<string, unknown>): ResolvedPipel
 				traversalRaw?.maxAttributesPerAspect,
 				1,
 				200,
-				d.traversal?.maxAttributesPerAspect ?? 20,
+				d.traversal?.maxAttributesPerAspect ?? 25,
+			),
+			maxWriteAspectsPerEntity: clampPositive(
+				traversalRaw?.maxWriteAspectsPerEntity,
+				1,
+				50,
+				d.traversal?.maxWriteAspectsPerEntity ?? 10,
+			),
+			maxWriteAttributesPerAspect: clampPositive(
+				traversalRaw?.maxWriteAttributesPerAspect,
+				1,
+				100,
+				d.traversal?.maxWriteAttributesPerAspect ?? 25,
 			),
 			maxDependencyHops: clampPositive(traversalRaw?.maxDependencyHops, 1, 200, d.traversal?.maxDependencyHops ?? 10),
 			minDependencyStrength: clampFraction(
@@ -974,6 +988,18 @@ export function loadDreamingConfig(yaml: Record<string, unknown>): DreamingConfi
 		maxInputTokens: clampWarn("maxInputTokens", raw.maxInputTokens, 8_000, 1_000_000, dd.maxInputTokens),
 		maxOutputTokens: clampWarn("maxOutputTokens", raw.maxOutputTokens, 1_000, 128_000, dd.maxOutputTokens),
 		backfillOnFirstRun: typeof raw.backfillOnFirstRun === "boolean" ? raw.backfillOnFirstRun : dd.backfillOnFirstRun,
+	};
+}
+
+/** Write-path graph caps from the traversal config, with defaults. */
+export function graphWriteCaps(cfg: ResolvedMemoryConfig): {
+	readonly maxAspectsPerEntity: number;
+	readonly maxAttributesPerAspect: number;
+} {
+	const traversal = cfg.pipelineV2.traversal;
+	return {
+		maxAspectsPerEntity: traversal?.maxWriteAspectsPerEntity ?? 10,
+		maxAttributesPerAspect: traversal?.maxWriteAttributesPerAspect ?? 25,
 	};
 }
 

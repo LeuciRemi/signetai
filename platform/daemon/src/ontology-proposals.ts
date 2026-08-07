@@ -181,6 +181,7 @@ export interface ApplyOntologyProposalParams {
 	readonly agentId: string;
 	readonly id: string;
 	readonly actor: string;
+	readonly writeCaps?: GraphWriteCaps;
 }
 
 export interface RejectOntologyProposalParams extends ApplyOntologyProposalParams {
@@ -217,6 +218,7 @@ export interface ApplyOntologyOperationParams extends OntologyOperationInput {
 	readonly actor: string;
 	readonly dryRun?: boolean;
 	readonly propose?: boolean;
+	readonly writeCaps?: GraphWriteCaps;
 }
 
 export interface ApplyOntologyOperationResult {
@@ -232,6 +234,7 @@ export interface ApplyOntologyOperationBatchParams {
 	readonly operations: readonly OntologyOperationInput[];
 	readonly dryRun?: boolean;
 	readonly propose?: boolean;
+	readonly writeCaps?: GraphWriteCaps;
 }
 
 export interface ApplyOntologyOperationBatchResult {
@@ -253,7 +256,9 @@ export interface OntologyOperationBatchError {
 /** Apply an audited operation batch inside a caller-owned transaction. */
 export function applyOntologyOperationBatchInTx(
 	db: WriteDb,
-	params: Pick<ApplyOntologyOperationBatchParams, "agentId" | "actor" | "operations">,
+	params: Pick<ApplyOntologyOperationBatchParams, "agentId" | "actor" | "operations"> & {
+		readonly writeCaps?: GraphWriteCaps;
+	},
 ): ApplyOntologyOperationBatchResult {
 	if (params.operations.length === 0) throw new OntologyProposalError("operations are required", 400);
 	if (params.operations.length > 500)
@@ -281,7 +286,7 @@ export function applyOntologyOperationBatchInTx(
 		);
 		const row = getProposalInTx(db, inserted.id, params.agentId);
 		if (row === null) throw new OntologyProposalError("Proposal not found", 404);
-		const result = applyOperation(db, row, params.actor);
+		const result = applyOperation(db, row, params.actor, params.writeCaps);
 		items.push({
 			proposal: markAppliedInTx(db, row, params.actor, result),
 			result,
@@ -325,6 +330,12 @@ export class OntologyProposalError extends Error {
 		super(message);
 		this.name = "OntologyProposalError";
 	}
+}
+
+/** Write-path caps enforced before add_claim_value/create_aspect. */
+export interface GraphWriteCaps {
+	readonly maxAspectsPerEntity: number;
+	readonly maxAttributesPerAspect: number;
 }
 
 function now(): string {
@@ -950,6 +961,7 @@ function applyAddClaimValue(
 	agentId: string,
 	proposal: ProposalRow,
 	payload: Readonly<Record<string, unknown>>,
+	writeCaps?: GraphWriteCaps,
 ): Readonly<Record<string, unknown>> {
 	const entity = readString(payload, "entity");
 	const aspect = readString(payload, "aspect");
@@ -980,6 +992,24 @@ function applyAddClaimValue(
 		.get(aspectId, agentId, kind, normalized, groupKey, claimKey) as { id: string } | undefined;
 	if (existing) {
 		return { entityId, aspectId, attributeId: existing.id, deduped: true };
+	}
+
+	if (writeCaps !== undefined) {
+		const attrCount = db
+			.prepare(
+				`SELECT COUNT(*) AS c FROM entity_attributes
+				 WHERE aspect_id = ? AND agent_id = ? AND status = 'active'`,
+			)
+			.get(aspectId, agentId) as { c: number };
+		if (attrCount.c >= writeCaps.maxAttributesPerAspect) {
+			const aspectName = db.prepare("SELECT name FROM entity_aspects WHERE id = ?").get(aspectId) as
+				| { name: string }
+				| undefined;
+			throw new OntologyProposalError(
+				`aspect '${aspectName?.name ?? aspectId}' is at attribute cap (${attrCount.c}/${writeCaps.maxAttributesPerAspect}) — supersede or expire an existing claim, or consolidate duplicates, before adding`,
+				409,
+			);
+		}
 	}
 
 	const id = crypto.randomUUID();
@@ -1343,12 +1373,38 @@ function applyCreateAspect(
 	agentId: string,
 	proposal: ProposalRow,
 	payload: Readonly<Record<string, unknown>>,
+	writeCaps?: GraphWriteCaps,
 ): Readonly<Record<string, unknown>> {
 	const entitySelector = readPayloadSelector(payload, "entity", "entity_id");
 	const name = readString(payload, "name") ?? readString(payload, "aspect");
 	if (entitySelector === null) throw new OntologyProposalError("payload.entity is required", 400);
 	if (name === null) throw new OntologyProposalError("payload.name is required", 400);
 	const entity = resolveEntityStrict(db, agentId, entitySelector);
+
+	if (writeCaps !== undefined) {
+		const key = canonical(name);
+		const existingAspect = db
+			.prepare(
+				`SELECT id FROM entity_aspects
+				 WHERE entity_id = ? AND agent_id = ? AND canonical_name = ?`,
+			)
+			.get(entity.id, agentId, key) as { id: string } | undefined;
+		if (existingAspect == null) {
+			const aspectCount = db
+				.prepare(
+					`SELECT COUNT(*) AS c FROM entity_aspects
+					 WHERE entity_id = ? AND agent_id = ? AND COALESCE(status, 'active') = 'active'`,
+				)
+				.get(entity.id, agentId) as { c: number };
+			if (aspectCount.c >= writeCaps.maxAspectsPerEntity) {
+				throw new OntologyProposalError(
+					`entity '${entity.name}' is at aspect cap (${aspectCount.c}/${writeCaps.maxAspectsPerEntity}) — consolidate or archive an existing aspect before creating a new one`,
+					409,
+				);
+			}
+		}
+	}
+
 	const aspectId = resolveOrCreateAspect(db, entity.id, agentId, name);
 	db.prepare(
 		`UPDATE entity_aspects
@@ -1870,17 +1926,24 @@ function applyArchiveEntityAlias(
 	return { aliasId, entityId: entity.id, archived: true };
 }
 
-function applyOperation(db: WriteDb, proposal: ProposalRow, actor: string): Readonly<Record<string, unknown>> {
+function applyOperation(
+	db: WriteDb,
+	proposal: ProposalRow,
+	actor: string,
+	writeCaps?: GraphWriteCaps,
+): Readonly<Record<string, unknown>> {
 	const payload = parseJsonRecord(proposal.payload);
 	if (proposal.operation === "create_entity") return applyCreateEntity(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "rename_entity") return applyRenameEntity(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "archive_entity")
 		return applyArchiveEntity(db, proposal.agent_id, proposal, payload, actor);
-	if (proposal.operation === "create_aspect") return applyCreateAspect(db, proposal.agent_id, proposal, payload);
+	if (proposal.operation === "create_aspect")
+		return applyCreateAspect(db, proposal.agent_id, proposal, payload, writeCaps);
 	if (proposal.operation === "rename_aspect") return applyRenameAspect(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "archive_aspect")
 		return applyArchiveAspect(db, proposal.agent_id, proposal, payload, actor);
-	if (proposal.operation === "add_claim_value") return applyAddClaimValue(db, proposal.agent_id, proposal, payload);
+	if (proposal.operation === "add_claim_value")
+		return applyAddClaimValue(db, proposal.agent_id, proposal, payload, writeCaps);
 	if (proposal.operation === "set_claim_value") return applySetClaimValue(db, proposal.agent_id, proposal, payload);
 	if (proposal.operation === "merge_entities") return applyMergeEntities(db, proposal.agent_id, payload);
 	if (proposal.operation === "supersede_claim_value") {
@@ -2603,7 +2666,7 @@ export function applyOntologyProposal(accessor: DbAccessor, params: ApplyOntolog
 				throw new OntologyProposalError(`Proposal is ${proposal.status}, not pending`, 409);
 			}
 
-			const result = applyOperation(db, proposal, params.actor);
+			const result = applyOperation(db, proposal, params.actor, params.writeCaps);
 			const ts = now();
 			db.prepare(
 				`UPDATE ontology_proposals
@@ -2680,7 +2743,7 @@ export function applyOntologyOperation(
 			const inserted = insertProposalInTx(db, operationToProposalInput(params), now());
 			const row = getProposalInTx(db, inserted.id, params.agentId);
 			if (row === null) throw new OntologyProposalError("Proposal not found", 404);
-			const operationResult = applyOperation(db, row, params.actor);
+			const operationResult = applyOperation(db, row, params.actor, params.writeCaps);
 			const proposal = markAppliedInTx(db, row, params.actor, operationResult);
 			const item = { proposal, result: operationResult, dryRun: params.dryRun === true, proposed: false };
 			if (params.dryRun) {
@@ -2763,7 +2826,7 @@ export function applyOntologyOperationBatch(
 					);
 					const row = getProposalInTx(db, inserted.id, params.agentId);
 					if (row === null) throw new OntologyProposalError("Proposal not found", 404);
-					const operationResult = applyOperation(db, row, params.actor);
+					const operationResult = applyOperation(db, row, params.actor, params.writeCaps);
 					const proposal = markAppliedInTx(db, row, params.actor, operationResult);
 					items.push({ proposal, result: operationResult, dryRun: params.dryRun === true, proposed: false });
 				} catch (err) {

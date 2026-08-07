@@ -946,8 +946,10 @@ supplementary.
 |-------|---------|-------|-------------|
 | `enabled` | `true` | — | Enable graph traversal |
 | `primary` | `true` | — | Use traversal as primary retrieval strategy |
-| `maxAspectsPerEntity` | `10` | 1-50 | Max aspects to collect per entity |
-| `maxAttributesPerAspect` | `20` | 1-100 | Max attributes per aspect |
+| `maxAspectsPerEntity` | `10` | 1-50 | Max aspects to collect per entity (read cap) |
+| `maxAttributesPerAspect` | `25` | 1-100 | Max attributes per aspect (read cap) |
+| `maxWriteAspectsPerEntity` | `10` | 1-50 | Max active aspects per entity before create_aspect is rejected |
+| `maxWriteAttributesPerAspect` | `25` | 1-100 | Max active attributes per aspect before add_claim_value is rejected |
 | `maxDependencyHops` | `10` | 1-50 | Max hops for dependency walking |
 | `minDependencyStrength` | `0.3` | 0.0-1.0 | Minimum edge strength to follow |
 | `maxBranching` | `4` | 1-20 | Max branching factor during traversal |
@@ -964,7 +966,9 @@ memory:
       enabled: true
       primary: true
       maxAspectsPerEntity: 10
-      maxAttributesPerAspect: 20
+      maxAttributesPerAspect: 25
+      maxWriteAspectsPerEntity: 10
+      maxWriteAttributesPerAspect: 25
       maxDependencyHops: 10
       minDependencyStrength: 0.3
       maxBranching: 4

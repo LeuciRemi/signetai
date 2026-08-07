@@ -2442,4 +2442,163 @@ describe("ontology proposals", () => {
 			}),
 		).toThrow("ambiguous");
 	});
+
+	// #1138: write-gate aspect/attribute caps that force supersession and consolidation
+	it("rejects add_claim_value past the attribute cap with a teaching error", () => {
+		const cap = { maxAspectsPerEntity: 10, maxAttributesPerAspect: 2 };
+		const common = {
+			agentId: "ant",
+			actor: "test",
+			operation: "add_claim_value",
+		} as const;
+
+		for (let i = 0; i < 2; i++) {
+			applyOntologyOperation(getDbAccessor(), {
+				...common,
+				payload: {
+					entity: "Capped",
+					entity_type: "project",
+					aspect: "facts",
+					claim_key: `fact_${i}`,
+					value: `fact number ${i}`,
+				},
+				writeCaps: cap,
+			});
+		}
+
+		expect(() =>
+			applyOntologyOperation(getDbAccessor(), {
+				...common,
+				payload: {
+					entity: "Capped",
+					entity_type: "project",
+					aspect: "facts",
+					claim_key: "fact_overflow",
+					value: "this should be rejected",
+				},
+				writeCaps: cap,
+			}),
+		).toThrow(/attribute cap \(2\/2\).*supersede or expire/);
+	});
+
+	it("does not enforce attribute cap when writeCaps is omitted (backward compat)", () => {
+		for (let i = 0; i < 5; i++) {
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "add_claim_value",
+				payload: {
+					entity: "Uncapped",
+					entity_type: "project",
+					aspect: "facts",
+					claim_key: `fact_${i}`,
+					value: `fact number ${i}`,
+				},
+			});
+		}
+
+		const count = getDbAccessor().withReadDb(
+			(db) =>
+				db
+					.prepare("SELECT COUNT(*) AS c FROM entity_attributes WHERE agent_id = ? AND status = 'active'")
+					.get("ant") as { c: number },
+		);
+		expect(count.c).toBe(5);
+	});
+
+	it("rejects create_aspect past the aspect cap with a teaching error", () => {
+		const cap = { maxAspectsPerEntity: 2, maxAttributesPerAspect: 25 };
+
+		// create_entity first so create_aspect can resolve it
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "create_entity",
+			payload: { name: "CappedEnt", entity_type: "project" },
+		});
+
+		for (let i = 0; i < 2; i++) {
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "create_aspect",
+				payload: { entity: "CappedEnt", entity_type: "project", name: `aspect_${i}` },
+				writeCaps: cap,
+			});
+		}
+
+		expect(() =>
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "create_aspect",
+				payload: { entity: "CappedEnt", entity_type: "project", name: "overflow_aspect" },
+				writeCaps: cap,
+			}),
+		).toThrow(/aspect cap \(2\/2\).*consolidate or archive/);
+	});
+
+	it("allows adding to an existing aspect that already exists past the cap (idempotent resolve)", () => {
+		const cap = { maxAspectsPerEntity: 1, maxAttributesPerAspect: 25 };
+
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "create_entity",
+			payload: { name: "Single", entity_type: "project" },
+		});
+
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "create_aspect",
+			payload: { entity: "Single", entity_type: "project", name: "only_aspect" },
+			writeCaps: cap,
+		});
+
+		// Re-creating the same aspect should not trigger the cap
+		expect(() =>
+			applyOntologyOperation(getDbAccessor(), {
+				agentId: "ant",
+				actor: "test",
+				operation: "create_aspect",
+				payload: { entity: "Single", entity_type: "project", name: "only_aspect" },
+				writeCaps: cap,
+			}),
+		).not.toThrow();
+	});
+
+	it("deduplicates exact-value claims before enforcing the attribute cap", () => {
+		const cap = { maxAspectsPerEntity: 10, maxAttributesPerAspect: 1 };
+
+		applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "add_claim_value",
+			payload: {
+				entity: "Dedup",
+				entity_type: "project",
+				aspect: "facts",
+				claim_key: "same_key",
+				value: "identical content",
+			},
+			writeCaps: cap,
+		});
+
+		// Adding the exact same value+key should dedup, not hit the cap
+		const result = applyOntologyOperation(getDbAccessor(), {
+			agentId: "ant",
+			actor: "test",
+			operation: "add_claim_value",
+			payload: {
+				entity: "Dedup",
+				entity_type: "project",
+				aspect: "facts",
+				claim_key: "same_key",
+				value: "identical content",
+			},
+			writeCaps: cap,
+		});
+		expect(result.result?.deduped).toBe(true);
+	});
 });

@@ -1,7 +1,11 @@
 import { SOURCE_NATIVE_TOPOLOGY_ENTITY_TYPES } from "@signet/core";
 import type { DbAccessor, ReadDb } from "../db-accessor";
 import { findEpisodicSourceAgentIds, readEpisodicSource } from "../episodic-sources";
-import { type OntologyOperationInput, applyOntologyOperationBatchInTx } from "../ontology-proposals";
+import {
+	type GraphWriteCaps,
+	type OntologyOperationInput,
+	applyOntologyOperationBatchInTx,
+} from "../ontology-proposals";
 import { type DreamingAttention, enqueueDreamingAttentionInTx, getDreamingAttentionById } from "./dreaming-attention";
 import { type DreamingAgentEvidence, createDreamingAgentEvidence } from "./dreaming-evidence";
 import { DREAMING_OPERATION_IDS } from "./dreaming-operation-contract";
@@ -489,6 +493,7 @@ export function applyDreamingOperations(params: {
 	readonly actor: string;
 	readonly operations: readonly DreamingOperationRequest[];
 	readonly passId?: string;
+	readonly writeCaps?: GraphWriteCaps;
 }): ApplyDreamingOperationsResult {
 	if (params.operations.length === 0) return { ok: false, items: [], error: "operations are required" };
 	const allowedOperations = new Set<string>(DREAMING_OPERATION_IDS);
@@ -581,6 +586,7 @@ export function applyDreamingOperations(params: {
 					agentId: params.agentId,
 					actor: params.actor,
 					operations: [entry.input],
+					writeCaps: params.writeCaps,
 				});
 				db.exec(`RELEASE SAVEPOINT ${savepoint}`);
 				if (entry.attentionId !== null) {

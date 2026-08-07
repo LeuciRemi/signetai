@@ -7,7 +7,7 @@ import { requirePermission, requireRateLimit } from "../auth";
 import { getDbAccessor } from "../db-accessor.js";
 import { type QueueCounts, getQueueDiagnosticsSnapshot } from "../diagnostics-queue.js";
 import { getLlmProvider } from "../llm.js";
-import { loadMemoryConfig } from "../memory-config.js";
+import { graphWriteCaps, loadMemoryConfig } from "../memory-config.js";
 import {
 	getDreamingAttention,
 	getDreamingEpisodicTokenBacklog,
@@ -665,6 +665,7 @@ export function registerPipelineRoutes(app: Hono): void {
 			accessor: getDbAccessor(),
 			agentId,
 			actor,
+			writeCaps: graphWriteCaps(loadMemoryConfig(AGENTS_DIR)),
 			operations: operations.map((rawOperation) => {
 				const operation = asRecord(rawOperation);
 				return {
