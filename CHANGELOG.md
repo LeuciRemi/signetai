@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-07
-- Features: emit pipeline.embedding with stats; PostHog ping, default-on disclosure; GitHub release download stats (Phase 3 of #1026); Phase 2 opt-in telemetry with open log + lifecycle events; anonymous post-install telemetry ping with opt-out; per-install PostHog analytics; record embedding token usage at the fetch boundary (#1154); record provider-reported token usage on dreaming passes; export session transcripts for training/fine-tuning; supersedes lineage at remember-write time + lineage chain; hygiene over-cap detector flags consolidation targets; merge_aspects consolidation op + bump graph caps to 20/50; write-gate aspect/attribute caps that force supersession; redesign marketing site and docs system; review_after column + store surfaces for temporal-claim expiry (#945).
+- Features: emit install.activated on first run; emit pipeline.embedding with stats; PostHog ping, default-on disclosure; GitHub release download stats (Phase 3 of #1026); Phase 2 opt-in telemetry with open log + lifecycle events; anonymous post-install telemetry ping with opt-out; per-install PostHog analytics; record embedding token usage at the fetch boundary (#1154); record provider-reported token usage on dreaming passes; export session transcripts for training/fine-tuning; supersedes lineage at remember-write time + lineage chain; hygiene over-cap detector flags consolidation targets; merge_aspects consolidation op + bump graph caps to 20/50; write-gate aspect/attribute caps that force supersession; redesign marketing site and docs system; review_after column + store surfaces for temporal-claim expiry (#945).
 - Bug fixes: honor SIGNET_TELEMETRY_OPTOUT; close hygiene attention pin gaps found in adversarial review; pin hygiene archive targets by subjectRef when flag details omit ids; write setup opt-out to memory.pipelineV2; defer summary jobs when synthesis resolver uninitialised; label prompt-estimate tokens instead of zero-filling breakdown; watermark tracks surfaced evidence; close adversarial-review findings on #1148; surface daemon deaths with lifecycle record, exit-path logs, and concurrency load test; close remaining adversarial-review findings on #1147; close cap bypasses + lineage scope leak found in adversarial review; unshadow Astro home page from stale static index.html; drop vanished native-memory artifacts, back off failed reads (#1142); defer source tombstone cleanup to post-DB-init (#1143); reclaim SQLite free pages via auto_vacuum (#1139); content runbook defers mid-stream transcripts and supersedes contradictions.
 - Docs: mark #1026 usage analytics done.
 
@@ -41,6 +41,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Refactoring: focus public Signet language on memory and secrets; merge daemon-hosting and remote-daemon into one prompt; drop the 'Where is Signet running?' prompt from interactive setup; trim background-inference menu to four options; collapse passthrough into off; replace synthesis route with aggregate-recall provider; introduce SetupPlan seam (zod) with --schema introspection.
 
 ## Release Ledger
+
+## [0.173.0] - 2026-08-07
+
+Release summary: 1 feature.
+Tag range: `v0.172.0..v0.173.0`.
+
+### Features
+
+- **telemetry**: emit install.activated on first run
 
 ## [0.172.0] - 2026-08-07
 
