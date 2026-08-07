@@ -29,6 +29,7 @@ function mockProviderWithUsage(name = "test"): LlmProvider {
 					outputTokens: ++callCount,
 					cacheReadTokens: 0,
 					cacheCreationTokens: 0,
+					totalTokens: ++callCount,
 					totalCost: null,
 					totalDurationMs: null,
 				},

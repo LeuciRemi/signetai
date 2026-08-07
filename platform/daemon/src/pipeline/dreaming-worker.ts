@@ -225,7 +225,10 @@ export function startDreamingWorker(
 						: "";
 					throw new Error(attempts ? `${result.error.message} (${attempts})` : result.error.message);
 				}
-				return { summary: `Dreaming agent completed through ${result.value.decision.targetRef}` };
+				return {
+					summary: `Dreaming agent completed through ${result.value.decision.targetRef}`,
+					usage: result.value.attempts.find((attempt) => attempt.ok)?.usage ?? null,
+				};
 			},
 		};
 	};

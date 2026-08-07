@@ -11,6 +11,7 @@ export interface LlmUsage {
 	readonly outputTokens: number | null;
 	readonly cacheReadTokens: number | null;
 	readonly cacheCreationTokens: number | null;
+	readonly totalTokens: number | null;
 	readonly totalCost: number | null;
 	readonly totalDurationMs: number | null;
 }

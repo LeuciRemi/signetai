@@ -31,7 +31,7 @@ import { type ResolvedInferenceCredential, createRoutingProvider } from "./infer
 import { logger } from "./logger";
 import { loadMemoryConfig } from "./memory-config";
 import { createDreamingAcpxMcpConfig } from "./pipeline/acpx-dreaming-mcp";
-import { isPiAgentSessionProvider } from "./pipeline/pi-provider";
+import { isPiAgentSessionProvider, mapSessionStatsToUsage } from "./pipeline/pi-provider";
 import {
 	type AcpxHooksMode,
 	type LlmProviderStreamEvent,
@@ -858,16 +858,21 @@ export class InferenceRouter {
 					if ((opts?.timeoutMs ?? provider.agentSessionTimeoutMs) > 0) {
 						timer = setTimeout(() => void session.abort(), opts?.timeoutMs ?? provider.agentSessionTimeoutMs);
 					}
+					let sessionUsage: LlmUsage | null = null;
 					try {
 						await session.prompt(prompt);
 						const failure = session.getFailureMessage();
 						if (failure) throw new Error(failure);
+						// Read the session aggregate before dispose() tears the
+						// in-memory entries down. getStats is the only way to
+						// capture provider-reported tokens for the agentic loop.
+						sessionUsage = mapSessionStatsToUsage(session.getStats(), Date.now() - startedAt);
 					} finally {
 						if (timer) clearTimeout(timer);
 						session.dispose();
 					}
 					this.clearObservedRuntimeState(loaded.value, targetRef);
-					attempts.push({ targetRef, ok: true, durationMs: Date.now() - startedAt, usage: null });
+					attempts.push({ targetRef, ok: true, durationMs: Date.now() - startedAt, usage: sessionUsage });
 					return { ok: true, value: { decision: decision.value, attempts } };
 				} catch (error) {
 					const message = formatExecutionError(error);

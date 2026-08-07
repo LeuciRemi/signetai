@@ -22,6 +22,7 @@ import {
 	DefaultResourceLoader,
 	ModelRuntime,
 	SessionManager,
+	type SessionStats,
 	SettingsManager,
 	type ToolDefinition,
 	createAgentSession,
@@ -96,6 +97,12 @@ export interface PiAgentSession {
 	dispose(): void;
 	getActiveToolNames(): readonly string[];
 	getFailureMessage(): string | undefined;
+	/**
+	 * Provider-reported token usage for the whole session, aggregated by
+	 * pi-coding-agent across every assistant turn and tool call. Undefined
+	 * for providers that never reported usage.
+	 */
+	getStats(): SessionStats | undefined;
 }
 
 export interface PiAgentSessionProvider {
@@ -253,8 +260,39 @@ function mapUsage(usage: Usage): LlmUsage {
 		outputTokens: usage.output ?? null,
 		cacheReadTokens: usage.cacheRead ?? null,
 		cacheCreationTokens: usage.cacheWrite ?? null,
+		totalTokens: usage.totalTokens ?? null,
 		totalCost: usage.cost?.total ?? null,
 		totalDurationMs: null,
+	};
+}
+
+/**
+ * Map a pi-coding-agent SessionStats aggregate to the shared LlmUsage shape.
+ * The stats object aggregates provider-reported usage across every assistant
+ * turn and tool result in the session; a session that reported nothing
+ * yields an all-null usage so callers can distinguish "no usage reported"
+ * from a real zero-token pass.
+ */
+export function mapSessionStatsToUsage(stats: SessionStats | undefined, totalDurationMs: number): LlmUsage {
+	if (stats === undefined) {
+		return {
+			inputTokens: null,
+			outputTokens: null,
+			cacheReadTokens: null,
+			cacheCreationTokens: null,
+			totalTokens: null,
+			totalCost: null,
+			totalDurationMs,
+		};
+	}
+	return {
+		inputTokens: stats.tokens.input,
+		outputTokens: stats.tokens.output,
+		cacheReadTokens: stats.tokens.cacheRead,
+		cacheCreationTokens: stats.tokens.cacheWrite,
+		totalTokens: stats.tokens.total,
+		totalCost: stats.cost,
+		totalDurationMs,
 	};
 }
 
@@ -508,6 +546,7 @@ export function createPiModelProvider(
 				abort: () => session.abort(),
 				dispose: () => session.dispose(),
 				getActiveToolNames: () => session.getActiveToolNames(),
+				getStats: () => session.getSessionStats(),
 				getFailureMessage: () => {
 					for (const message of [...session.messages].reverse()) {
 						if (
