@@ -98,6 +98,13 @@ import {
 } from "./session-checkpoints";
 import { deriveSessionEndFallbackId, recoverMissingSessionEndOnClearStart } from "./session-end-recovery";
 import {
+	clearSessionEndTelemetry,
+	hasSessionEndTelemetry,
+	hashSessionKey,
+	markSessionEndTelemetry,
+	pruneSessionEndTelemetry,
+} from "./session-end-state";
+import {
 	type SessionMemoryCandidate,
 	parseFeedback,
 	recordAgentFeedback,
@@ -609,6 +616,13 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 		const sessionKey = req.sessionKey?.trim();
 		const recoveredJobId = recoverMissingSessionEndOnClearStart(req, agentId, memoryCfg, new Date().toISOString());
 		clearSessionStartDedupe(req);
+		// A reset also opens a new session lifetime — any prior session.end
+		// marker must not suppress a termination event for the new one (#1212).
+		clearSessionEndTelemetry({
+			agentId,
+			harness: req.harness,
+			sessionKey: req.sessionKey ?? undefined,
+		});
 		if (sessionKey) {
 			clearRawSessionStartDedupeKey(sessionKey);
 			clearContinuity(sessionKey);
@@ -654,9 +668,18 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 	}
 
 	// Anonymous usage telemetry: a real session start (dedup stubs and
-	// clear/reset paths above don't count as new sessions).
+	// clear/reset paths above don't count as new sessions). A real start
+	// also opens a new session lifetime, so any prior session.end marker
+	// for this key must not suppress a later termination event (#1212).
+	pruneSessionEndTelemetry();
+	clearSessionEndTelemetry({
+		agentId,
+		harness: req.harness,
+		sessionKey: req.sessionKey,
+	});
 	getActiveTelemetry()?.record("session.start", {
 		harness: req.harness,
+		sessionHash: hashSessionKey(req.sessionKey),
 	});
 
 	// Initialize continuity state for checkpoint accumulation (first call only)
@@ -1748,6 +1771,17 @@ export async function handleSessionEnd(req: SessionEndRequest): Promise<SessionE
 			sourceRef: sessionKey ?? null,
 		});
 		clearContinuity(sessionKey);
+		// Real session termination: the caller explicitly discards the
+		// session. Emit session.end once per session lifetime (#1212) so the
+		// counter stays comparable with the dedup'd session.start.
+		if (!hasSessionEndTelemetry({ agentId, harness: req.harness, sessionKey })) {
+			getActiveTelemetry()?.record("session.end", {
+				harness: req.harness,
+				reason: "clear",
+				sessionHash: hashSessionKey(sessionKey),
+			});
+			markSessionEndTelemetry({ agentId, harness: req.harness, sessionKey });
+		}
 		return { memoriesSaved: 0 };
 	}
 
@@ -1756,11 +1790,15 @@ export async function handleSessionEnd(req: SessionEndRequest): Promise<SessionE
 	// the interval since the last periodic/pre-compaction consume.
 	const snap = consumeState(sessionKey);
 
-	// Anonymous usage telemetry for real session ends (the clear path above
-	// returns early and doesn't count as a session).
-	getActiveTelemetry()?.record("session.end", {
+	// Anonymous usage telemetry for session-end hook calls. Harnesses call
+	// this hook per turn (Stop/session.idle) to persist messages, so this
+	// is a "turns persisted" volume counter — not a session boundary.
+	// Real session termination is emitted separately as session.end on
+	// explicit clear or TTL eviction (#1212).
+	getActiveTelemetry()?.record("session.turn", {
 		harness: req.harness,
 		promptCount: snap?.totalPromptCount ?? null,
+		sessionHash: hashSessionKey(sessionKey),
 	});
 	if (snap && snap.totalPromptCount > 0) {
 		try {

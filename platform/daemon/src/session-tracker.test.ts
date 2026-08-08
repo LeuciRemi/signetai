@@ -1,4 +1,7 @@
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
+import type { DbAccessor } from "./db-accessor";
+import { hashSessionKey, markSessionEndTelemetry } from "./session-end-state";
 import {
 	type SessionEvictionHandler,
 	_expireSessionForTest,
@@ -17,10 +20,47 @@ import {
 	runStaleCleanup,
 	setSessionEvictionHandler,
 } from "./session-tracker";
+import { createTelemetryCollector, setActiveTelemetry } from "./telemetry";
+
+// Collector config for telemetry regression tests (#1212): empty posthogHost
+// means nothing is ever sent, and the buffer is queried directly.
+const TEST_TELEMETRY_CONFIG = {
+	posthogHost: "",
+	posthogApiKey: "",
+	flushIntervalMs: 60000,
+	flushBatchSize: 50,
+	retentionDays: 90,
+	memorySearchQaEnabled: false,
+} as const;
 
 afterEach(() => {
 	resetSessions();
 });
+
+/**
+ * Real in-memory telemetry DB: the collector writes the event buffer to
+ * `telemetry_events` on flush, and `query()` reads it back — a fake that
+ * returns [] for every SELECT would hide the events. Mirrors the real
+ * schema (migration 109) so flush + query behave like production.
+ */
+function telemetryTestDb(): DbAccessor {
+	const db = new Database(":memory:");
+	db.exec("CREATE TABLE telemetry_install (id TEXT PRIMARY KEY, created_at TEXT NOT NULL)");
+	db.exec(
+		`CREATE TABLE telemetry_events (
+			id TEXT PRIMARY KEY,
+			event TEXT NOT NULL,
+			timestamp TEXT NOT NULL,
+			properties TEXT NOT NULL,
+			sent_to_posthog INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL
+		)`,
+	);
+	return {
+		withWriteTx: (fn: (d: Database) => unknown) => fn(db),
+		withReadDb: (fn: (d: Database) => unknown) => fn(db),
+	} as unknown as DbAccessor;
+}
 
 describe("bypass with allowUnknown", () => {
 	it("adds a bypass entry for an unclaimed session", () => {
@@ -267,5 +307,74 @@ describe("TTL eviction lifecycle handler (#902)", () => {
 
 		expect(evicted).toEqual(["ttl-reclaim", "ttl-has", "ttl-path", "ttl-active", "ttl-renew"]);
 		expect(getSessionTrackerStats().expired).toBe(5);
+	});
+
+	describe("session.end telemetry on TTL eviction (#1212)", () => {
+		it("emits session.end once per session lifetime when a claim TTL-evicts", async () => {
+			const collector = createTelemetryCollector(telemetryTestDb(), TEST_TELEMETRY_CONFIG, "0.0.0-test");
+			setActiveTelemetry(collector);
+			try {
+				claimSession("sess-evict", "legacy", "default", "claude-code");
+				_expireSessionForTest("sess-evict");
+				runStaleCleanup();
+				await collector.flush();
+
+				const ends = collector.query().filter((e) => e.event === "session.end");
+				expect(ends).toHaveLength(1);
+				expect(ends[0]?.properties.reason).toBe("expired");
+				expect(ends[0]?.properties.harness).toBe("claude-code");
+				expect(typeof ends[0]?.properties.sessionHash).toBe("string");
+
+				// A re-claimed session that evicts again without a new session
+				// start is the same lifetime — no second event.
+				claimSession("sess-evict", "legacy", "default", "claude-code");
+				_expireSessionForTest("sess-evict");
+				runStaleCleanup();
+				await collector.flush();
+				expect(collector.query().filter((e) => e.event === "session.end")).toHaveLength(1);
+			} finally {
+				setActiveTelemetry(undefined);
+			}
+		});
+
+		it("emits session.end for claims without a harness as harness null", async () => {
+			const collector = createTelemetryCollector(telemetryTestDb(), TEST_TELEMETRY_CONFIG, "0.0.0-test");
+			setActiveTelemetry(collector);
+			try {
+				claimSession("sess-evict-noharness", "plugin");
+				_expireSessionForTest("sess-evict-noharness");
+				runStaleCleanup();
+				await collector.flush();
+
+				const ends = collector.query().filter((e) => e.event === "session.end");
+				expect(ends).toHaveLength(1);
+				expect(ends[0]?.properties.harness).toBeNull();
+			} finally {
+				setActiveTelemetry(undefined);
+			}
+		});
+
+		it("does not double-count a lifetime whose clear used a session:-prefixed key (#1212)", async () => {
+			const collector = createTelemetryCollector(telemetryTestDb(), TEST_TELEMETRY_CONFIG, "0.0.0-test");
+			setActiveTelemetry(collector);
+			try {
+				// Harnesses (openclaw) send "session:<uuid>" keys. The clear
+				// path and the tracker eviction path must agree on the same
+				// normalized identity, or the same lifetime emits session.end
+				// twice — once for clear, once for the eviction.
+				markSessionEndTelemetry({ agentId: "default", harness: "claude-code", sessionKey: "session:evict-prefixed" });
+				claimSession("session:evict-prefixed", "legacy", "default", "claude-code");
+				_expireSessionForTest("session:evict-prefixed");
+				runStaleCleanup();
+				await collector.flush();
+
+				expect(collector.query().filter((e) => e.event === "session.end")).toHaveLength(0);
+
+				// And the anonymous hash is joinable across raw/normalized forms.
+				expect(hashSessionKey("session:abc")).toBe(hashSessionKey("abc"));
+			} finally {
+				setActiveTelemetry(undefined);
+			}
+		});
 	});
 });

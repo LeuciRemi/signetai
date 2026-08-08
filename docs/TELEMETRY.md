@@ -52,8 +52,9 @@ PostHog failures, and never throws into the daemon.
 | `install.activated` | first daemon run of a new install (persisted install id first created) | `version`, `platform` |
 | `daemon.started` | daemon boot | `version`, `platform`, `uptimeMs` |
 | `daemon.heartbeat` | every 5 minutes | `uptimeMs`, `memoryCount`, `connectorsActive`, `pipelineMode`, `extractionProvider`, `embeddingProvider` |
-| `session.start` | real session start (deduped; stubs and clear/reset paths don't count) | `harness` |
-| `session.end` | Stop/session-end hook | `harness`, `promptCount` |
+| `session.start` | real session start (deduped; stubs and clear/reset paths don't count) | `harness`, `sessionHash` |
+| `session.turn` | every `session-end` hook call (per turn, see notes) | `harness`, `promptCount`, `sessionHash` |
+| `session.end` | real session termination: explicit `reason: "clear"`, or a TTL-evicted (abandoned) session claim | `harness`, `reason` (`clear` / `expired`), `sessionHash` |
 | `llm.generate` | every LLM call | `provider`, `latencyMs`, `success`, `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, `totalCost` |
 | `pipeline.embedding` | every embedding fetch, at the usage-recording boundary | `tokens`, `provider`, `sourceKind` (`memory-capture` / `artifact-index` / `recall` / `dreaming` / `other`) |
 | `dreaming.pass` | completed agentic dreaming pass (early-exit passes emit nothing) | `mode`, `tokensInput`, `tokensOutput`, `tokensCacheRead`, `tokensCacheWrite`, `cost` |
@@ -79,12 +80,18 @@ Notes on individual events:
   id is first created. It covers bun, desktop, and npm uniformly and is the
   **active installs** metric. Count distinct ids with `install.activated`;
   never sum ping and activated counts.
-- **`session.end`** — known naming quirk: it fires on the `session_end` hook
-  harnesses call per turn to save messages, so it measures *turns persisted*,
-  not session terminations. `session.start` is deduped per real session; the
-  end path is not, so the counters are not comparable (observed ~9:1 in the
-  wild). Rename to `session.turn` / `turn.persisted` plus a real termination
-  event is tracked in issue #1212.
+- **Session events (#1212)** — the three events measure different things and
+  are deliberately not comparable with each other: `session.start` fires once
+  per real session start (deduped per session key; resumed sessions do not
+  re-fire); `session.turn` fires on every `session-end` hook call, which
+  harnesses invoke per turn to persist messages — a *turns persisted* volume
+  counter; `session.end` fires only at real terminations (explicit
+  `reason: "clear"`, or TTL-evicted abandoned claims), deduped once per
+  session lifetime via `session-end-state.ts` (in-memory, cleared on real and
+  clear session starts). All three carry `sessionHash`, a 16-hex sha256 of the
+  normalized session key, so distinct sessions and concurrency are countable
+  without leaking raw keys. Cleanly-finished sessions that never send
+  `clear` are not counted as ended — only provable terminations are.
 - **`dreaming.pass`** — dreaming is the largest token consumer (millions of
   input tokens per heavy install), so always include it in token/cost
   aggregates.
@@ -162,7 +169,6 @@ it is never flushed to PostHog.
 
 ## Known semantics quirks
 
-- `session.end` counts turns, not sessions (#1212, rename pending).
 - `pipeline.embedding` is tokens-only; embedding cost accounting is pending
   (#1201).
 - `install.ping` and `install.activated` measure different populations —
@@ -214,6 +220,7 @@ vault mirrors the key PostHog aggregates for daily review via
 | 0.173.0 | `install.activated` on first daemon run |
 | 0.174.0 | `dreaming.pass` with provider-reported token usage and cost |
 | 0.176.0 | Sanitized crash reports: full `error.occurred` payload (truncated, home-stripped message + top-8 stack frames) and rate-limited `EventLoopLag` wedge reports |
+| next | `session.turn` + real `session.end` split (#1212): the per-turn event renamed from the old `session.end`; `session.end` now fires only at real terminations, deduped per lifetime; `sessionHash` added to all three session events |
 
 Related: #1026 (original rollout), #1200 (IP capture, dev tagging),
-#1201-#1207 (event-scoped follow-ups), #1212 (session.end rename).
+#1201-#1207 (event-scoped follow-ups), #1212 (session.end rename — resolved).
