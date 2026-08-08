@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-08
-- Features: embed live dashboard demo in marketing showcase.
+- Features: sanitized crash reports for remote debugging; embed live dashboard demo in marketing showcase.
 - Bug fixes: keep check loop alive on pass failure; serve the dashboard demo via a worker-owned /demo/ route; declare the ASSETS binding for the framing worker; enforce dashboard framing headers in a worker; _headers override must precede the site-wide rule; render dashboard embed at 1536x864 zoom instead of cropping; drop showcase view switcher, enlarge dashboard embed; polish embedded dashboard demo.
 
 ### 2026-08-07
@@ -40,6 +40,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: address review feedback on the daemon-rs removal; remove daemon-rs references and record deprecation.
 
 ## Release Ledger
+
+## [0.176.0] - 2026-08-08
+
+Release summary: 1 feature.
+Tag range: `v0.175.0..v0.176.0`.
+
+### Features
+
+- **telemetry**: sanitized crash reports for remote debugging
 
 ## [0.175.0] - 2026-08-08
 
