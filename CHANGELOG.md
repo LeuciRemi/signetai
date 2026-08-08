@@ -6,6 +6,10 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-08-08
+- Features: embed live dashboard demo in marketing showcase.
+- Bug fixes: keep check loop alive on pass failure; serve the dashboard demo via a worker-owned /demo/ route; declare the ASSETS binding for the framing worker; enforce dashboard framing headers in a worker; _headers override must precede the site-wide rule; render dashboard embed at 1536x864 zoom instead of cropping; drop showcase view switcher, enlarge dashboard embed; polish embedded dashboard demo.
+
 ### 2026-08-07
 - Features: emit dreaming.pass with token usage; require natural-language pass summaries in runbook; dreaming tab with live trace, summary, and ledger; emit install.activated on first run; emit pipeline.embedding with stats; PostHog ping, default-on disclosure; GitHub release download stats (Phase 3 of #1026); Phase 2 opt-in telemetry with open log + lifecycle events; anonymous post-install telemetry ping with opt-out; per-install PostHog analytics; record embedding token usage at the fetch boundary (#1154); record provider-reported token usage on dreaming passes; export session transcripts for training/fine-tuning; supersedes lineage at remember-write time + lineage chain; hygiene over-cap detector flags consolidation targets; merge_aspects consolidation op + bump graph caps to 20/50; write-gate aspect/attribute caps that force supersession; redesign marketing site and docs system; review_after column + store surfaces for temporal-claim expiry (#945).
 - Bug fixes: honor SIGNET_TELEMETRY_OPTOUT; close hygiene attention pin gaps found in adversarial review; pin hygiene archive targets by subjectRef when flag details omit ids; write setup opt-out to memory.pipelineV2; defer summary jobs when synthesis resolver uninitialised; label prompt-estimate tokens instead of zero-filling breakdown; watermark tracks surfaced evidence; close adversarial-review findings on #1148; surface daemon deaths with lifecycle record, exit-path logs, and concurrency load test; close remaining adversarial-review findings on #1147; close cap bypasses + lineage scope leak found in adversarial review; unshadow Astro home page from stale static index.html; drop vanished native-memory artifacts, back off failed reads (#1142); defer source tombstone cleanup to post-DB-init (#1143); reclaim SQLite free pages via auto_vacuum (#1139); content runbook defers mid-stream transcripts and supersedes contradictions.
@@ -35,12 +39,27 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Refactoring: remove nativeShadowEnabled shadow proxy; remove SIGNET_DAEMON_RUNTIME rust switch and binary download.
 - Docs: address review feedback on the daemon-rs removal; remove daemon-rs references and record deprecation.
 
-### 2026-07-30
-- Features: migrate embeddings without recall downtime; run OAuth via pi-ai SDK directly; drop llama.cpp embeddings; add 'Disable background inference' option to the menu; dashboard-matching provider connect for memory extraction; provider-connect toolkit for dashboard-matching extraction UX; show full brand banner on interactive signet setup; connect obsidian vault sources during setup; remote-instance config (daemon.url); multi-agent roster loop + phase-2 findings; dreaming toggle (memory.dreaming.enabled); distinct synthesis provider route; reviewable summary screen before apply; headless plan path (--file/--json), --dry-run, non-TTY guard.
-- Bug fixes: pass embedding migration typecheck; preserve aggregate recall routing; enforce production typecheck; handle missing Bun SQLite rows; allow nullable dependency reasons; preserve nullable dependency reasons; type source ingestion contracts; type query row boundaries; address review findings; harden provider route setup; keep the event loop alive during the OAuth login; OAuth login fails gracefully instead of quitting silently; run OAuth during the wizard (pi-ai login) before listing models; don't put the model key in extractionConnect; aggregate-recall uses pi-ai catalog + searchable models; wire the pi-ai catalog imports into the wizard (runtime crash); source providers + models from pi-ai, not a hand-rolled catalog; TDZ crash on interactive connect + model/catalog cleanups (autoreview); connect flow — accept all provider families, fix model + catalog (autoreview); make aggregate-recall provider resolvable + daemon-valid (autoreview); drop dead synthesisEndpoint read in wizard prompt; malformed daemon.url no longer bricks the CLI (autoreview); harden synthesis/agent validation (autoreview findings); schema/runtime contract parity, existing-install guard, stdin TTY.
-- Refactoring: focus public Signet language on memory and secrets; merge daemon-hosting and remote-daemon into one prompt; drop the 'Where is Signet running?' prompt from interactive setup; trim background-inference menu to four options; collapse passthrough into off; replace synthesis route with aggregate-recall provider; introduce SetupPlan seam (zod) with --schema introspection.
-
 ## Release Ledger
+
+## [0.175.0] - 2026-08-08
+
+Release summary: 1 feature and 8 bug fixes.
+Tag range: `v0.174.0..v0.175.0`.
+
+### Features
+
+- **web**: embed live dashboard demo in marketing showcase
+
+### Bug Fixes
+
+- **dreaming**: keep check loop alive on pass failure
+- **web**: serve the dashboard demo via a worker-owned /demo/ route
+- **web**: declare the ASSETS binding for the framing worker
+- **web**: enforce dashboard framing headers in a worker
+- **web**: _headers override must precede the site-wide rule
+- **web**: render dashboard embed at 1536x864 zoom instead of cropping
+- **web**: drop showcase view switcher, enlarge dashboard embed
+- **web**: polish embedded dashboard demo
 
 ## [0.174.0] - 2026-08-07
 
