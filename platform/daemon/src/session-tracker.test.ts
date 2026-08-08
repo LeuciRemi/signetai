@@ -212,6 +212,18 @@ describe("ended session tombstones", () => {
 
 		expect(getEndedSession("reused-sess")).toBeUndefined();
 	});
+
+	it("removes expired ended markers from the agent-scoped map", () => {
+		markSessionEnded("expired-scoped", "plugin", "agent-scoped");
+		const realNow = Date.now;
+		Date.now = () => realNow() + 31 * 60 * 1000;
+		try {
+			expect(getEndedSession("expired-scoped", "agent-scoped")).toBeUndefined();
+			expect(getSessionTrackerStats().ended).toBe(0);
+		} finally {
+			Date.now = realNow;
+		}
+	});
 });
 
 describe("TTL eviction lifecycle handler (#902)", () => {
@@ -219,10 +231,11 @@ describe("TTL eviction lifecycle handler (#902)", () => {
 		const seen: Array<{ key: string; agentId: string; runtimePath: string }> = [];
 		const handler: SessionEvictionHandler = (info) => {
 			seen.push({ key: info.sessionKey, agentId: info.agentId, runtimePath: info.runtimePath });
+			return undefined;
 		};
 		setSessionEvictionHandler(handler);
 		claimSession("ttl-sess-1", "plugin", "agent-a");
-		_expireSessionForTest("ttl-sess-1");
+		_expireSessionForTest("ttl-sess-1", "agent-a");
 
 		runStaleCleanup();
 
@@ -234,7 +247,7 @@ describe("TTL eviction lifecycle handler (#902)", () => {
 	it("counts a handler 'skipped' outcome as unfinalized", () => {
 		setSessionEvictionHandler(() => "skipped");
 		claimSession("ttl-sess-2", "legacy", "agent-b");
-		_expireSessionForTest("ttl-sess-2");
+		_expireSessionForTest("ttl-sess-2", "agent-b");
 
 		runStaleCleanup();
 
@@ -245,7 +258,7 @@ describe("TTL eviction lifecycle handler (#902)", () => {
 	it("does not count a 'finalized' outcome as unfinalized", () => {
 		setSessionEvictionHandler(() => "finalized");
 		claimSession("ttl-sess-3", "plugin", "agent-c");
-		_expireSessionForTest("ttl-sess-3");
+		_expireSessionForTest("ttl-sess-3", "agent-c");
 
 		runStaleCleanup();
 
