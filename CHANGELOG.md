@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-08-08
 - Features: sanitized crash reports for remote debugging; embed live dashboard demo in marketing showcase.
-- Bug fixes: prevent stale-session sweep starvation, short-session re-fire, and index-defeating query; dedup stale-session sweep unconditionally (null harness must not re-fire); sweep stale live-retained sessions and fire their deferred session-end; keep check loop alive on pass failure; serve the dashboard demo via a worker-owned /demo/ route; declare the ASSETS binding for the framing worker; enforce dashboard framing headers in a worker; _headers override must precede the site-wide rule; render dashboard embed at 1536x864 zoom instead of cropping; drop showcase view switcher, enlarge dashboard embed; polish embedded dashboard demo.
+- Bug fixes: raise dreaming pass deadline to 20 minutes; enforce the agent-session deadline when the agent loop never returns; prevent stale-session sweep starvation, short-session re-fire, and index-defeating query; dedup stale-session sweep unconditionally (null harness must not re-fire); sweep stale live-retained sessions and fire their deferred session-end; keep check loop alive on pass failure; serve the dashboard demo via a worker-owned /demo/ route; declare the ASSETS binding for the framing worker; enforce dashboard framing headers in a worker; _headers override must precede the site-wide rule; render dashboard embed at 1536x864 zoom instead of cropping; drop showcase view switcher, enlarge dashboard embed; polish embedded dashboard demo.
 - Performance: add memory_entity_mentions (entity_id, memory_id) join index (#1158).
 
 ### 2026-08-07
@@ -41,6 +41,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: address review feedback on the daemon-rs removal; remove daemon-rs references and record deprecation.
 
 ## Release Ledger
+
+## [0.176.4] - 2026-08-08
+
+Release summary: 2 bug fixes.
+Tag range: `v0.176.3..v0.176.4`.
+
+### Bug Fixes
+
+- **daemon**: raise dreaming pass deadline to 20 minutes
+- **daemon**: enforce the agent-session deadline when the agent loop never returns
 
 ## [0.176.3] - 2026-08-08
 
