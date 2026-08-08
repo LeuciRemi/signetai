@@ -367,6 +367,50 @@ describe("TTL eviction lifecycle handler (#902)", () => {
 			}
 		});
 
+		it("refreshes the harness on a same-path reclaim before TTL eviction", async () => {
+			const collector = createTelemetryCollector(telemetryTestDb(), TEST_TELEMETRY_CONFIG, "0.0.0-test");
+			setActiveTelemetry(collector);
+			try {
+				// The session-start route must repair a claim created without a
+				// harness before TTL eviction emits its lifecycle event.
+				claimSession("sess-evict-harness", "plugin", "default");
+				claimSession("sess-evict-harness", "plugin", "default", "opencode");
+				_expireSessionForTest("sess-evict-harness");
+				runStaleCleanup();
+				await collector.flush();
+
+				const ends = collector.query().filter((e) => e.event === "session.end");
+				expect(ends).toHaveLength(1);
+				expect(ends[0]?.properties.harness).toBe("opencode");
+			} finally {
+				setActiveTelemetry(undefined);
+			}
+		});
+
+		it("does not double-count a lifetime when clear and TTL use different harness values", async () => {
+			const collector = createTelemetryCollector(telemetryTestDb(), TEST_TELEMETRY_CONFIG, "0.0.0-test");
+			setActiveTelemetry(collector);
+			try {
+				// Simulate the explicit-clear path recording the end marker with
+				// the harness supplied by the termination request.
+				markSessionEndTelemetry({
+					agentId: "default",
+					harness: "opencode",
+					sessionKey: "sess-evict-dedup",
+				});
+				// The claim was created by a path that did not retain harness
+				// metadata. The TTL path must still find the same marker.
+				claimSession("sess-evict-dedup", "plugin", "default");
+				_expireSessionForTest("sess-evict-dedup");
+				runStaleCleanup();
+				await collector.flush();
+
+				expect(collector.query().filter((e) => e.event === "session.end")).toHaveLength(0);
+			} finally {
+				setActiveTelemetry(undefined);
+			}
+		});
+
 		it("does not double-count a lifetime whose clear used a session:-prefixed key (#1212)", async () => {
 			const collector = createTelemetryCollector(telemetryTestDb(), TEST_TELEMETRY_CONFIG, "0.0.0-test");
 			setActiveTelemetry(collector);

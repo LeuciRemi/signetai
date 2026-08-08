@@ -38,7 +38,7 @@ interface SessionClaim {
 	readonly agentId: string;
 	readonly runtimePath: RuntimePath;
 	/** Harness that claimed the session (for telemetry breakdowns). */
-	readonly harness?: string;
+	harness?: string;
 	readonly claimedAt: string;
 	expiresAt: number;
 }
@@ -201,7 +201,8 @@ export function claimSession(
 
 	if (existing) {
 		if (existing.runtimePath === runtimePath) {
-			// Same path reclaiming — refresh expiry
+			// Same path reclaiming — refresh expiry and repair telemetry metadata.
+			if (harness !== undefined) existing.harness = harness;
 			existing.expiresAt = Date.now() + STALE_SESSION_MS;
 			claimStore?.upsertActive(persistedClaim(key, existing));
 			return { ok: true };

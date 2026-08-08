@@ -216,7 +216,7 @@ function isInternalCall(c: Context): boolean {
 function checkBypass(body?: { sessionKey?: string; sessionId?: string; agentId?: string }): boolean {
 	const key = body?.sessionKey ?? body?.sessionId;
 	if (!key) return false;
-	return isSessionBypassed(key, body?.agentId ?? "default");
+	return isSessionBypassed(key, resolveAgentId({ agentId: body?.agentId, sessionKey: key }));
 }
 
 export function listLiveSessions(agentId: string): Array<{
@@ -272,11 +272,8 @@ function registerSessionStart(app: Hono): void {
 			if (runtimePath) body.runtimePath = runtimePath;
 
 			if (body.sessionKey && runtimePath) {
-				const claim = claimSession(
-					body.sessionKey,
-					runtimePath,
-					resolveAgentId({ agentId: body.agentId, sessionKey: body.sessionKey }),
-				);
+				const agentId = resolveAgentId({ agentId: parseOptionalString(body.agentId), sessionKey: body.sessionKey });
+				const claim = claimSession(body.sessionKey, runtimePath, agentId, body.harness);
 				if (!claim.ok) {
 					return c.json(
 						{
@@ -289,7 +286,7 @@ function registerSessionStart(app: Hono): void {
 
 			upsertAgentPresence({
 				sessionKey: parseOptionalString(body.sessionKey),
-				agentId: parseOptionalString(body.agentId) ?? "default",
+				agentId: resolveAgentId({ agentId: parseOptionalString(body.agentId), sessionKey: body.sessionKey }),
 				harness: body.harness,
 				project: parseOptionalString(body.project),
 				runtimePath,
@@ -374,7 +371,7 @@ function registerUserPromptSubmit(app: Hono): void {
 			if (runtimePath) body.runtimePath = runtimePath;
 
 			const sessionKey = parseOptionalString(body.sessionKey);
-			const agentId = parseOptionalString(body.agentId) ?? "default";
+			const agentId = resolveAgentId({ agentId: parseOptionalString(body.agentId), sessionKey });
 			const known = sessionKey ? hasSession(sessionKey, agentId) : false;
 			const duplicate = claimAutomaticSessionOrSkip(
 				sessionKey,
@@ -558,7 +555,12 @@ function registerSkillInvocation(app: Hono): void {
 			if (createdAt.error) return c.json({ error: createdAt.error }, 400);
 			const sessionKey = parseOptionalString(body.sessionKey ?? body.sessionId);
 			const runtimePath = resolveRuntimePath(c, { runtimePath: parseOptionalString(body.runtimePath) });
-			const conflict = checkSessionClaim(c, sessionKey, runtimePath, parseOptionalString(body.agentId) ?? "default");
+			const conflict = checkSessionClaim(
+				c,
+				sessionKey,
+				runtimePath,
+				resolveAgentId({ agentId: parseOptionalString(body.agentId), sessionKey }),
+			);
 			if (conflict) return conflict;
 			const requestedAgentId = resolveAgentId({ agentId: parseOptionalString(body.agentId), sessionKey });
 			const denied = await requirePermission("remember", authConfig)(c, () => Promise.resolve());
@@ -616,7 +618,7 @@ function registerCheckpointExtract(app: Hono): void {
 
 			const runtimePath = resolveRuntimePath(c, body);
 			if (runtimePath) body.runtimePath = runtimePath;
-			const agentId = parseOptionalString(body.agentId) ?? "default";
+			const agentId = resolveAgentId({ agentId: parseOptionalString(body.agentId), sessionKey: body.sessionKey });
 
 			const duplicate = claimAutomaticSessionOrSkip(
 				body.sessionKey,
@@ -667,7 +669,7 @@ function registerRemember(app: Hono): void {
 				c,
 				body.sessionKey,
 				runtimePath,
-				parseOptionalString(body.agentId) ?? "default",
+				resolveAgentId({ agentId: parseOptionalString(body.agentId), sessionKey: body.sessionKey }),
 			);
 			if (conflict) return conflict;
 
@@ -719,7 +721,7 @@ function registerRecall(app: Hono): void {
 				c,
 				body.sessionKey,
 				runtimePath,
-				parseOptionalString(body.agentId) ?? "default",
+				resolveAgentId({ agentId: parseOptionalString(body.agentId), sessionKey: body.sessionKey }),
 			);
 			if (conflict) return conflict;
 
@@ -903,7 +905,7 @@ function registerCompactionComplete(app: Hono): void {
 			const duplicate = claimAutomaticSessionOrSkip(
 				body.sessionKey,
 				runtimePath,
-				parseOptionalString(body.agentId) ?? "default",
+				resolveAgentId({ agentId: parseOptionalString(body.agentId), sessionKey: body.sessionKey }),
 				body.harness,
 				"compaction-complete",
 				{
@@ -923,7 +925,7 @@ function registerCompactionComplete(app: Hono): void {
 			const now = new Date().toISOString();
 			const scopedAgent = resolveScopedAgentId(
 				c,
-				resolveAgentId({ agentId: body.agentId, sessionKey: body.sessionKey }),
+				resolveAgentId({ agentId: parseOptionalString(body.agentId), sessionKey: body.sessionKey }),
 			);
 			if (scopedAgent.error) {
 				return c.json({ error: scopedAgent.error }, 403);
