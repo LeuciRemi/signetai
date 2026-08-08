@@ -1131,10 +1131,30 @@ by default and asks whether to disable it. Declining writes
 `telemetryEnabled: false`; non-interactive/CI setups keep the default
 (enabled).
 
+**Runtime opt-out:** setting `SIGNET_TELEMETRY_OPTOUT=1` in the daemon's
+environment disables telemetry without touching config — the same knob the
+install ping honors. CI runners, containers, and scripted environments
+should set it so automated daemon boots don't count as installs.
+
+**Open telemetry log:** every recorded event is appended as one JSON line
+to `<agentsDir>/.daemon/telemetry/events.jsonl` — the single inspectable
+audit surface for exactly what was sent (daemon events and CLI
+`command.invoked` lines). CLI command events are also queued in the workspace
+database and flushed to PostHog in bounded, best-effort batches without
+awaiting the command. The CLI and daemon use the same persisted install id.
+No memory content, code, file paths, or personal
+data are ever included.
+
+Lifecycle events: `daemon.started` (version, platform,
+uptime), `command.invoked` (command name only, never arguments),
+`error.occurred` (sanitized crash report — truncated message with user paths
+stripped, top stack frames with home directories removed, uptime, and
+rate-limited `EventLoopLag` reports with measured lag), `version.upgraded`
+(from, to).
 | Field | Default | Range | Description |
 |-------|---------|-------|-------------|
 | `posthogHost` | `https://us.i.posthog.com` | — | PostHog instance URL (empty disables) |
-| `posthogApiKey` | `phc_mLsvJmbmp6e9UarrX9Cq5QtTjVNiiphM9mvi5Xnddd8Q` | — | PostHog project API key. Public ingest key by design; overrides the `POSTHOG_API_KEY` secret when set |
+| `posthogApiKey` | `phc_mLsvJmbmp6e9UarrX9Cq5QtTjVNiiphM9mvi5Xnddd8Q` | — | PostHog project API key. Public ingest key by design; shared by daemon and CLI |
 | `flushIntervalMs` | `60000` | 5s-10min | Time between event flushes |
 | `flushBatchSize` | `50` | 1-500 | Max events per flush batch |
 | `retentionDays` | `90` | 1-365 | Days before local telemetry data is purged |
