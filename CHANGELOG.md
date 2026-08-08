@@ -9,6 +9,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 ### 2026-08-08
 - Features: sanitized crash reports for remote debugging; embed live dashboard demo in marketing showcase.
 - Bug fixes: prevent stale-session sweep starvation, short-session re-fire, and index-defeating query; dedup stale-session sweep unconditionally (null harness must not re-fire); sweep stale live-retained sessions and fire their deferred session-end; keep check loop alive on pass failure; serve the dashboard demo via a worker-owned /demo/ route; declare the ASSETS binding for the framing worker; enforce dashboard framing headers in a worker; _headers override must precede the site-wide rule; render dashboard embed at 1536x864 zoom instead of cropping; drop showcase view switcher, enlarge dashboard embed; polish embedded dashboard demo.
+- Performance: add memory_entity_mentions (entity_id, memory_id) join index (#1158).
 
 ### 2026-08-07
 - Features: emit dreaming.pass with token usage; require natural-language pass summaries in runbook; dreaming tab with live trace, summary, and ledger; emit install.activated on first run; emit pipeline.embedding with stats; PostHog ping, default-on disclosure; GitHub release download stats (Phase 3 of #1026); Phase 2 opt-in telemetry with open log + lifecycle events; anonymous post-install telemetry ping with opt-out; per-install PostHog analytics; record embedding token usage at the fetch boundary (#1154); record provider-reported token usage on dreaming passes; export session transcripts for training/fine-tuning; supersedes lineage at remember-write time + lineage chain; hygiene over-cap detector flags consolidation targets; merge_aspects consolidation op + bump graph caps to 20/50; write-gate aspect/attribute caps that force supersession; redesign marketing site and docs system; review_after column + store surfaces for temporal-claim expiry (#945).
@@ -40,6 +41,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: address review feedback on the daemon-rs removal; remove daemon-rs references and record deprecation.
 
 ## Release Ledger
+
+## [0.176.3] - 2026-08-08
+
+Release summary: 1 performance improvement.
+Tag range: `v0.176.2..v0.176.3`.
+
+### Performance
+
+- **core**: add memory_entity_mentions (entity_id, memory_id) join index (#1158) (#1166)
 
 ## [0.176.2] - 2026-08-08
 
