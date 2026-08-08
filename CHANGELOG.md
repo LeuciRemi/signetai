@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-08-08
 - Features: sanitized crash reports for remote debugging; embed live dashboard demo in marketing showcase.
-- Bug fixes: raise dreaming pass deadline to 20 minutes; enforce the agent-session deadline when the agent loop never returns; prevent stale-session sweep starvation, short-session re-fire, and index-defeating query; dedup stale-session sweep unconditionally (null harness must not re-fire); sweep stale live-retained sessions and fire their deferred session-end; keep check loop alive on pass failure; serve the dashboard demo via a worker-owned /demo/ route; declare the ASSETS binding for the framing worker; enforce dashboard framing headers in a worker; _headers override must precede the site-wide rule; render dashboard embed at 1536x864 zoom instead of cropping; drop showcase view switcher, enlarge dashboard embed; polish embedded dashboard demo.
+- Bug fixes: live config in embedding migration; restart the embedding-index build on config change and cap provider-failure retries; harden the file logger retry path; make the file logger recover from write failures instead of going silent forever; raise dreaming pass deadline to 20 minutes; enforce the agent-session deadline when the agent loop never returns; prevent stale-session sweep starvation, short-session re-fire, and index-defeating query; dedup stale-session sweep unconditionally (null harness must not re-fire); sweep stale live-retained sessions and fire their deferred session-end; keep check loop alive on pass failure; serve the dashboard demo via a worker-owned /demo/ route; declare the ASSETS binding for the framing worker; enforce dashboard framing headers in a worker; _headers override must precede the site-wide rule; render dashboard embed at 1536x864 zoom instead of cropping; drop showcase view switcher, enlarge dashboard embed; polish embedded dashboard demo.
 - Performance: add memory_entity_mentions (entity_id, memory_id) join index (#1158).
 
 ### 2026-08-07
@@ -41,6 +41,18 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: address review feedback on the daemon-rs removal; remove daemon-rs references and record deprecation.
 
 ## Release Ledger
+
+## [0.176.5] - 2026-08-08
+
+Release summary: 4 bug fixes.
+Tag range: `v0.176.4..v0.176.5`.
+
+### Bug Fixes
+
+- **daemon**: live config in embedding migration (#1160)
+- **daemon**: restart the embedding-index build on config change and cap provider-failure retries
+- **daemon**: harden the file logger retry path
+- **daemon**: make the file logger recover from write failures instead of going silent forever
 
 ## [0.176.4] - 2026-08-08
 
