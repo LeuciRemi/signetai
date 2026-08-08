@@ -25,6 +25,8 @@ const { deriveSessionEndFallbackId } = await import("./session-end-recovery");
 const { upsertSessionTranscript } = await import("./session-transcripts");
 const { buildSignetSystemPrompt } = await import("./session-start-format");
 const { resetTokenizerStats, tokenizerStats } = await import("./pipeline/tokenizer");
+const { resetSessionEndTelemetry } = await import("./session-end-state");
+const { createTelemetryCollector, setActiveTelemetry } = await import("./telemetry");
 const {
 	handleSessionStart,
 	handlePreCompaction,
@@ -73,6 +75,34 @@ function ensureDir(path: string): void {
 async function flushSessionEndDeferredWork(): Promise<void> {
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	await hooks.flushDeferredSessionEndWorkForTests();
+}
+
+// Collector config for telemetry regression tests (#1212): empty posthogHost
+// means nothing is ever sent, and the buffer is queried directly.
+const TEST_TELEMETRY_CONFIG = {
+	posthogHost: "",
+	posthogApiKey: "",
+	flushIntervalMs: 60000,
+	flushBatchSize: 50,
+	retentionDays: 90,
+	memorySearchQaEnabled: false,
+} as const;
+
+/** Ensure the telemetry tables exist on the test DB (migrations 014/109). */
+function ensureTelemetryTables(): void {
+	getDbAccessor().withWriteTx((db) => {
+		db.prepare("CREATE TABLE IF NOT EXISTS telemetry_install (id TEXT PRIMARY KEY, created_at TEXT NOT NULL)").run();
+		db.prepare(
+			`CREATE TABLE IF NOT EXISTS telemetry_events (
+				id TEXT PRIMARY KEY,
+				event TEXT NOT NULL,
+				timestamp TEXT NOT NULL,
+				properties TEXT NOT NULL,
+				sent_to_posthog INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL
+			)`,
+		).run();
+	});
 }
 
 /** Create an isolated test DB with the full schema */
@@ -2269,6 +2299,68 @@ memory:
 		});
 
 		expect(result.queued).toBe(false);
+	});
+
+	// ------------------------------------------------------------------
+	// #1212 — session.end telemetry fired per session-end hook call,
+	// inflating the counter ~9x vs dedup'd session.start. The per-turn
+	// event is now session.turn; session.end fires only at real session
+	// boundaries (explicit clear or TTL eviction), once per lifetime.
+	// ------------------------------------------------------------------
+
+	test.serial("session-end hook calls emit session.turn, never session.end (#1212)", async () => {
+		createMemoryDb([]);
+		ensureTelemetryTables();
+		const collector = createTelemetryCollector(getDbAccessor(), TEST_TELEMETRY_CONFIG, "0.0.0-test");
+		setActiveTelemetry(collector);
+		try {
+			await handleSessionEnd({ harness: "test", sessionKey: "sess-turn-a" });
+			await handleSessionEnd({ harness: "test", sessionKey: "sess-turn-a" });
+			await handleSessionEnd({ harness: "test", sessionKey: "sess-turn-b" });
+			await collector.flush();
+
+			const turns = collector.query().filter((e) => e.event === "session.turn");
+			const ends = collector.query().filter((e) => e.event === "session.end");
+			expect(turns).toHaveLength(3);
+			expect(ends).toHaveLength(0);
+			expect(turns[0]?.properties.harness).toBe("test");
+			expect(typeof turns[0]?.properties.sessionHash).toBe("string");
+		} finally {
+			setActiveTelemetry(undefined);
+			resetSessionEndTelemetry();
+		}
+	});
+
+	test.serial("explicit clear emits session.end once per session lifetime (#1212)", async () => {
+		createMemoryDb([]);
+		ensureTelemetryTables();
+		const collector = createTelemetryCollector(getDbAccessor(), TEST_TELEMETRY_CONFIG, "0.0.0-test");
+		setActiveTelemetry(collector);
+		try {
+			await handleSessionEnd({ harness: "test", sessionKey: "sess-clear-a", reason: "clear" });
+			// Repeated clear for the same lifetime must not inflate the counter.
+			await handleSessionEnd({ harness: "test", sessionKey: "sess-clear-a", reason: "clear" });
+			await collector.flush();
+
+			const ends = collector.query().filter((e) => e.event === "session.end");
+			expect(ends).toHaveLength(1);
+			expect(ends[0]?.properties.reason).toBe("clear");
+			expect(ends[0]?.properties.harness).toBe("test");
+
+			// A real session start opens a new lifetime — the next clear counts again.
+			await handleSessionStart({ harness: "test", sessionKey: "sess-clear-a" });
+			await collector.flush();
+			const starts = collector.query().filter((e) => e.event === "session.start");
+			expect(starts).toHaveLength(1);
+			expect(typeof starts[0]?.properties.sessionHash).toBe("string");
+
+			await handleSessionEnd({ harness: "test", sessionKey: "sess-clear-a", reason: "clear" });
+			await collector.flush();
+			expect(collector.query().filter((e) => e.event === "session.end")).toHaveLength(2);
+		} finally {
+			setActiveTelemetry(undefined);
+			resetSessionEndTelemetry();
+		}
 	});
 });
 

@@ -124,12 +124,13 @@ function claimAutomaticSessionOrSkip(
 	sessionKey: string | undefined,
 	runtimePath: RuntimePath | undefined,
 	agentId: string,
+	harness: string | undefined,
 	hook: string,
 	noop: Record<string, unknown>,
 ): Record<string, unknown> | null {
 	if (!sessionKey || !runtimePath) return null;
 
-	const claim = claimSession(sessionKey, runtimePath, agentId);
+	const claim = claimSession(sessionKey, runtimePath, agentId, harness);
 	if (claim.ok) return null;
 
 	logger.info("hooks", "Duplicate runtime hook skipped", {
@@ -374,11 +375,18 @@ function registerUserPromptSubmit(app: Hono): void {
 			const known = sessionKey ? hasSession(sessionKey) : false;
 
 			const agentId = parseOptionalString(body.agentId) ?? "default";
-			const duplicate = claimAutomaticSessionOrSkip(sessionKey, runtimePath, agentId, "user-prompt-submit", {
-				inject: "",
-				memoryCount: 0,
-				sessionKnown: known,
-			});
+			const duplicate = claimAutomaticSessionOrSkip(
+				sessionKey,
+				runtimePath,
+				agentId,
+				body.harness,
+				"user-prompt-submit",
+				{
+					inject: "",
+					memoryCount: 0,
+					sessionKnown: known,
+				},
+			);
 			if (duplicate) {
 				return c.json(duplicate);
 			}
@@ -471,7 +479,7 @@ function registerSessionEnd(app: Hono): void {
 				agentId = scopedAgent.agentId;
 				body.agentId = agentId;
 			}
-			const duplicate = claimAutomaticSessionOrSkip(sessionKey, runtimePath, agentId, "session-end", {
+			const duplicate = claimAutomaticSessionOrSkip(sessionKey, runtimePath, agentId, body.harness, "session-end", {
 				memoriesSaved: 0,
 			});
 			if (duplicate) return c.json(duplicate);
@@ -612,6 +620,7 @@ function registerCheckpointExtract(app: Hono): void {
 				body.sessionKey,
 				runtimePath,
 				parseOptionalString(body.agentId) ?? "default",
+				body.harness,
 				"session-checkpoint-extract",
 				{
 					skipped: true,
@@ -822,11 +831,18 @@ function registerPreCompaction(app: Hono): void {
 				agentId = scopedAgent.agentId;
 				body.agentId = agentId;
 			}
-			const duplicate = claimAutomaticSessionOrSkip(body.sessionKey, runtimePath, agentId, "pre-compaction", {
-				guidelines: "",
-				instructions: "",
-				summaryPrompt: "",
-			});
+			const duplicate = claimAutomaticSessionOrSkip(
+				body.sessionKey,
+				runtimePath,
+				agentId,
+				body.harness,
+				"pre-compaction",
+				{
+					guidelines: "",
+					instructions: "",
+					summaryPrompt: "",
+				},
+			);
 			if (duplicate) return c.json(duplicate);
 
 			if (checkBypass(body)) {
@@ -876,6 +892,7 @@ function registerCompactionComplete(app: Hono): void {
 				body.sessionKey,
 				runtimePath,
 				parseOptionalString(body.agentId) ?? "default",
+				body.harness,
 				"compaction-complete",
 				{
 					success: true,

@@ -51,6 +51,11 @@ export const TELEMETRY_EVENTS = [
 	"inference.stream",
 	"inference.fallback",
 	"session.start",
+	// Per session-end hook call — a "turns persisted" counter (harness
+	// activity volume), distinct from the real session boundary event.
+	"session.turn",
+	// Fired only at actual session boundaries (explicit clear or TTL
+	// eviction), dedup'd once per session lifetime (#1212).
 	"session.end",
 	"daemon.heartbeat",
 	// Lifecycle events (issue #1026 Phase 2): fired when the user has opted

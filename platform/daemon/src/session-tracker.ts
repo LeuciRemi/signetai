@@ -10,6 +10,16 @@
  */
 
 import { logger } from "./logger";
+import {
+	hashSessionKey,
+	hasSessionEndTelemetry,
+	markSessionEndTelemetry,
+	normalizeSessionKey,
+	resetSessionEndTelemetry,
+} from "./session-end-state";
+import { getActiveTelemetry } from "./telemetry";
+
+export { normalizeSessionKey } from "./session-end-state";
 
 export type RuntimePath = "plugin" | "legacy";
 
@@ -25,6 +35,8 @@ export interface SessionInfo {
 interface SessionClaim {
 	readonly agentId: string;
 	readonly runtimePath: RuntimePath;
+	/** Harness that claimed the session (for telemetry breakdowns). */
+	readonly harness?: string;
 	readonly claimedAt: string;
 	expiresAt: number;
 }
@@ -49,6 +61,7 @@ export interface EvictedSessionInfo {
 	readonly sessionKey: string;
 	readonly agentId: string;
 	readonly runtimePath: RuntimePath;
+	readonly harness?: string;
 	readonly claimedAt: string;
 }
 
@@ -82,13 +95,8 @@ let evictionHandler: SessionEvictionHandler | null = null;
 let expiredCount = 0;
 let unfinalizedCount = 0;
 
-export function normalizeSessionKey(sessionKey: string): string {
-	const trimmed = sessionKey.trim();
-	if (trimmed.startsWith("session:")) {
-		return trimmed.slice("session:".length);
-	}
-	return trimmed;
-}
+// normalizeSessionKey is defined in session-end-state.ts (single source of
+// truth for session-key identity) and re-exported here for the routes.
 
 function evictExpiredSession(key: string, claim: SessionClaim): void {
 	if (!sessions.delete(key)) return;
@@ -100,6 +108,19 @@ function evictExpiredSession(key: string, claim: SessionClaim): void {
 		runtimePath: claim.runtimePath,
 		claimedAt: claim.claimedAt,
 	});
+
+	// Real session termination: the daemon judged the session abandoned
+	// (no hooks for STALE_SESSION_MS). Emit session.end once per session
+	// lifetime (#1212) — dedup'd so a session already counted via explicit
+	// clear is not double-counted here.
+	if (!hasSessionEndTelemetry({ agentId: claim.agentId, harness: claim.harness, sessionKey: key })) {
+		getActiveTelemetry()?.record("session.end", {
+			harness: claim.harness ?? null,
+			reason: "expired",
+			sessionHash: hashSessionKey(key),
+		});
+		markSessionEndTelemetry({ agentId: claim.agentId, harness: claim.harness, sessionKey: key });
+	}
 
 	if (!evictionHandler) return;
 	try {
@@ -124,7 +145,12 @@ function evictExpiredSession(key: string, claim: SessionClaim): void {
  * session is unclaimed or already claimed by the same path. Returns
  * ok:false with claimedBy if claimed by the other path.
  */
-export function claimSession(sessionKey: string, runtimePath: RuntimePath, agentId = "default"): ClaimResult {
+export function claimSession(
+	sessionKey: string,
+	runtimePath: RuntimePath,
+	agentId = "default",
+	harness?: string,
+): ClaimResult {
 	const key = normalizeSessionKey(sessionKey);
 	const existing = sessions.get(key);
 	endedSessions.delete(key);
@@ -153,6 +179,7 @@ export function claimSession(sessionKey: string, runtimePath: RuntimePath, agent
 	sessions.set(key, {
 		agentId,
 		runtimePath,
+		harness,
 		claimedAt: new Date().toISOString(),
 		expiresAt: Date.now() + STALE_SESSION_MS,
 	});
@@ -471,6 +498,7 @@ export function resetSessions(): void {
 	evictionHandler = null;
 	expiredCount = 0;
 	unfinalizedCount = 0;
+	resetSessionEndTelemetry();
 }
 
 /** Test-only: force a session claim's expiry so cleanup evicts it. */
