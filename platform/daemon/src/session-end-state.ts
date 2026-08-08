@@ -55,11 +55,9 @@ function sessionEndDedupeKey(identity: SessionEndIdentity): string | null {
 	if (!sessionKey) return null;
 	const normalized = normalizeSessionKey(sessionKey);
 	if (normalized.length === 0) return null;
-	return [
-		resolveAgentId({ agentId: identity.agentId, sessionKey: normalized }),
-		identity.harness ?? "",
-		normalized,
-	].join("\0");
+	// Harness identifies the producer, not the session lifetime. A harness can
+	// be absent on the start/TTL path and present on explicit termination.
+	return [resolveAgentId({ agentId: identity.agentId, sessionKey: normalized }), normalized].join("\0");
 }
 
 /** Anonymous per-session key for telemetry — hashed, never raw. */
