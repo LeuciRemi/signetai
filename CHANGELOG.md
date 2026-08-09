@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-09
-- Features: launch Starlight documentation; deliver cross-agent notifications.
+- Features: reconcile indeterminate ACP deliveries (#1263); launch Starlight documentation; deliver cross-agent notifications.
 - Bug fixes: gate remote memory extraction; make manifest locking async; bound stale session sweep work; report previous exit telemetry; bound traversal hydration; preserve Python interpreter fallback; use python3 probe fallback; classify skipped embeddings; open Codex OAuth externally; pair pipeline error types; preserve explicit route pins; make generated routes routable; recover claims without reinjection.
 
 ### 2026-08-08
@@ -42,6 +42,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: refresh roadmap and vision for August 2026; add tests, regression tests, and evals policy.
 
 ## Release Ledger
+
+## [0.185.0] - 2026-08-09
+
+Release summary: 1 feature.
+Tag range: `v0.184.1..v0.185.0`.
+
+### Features
+
+- **daemon**: reconcile indeterminate ACP deliveries (#1263) (#1269)
 
 ## [0.184.1] - 2026-08-09
 
