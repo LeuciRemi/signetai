@@ -6,6 +6,9 @@ All notable changes to Signet are documented here.
 
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
+### 2026-08-09
+- Bug fixes: recover claims without reinjection.
+
 ### 2026-08-08
 - Features: make inference routes inspectable; add per-install cost tracking; flush CLI command events; add config snapshot event; sync to 4.3.3 — install script, clear+briefing tools, capabilities; one-shot first-use events; track recall usage; sanitized crash reports for remote debugging; embed live dashboard demo in marketing showcase.
 - Bug fixes: stabilize session end identity; preserve legacy routing migration; count explicit session boundaries; require entity summary manifests; persist session lifecycle claims; tag development installs; preserve active session costs; preserve upstream stats contracts; recover resumed session attribution; align telemetry stats response types; resolve configured routing targets; emit pipeline error telemetry; harden 4.3.3 sync per review; format pass summaries as Markdown; session.end at real boundaries only; hash agentId in inference events with the per-install id; address adversarial review of runbook rewrite; process-heavy runbook with must-nots; resolve attention flags the agent judged and declined; cap audit transcript size and archive by rename instead of duplicating (#1163); consolidate EDEADLK/dataless artifact-read warnings instead of per-file spam (#1161); probe configured llama.cpp base_url in fallback status check; probe the configured llama.cpp base_url in the embedding fallback; live config in embedding migration; restart the embedding-index build on config change and cap provider-failure retries; harden the file logger retry path; make the file logger recover from write failures instead of going silent forever; raise dreaming pass deadline to 20 minutes; enforce the agent-session deadline when the agent loop never returns; prevent stale-session sweep starvation, short-session re-fire, and index-defeating query; dedup stale-session sweep unconditionally (null harness must not re-fire); sweep stale live-retained sessions and fire their deferred session-end; keep check loop alive on pass failure; serve the dashboard demo via a worker-owned /demo/ route; declare the ASSETS binding for the framing worker; enforce dashboard framing headers in a worker; _headers override must precede the site-wide rule; render dashboard embed at 1536x864 zoom instead of cropping; drop showcase view switcher, enlarge dashboard embed; polish embedded dashboard demo.
@@ -37,12 +40,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: prefer native install over wrapper; close hook stdin after read timeout.
 - Docs: refresh roadmap and vision for August 2026; add tests, regression tests, and evals policy.
 
-### 2026-08-02
-- Bug fixes: persist memory embeddings across startup index promotion; validate checkpoint run IDs; unvalidated file path in checkpoint loading.
-- Refactoring: remove nativeShadowEnabled shadow proxy; remove SIGNET_DAEMON_RUNTIME rust switch and binary download.
-- Docs: address review feedback on the daemon-rs removal; remove daemon-rs references and record deprecation.
-
 ## Release Ledger
+
+## [0.182.2] - 2026-08-09
+
+Release summary: 1 bug fix.
+Tag range: `v0.182.1..v0.182.2`.
+
+### Bug Fixes
+
+- **hermes**: recover claims without reinjection
 
 ## [0.182.1] - 2026-08-08
 
