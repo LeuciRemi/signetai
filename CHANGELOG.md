@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-09
-- Bug fixes: pair pipeline error types; preserve explicit route pins; make generated routes routable; recover claims without reinjection.
+- Bug fixes: classify skipped embeddings; open Codex OAuth externally; pair pipeline error types; preserve explicit route pins; make generated routes routable; recover claims without reinjection.
 
 ### 2026-08-08
 - Features: make inference routes inspectable; add per-install cost tracking; flush CLI command events; add config snapshot event; sync to 4.3.3 — install script, clear+briefing tools, capabilities; one-shot first-use events; track recall usage; sanitized crash reports for remote debugging; embed live dashboard demo in marketing showcase.
@@ -41,6 +41,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: refresh roadmap and vision for August 2026; add tests, regression tests, and evals policy.
 
 ## Release Ledger
+
+## [0.182.6] - 2026-08-09
+
+Release summary: 2 bug fixes.
+Tag range: `v0.182.5..v0.182.6`.
+
+### Bug Fixes
+
+- **telemetry**: classify skipped embeddings (#1252)
+- **desktop**: open Codex OAuth externally
 
 ## [0.182.5] - 2026-08-09
 
