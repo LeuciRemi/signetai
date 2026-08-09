@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-08-09
 - Features: deliver cross-agent notifications.
-- Bug fixes: bound stale session sweep work; report previous exit telemetry; bound traversal hydration; preserve Python interpreter fallback; use python3 probe fallback; classify skipped embeddings; open Codex OAuth externally; pair pipeline error types; preserve explicit route pins; make generated routes routable; recover claims without reinjection.
+- Bug fixes: make manifest locking async; bound stale session sweep work; report previous exit telemetry; bound traversal hydration; preserve Python interpreter fallback; use python3 probe fallback; classify skipped embeddings; open Codex OAuth externally; pair pipeline error types; preserve explicit route pins; make generated routes routable; recover claims without reinjection.
 
 ### 2026-08-08
 - Features: make inference routes inspectable; add per-install cost tracking; flush CLI command events; add config snapshot event; sync to 4.3.3 — install script, clear+briefing tools, capabilities; one-shot first-use events; track recall usage; sanitized crash reports for remote debugging; embed live dashboard demo in marketing showcase.
@@ -42,6 +42,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: refresh roadmap and vision for August 2026; add tests, regression tests, and evals policy.
 
 ## Release Ledger
+
+## [0.183.1] - 2026-08-09
+
+Release summary: 1 bug fix.
+Tag range: `v0.183.0..v0.183.1`.
+
+### Bug Fixes
+
+- **daemon**: make manifest locking async (#1259)
 
 ## [0.183.0] - 2026-08-09
 
