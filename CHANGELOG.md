@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-08-09
 - Features: reconcile indeterminate ACP deliveries (#1263); launch Starlight documentation; deliver cross-agent notifications.
-- Bug fixes: cover remote executor consent; gate remote memory extraction; make manifest locking async; bound stale session sweep work; report previous exit telemetry; bound traversal hydration; preserve Python interpreter fallback; use python3 probe fallback; classify skipped embeddings; open Codex OAuth externally; pair pipeline error types; preserve explicit route pins; make generated routes routable; recover claims without reinjection.
+- Bug fixes: forward Bun inspector setting; cover remote executor consent; gate remote memory extraction; make manifest locking async; bound stale session sweep work; report previous exit telemetry; bound traversal hydration; preserve Python interpreter fallback; use python3 probe fallback; classify skipped embeddings; open Codex OAuth externally; pair pipeline error types; preserve explicit route pins; make generated routes routable; recover claims without reinjection.
 
 ### 2026-08-08
 - Features: make inference routes inspectable; add per-install cost tracking; flush CLI command events; add config snapshot event; sync to 4.3.3 — install script, clear+briefing tools, capabilities; one-shot first-use events; track recall usage; sanitized crash reports for remote debugging; embed live dashboard demo in marketing showcase.
@@ -42,6 +42,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: refresh roadmap and vision for August 2026; add tests, regression tests, and evals policy.
 
 ## Release Ledger
+
+## [0.185.2] - 2026-08-09
+
+Release summary: 1 bug fix.
+Tag range: `v0.185.1..v0.185.2`.
+
+### Bug Fixes
+
+- **cli**: forward Bun inspector setting
 
 ## [0.185.1] - 2026-08-09
 
