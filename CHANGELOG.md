@@ -8,8 +8,8 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-08-10
 - Features: expose collector delivery health; expose accounting provenance; add source lifecycle telemetry (#1276); add marketing PostHog events; record dreaming pass effects.
-- Bug fixes: bound memory capture concurrency; remove legacy memory pipeline routing; summarize pipeline operations (#1278); preserve mixed coverage; correct Pi accounting provenance; filter reasoning from evidence; remove duplicate projection helper; retain transcript manifest projection; account for recovered dreaming passes; disclose CLI command delivery (#1280); classify deployment role and install provenance; canonicalize embedding endpoint (#1264); bound wedge pressure probes; merge growing recovery snapshots; retain worker status telemetry; harden retired transcript recovery; retire summary-worker delivery; measure recall delivery outcomes; add bounded wedge pressure telemetry; persist first-use milestones atomically.
-- Docs: improve issue triage workflow.
+- Bug fixes: bound SQLite writer admission; bound memory capture concurrency; remove legacy memory pipeline routing; summarize pipeline operations (#1278); preserve mixed coverage; correct Pi accounting provenance; filter reasoning from evidence; remove duplicate projection helper; retain transcript manifest projection; account for recovered dreaming passes; disclose CLI command delivery (#1280); classify deployment role and install provenance; canonicalize embedding endpoint (#1264); bound wedge pressure probes; merge growing recovery snapshots; retain worker status telemetry; harden retired transcript recovery; retire summary-worker delivery; measure recall delivery outcomes; add bounded wedge pressure telemetry; persist first-use milestones atomically.
+- Docs: catalog health events; improve issue triage workflow.
 
 ### 2026-08-09
 - Features: reconcile indeterminate ACP deliveries (#1263); launch Starlight documentation; deliver cross-agent notifications.
@@ -43,6 +43,19 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: reflect Dreaming cutover; clarify inline linking boundary; align pipeline with Dreaming cutover; describe summary lineage cutover.
 
 ## Release Ledger
+
+## [0.189.1] - 2026-08-10
+
+Release summary: 1 bug fix and 1 docs update.
+Tag range: `v0.189.0..v0.189.1`.
+
+### Bug Fixes
+
+- **daemon**: bound SQLite writer admission
+
+### Docs
+
+- **telemetry**: catalog health events
 
 ## [0.189.0] - 2026-08-10
 
