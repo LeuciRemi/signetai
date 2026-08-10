@@ -155,7 +155,7 @@ Query raw telemetry events.
 | `event`   | string  | Filter by event type (e.g., `llm.generate`)    |
 | `since`   | string  | ISO timestamp lower bound                      |
 | `until`   | string  | ISO timestamp upper bound                      |
-| `limit`   | integer | Max events (default: 100)                      |
+| `limit`   | integer | Max events (default: 100, clamped to 1-10000)  |
 
 **Response**
 
@@ -171,6 +171,38 @@ Query raw telemetry events.
   "enabled": true
 }
 ```
+
+### GET /api/telemetry/health
+
+Returns a bounded, payload-free summary of the daemon collector. This route
+requires `analytics` permission and is also the dashboard's source for
+distinguishing daemon silence from a delivery outage.
+
+```json
+{
+  "enabled": true,
+  "status": "degraded",
+  "deliveryConfigured": true,
+  "bufferedEventCount": 0,
+  "queuedUnsentEventCount": 12,
+  "oldestUnsentEventAgeSec": 184,
+  "lastDaemonEventAgeSec": 9,
+  "lastSuccessfulDeliveryAgeSec": 902,
+  "recentDeliverySuccessCount": 31,
+  "recentDeliveryFailureCount": 3,
+  "consecutiveFailures": 3,
+  "backoffActive": true,
+  "droppedEventCount": 0,
+  "flushIntervalMs": 300000
+}
+```
+
+`status` is `local-only` when no remote sink is configured, `healthy` when
+delivery is current, and `degraded` when delivery is failing or an unsent
+queue is aging. `enabled: false` means the daemon collector is disabled. Age
+values are seconds and may be `null` when no event or successful delivery has
+ever been observed. The response never includes install identifiers, endpoint
+credentials, paths, event properties, response bodies, or user identity.
 
 Inference emits additional local-first telemetry events:
 
@@ -376,7 +408,7 @@ Export raw telemetry events as newline-delimited JSON (NDJSON).
 | Parameter | Type    | Description                           |
 |-----------|---------|---------------------------------------|
 | `since`   | string  | ISO timestamp lower bound (optional)  |
-| `limit`   | integer | Max events (default: 10000)           |
+| `limit`   | integer | Max events (default: 10000, clamped to 1-100000) |
 
 **Response** — `Content-Type: application/x-ndjson`. Each line is a
 JSON-serialized telemetry event. Returns `404` if telemetry is not enabled.

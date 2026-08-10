@@ -21,9 +21,12 @@ import {
 	createTelemetryCollector,
 	defaultTelemetryLogPath,
 	nextFlushIntervalMs,
+	parseTelemetryTimestamp,
 	sanitizeCrashError,
 	telemetryDeployment,
+	telemetryDeploymentRole,
 	telemetryDisabledByEnv,
+	telemetryInstallChannel,
 	telemetryReportedVersion,
 } from "./telemetry";
 import { cleanupTestTempDir, createTestTempDir } from "./test-temp-dir";
@@ -50,6 +53,7 @@ let dir = "";
 let logPath = "";
 let captured: Array<{ readonly url: string; readonly body: CapturedBody }> = [];
 let pendingFetch: { readonly gate: Promise<void>; readonly started: () => void } | null = null;
+let fetchStatus = 200;
 const originalFetch = globalThis.fetch;
 
 function installFetchMock(): void {
@@ -65,7 +69,7 @@ function installFetchMock(): void {
 			blocked.started();
 			await blocked.gate;
 		}
-		return new Response("1", { status: 200 });
+		return new Response(fetchStatus === 200 ? "1" : "failure", { status: fetchStatus });
 	}) as typeof fetch;
 }
 
@@ -74,7 +78,7 @@ function resetWorkspace(): void {
 	rmSync(join(dir, "memory"), { recursive: true, force: true });
 	rmSync(join(dir, ".daemon"), { recursive: true, force: true });
 	mkdirSync(join(dir, "memory"), { recursive: true });
-	initDbAccessor(join(dir, "memory", "memories.db"));
+	initDbAccessor(join(dir, "memory", "memories.db"), { agentsDir: dir });
 }
 
 function makeCollector(configSnapshot?: TelemetryConfigSnapshot): TelemetryCollector {
@@ -128,6 +132,7 @@ beforeAll(() => {
 beforeEach(() => {
 	captured = [];
 	pendingFetch = null;
+	fetchStatus = 200;
 	logPath = defaultTelemetryLogPath(dir);
 	resetWorkspace();
 });
@@ -149,7 +154,7 @@ describe("telemetry collector", () => {
 		const dirB = createTestTempDir("signet-telemetry-b-");
 		try {
 			closeDbAccessor();
-			initDbAccessor(join(dirB, "memory", "memories.db"));
+			initDbAccessor(join(dirB, "memory", "memories.db"), { agentsDir: dirB });
 			const collectorB = makeCollector();
 			collectorB.record("daemon.heartbeat", { uptimeMs: 1 });
 			await collectorB.flush();
@@ -254,7 +259,7 @@ describe("telemetry collector", () => {
 		const dir = createTestTempDir("signet-anon-");
 		try {
 			closeDbAccessor();
-			initDbAccessor(join(dir, "memory", "memories.db"));
+			initDbAccessor(join(dir, "memory", "memories.db"), { agentsDir: dir });
 			const collector = createTelemetryCollector(
 				getDbAccessor(),
 				{
@@ -285,7 +290,7 @@ describe("telemetry collector", () => {
 		const dirB = createTestTempDir("signet-anon-b-");
 		try {
 			closeDbAccessor();
-			initDbAccessor(join(dirA, "memory", "memories.db"));
+			initDbAccessor(join(dirA, "memory", "memories.db"), { agentsDir: dirA });
 			const ca = createTelemetryCollector(
 				getDbAccessor(),
 				{
@@ -300,7 +305,7 @@ describe("telemetry collector", () => {
 			);
 			const ha = ca.anonymizeAgentId("default");
 			closeDbAccessor();
-			initDbAccessor(join(dirB, "memory", "memories.db"));
+			initDbAccessor(join(dirB, "memory", "memories.db"), { agentsDir: dirB });
 			const cb = createTelemetryCollector(
 				getDbAccessor(),
 				{
@@ -344,6 +349,7 @@ describe("telemetry collector", () => {
 			"platform",
 			"deploymentRole",
 			"installChannel",
+			"$insert_id",
 			"$lib",
 			"$lib_version",
 		]);
@@ -399,7 +405,7 @@ describe("telemetry collector", () => {
 		// activation event) disappears, but the atomically persisted
 		// first-use rows survive and are recoverable by the next daemon.
 		closeDbAccessor();
-		initDbAccessor(join(dir, "memory", "memories.db"));
+		initDbAccessor(join(dir, "memory", "memories.db"), { agentsDir: dir });
 		const restarted = makeCollector();
 		restarted.recordFirstUse("remember");
 		restarted.recordFirstUse("recall");
@@ -567,6 +573,9 @@ describe("telemetry collector", () => {
 	});
 
 	it("uses explicit bounded deployment metadata and keeps unknown as the fallback", async () => {
+		expect(telemetryDeploymentRole(undefined, { SIGNET_TELEMETRY_ENV: "dev" })).toBe("development");
+		expect(telemetryInstallChannel(undefined, { SIGNET_TELEMETRY_INSTALL_CHANNEL: "container" })).toBe("container");
+
 		const collector = createTelemetryCollector(
 			getDbAccessor(),
 			{
@@ -647,11 +656,112 @@ describe("telemetry collector", () => {
 		expect(nextFlushIntervalMs(60000, 9)).toBe(300000);
 	});
 
-	it("prunes events older than the retention window", async () => {
+	it("parses SQLite CURRENT_TIMESTAMP as UTC regardless of host timezone", () => {
+		expect(parseTelemetryTimestamp("2026-08-10 12:34:56")).toBe(Date.parse("2026-08-10T12:34:56.000Z"));
+	});
+
+	it("persists delivery health and retries failed events with stable insert ids", async () => {
+		fetchStatus = 503;
+		const collector = makeCollector();
+		collector.record("daemon.heartbeat", { uptimeMs: 1 });
+		await collector.flush();
+
+		const failedHealth = collector.deliveryHealth();
+		expect(failedHealth.status).toBe("degraded");
+		expect(failedHealth.queuedUnsentEventCount).toBeGreaterThan(0);
+		expect(failedHealth.recentDeliveryFailureCount).toBe(1);
+		expect(failedHealth.backoffActive).toBe(false);
+		const firstIds = captured[0]?.body.batch.map((event) => event.properties.$insert_id);
+		expect(firstIds?.every((id) => typeof id === "string")).toBe(true);
+		const attempts = getDbAccessor().withReadDb(
+			(db) =>
+				db
+					.prepare("SELECT delivery_attempts, last_failure_code FROM telemetry_events WHERE event = ?")
+					.all("daemon.heartbeat") as Array<{
+					readonly delivery_attempts: number;
+					readonly last_failure_code: string;
+				}>,
+		);
+		expect(attempts[0]).toMatchObject({ delivery_attempts: 1, last_failure_code: "http" });
+
+		fetchStatus = 200;
+		await collector.flush();
+		expect(captured[1]?.body.batch.map((event) => event.properties.$insert_id)).toEqual(firstIds);
+		expect(collector.deliveryHealth().queuedUnsentEventCount).toBe(0);
+		expect(collector.deliveryHealth().lastSuccessfulDeliveryAgeSec).not.toBeNull();
+	});
+
+	it("emits a bounded local health event without exposing delivery secrets", async () => {
+		const collector = createTelemetryCollector(getDbAccessor(), TELEMETRY_CONFIG, "0.0.0-test", {
+			telemetryLogPath: logPath,
+		});
+		collector.record("daemon.heartbeat", { uptimeMs: 1 });
+		await collector.stop();
+
+		const health = collector.query({ event: "telemetry.health" })[0];
+		expect(health).toBeDefined();
+		expect(health?.properties).toMatchObject({
+			queuedUnsentEventCount: 2,
+			deliveryConfigured: true,
+		});
+		expect(health?.properties).not.toHaveProperty("posthogApiKey");
+		expect(health?.properties).not.toHaveProperty("posthogHost");
+		expect(health?.properties).not.toHaveProperty("installId");
+		expect(readFileSync(logPath, "utf-8")).toContain('"event":"telemetry.health"');
+	});
+
+	it("drains events recorded during an in-flight flush before stopping", async () => {
+		let releaseFetch: (() => void) | undefined;
+		const fetchBlocked = new Promise<void>((resolve) => {
+			releaseFetch = resolve;
+		});
+		globalThis.fetch = (async () => {
+			await fetchBlocked;
+			return new Response("1", { status: 200 });
+		}) as unknown as typeof fetch;
+
+		const collector = makeCollector();
+		collector.record("daemon.heartbeat", { uptimeMs: 1 });
+		const firstFlush = collector.flush();
+		collector.record("daemon.heartbeat", { uptimeMs: 2 });
+		releaseFetch?.();
+		await firstFlush;
+		await collector.stop();
+
+		expect(
+			getDbAccessor().withReadDb(
+				(db) =>
+					db.prepare("SELECT COUNT(*) AS count FROM telemetry_events WHERE event = 'daemon.heartbeat'").get() as {
+						readonly count: number;
+					},
+			).count,
+		).toBe(2);
+	});
+
+	it("retains old unsent events during retention pruning", async () => {
 		const old = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000).toISOString();
 		getDbAccessor().withWriteTx((w) => {
 			w.prepare(
 				"INSERT INTO telemetry_events (id, event, timestamp, properties, sent_to_posthog, created_at) VALUES (?, ?, ?, ?, 0, ?)",
+			).run("old-unsent", "daemon.heartbeat", old, "{}", old);
+		});
+		const collector = createTelemetryCollector(
+			getDbAccessor(),
+			{ ...TELEMETRY_CONFIG, posthogHost: "", posthogApiKey: "" },
+			"0.0.0-test",
+		);
+		for (let i = 0; i < 10; i++) await collector.flush();
+		const row = getDbAccessor().withReadDb((db) =>
+			db.prepare("SELECT id FROM telemetry_events WHERE id = ?").get("old-unsent"),
+		);
+		expect(row).toBeDefined();
+	});
+
+	it("prunes events older than the retention window", async () => {
+		const old = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000).toISOString();
+		getDbAccessor().withWriteTx((w) => {
+			w.prepare(
+				"INSERT INTO telemetry_events (id, event, timestamp, properties, sent_to_posthog, created_at) VALUES (?, ?, ?, ?, 1, ?)",
 			).run("old-1", "daemon.heartbeat", old, "{}", old);
 		});
 
@@ -834,8 +944,10 @@ describe("session economics (issue #1201)", () => {
 		await collector.flush();
 
 		const ends = collector.query({ event: "session.end" });
-		expect(ends[0]?.properties.tokensInput).toBe(100);
-		expect(ends[1]?.properties.tokensInput).toBe(300);
-		expect(ends[1]?.properties.cost).toBe(1.5);
+		const first = ends.find((event) => event.properties.tokensInput === 100);
+		const resumed = ends.find((event) => event.properties.tokensInput === 300);
+		expect(first?.properties.tokensInput).toBe(100);
+		expect(resumed?.properties.tokensInput).toBe(300);
+		expect(resumed?.properties.cost).toBe(1.5);
 	});
 });
