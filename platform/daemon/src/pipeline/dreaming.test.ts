@@ -15,6 +15,7 @@ import {
 	dreamingEarlyExitSummary,
 	enqueueDreamingHygieneAttention,
 	getDreamingEpisodicTokenBacklog,
+	getDreamingEvidenceExclusions,
 	getDreamingPasses,
 	getDreamingState,
 	getDreamingToolCalls,
@@ -32,6 +33,11 @@ import {
 	getDreamingAttentionSnapshots,
 	resolveDreamingAttentionInTx,
 } from "./dreaming-attention";
+import {
+	autoRequeueRepairedDreamingEvidence,
+	collectRejectedDreamingEvidence,
+	resolveRequeuedDreamingEvidenceInTx,
+} from "./dreaming-evidence-retry";
 import { readDreamingRunbook } from "./dreaming-runbook";
 
 const AGENT = "default";
@@ -93,16 +99,21 @@ function seedTranscript(db: Database, id: string, content: string, capturedAt?: 
 	).run(id, content, AGENT, timestamp, timestamp, timestamp);
 }
 
-function seedSummary(db: Database, id: string, content: string, tokens: number): void {
+function seedSummary(db: Database, id: string, content: string, tokens: number, agentId = AGENT): void {
 	// Keep a legacy row for explicit provenance-compatibility assertions, but
 	// seed the canonical direct transcript path used by Dreaming's default
 	// evidence selector.
-	seedTranscript(db, id, content);
+	const timestamp = (db.prepare("SELECT datetime('now') AS now").get() as { now: string }).now;
+	db.prepare(
+		`INSERT INTO session_transcripts
+		 (session_key, content, agent_id, created_at, updated_at, completed_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+	).run(id, content, agentId, timestamp, timestamp, timestamp);
 	db.prepare(
 		`INSERT INTO session_summaries
 		 (id, agent_id, content, token_count, depth, kind, source_type, earliest_at, latest_at, created_at)
 		 VALUES (?, ?, ?, ?, 0, 'session', 'summary', datetime('now'), datetime('now'), datetime('now'))`,
-	).run(id, AGENT, content, tokens);
+	).run(id, agentId, content, tokens);
 }
 
 describe("Dreaming", () => {
@@ -666,6 +677,193 @@ describe("Dreaming", () => {
 			}),
 		]);
 		expect(Object.keys(attention[0] ?? {})).not.toContain("detailsJson");
+	});
+
+	it("classifies rejected evidence by the repair that can make it retryable", () => {
+		const timestamp = "2026-08-10T12:00:00.000Z";
+		db.prepare(
+			`INSERT INTO session_transcripts
+			 (session_key, content, agent_id, created_at, updated_at, completed_at)
+			 VALUES ('incomplete', 'still running', ?, ?, ?, NULL)`,
+		).run(AGENT, timestamp, timestamp);
+		seedTranscript(db, "quote-changed", "The repaired source has new wording.", timestamp);
+		db.prepare(
+			`INSERT INTO session_transcripts
+			 (session_key, content, agent_id, created_at, updated_at, completed_at)
+			 VALUES ('other-scope', 'private evidence', 'other-agent', ?, ?, ?)`,
+		).run(timestamp, timestamp, timestamp);
+
+		const operations = [
+			{ evidence: [{ source_ref: "transcript:incomplete", quote: "still running" }] },
+			{ evidence: [{ source_ref: "transcript:quote-changed", quote: "The old wording." }] },
+			{ evidence: [{ source_ref: "transcript:missing", quote: "projected later" }] },
+			{ evidence: [{ source_ref: "transcript:other-scope", quote: "private evidence" }] },
+		] as const;
+		const rejected = collectRejectedDreamingEvidence(
+			accessor,
+			AGENT,
+			{
+				ok: false,
+				items: operations.map((_operation, index) => ({ index, ok: false })),
+			},
+			operations,
+		);
+
+		expect(rejected).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ sourceId: "incomplete", failureClass: "incomplete_transcript" }),
+				expect.objectContaining({ sourceId: "quote-changed", failureClass: "quote_mismatch" }),
+				expect.objectContaining({ sourceId: "missing", failureClass: "source_projection" }),
+				expect.objectContaining({ sourceId: "other-scope", failureClass: "scope_mismatch" }),
+			]),
+		);
+		expect(rejected).toHaveLength(4);
+	});
+
+	it("requeues repaired quarantines once, within budget, without deleting the audit row", () => {
+		const timestamp = "2026-08-10T12:00:00.000Z";
+		db.prepare(
+			`INSERT INTO session_transcripts
+			 (session_key, content, agent_id, created_at, updated_at, completed_at)
+			 VALUES ('incomplete', 'now complete', ?, ?, ?, NULL)`,
+		).run(AGENT, timestamp, timestamp);
+		db.prepare(
+			`INSERT INTO session_transcripts
+			 (session_key, content, agent_id, created_at, updated_at, completed_at)
+			 VALUES ('scope-repaired', 'returned to the scope', ?, ?, ?, ?)`,
+		).run("other-agent", timestamp, timestamp, timestamp);
+		seedTranscript(db, "quote-repaired", "new rendered quote", timestamp);
+
+		const exclusions = [
+			["incomplete", "incomplete_transcript", null],
+			["projected", "source_projection", null],
+			["scope-repaired", "scope_mismatch", null],
+			["quote-repaired", "quote_mismatch", "old-fingerprint"],
+		] as const;
+		for (const [sourceId, failureClass, fingerprint] of exclusions) {
+			db.prepare(
+				`INSERT INTO dreaming_evidence_exclusions
+				 (agent_id, source_kind, source_id, reason, pass_id, excluded_at, requeue_requested_at, resolved_at,
+				  failure_class, source_fingerprint, retry_count, last_requeued_at)
+				 VALUES (?, 'transcript', ?, 'semantic_operation_rejected', 'failed-pass', ?, NULL, NULL, ?, ?, 0, NULL)`,
+			).run(AGENT, sourceId, timestamp, failureClass, fingerprint);
+		}
+
+		// The incomplete transcript, absent projection, and scope mismatch
+		// remain quarantined; only the changed rendered source is retryable.
+		expect(
+			autoRequeueRepairedDreamingEvidence(
+				accessor,
+				{ cooldownMs: 0, hourlyBudget: 10, maxAttempts: 3 },
+				Date.parse(timestamp),
+			),
+		).toBe(1);
+		// Repair the remaining three sources, including the scope that was
+		// temporarily owned by another agent.
+		seedTranscript(db, "projected", "projected later", timestamp);
+		seedTranscript(db, "scope-repaired", "returned to the scope", timestamp);
+		db.prepare("UPDATE session_transcripts SET completed_at = ? WHERE agent_id = ? AND session_key = 'incomplete'").run(
+			timestamp,
+			AGENT,
+		);
+		expect(
+			autoRequeueRepairedDreamingEvidence(
+				accessor,
+				{ cooldownMs: 0, hourlyBudget: 10, maxAttempts: 3 },
+				Date.parse(timestamp) + 1_000,
+			),
+		).toBe(3);
+		// A requested repair is not re-enqueued on every sweep.
+		expect(
+			autoRequeueRepairedDreamingEvidence(
+				accessor,
+				{ cooldownMs: 0, hourlyBudget: 10, maxAttempts: 3 },
+				Date.parse(timestamp) + 2_000,
+			),
+		).toBe(0);
+
+		const rows = db
+			.prepare(
+				`SELECT source_id AS sourceId, retry_count AS retryCount, requeue_requested_at AS requestedAt,
+				        resolved_at AS resolvedAt
+				 FROM dreaming_evidence_exclusions WHERE agent_id = ? ORDER BY source_id`,
+			)
+			.all(AGENT) as Array<{
+			sourceId: string;
+			retryCount: number;
+			requestedAt: string | null;
+			resolvedAt: string | null;
+		}>;
+		expect(rows).toHaveLength(4);
+		expect(rows.every((row) => row.retryCount === 1 && row.requestedAt !== null && row.resolvedAt === null)).toBe(true);
+		expect(getDreamingAttention(accessor, AGENT).filter((item) => item.kind === "evidence_requeue")).toHaveLength(4);
+
+		accessor.withWriteTx((tx) =>
+			resolveRequeuedDreamingEvidenceInTx(tx, AGENT, "repair-pass", { ok: true, items: [{ index: 0, ok: true }] }, [
+				{ evidence: [{ source_ref: "transcript:incomplete", quote: "now complete" }] },
+			]),
+		);
+		expect(
+			db
+				.prepare(
+					"SELECT resolved_at AS resolvedAt FROM dreaming_evidence_exclusions WHERE agent_id = ? AND source_id = 'incomplete'",
+				)
+				.get(AGENT),
+		).toMatchObject({ resolvedAt: expect.any(String) });
+		expect(getDreamingAttention(accessor, AGENT).filter((item) => item.kind === "evidence_requeue")).toHaveLength(3);
+	});
+
+	it("records the repair classification under the operation's target scope when pre-apply validation fails", async () => {
+		accessor.withWriteTx((tx) => {
+			enqueueDreamingAttentionInTx(tx, {
+				agentId: AGENT,
+				kind: "review_due",
+				subjectRef: "entity:rejected-citation",
+				details: { reason: "force the apply path for scope attribution" },
+				priority: 90,
+			});
+		});
+		seedSummary(db, "rejected-citation", "The canonical source says the deployment is local.", 12, "other-agent");
+		const result = await runDreamingAgentPass(
+			accessor,
+			{
+				async run(input) {
+					const apply = input.tools.find((tool) => tool.name === "apply_ontology_ops");
+					if (!apply) throw new Error("Missing apply_ontology_ops");
+					await apply.execute(
+						"call",
+						{
+							agentId: "other-agent",
+							operations: [
+								{
+									evidence: [{ source_ref: "summary:rejected-citation", quote: "the deployment is remote" }],
+								},
+							],
+						},
+						undefined,
+						undefined,
+						{} as never,
+					);
+					return { summary: "Rejected citation" };
+				},
+			},
+			defaultCfg(),
+			"/tmp",
+			AGENT,
+			[AGENT],
+			"incremental",
+		);
+
+		expect(result.summary).toBe("Rejected citation");
+		expect(getDreamingEvidenceExclusions(accessor, "other-agent")).toContainEqual(
+			expect.objectContaining({
+				sourceKind: "summary",
+				sourceId: "rejected-citation",
+				failureClass: "quote_mismatch",
+				retryCount: 0,
+			}),
+		);
+		expect(getDreamingEvidenceExclusions(accessor, AGENT)).toEqual([]);
 	});
 
 	it("applies cited operations only through the daemon-owned tool surface", async () => {
