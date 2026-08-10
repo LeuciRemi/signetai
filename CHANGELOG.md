@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-10
-- Features: record dreaming pass effects.
+- Features: add source lifecycle telemetry (#1276); add marketing PostHog events; record dreaming pass effects.
 - Bug fixes: remove duplicate projection helper; retain transcript manifest projection; account for recovered dreaming passes; disclose CLI command delivery (#1280); classify deployment role and install provenance; canonicalize embedding endpoint (#1264); bound wedge pressure probes; merge growing recovery snapshots; retain worker status telemetry; harden retired transcript recovery; retire summary-worker delivery; measure recall delivery outcomes; add bounded wedge pressure telemetry; persist first-use milestones atomically.
 - Docs: improve issue triage workflow.
 
@@ -43,6 +43,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: reflect Dreaming cutover; clarify inline linking boundary; align pipeline with Dreaming cutover; describe summary lineage cutover.
 
 ## Release Ledger
+
+## [0.187.0] - 2026-08-10
+
+Release summary: 2 features.
+Tag range: `v0.186.0..v0.187.0`.
+
+### Features
+
+- **telemetry**: add source lifecycle telemetry (#1276) (#1293)
+- **web**: add marketing PostHog events (#1301)
 
 ## [0.186.0] - 2026-08-10
 
