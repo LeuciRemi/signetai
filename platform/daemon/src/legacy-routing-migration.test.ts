@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
 	migrateLegacyRoutingToRegistry,
 	migrateRetiredExtractionWriterConfig,
+	migrateRetiredMemoryPipelineRouting,
 	migrateSessionSynthesisRoute,
 } from "./config-migration";
 import { loadMemoryConfig } from "./memory-config";
@@ -16,7 +17,7 @@ function setupDir(): string {
 }
 
 describe("migrateLegacyRoutingToRegistry (#947 v4, #1004 v5 cleanup)", () => {
-	it("compiles legacy extraction + synthesis into inference registry and nulls routing keys", () => {
+	it("compiles legacy extraction and removes the obsolete synthesis block", () => {
 		const dir = setupDir();
 		try {
 			writeFileSync(
@@ -57,11 +58,12 @@ describe("migrateLegacyRoutingToRegistry (#947 v4, #1004 v5 cleanup)", () => {
 			expect(after).not.toContain("sessionSynthesis");
 			expect(after).not.toContain("legacy-synthesis");
 
-			// Legacy ROUTING keys gone, tuning preserved.
+			// Legacy extraction routing is gone; extraction tuning remains.
 			expect(after).not.toMatch(/provider: openrouter/);
 			expect(after).not.toMatch(/fallbackProvider:/);
+			expect(after).not.toMatch(/memory.pipelineV2.synthesis/);
 			expect(after).toContain("timeout: 90000");
-			expect(after).toContain("maxTokens: 1024");
+			expect(after).not.toContain("maxTokens: 1024");
 
 			// Version stamped.
 			expect(after).toMatch(/^configVersion: 5/m);
@@ -70,6 +72,69 @@ describe("migrateLegacyRoutingToRegistry (#947 v4, #1004 v5 cleanup)", () => {
 		}
 	});
 
+	it("removes retired routing from an already-versioned config before strict loading", () => {
+		const dir = setupDir();
+		try {
+			writeFileSync(
+				join(dir, "agent.yaml"),
+				`configVersion: 7
+memory:
+  synthesis:
+    harness: openclaw
+    model: sonnet
+  pipelineV2:
+    enabled: true
+    allowRemoteProviders: false
+    extraction:
+      provider: openrouter
+      model: anthropic/claude-haiku
+      endpoint: https://openrouter.ai/api/v1
+      strength: high
+    synthesis:
+      enabled: true
+      timeout: 90000
+      maxTokens: 1024
+`,
+			);
+			migrateRetiredMemoryPipelineRouting(dir);
+			const after = readFileSync(join(dir, "agent.yaml"), "utf-8");
+			expect(after).toMatch(/^configVersion: 8/m);
+			expect(after).not.toContain("allowRemoteProviders");
+			expect(after).not.toContain("provider: openrouter");
+			expect(after).not.toMatch(/^\s+synthesis:/m);
+			expect(after).toContain("strength: high");
+			expect(() => loadMemoryConfig(dir)).not.toThrow();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("preserves unsupported routing so strict loading reports the required reconfiguration", () => {
+		const dir = setupDir();
+		try {
+			writeFileSync(
+				join(dir, "agent.yaml"),
+				`configVersion: 7
+memory:
+  pipelineV2:
+    enabled: true
+    extraction:
+      provider: groq
+      model: llama-3
+      endpoint: https://api.groq.com/openai/v1
+`,
+			);
+
+			migrateRetiredMemoryPipelineRouting(dir);
+			const after = readFileSync(join(dir, "agent.yaml"), "utf-8");
+			expect(after).toMatch(/^configVersion: 8/m);
+			expect(after).toContain("provider: groq");
+			expect(after).toContain("model: llama-3");
+			expect(() => loadMemoryConfig(dir)).toThrow("is retired");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 	it("compiles legacy flat extraction routing instead of deleting it", () => {
 		const dir = setupDir();
 		try {
