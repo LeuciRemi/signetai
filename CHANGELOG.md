@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-10
-- Bug fixes: measure recall delivery outcomes; add bounded wedge pressure telemetry; persist first-use milestones atomically.
+- Bug fixes: merge growing recovery snapshots; retain worker status telemetry; harden retired transcript recovery; retire summary-worker delivery; measure recall delivery outcomes; add bounded wedge pressure telemetry; persist first-use milestones atomically.
 
 ### 2026-08-09
 - Features: reconcile indeterminate ACP deliveries (#1263); launch Starlight documentation; deliver cross-agent notifications.
@@ -41,6 +41,18 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: reflect Dreaming cutover; clarify inline linking boundary; align pipeline with Dreaming cutover; describe summary lineage cutover.
 
 ## Release Ledger
+
+## [0.185.5] - 2026-08-10
+
+Release summary: 4 bug fixes.
+Tag range: `v0.185.4..v0.185.5`.
+
+### Bug Fixes
+
+- **daemon**: merge growing recovery snapshots
+- **daemon**: retain worker status telemetry
+- **daemon**: harden retired transcript recovery
+- **daemon**: retire summary-worker delivery
 
 ## [0.185.4] - 2026-08-10
 
