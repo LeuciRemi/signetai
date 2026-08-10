@@ -84,9 +84,15 @@ const EMPTY_QUEUE_COUNTS_SHAPE: QueueCounts = {
 	oldestAgeSec: 0,
 	oldestDeadAgeSec: 0,
 	lastError: null,
+	completeness: "exact",
 };
 
-function pipelineQueueBlock(): PipelineQueueBlock {
+const UNKNOWN_QUEUE_COUNTS_SHAPE: QueueCounts = {
+	...EMPTY_QUEUE_COUNTS_SHAPE,
+	completeness: "unknown",
+};
+
+export function pipelineQueueBlock(): PipelineQueueBlock {
 	try {
 		const accessor = getDbAccessor();
 		return accessor.withReadDb((db) => {
@@ -99,8 +105,8 @@ function pipelineQueueBlock(): PipelineQueueBlock {
 		});
 	} catch {
 		return {
-			memory: { ...EMPTY_QUEUE_COUNTS_SHAPE },
-			summary: { ...EMPTY_QUEUE_COUNTS_SHAPE },
+			memory: { ...UNKNOWN_QUEUE_COUNTS_SHAPE },
+			summary: { ...UNKNOWN_QUEUE_COUNTS_SHAPE },
 			oldestDeadSummaryJob: null,
 		};
 	}

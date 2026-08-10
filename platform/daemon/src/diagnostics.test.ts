@@ -204,6 +204,50 @@ describe("expanded queue diagnostics", () => {
 		expect(getQueueDiagnosticsSnapshot(readDb, { fresh: true }).memory.dead).toBe(1);
 	});
 
+	test("marks observable bounded diagnostics as exact", () => {
+		insertMemory(db, "mem-exact-diagnostics");
+		insertJob(db, "job-exact", "mem-exact-diagnostics", "completed");
+
+		const counts = getQueueDiagnosticsSnapshot(asReadDb(db), { fresh: true }).memory;
+		expect(counts.completed).toBe(1);
+		expect(counts.completeness).toBe("exact");
+	});
+
+	test("reports unknown completeness when a legacy schema lacks the diagnostics index", () => {
+		insertMemory(db, "mem-legacy-diagnostics");
+		insertJob(db, "job-legacy", "mem-legacy-diagnostics", "completed");
+		db.exec("DROP INDEX idx_memory_jobs_diagnostics_status_created_at");
+
+		const counts = getQueueDiagnosticsSnapshot(asReadDb(db), { fresh: true }).memory;
+		expect(counts).toMatchObject({
+			pending: 0,
+			leased: 0,
+			completed: 0,
+			failed: 0,
+			dead: 0,
+			completeness: "unknown",
+		});
+	});
+
+	test("bounds fresh diagnostics counts and marks terminal history as truncated", () => {
+		insertMemory(db, "mem-bounded-diagnostics");
+		for (let i = 0; i < 1_100; i++) {
+			insertJob(db, `job-bounded-${i}`, "mem-bounded-diagnostics", "completed");
+		}
+
+		const counts = getQueueDiagnosticsSnapshot(asReadDb(db), { fresh: true }).memory;
+		expect(counts.completed).toBe(1_000);
+		expect(counts.completeness).toBe("truncated");
+		const plan = db
+			.prepare(
+				`EXPLAIN QUERY PLAN
+				 SELECT status FROM memory_jobs INDEXED BY idx_memory_jobs_diagnostics_status_created_at
+				 WHERE status = 'completed' AND job_type <> 'extract' LIMIT 1001`,
+			)
+			.all() as ReadonlyArray<{ readonly detail?: string }>;
+		expect(plan.some((row) => row.detail?.includes("idx_memory_jobs_diagnostics_status_created_at"))).toBe(true);
+	});
+
 	test("bounds heartbeat queue observation and distinguishes empty queue age", () => {
 		const readDb = asReadDb(db);
 		const empty = getQueuePressureSnapshot(readDb);
