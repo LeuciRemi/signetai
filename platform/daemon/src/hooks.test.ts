@@ -742,11 +742,27 @@ describe("handleSessionStart", () => {
 		expect(result.identity.description).toBeUndefined();
 		expect(result.memories).toEqual([]);
 		expect(typeof result.inject).toBe("string");
+		expect(result.inject).not.toContain("Current Date & Time");
+	});
+
+	test.serial("keeps session-start context free of wall-clock metadata", async () => {
+		createMemoryDb();
+		const db = openTestDb();
+		insertCompletedTranscript(db, { sessionKey: "cache-stable-session", content: "previous session" });
+		db.close();
+
+		const result = await handleSessionStart({ harness: "test", sessionKey: "cache-stable-session-2" });
+		expect(result.inject).not.toContain("Current Date & Time");
+		expect(result.inject).not.toContain("last active");
 	});
 
 	test.serial("inject starts with memory status line", async () => {
 		const result = await handleSessionStart({ harness: "test" });
 		expect(result.inject).toContain("[memory active");
+		expect(result.inject.startsWith("<signet-memory-context>\n")).toBe(true);
+		expect(result.inject.endsWith("\n</signet-memory-context>\n")).toBe(true);
+		expect(result.contextVersion).toBe(1);
+		expect(result.contextHash).toMatch(/^[0-9a-f]{64}$/);
 	});
 
 	test.serial("keeps tokenizer encodes off the event loop for a populated recall pool (#1114)", async () => {

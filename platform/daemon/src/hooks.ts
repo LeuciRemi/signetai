@@ -14,6 +14,8 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import {
 	type AgentRosterReadPolicy,
+	type PROMPT_CONTEXT_VERSION,
+	createPromptContext,
 	identityModeManagesFiles,
 	identityModeReadsFiles,
 	loadIdentityMode,
@@ -279,6 +281,8 @@ export interface SessionStartResponse {
 	}>;
 	recentContext?: string;
 	inject: string;
+	contextHash?: string;
+	contextVersion?: typeof PROMPT_CONTEXT_VERSION;
 	warnings?: string[];
 }
 
@@ -314,6 +318,8 @@ export interface UserPromptSubmitRequest {
 
 export interface UserPromptSubmitResponse {
 	inject: string;
+	contextHash?: string;
+	contextVersion?: typeof PROMPT_CONTEXT_VERSION;
 	memoryCount: number;
 	queryTerms?: string;
 	engine?: string;
@@ -429,7 +435,7 @@ function buildPluginPromptContributionSection(target: PluginPromptTargetV1, log:
 	}
 }
 
-/** Build a brief "since your last session" summary for temporal awareness */
+/** Build a brief "since your last session" summary */
 function getSessionGapSummary(): string | undefined {
 	if (!existsSync(getMemoryDbPath())) return undefined;
 
@@ -444,19 +450,6 @@ function getSessionGapSummary(): string | undefined {
 			if (!lastSession?.last_end) return undefined;
 
 			const lastEnd = lastSession.last_end;
-			const lastEndMs = new Date(lastEnd).getTime();
-			const gapMs = Date.now() - lastEndMs;
-
-			// Format time gap
-			let gapStr: string;
-			const gapMins = Math.floor(gapMs / 60000);
-			const gapHours = Math.floor(gapMs / 3600000);
-			const gapDays = Math.floor(gapMs / 86400000);
-
-			if (gapDays > 7) gapStr = "7+ days ago";
-			else if (gapDays >= 1) gapStr = `${gapDays}d ago`;
-			else if (gapHours >= 1) gapStr = `${gapHours}h ago`;
-			else gapStr = `${Math.max(1, gapMins)}m ago`;
 
 			// Count new memories since last session
 			const memCount = db
@@ -468,7 +461,7 @@ function getSessionGapSummary(): string | undefined {
 				.prepare("SELECT COUNT(*) as cnt FROM session_transcripts WHERE completed_at > ?")
 				.get(lastEnd) as { cnt: number };
 
-			return `[since last session: ${memCount.cnt} new memories, ${sessionCount.cnt} sessions captured, last active ${gapStr}]`;
+			return `[since last session: ${memCount.cnt} new memories, ${sessionCount.cnt} sessions captured]`;
 		});
 	} catch {
 		return undefined;
@@ -660,21 +653,15 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 			harness: req.harness,
 			sessionKey: req.sessionKey,
 		});
-		const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-		const now = new Date().toLocaleString("en-US", {
-			timeZone: tz,
-			dateStyle: "full",
-			timeStyle: "short",
-		});
 		const warnings = req.sessionKey
 			? [getExpiryWarning(req.sessionKey, agentId)].filter((w): w is string => w !== null)
 			: undefined;
-		return {
+		return attachPromptContext({
 			identity: { name: "Agent" },
 			memories: [],
-			inject: `[memory active | /remember | /recall]\n# Current Date & Time\n${now} (${tz})`,
+			inject: "[memory active | /remember | /recall]",
 			warnings: warnings?.length ? warnings : undefined,
-		};
+		});
 	}
 
 	// Anonymous usage telemetry: a real session start (dedup stubs and
@@ -1049,15 +1036,6 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 		injectParts.push(gapSummary);
 	}
 
-	// Inject local date/time and timezone
-	const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-	const now = new Date().toLocaleString("en-US", {
-		timeZone: tz,
-		dateStyle: "full",
-		timeStyle: "short",
-	});
-	injectParts.push(`\n# Current Date & Time\n${now} (${tz})\n`);
-
 	if (req.project) {
 		const peerSessions = listAgentPresence({
 			agentId: resolveAgentId(req),
@@ -1241,7 +1219,7 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 	// Mark this session as having received the full inject
 	markSessionStartDedupe(req);
 
-	return {
+	return attachPromptContext({
 		identity,
 		memories: memories.map((m) => ({
 			id: m.id,
@@ -1257,7 +1235,7 @@ export async function handleSessionStart(req: SessionStartRequest): Promise<Sess
 			const w = [getExpiryWarning(req.sessionKey, resolveAgentId(req))].filter((v): v is string => v !== null);
 			return w.length > 0 ? w : undefined;
 		})(),
-	};
+	});
 }
 
 export function handlePreCompaction(req: PreCompactionRequest): PreCompactionResponse {
@@ -1366,7 +1344,8 @@ function finalizeUserPromptSubmitSuccess(
 	log: typeof logger,
 	engineOverride?: string,
 ): UserPromptSubmitResponse {
-	const inject = typeof result.inject === "string" ? result.inject : "";
+	const contextualResult = attachPromptContext(result);
+	const inject = contextualResult.inject;
 	const rawMemoryCount = typeof result.memoryCount === "number" ? result.memoryCount : 0;
 	const memoryCount = Number.isFinite(rawMemoryCount) && rawMemoryCount >= 0 ? rawMemoryCount : 0;
 	const engine =
@@ -1389,7 +1368,23 @@ function finalizeUserPromptSubmitSuccess(
 		durationMs: duration,
 	});
 
-	return result;
+	return contextualResult;
+}
+
+function attachPromptContext<T extends { readonly inject: string }>(
+	result: T,
+): T & {
+	readonly contextHash?: string;
+	readonly contextVersion?: typeof PROMPT_CONTEXT_VERSION;
+} {
+	const context = createPromptContext(result.inject);
+	if (!context) return { ...result, inject: "" };
+	return {
+		...result,
+		inject: context.serialized,
+		contextHash: context.hash,
+		contextVersion: context.version,
+	};
 }
 
 function entityMemoryToRecallResult(memory: PromptEntityContextMemory): RecallResult {
@@ -1643,14 +1638,10 @@ export async function handleUserPromptSubmit(
 		}
 	}
 
-	// Build lightweight metadata header (injected on every prompt)
-	const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-	const now = new Date().toLocaleString("en-US", {
-		timeZone: tz,
-		dateStyle: "full",
-		timeStyle: "short",
-	});
-	const metadataHeader = `# Current Date & Time\n${now} (${tz})\n`;
+	// Per-prompt context must not contain a wall-clock value. Harnesses may
+	// replay the same response for title, primary, retry, and tool-loop calls;
+	// dynamic metadata would invalidate their prompt cache and its hash.
+	const metadataHeader = "";
 	const expiryWarning = req.sessionKey ? deps.getExpiryWarning(req.sessionKey, agentId) : null;
 	const warnings = expiryWarning ? [expiryWarning] : undefined;
 
