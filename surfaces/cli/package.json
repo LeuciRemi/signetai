@@ -1,6 +1,6 @@
 {
   "name": "@signet/cli",
-  "version": "0.192.2",
+  "version": "0.193.0",
   "description": "CLI for Signet - portable AI agent identity",
   "type": "module",
   "bin": "./dist/cli.js",
