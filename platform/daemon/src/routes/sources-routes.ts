@@ -15,8 +15,9 @@ import {
 	markSourceIndexed,
 	removeSource,
 } from "@signet/core";
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import { resolveDaemonAgentId } from "../agent-id";
+import { getPeerAddress } from "../auth/middleware";
 import { type ReadDb, getDbAccessor } from "../db-accessor";
 import { fetchEmbedding } from "../embedding-fetch";
 import { logger } from "../logger";
@@ -166,15 +167,17 @@ export function registerSourcesRoutes(app: Hono, deps: RegisterSourcesRoutesDeps
 		const agentId = resolveDaemonAgentId();
 		return c.json({
 			version: config.version,
-			sources: config.sources.map((source) => {
-				const stats = sourceStats(source, agentId);
-				return {
-					...source,
-					stats,
-					health: sourceHealth(source, agentId, stats),
-					indexJob: getSourceIndexJob(source.id),
-				};
-			}),
+			sources: config.sources
+				.filter((source) => isSourceVisibleToAgent(source, agentId))
+				.map((source) => {
+					const stats = sourceStats(source, agentId);
+					return {
+						...source,
+						stats,
+						health: sourceHealth(source, agentId, stats),
+						indexJob: getSourceIndexJob(source.id),
+					};
+				}),
 		});
 	});
 
@@ -189,6 +192,20 @@ export function registerSourcesRoutes(app: Hono, deps: RegisterSourcesRoutesDeps
 		const result = await pickDirectory(body.title ?? "Choose folder");
 		if (result.ok === false) return c.json({ error: result.error }, 501);
 		return c.json({ path: result.path });
+	});
+
+	app.post("/api/sources/pick-files", async (c) => {
+		if (!isLoopbackRequest(c)) return c.json({ error: "Native file picking is local-only" }, 400);
+		let body: PickDirectoryBody = {};
+		try {
+			body = (await c.req.json().catch(() => ({}))) as PickDirectoryBody;
+		} catch {
+			body = {};
+		}
+
+		const result = await pickFiles(body.title ?? "Choose files");
+		if (result.ok === false) return c.json({ error: result.error }, 501);
+		return c.json({ paths: result.paths });
 	});
 
 	app.post("/api/sources/obsidian", async (c) => {
@@ -282,7 +299,7 @@ export function registerSourcesRoutes(app: Hono, deps: RegisterSourcesRoutesDeps
 
 	app.get("/api/sources/:sourceId/snapshot", (c) => {
 		const sourceId = c.req.param("sourceId");
-		const source = findConfiguredSource(sourceId, agentsDir);
+		const source = findConfiguredSource(sourceId, agentsDir, resolveDaemonAgentId());
 		if (!source) return c.json({ error: "Source not found" }, 404);
 		const includeLocalDiscord = c.req.query("includeLocalDiscord") === "true";
 		return c.json(
@@ -296,7 +313,7 @@ export function registerSourcesRoutes(app: Hono, deps: RegisterSourcesRoutesDeps
 
 	app.get("/api/sources/:sourceId/health", (c) => {
 		const sourceId = c.req.param("sourceId");
-		const source = findConfiguredSource(sourceId, agentsDir);
+		const source = findConfiguredSource(sourceId, agentsDir, resolveDaemonAgentId());
 		if (!source) return c.json({ error: "Source not found" }, 404);
 		const agentId = resolveDaemonAgentId();
 		const stats = sourceStats(source, agentId);
@@ -306,7 +323,7 @@ export function registerSourcesRoutes(app: Hono, deps: RegisterSourcesRoutesDeps
 	app.post("/api/sources/:sourceId/snapshot/import", async (c) => {
 		const startedAt = Date.now();
 		const sourceId = c.req.param("sourceId");
-		const source = findConfiguredSource(sourceId, agentsDir);
+		const source = findConfiguredSource(sourceId, agentsDir, resolveDaemonAgentId());
 		if (!source) return c.json({ error: "Source not found" }, 404);
 		if (isSourceImportBlocked(source.id)) {
 			return c.json({ error: "Source snapshot import cannot run while source indexing is queued or running" }, 409);
@@ -420,11 +437,15 @@ export function registerSourcesRoutes(app: Hono, deps: RegisterSourcesRoutesDeps
 
 	app.delete("/api/sources/:sourceId", (c) => {
 		const sourceId = c.req.param("sourceId");
+		const source = findConfiguredSource(sourceId, agentsDir, resolveDaemonAgentId());
+		if (source === undefined) return c.json({ error: "Source not found" }, 404);
+		const sourceAgentId = resolveDaemonAgentId();
+		if (source.kind === "import" && source.providerSettings?.agentId !== sourceAgentId)
+			return c.json({ error: "Source not found" }, 404);
 		const result = removeSource(sourceId, agentsDir);
 		if (result.ok === false) return c.json({ error: result.error }, 404);
 		cancelSourceIndexJob(result.source.id);
 
-		const sourceAgentId = resolveDaemonAgentId();
 		removeSourceLifecycleState(result.source, sourceAgentId);
 		recordSourceDeletionTombstone(result.source, sourceAgentId, agentsDir);
 		const provider = getSourceProvider(result.source.kind);
@@ -435,8 +456,14 @@ export function registerSourcesRoutes(app: Hono, deps: RegisterSourcesRoutesDeps
 	});
 }
 
-function findConfiguredSource(sourceId: string, agentsDir: string): SignetSourceEntry | undefined {
-	return loadSourcesConfig(agentsDir).sources.find((source) => source.id === sourceId);
+function findConfiguredSource(sourceId: string, agentsDir: string, agentId: string): SignetSourceEntry | undefined {
+	return loadSourcesConfig(agentsDir).sources.find(
+		(source) => source.id === sourceId && isSourceVisibleToAgent(source, agentId),
+	);
+}
+
+function isSourceVisibleToAgent(source: SignetSourceEntry, agentId: string): boolean {
+	return source.kind !== "import" || source.providerSettings?.agentId === agentId;
 }
 
 function isSourceImportBlocked(sourceId: string): boolean {
@@ -1130,6 +1157,83 @@ function countRow(row: unknown): number {
 	return typeof row === "object" && row !== null && "n" in row && typeof (row as { n?: unknown }).n === "number"
 		? (row as { n: number }).n
 		: 0;
+}
+
+async function pickFiles(title: string): Promise<{ ok: true; paths: string[] } | { ok: false; error: string }> {
+	const trimmedTitle = title.trim() || "Choose files";
+	const errors: string[] = [];
+
+	for (const candidate of filePickerCommands(trimmedTitle)) {
+		try {
+			const { stdout } = await execFileAsync(candidate.command, candidate.args, { timeout: 120_000 });
+			const paths = stdout
+				.split(/\r?\n|\|/)
+				.map((path) => path.trim())
+				.filter((path) => path.length > 0);
+			if (paths.length > 0) return { ok: true, paths };
+		} catch (err) {
+			errors.push(`${candidate.command}: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+
+	return {
+		ok: false,
+		error: `No native file picker is available for this daemon environment. Tried: ${errors.join("; ")}`,
+	};
+}
+
+function isLoopbackRequest(c: Context): boolean {
+	const peer = getPeerAddress(c);
+	if (peer === null) return false;
+	const normalized = peer
+		.trim()
+		.toLowerCase()
+		.replace(/^\[|\]$/g, "");
+	return (
+		normalized === "localhost" ||
+		normalized === "127.0.0.1" ||
+		normalized === "::1" ||
+		normalized === "::ffff:127.0.0.1"
+	);
+}
+
+function filePickerCommands(title: string): Array<{ command: string; args: string[] }> {
+	if (process.env.SIGNET_FILE_PICKER) {
+		return [{ command: process.env.SIGNET_FILE_PICKER, args: [] }];
+	}
+
+	if (process.platform === "darwin") {
+		return [
+			{
+				command: "osascript",
+				args: [
+					"-e",
+					`set picked to choose file with prompt ${JSON.stringify(title)} with multiple selections allowed\nset output to ""\nrepeat with itemRef in picked\nset output to output & POSIX path of itemRef & linefeed\nend repeat\nreturn output`,
+				],
+			},
+		];
+	}
+
+	if (process.platform === "win32") {
+		return [
+			{
+				command: "powershell.exe",
+				args: [
+					"-NoProfile",
+					"-Command",
+					`Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Multiselect = $true; $d.Title = ${JSON.stringify(title)}; if ($d.ShowDialog() -eq 'OK') { $d.FileNames -join [Environment]::NewLine }`,
+				],
+			},
+		];
+	}
+
+	return [
+		{ command: "zenity", args: ["--file-selection", "--multiple", "--separator=|", "--title", title] },
+		{
+			command: "kdialog",
+			args: ["--getopenfilename", homedir(), "*", "--multiple", "--separate-output", "--title", title],
+		},
+	];
 }
 
 async function pickDirectory(title: string): Promise<{ ok: true; path: string } | { ok: false; error: string }> {

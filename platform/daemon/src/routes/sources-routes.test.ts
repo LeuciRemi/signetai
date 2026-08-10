@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { addDiscordSource, addObsidianSource, loadSourcesConfig } from "@signet/core";
+import { addDiscordSource, addImportedSource, addObsidianSource, loadSourcesConfig } from "@signet/core";
 import { Hono } from "hono";
 import { closeDbAccessor, getDbAccessor, initDbAccessor } from "../db-accessor";
 import { hashNormalizedBody } from "../memory-lineage";
@@ -293,6 +293,68 @@ describe("Sources routes", () => {
 		await waitFor(() => !!loadSourcesConfig(dir).sources[0]?.lastIndexedAt);
 	});
 
+	it("does not let another agent delete an imported source", async () => {
+		process.env.SIGNET_AGENT_ID = "source-owner-a";
+		const added = addImportedSource(
+			{
+				fileName: "owned.json",
+				contentHash: "b".repeat(64),
+				format: "json",
+				agentId: "source-owner-a",
+			},
+			dir,
+		);
+		expect(added.ok).toBe(true);
+		if (added.ok === false) throw new Error(added.error);
+
+		process.env.SIGNET_AGENT_ID = "source-owner-b";
+		const response = await makeApp().request(`/api/sources/${encodeURIComponent(added.source.id)}`, {
+			method: "DELETE",
+		});
+
+		expect(response.status).toBe(404);
+		expect(loadSourcesConfig(dir).sources).toHaveLength(1);
+		expect(
+			getDbAccessor().withReadDb(
+				(db) => db.prepare("SELECT COUNT(*) AS count FROM imported_source_lifecycle").get() as { count: number },
+			).count,
+		).toBe(0);
+	});
+
+	it("does not expose another agent's imported source through list or read routes", async () => {
+		process.env.SIGNET_AGENT_ID = "source-owner-a";
+		const added = addImportedSource(
+			{
+				fileName: "private.json",
+				contentHash: "c".repeat(64),
+				format: "json",
+				agentId: "source-owner-a",
+			},
+			dir,
+		);
+		if (added.ok === false) throw new Error(added.error);
+
+		process.env.SIGNET_AGENT_ID = "source-owner-b";
+		const app = makeApp();
+		const list = await app.request("/api/sources");
+		expect(list.status).toBe(200);
+		expect((await list.json()) as { version: number; sources: unknown[] }).toEqual({ version: 1, sources: [] });
+
+		const paths = [
+			`/api/sources/${encodeURIComponent(added.source.id)}/health`,
+			`/api/sources/${encodeURIComponent(added.source.id)}/snapshot`,
+			`/api/sources/${encodeURIComponent(added.source.id)}/snapshot/import`,
+		];
+		for (const path of paths) {
+			const isImport = path.endsWith("/import");
+			const response = await app.request(path, {
+				method: isImport ? "POST" : "GET",
+				headers: isImport ? { "Content-Type": "application/json" } : undefined,
+				body: isImport ? "{}" : undefined,
+			});
+			expect(response.status).toBe(404);
+		}
+	});
 	it("purges again when a disconnected source still has an in-flight index job", async () => {
 		let releaseScan = () => {};
 		let purges = 0;

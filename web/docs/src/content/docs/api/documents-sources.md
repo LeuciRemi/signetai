@@ -131,7 +131,7 @@ the document are soft-deleted one at a time with audit history.
 
 Sources connect read-only external knowledge bases to Signet recall without
 turning them into ordinary saved memories. Supported source kinds are
-`obsidian`, `discord`, and `github`.
+`obsidian`, `discord`, `github`, and `import`.
 
 ### GET /api/sources
 
@@ -172,7 +172,72 @@ agent.
 }
 ```
 
+### POST /api/sources/import
+
+Import one or more files as durable, read-only source artifacts. The request is
+`multipart/form-data` with one or more `files` fields and an optional
+`duplicateMode` field. `duplicateMode` is `skip` by default and can also be
+`replace` or `reimport`.
+
+The dashboard importer accepts text, Markdown, JSON, HTML, CSV, and document
+formats supported by AnyDoc (`doc`, `docx`, `docm`, `odt`, `rtf`, `pdf`, `ppt`,
+`pptx`, `ppsx`, `odp`, `epub`, `xls`, `xlsx`, `xlsm`, and `ods`). JSON is stored
+as both a structured canonical artifact and a searchable projection. CSV keeps
+one table artifact and adds bounded searchable row-range chunks with row-range
+provenance. Document formats are converted to a Markdown projection. Raw upload
+bytes are not retained by the importer.
+
+A local desktop daemon may also receive repeated `paths` fields instead of
+`files`; it reads those paths directly only for loopback requests. Remote
+clients must upload file bytes through `files`, so a desktop path is never
+interpreted by a remote daemon.
+
+Imported artifacts are available immediately through source-backed recall, with
+`source_id` and `source_path` pointing back to the imported source. Import
+completion queues a hygiene Dreaming attention for asynchronous semantic
+processing. Removing or replacing an imported source removes its searchable
+artifacts, preserves derived provenance rows, records an `unsupported`
+lifecycle marker, and queues another hygiene review rather than silently
+deleting derived ontology.
+
+The default safety bounds are 25 files per request, 25 MiB per file, and 100
+MiB per batch. Each file returns an individual result so a mixed batch can
+partially succeed.
+
+**Response**
+
+```json
+{
+  "imported": 1,
+  "failed": 0,
+  "files": [
+    {
+      "fileName": "export.json",
+      "status": "imported",
+      "sourceId": "import:abc123",
+      "format": "json",
+      "duplicate": false
+    }
+  ]
+}
+```
+
+### POST /api/sources/pick-files
+
+Open the native multi-file picker on a local desktop daemon. This endpoint is
+loopback-only and returns filesystem paths for a subsequent `paths`-based import.
+A remote client must upload bytes through `POST /api/sources/import` instead.
+
+**Response**
+
+```json
+{
+  "paths": ["/home/user/Downloads/export.json"]
+}
+```
+
 ### POST /api/sources/obsidian
+
 
 Add or update an Obsidian vault source and queue a source index job. The vault
 stays read-only; Signet writes only derived source artifacts, graph rows, and
