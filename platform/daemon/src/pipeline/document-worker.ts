@@ -18,6 +18,7 @@ import type { EmbeddingRole } from "../embedding-profile";
 import { logger } from "../logger";
 import type { EmbeddingConfig, PipelineV2Config } from "../memory-config";
 import { isPipelineTimeout, recordPipelineError } from "../pipeline-error";
+import { type PipelineCauseFamily, normalizePipelineCause, recordPipelineOperation } from "../pipeline-operation";
 import { isSystemPressureHigh } from "../system-pressure";
 import { txIngestEnvelope } from "../transactions";
 import { fetchUrlContent } from "./url-fetcher";
@@ -51,6 +52,23 @@ interface DocumentJobRow {
 	readonly payload: string | null;
 	readonly attempts: number;
 	readonly max_attempts: number;
+	readonly created_at: string;
+}
+
+interface DocumentProcessResult {
+	readonly accepted: number;
+	readonly skipped: number;
+	readonly failed: number;
+	readonly causeFamily?: PipelineCauseFamily;
+}
+
+interface MutableDocumentOperation {
+	accepted: number;
+	skipped: number;
+	failed: number;
+	cancelled: boolean;
+	operationClass: "indexing" | "extraction";
+	causeFamily?: PipelineCauseFamily;
 }
 
 interface DocumentRow {
@@ -105,7 +123,7 @@ function leaseDocumentJob(db: WriteDb, maxAttempts: number): DocumentJobRow | nu
 	const row = db
 		.prepare(
 			`SELECT id, memory_id, document_id, job_type, payload,
-			        attempts, max_attempts
+			        attempts, max_attempts, created_at
 			 FROM memory_jobs
 			 WHERE job_type = 'document_ingest'
 			   AND status = 'pending'
@@ -215,8 +233,13 @@ export function enqueueDocumentIngestJob(accessor: DbAccessor, documentId: strin
 // Core processing logic
 // ---------------------------------------------------------------------------
 
-async function processDocument(deps: DocumentWorkerDeps, job: DocumentJobRow): Promise<void> {
+async function processDocument(
+	deps: DocumentWorkerDeps,
+	job: DocumentJobRow,
+	operation: MutableDocumentOperation,
+): Promise<DocumentProcessResult> {
 	const { accessor, embeddingCfg, fetchEmbedding, pipelineCfg } = deps;
+	operation.operationClass = "indexing";
 	const docId = job.document_id;
 	if (!docId) {
 		throw new Error("document_ingest job missing document_id");
@@ -232,7 +255,8 @@ async function processDocument(deps: DocumentWorkerDeps, job: DocumentJobRow): P
 
 	if (doc.status === "done" || doc.status === "deleted") {
 		accessor.withWriteTx((db) => completeJob(db, job.id));
-		return;
+		operation.skipped++;
+		return { accepted: 0, skipped: 1, failed: 0 };
 	}
 	const documentScope = readDocumentScope(doc);
 
@@ -253,6 +277,7 @@ async function processDocument(deps: DocumentWorkerDeps, job: DocumentJobRow): P
 			content = doc.raw_content ?? "";
 		}
 	} catch (err) {
+		operation.operationClass = "extraction";
 		recordPipelineError("extraction", isPipelineTimeout(err) ? "EXTRACTION_TIMEOUT" : "EXTRACTION_PARSE_FAIL");
 		throw err;
 	}
@@ -264,19 +289,49 @@ async function processDocument(deps: DocumentWorkerDeps, job: DocumentJobRow): P
 			deletedAfterExtraction = true;
 		}
 	});
-	if (deletedAfterExtraction) return;
+	if (deletedAfterExtraction) {
+		operation.skipped++;
+		operation.cancelled = true;
+		return { accepted: 0, skipped: 1, failed: 0 };
+	}
 
 	if (content.length === 0) {
+		operation.operationClass = "extraction";
 		recordPipelineError("extraction", "EXTRACTION_PARSE_FAIL");
+		let deletedWhileEmpty = false;
 		accessor.withWriteTx((db) => {
 			if (isDocumentDeleted(db, docId)) {
 				completeJob(db, job.id);
+				deletedWhileEmpty = true;
 				return;
 			}
 			updateDocumentStatus(db, docId, "failed", "Empty content");
 			failJob(db, job.id, "Empty content", job.attempts, job.max_attempts);
 		});
-		return;
+		if (deletedWhileEmpty) {
+			operation.skipped++;
+			operation.cancelled = true;
+			return {
+				accepted: operation.accepted,
+				skipped: operation.skipped,
+				failed: operation.failed,
+				causeFamily: operation.causeFamily,
+			};
+		}
+		// A retry is still one logical invalid-input operation. Defer its
+		// summary counters until the terminal attempt so retries are represented
+		// only by `retried`, not by duplicate failures or skips.
+		if (job.attempts >= job.max_attempts) {
+			operation.skipped++;
+			operation.failed++;
+			operation.causeFamily ??= "invalid_input";
+		}
+		return {
+			accepted: 0,
+			skipped: job.attempts >= job.max_attempts ? 1 : 0,
+			failed: job.attempts >= job.max_attempts ? 1 : 0,
+			causeFamily: "invalid_input",
+		};
 	}
 
 	// Update title if discovered
@@ -311,11 +366,18 @@ async function processDocument(deps: DocumentWorkerDeps, job: DocumentJobRow): P
 	let aborted = false;
 	for (let i = 0; i < chunks.length; i++) {
 		const chunkText = chunks[i];
-		if (!chunkText || chunkText.trim().length === 0) continue;
+		if (!chunkText || chunkText.trim().length === 0) {
+			operation.skipped++;
+			continue;
+		}
 
 		// Embedding call is outside write lock
 		const vector = await fetchEmbedding(chunkText, embeddingCfg, "document", {
 			usage: { source: "artifact-index", agentId: documentScope.agentId },
+			onFailure: (causeFamily) => {
+				operation.failed++;
+				operation.causeFamily ??= causeFamily;
+			},
 		});
 
 		// Each chunk's memory creation in its own transaction
@@ -323,6 +385,7 @@ async function processDocument(deps: DocumentWorkerDeps, job: DocumentJobRow): P
 			if (isDocumentDeleted(db, docId)) {
 				completeJob(db, job.id);
 				aborted = true;
+				operation.cancelled = true;
 				return;
 			}
 			const normalized = normalizeAndHashContent(chunkText);
@@ -338,7 +401,10 @@ async function processDocument(deps: DocumentWorkerDeps, job: DocumentJobRow): P
 					 LIMIT 1`,
 				)
 				.get(docId, normalized.contentHash);
-			if (existingLink) return;
+			if (existingLink) {
+				operation.skipped++;
+				return;
+			}
 
 			const now = new Date().toISOString();
 			const existingScopedMemory = db
@@ -426,8 +492,17 @@ async function processDocument(deps: DocumentWorkerDeps, job: DocumentJobRow): P
 			}
 
 			memoriesCreated++;
+			operation.accepted++;
 		});
-		if (aborted) return;
+		if (aborted) {
+			operation.skipped++;
+			return {
+				accepted: operation.accepted,
+				skipped: operation.skipped,
+				failed: operation.failed,
+				causeFamily: operation.causeFamily,
+			};
+		}
 	}
 
 	// -- Step 4: Finalize --
@@ -439,12 +514,21 @@ async function processDocument(deps: DocumentWorkerDeps, job: DocumentJobRow): P
 		if (isDocumentDeleted(db, docId)) {
 			completeJob(db, job.id);
 			aborted = true;
+			operation.cancelled = true;
 			return;
 		}
 		completeDocument(db, docId, chunks.length, memoriesCreated);
 		completeJob(db, job.id);
 	});
-	if (aborted) return;
+	if (aborted) {
+		operation.skipped++;
+		return {
+			accepted: operation.accepted,
+			skipped: operation.skipped,
+			failed: operation.failed,
+			causeFamily: operation.causeFamily,
+		};
+	}
 
 	logger.info("document-worker", "Document processed", {
 		documentId: docId,
@@ -452,6 +536,12 @@ async function processDocument(deps: DocumentWorkerDeps, job: DocumentJobRow): P
 		memories: memoriesCreated,
 		title: title ?? "(untitled)",
 	});
+	return {
+		accepted: operation.accepted,
+		skipped: operation.skipped,
+		failed: operation.failed,
+		causeFamily: operation.causeFamily,
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -461,17 +551,98 @@ async function processDocument(deps: DocumentWorkerDeps, job: DocumentJobRow): P
 export function startDocumentWorker(deps: DocumentWorkerDeps): DocumentWorkerHandle {
 	let running = true;
 	let timer: ReturnType<typeof setInterval> | null = null;
+	const operations = new Map<
+		string,
+		{ readonly startedAtMs: number; readonly firstLeaseAtMs: number; readonly state: MutableDocumentOperation }
+	>();
+
+	function terminalStatus(jobId: string): string | null {
+		return deps.accessor.withReadDb((db) => {
+			const row = db.prepare("SELECT status FROM memory_jobs WHERE id = ?").get(jobId) as
+				| { status?: string }
+				| undefined;
+			return row?.status ?? null;
+		});
+	}
+
+	function emitOperation(
+		job: DocumentJobRow,
+		operation: {
+			readonly startedAtMs: number;
+			readonly firstLeaseAtMs: number;
+			readonly state: MutableDocumentOperation;
+		},
+	): void {
+		const { state } = operation;
+		if (job.document_id) {
+			const durable = deps.accessor.withReadDb(
+				(db) =>
+					db.prepare("SELECT chunk_count, memory_count FROM documents WHERE id = ?").get(job.document_id) as
+						| { chunk_count?: number | null; memory_count?: number | null }
+						| undefined,
+			);
+			const durableLinks = deps.accessor.withReadDb(
+				(db) =>
+					db.prepare("SELECT COUNT(*) AS count FROM document_memories WHERE document_id = ?").get(job.document_id) as
+						| { count?: number | null }
+						| undefined,
+			);
+			if (durable) {
+				const accepted =
+					typeof durableLinks?.count === "number"
+						? durableLinks.count
+						: typeof durable.memory_count === "number"
+							? durable.memory_count
+							: 0;
+				const chunks = typeof durable.chunk_count === "number" ? durable.chunk_count : 0;
+				state.accepted = Math.max(state.accepted, accepted);
+				if (chunks > 0) state.skipped = Math.min(state.skipped, Math.max(0, chunks - accepted));
+			}
+		}
+		const outcome = state.cancelled
+			? "cancelled"
+			: state.failed > 0
+				? state.accepted > 0
+					? "partial"
+					: "failed"
+				: state.skipped > 0 && state.accepted === 0
+					? "skipped"
+					: "completed";
+		recordPipelineOperation({
+			operationClass: state.operationClass,
+			outcome,
+			accepted: state.accepted,
+			skipped: state.skipped,
+			retried: Math.max(0, job.attempts - 1),
+			failed: state.failed,
+			durationMs: Date.now() - operation.startedAtMs,
+			queueAgeMs: operation.firstLeaseAtMs - Date.parse(job.created_at),
+			causeFamily: state.causeFamily,
+		});
+	}
 
 	async function tick(): Promise<void> {
 		if (!running) return;
 		if (isSystemPressureHigh()) return;
 
+		const leasedAt = Date.now();
 		const job = deps.accessor.withWriteTx((db) => leaseDocumentJob(db, deps.pipelineCfg.worker.maxRetries));
 
 		if (!job) return;
+		const operation = operations.get(job.id) ?? {
+			startedAtMs: leasedAt,
+			firstLeaseAtMs: leasedAt,
+			state: { accepted: 0, skipped: 0, failed: 0, cancelled: false, operationClass: "indexing" },
+		};
+		operations.set(job.id, operation);
 
 		try {
-			await processDocument(deps, job);
+			await processDocument(deps, job, operation.state);
+			const status = terminalStatus(job.id);
+			if (status === "completed" || status === "dead") {
+				emitOperation(job, operation);
+				operations.delete(job.id);
+			}
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			logger.warn("document-worker", "Job failed", {
@@ -483,6 +654,8 @@ export function startDocumentWorker(deps: DocumentWorkerDeps): DocumentWorkerHan
 			deps.accessor.withWriteTx((db) => {
 				if (job.document_id && isDocumentDeleted(db, job.document_id)) {
 					completeJob(db, job.id);
+					operation.state.skipped++;
+					operation.state.cancelled = true;
 					return;
 				}
 				failJob(db, job.id, msg, job.attempts, job.max_attempts);
@@ -490,6 +663,15 @@ export function startDocumentWorker(deps: DocumentWorkerDeps): DocumentWorkerHan
 					updateDocumentStatus(db, job.document_id, "failed", msg);
 				}
 			});
+			operation.state.causeFamily ??= normalizePipelineCause(err);
+			const status = terminalStatus(job.id);
+			if (status === "dead") {
+				operation.state.failed++;
+			}
+			if (status === "dead" || status === "completed") {
+				emitOperation(job, operation);
+				operations.delete(job.id);
+			}
 		}
 	}
 
