@@ -7,7 +7,7 @@ All notable changes to Signet are documented here.
 Surface summary of the most recent release dates. See the release ledger below for exact version-by-version history.
 
 ### 2026-08-10
-- Bug fixes: classify deployment role and install provenance; canonicalize embedding endpoint (#1264); bound wedge pressure probes; merge growing recovery snapshots; retain worker status telemetry; harden retired transcript recovery; retire summary-worker delivery; measure recall delivery outcomes; add bounded wedge pressure telemetry; persist first-use milestones atomically.
+- Bug fixes: disclose CLI command delivery (#1280); classify deployment role and install provenance; canonicalize embedding endpoint (#1264); bound wedge pressure probes; merge growing recovery snapshots; retain worker status telemetry; harden retired transcript recovery; retire summary-worker delivery; measure recall delivery outcomes; add bounded wedge pressure telemetry; persist first-use milestones atomically.
 
 ### 2026-08-09
 - Features: reconcile indeterminate ACP deliveries (#1263); launch Starlight documentation; deliver cross-agent notifications.
@@ -41,6 +41,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: reflect Dreaming cutover; clarify inline linking boundary; align pipeline with Dreaming cutover; describe summary lineage cutover.
 
 ## Release Ledger
+
+## [0.185.9] - 2026-08-10
+
+Release summary: 1 bug fix.
+Tag range: `v0.185.8..v0.185.9`.
+
+### Bug Fixes
+
+- **telemetry**: disclose CLI command delivery (#1280) (#1290)
 
 ## [0.185.8] - 2026-08-10
 
