@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-08-10
 - Features: unified dashboard source imports; attribute dreaming pass target; wire dreaming review suggestions; retry repaired evidence; add telemetry opt-out; expose collector delivery health; expose accounting provenance; add source lifecycle telemetry (#1276); add marketing PostHog events; record dreaming pass effects.
-- Bug fixes: gate hostile content projections; scroll dreaming summary; recover document leases on startup; quarantine migration embedding failures; repair stale synthesis config; make entity merges idempotent; close telemetry repair gaps; make integrity repair audit atomic; repair corrupt telemetry indexes; parse abbreviated date ranges; bound SQLite writer admission; bound memory capture concurrency; remove legacy memory pipeline routing; summarize pipeline operations (#1278); preserve mixed coverage; correct Pi accounting provenance; filter reasoning from evidence; remove duplicate projection helper; retain transcript manifest projection; account for recovered dreaming passes; disclose CLI command delivery (#1280); classify deployment role and install provenance; canonicalize embedding endpoint (#1264); bound wedge pressure probes; merge growing recovery snapshots; retain worker status telemetry; harden retired transcript recovery; retire summary-worker delivery; measure recall delivery outcomes; add bounded wedge pressure telemetry; persist first-use milestones atomically.
+- Bug fixes: complete cache-stable memory injection; gate hostile content projections; scroll dreaming summary; recover document leases on startup; quarantine migration embedding failures; repair stale synthesis config; make entity merges idempotent; close telemetry repair gaps; make integrity repair audit atomic; repair corrupt telemetry indexes; parse abbreviated date ranges; bound SQLite writer admission; bound memory capture concurrency; remove legacy memory pipeline routing; summarize pipeline operations (#1278); preserve mixed coverage; correct Pi accounting provenance; filter reasoning from evidence; remove duplicate projection helper; retain transcript manifest projection; account for recovered dreaming passes; disclose CLI command delivery (#1280); classify deployment role and install provenance; canonicalize embedding endpoint (#1264); bound wedge pressure probes; merge growing recovery snapshots; retain worker status telemetry; harden retired transcript recovery; retire summary-worker delivery; measure recall delivery outcomes; add bounded wedge pressure telemetry; persist first-use milestones atomically.
 - Performance: stabilize memory injection.
 - Docs: catalog health events; improve issue triage workflow.
 
@@ -44,6 +44,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Docs: reflect Dreaming cutover; clarify inline linking boundary; align pipeline with Dreaming cutover; describe summary lineage cutover.
 
 ## Release Ledger
+
+## [0.193.3] - 2026-08-10
+
+Release summary: 1 bug fix.
+Tag range: `v0.193.2..v0.193.3`.
+
+### Bug Fixes
+
+- **context**: complete cache-stable memory injection (#1382)
 
 ## [0.193.2] - 2026-08-10
 
