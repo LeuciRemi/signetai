@@ -6,7 +6,43 @@ import { closeDbAccessor, getDbAccessor, initDbAccessor } from "../db-accessor";
 import { type LogEntry, logger } from "../logger";
 import { DEFAULT_PIPELINE_V2, type EmbeddingConfig, type PipelineV2Config } from "../memory-config";
 import { installSkillNode, skillEmbeddingHash } from "./skill-graph";
-import { reconcileOnce, resetSkillFailureState, skillBackoffDelayMs } from "./skill-reconciler";
+import {
+	reconcileOnce,
+	reconcileSkillFile,
+	reconcileUnlinkedSkill,
+	resetSkillFailureState,
+	skillBackoffDelayMs,
+	startReconciler,
+	withSkillReconciliationLock,
+} from "./skill-reconciler";
+
+/** Poll `cond` until it returns true or `timeoutMs` elapses. */
+async function waitFor(cond: () => boolean, timeoutMs = 3_000): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (!cond()) {
+		if (Date.now() > deadline) throw new Error("waitFor timed out");
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+}
+
+function entityCount(skillName: string): number {
+	return getDbAccessor().withReadDb(
+		(db) =>
+			(db.prepare("SELECT COUNT(*) AS n FROM entities WHERE id = ?").get(`skill:default:${skillName}`) as { n: number })
+				.n,
+	);
+}
+
+function embeddingCount(skillName: string): number {
+	return getDbAccessor().withReadDb(
+		(db) =>
+			(
+				db
+					.prepare("SELECT COUNT(*) AS n FROM embeddings WHERE source_type = 'skill' AND source_id = ?")
+					.get(`skill:default:${skillName}`) as { n: number }
+			).n,
+	);
+}
 
 function setup(): { root: string; db: string } {
 	const root = join(tmpdir(), `signet-skill-reconciler-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -227,6 +263,166 @@ this skill helps with reconciliation loop debugging.`,
 		});
 
 		expect(pass).toEqual({ installed: 0, updated: 0, removed: 0 });
+	});
+
+	it("prevents overlapping triggers from reaching the embedding provider twice (#1354)", async () => {
+		const paths = setup();
+		root = paths.root;
+		db = paths.db;
+		initDbAccessor(db);
+
+		const skill = "single-flight-skill";
+		const file = join(paths.root, "skills", skill, "SKILL.md");
+		mkdirSync(join(paths.root, "skills", skill), { recursive: true });
+		writeFileSync(
+			file,
+			`---
+name: ${skill}
+description: shared trigger test
+---
+body`,
+		);
+
+		let calls = 0;
+		let releaseEmbedding: (() => void) | undefined;
+		let resolveFirstCall: (() => void) | undefined;
+		const firstCall = new Promise<void>((resolve) => {
+			resolveFirstCall = resolve;
+		});
+		const embeddingGate = new Promise<void>((resolve) => {
+			releaseEmbedding = resolve;
+		});
+		const deps = {
+			accessor: getDbAccessor(),
+			pipelineConfig: cfg(),
+			embeddingConfig: emb,
+			fetchEmbedding: async () => {
+				calls++;
+				resolveFirstCall?.();
+				await embeddingGate;
+				return [0.1, 0.2, 0.3];
+			},
+			agentsDir: root,
+		};
+
+		const startupPass = reconcileOnce(deps);
+		await firstCall;
+		const explicitInstall = reconcileSkillFile(skill, file, deps, { forceInstall: true, source: "installed" });
+
+		// The explicit post-install trigger is queued behind the startup pass,
+		// rather than reaching fetchEmbedding while the first call is pending.
+		expect(calls).toBe(1);
+		releaseEmbedding?.();
+
+		await expect(startupPass).resolves.toEqual({ installed: 1, updated: 0, removed: 0 });
+		await expect(explicitInstall).resolves.toBe("unchanged");
+		expect(calls).toBe(1);
+	});
+
+	it("serializes watcher unlink with an in-flight install under the same workspace key (#1354)", async () => {
+		const paths = setup();
+		root = paths.root;
+		db = paths.db;
+		initDbAccessor(db);
+
+		const skill = "unlink-single-flight-skill";
+		const file = join(paths.root, "skills", skill, "SKILL.md");
+		mkdirSync(join(paths.root, "skills", skill), { recursive: true });
+		writeFileSync(
+			file,
+			`---
+name: ${skill}
+description: unlink trigger test
+---
+body`,
+		);
+
+		let releaseEmbedding: (() => void) | undefined;
+		let resolveEmbeddingCall: (() => void) | undefined;
+		const embeddingCall = new Promise<void>((resolve) => {
+			resolveEmbeddingCall = resolve;
+		});
+		const embeddingGate = new Promise<void>((resolve) => {
+			releaseEmbedding = resolve;
+		});
+		const deps = {
+			accessor: getDbAccessor(),
+			pipelineConfig: cfg(),
+			embeddingConfig: emb,
+			fetchEmbedding: async () => {
+				resolveEmbeddingCall?.();
+				await embeddingGate;
+				return [0.1, 0.2, 0.3];
+			},
+			agentsDir: root,
+		};
+
+		const install = reconcileSkillFile(skill, file, deps);
+		await embeddingCall;
+		const unlink = reconcileUnlinkedSkill(skill, deps);
+
+		// The watcher unlink must wait for the install to finish before removing
+		// the graph node that the install is about to write.
+		releaseEmbedding?.();
+		await expect(install).resolves.toBe("installed");
+		await expect(unlink).resolves.toBe("removed");
+		expect(
+			getDbAccessor().withReadDb((dbh) =>
+				dbh.prepare("SELECT id FROM entities WHERE id = ?").get(`skill:default:${skill}`),
+			),
+		).toBeNull();
+	});
+
+	it("does not let an in-flight failure cancel a queued fresh trigger (#1354)", async () => {
+		const paths = setup();
+		root = paths.root;
+		db = paths.db;
+		initDbAccessor(db);
+
+		const skill = "fresh-trigger-skill";
+		const file = join(paths.root, "skills", skill, "SKILL.md");
+		mkdirSync(join(paths.root, "skills", skill), { recursive: true });
+		writeFileSync(
+			file,
+			`---
+name: ${skill}
+description: fresh trigger test
+---
+body`,
+		);
+
+		let calls = 0;
+		let rejectFirstEmbedding: ((error: Error) => void) | undefined;
+		let resolveFirstCall: (() => void) | undefined;
+		const firstCall = new Promise<void>((resolve) => {
+			resolveFirstCall = resolve;
+		});
+		const firstEmbedding = new Promise<number[] | null>((_, reject) => {
+			rejectFirstEmbedding = reject;
+		});
+		const deps = {
+			accessor: getDbAccessor(),
+			pipelineConfig: cfg(),
+			embeddingConfig: emb,
+			fetchEmbedding: async () => {
+				calls++;
+				if (calls === 1) {
+					resolveFirstCall?.();
+					return firstEmbedding;
+				}
+				return [0.1, 0.2, 0.3];
+			},
+			agentsDir: root,
+		};
+
+		const first = reconcileSkillFile(skill, file, deps);
+		await firstCall;
+		const fresh = reconcileSkillFile(skill, file, deps, { forceInstall: true });
+		rejectFirstEmbedding?.(new Error("first provider call failed"));
+
+		expect(await first).toBe("failed");
+		expect(await fresh).toBe("updated");
+		expect(calls).toBe(2);
 	});
 
 	it("updates skill metadata when a non-embedding frontmatter field changes on disk", async () => {
@@ -465,5 +661,226 @@ body`,
 		// fifth pass attempt the skill again (a fresh failure, not a skip).
 		expect(failures.length).toBe(5);
 		expect(backoffs.length).toBe(1);
+	});
+});
+
+describe("single-flight trigger overlap (#1354)", () => {
+	it("coalesces a periodic tick onto the in-flight startup backfill so the embedding boundary is reached once", async () => {
+		const paths = setup();
+		root = paths.root;
+		db = paths.db;
+		initDbAccessor(db);
+
+		// Two skills so a pre-fix second pass has installable work left after
+		// the startup pass parks on the first skill's embedding call.
+		for (const skill of ["alpha-skill", "beta-skill"]) {
+			const dir = join(root, "skills", skill);
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, "SKILL.md"), `---\nname: ${skill}\ndescription: overlap test\n---\nbody`);
+		}
+
+		let calls = 0;
+		let resolveFirstCall: (() => void) | undefined;
+		let releaseEmbedding: (() => void) | undefined;
+		const firstCall = new Promise<void>((resolve) => {
+			resolveFirstCall = resolve;
+		});
+		const embeddingGate = new Promise<void>((resolve) => {
+			releaseEmbedding = resolve;
+		});
+		const deps = {
+			accessor: getDbAccessor(),
+			pipelineConfig: {
+				...cfg(),
+				procedural: { ...cfg().procedural, reconcileIntervalMs: 25 },
+			},
+			embeddingConfig: emb,
+			fetchEmbedding: async () => {
+				calls++;
+				resolveFirstCall?.();
+				await embeddingGate;
+				return [0.1, 0.2, 0.3];
+			},
+			agentsDir: root,
+		};
+
+		const handle = startReconciler(deps);
+		try {
+			// Startup backfill parks on the first skill's embedding call.
+			await firstCall;
+			// Hold the gate across several periodic intervals (~120ms at 25ms
+			// interval). A periodic tick must coalesce onto the active startup
+			// pass instead of starting a second full pass that reaches the
+			// embedding provider for the other skill.
+			await new Promise((resolve) => setTimeout(resolve, 120));
+			expect(calls).toBe(1);
+
+			releaseEmbedding?.();
+			await waitFor(() => calls === 2);
+
+			expect(entityCount("alpha-skill")).toBe(1);
+			expect(entityCount("beta-skill")).toBe(1);
+			expect(embeddingCount("alpha-skill")).toBe(1);
+			expect(embeddingCount("beta-skill")).toBe(1);
+		} finally {
+			handle.stop();
+		}
+	});
+
+	it("queues an explicit post-install reconcile behind an in-flight watcher-style install", async () => {
+		const paths = setup();
+		root = paths.root;
+		db = paths.db;
+		initDbAccessor(db);
+
+		const skill = "watcher-explicit-skill";
+		const dir = join(root, "skills", skill);
+		const file = join(dir, "SKILL.md");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(file, `---\nname: ${skill}\ndescription: watcher vs explicit\n---\nbody`);
+
+		let calls = 0;
+		let resolveFirstCall: (() => void) | undefined;
+		let releaseEmbedding: (() => void) | undefined;
+		const firstCall = new Promise<void>((resolve) => {
+			resolveFirstCall = resolve;
+		});
+		const embeddingGate = new Promise<void>((resolve) => {
+			releaseEmbedding = resolve;
+		});
+		const deps = {
+			accessor: getDbAccessor(),
+			pipelineConfig: cfg(),
+			embeddingConfig: emb,
+			fetchEmbedding: async () => {
+				calls++;
+				resolveFirstCall?.();
+				await embeddingGate;
+				return [0.1, 0.2, 0.3];
+			},
+			agentsDir: root,
+		};
+
+		// Watcher add/change handler body: forceInstall reconcile.
+		const watcherTrigger = reconcileSkillFile(skill, file, deps, { forceInstall: true });
+		await firstCall;
+
+		// Explicit post-install hook (routes onSkillInstalled) fires while the
+		// watcher install is parked at the embedding boundary. It must queue
+		// behind the same flight and observe the written embedding.
+		const explicitTrigger = reconcileSkillFile(skill, file, deps, { forceInstall: true, source: "installed" });
+		expect(calls).toBe(1);
+
+		releaseEmbedding?.();
+		await expect(watcherTrigger).resolves.toBe("installed");
+		await expect(explicitTrigger).resolves.toBe("unchanged");
+		expect(calls).toBe(1);
+		expect(entityCount(skill)).toBe(1);
+		expect(embeddingCount(skill)).toBe(1);
+	});
+
+	it("keys the single-flight lock by workspace so agent scoping is preserved", async () => {
+		// Two different agentsDirs with the same skill name must not serialize
+		// against each other: a lock held for one agent's workspace cannot
+		// block another agent's reconcile of the same-named skill.
+		const dirA = join(tmpdir(), `signet-lock-a-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		const dirB = join(tmpdir(), `signet-lock-b-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		try {
+			let releaseA: (() => void) | undefined;
+			let startedB = 0;
+			const gateA = new Promise<void>((resolve) => {
+				releaseA = resolve;
+			});
+
+			const a = withSkillReconciliationLock(dirA, "shared-skill", async () => {
+				await gateA;
+			});
+			const b = withSkillReconciliationLock(dirB, "shared-skill", () => {
+				startedB++;
+			});
+
+			// B must run while A is still parked (different workspace key).
+			await Promise.race([
+				b,
+				new Promise((_, reject) => setTimeout(() => reject(new Error("B blocked behind A")), 500)),
+			]);
+			expect(startedB).toBe(1);
+
+			// Same workspace + same skill still serializes.
+			let startedA2 = 0;
+			const a2 = withSkillReconciliationLock(dirA, "shared-skill", () => {
+				startedA2++;
+			});
+			await new Promise((resolve) => setTimeout(resolve, 25));
+			expect(startedA2).toBe(0);
+
+			releaseA?.();
+			await a;
+			await a2;
+			expect(startedA2).toBe(1);
+		} finally {
+			rmSync(dirA, { recursive: true, force: true });
+			rmSync(dirB, { recursive: true, force: true });
+		}
+	});
+
+	it("lets an in-flight pass finish and starts no new passes after stop()", async () => {
+		const paths = setup();
+		root = paths.root;
+		db = paths.db;
+		initDbAccessor(db);
+
+		const skill = "shutdown-skill";
+		const dir = join(root, "skills", skill);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "SKILL.md"), `---\nname: ${skill}\ndescription: shutdown test\n---\nbody`);
+
+		let calls = 0;
+		let resolveFirstCall: (() => void) | undefined;
+		let releaseEmbedding: (() => void) | undefined;
+		const firstCall = new Promise<void>((resolve) => {
+			resolveFirstCall = resolve;
+		});
+		const embeddingGate = new Promise<void>((resolve) => {
+			releaseEmbedding = resolve;
+		});
+		const deps = {
+			accessor: getDbAccessor(),
+			pipelineConfig: {
+				...cfg(),
+				procedural: { ...cfg().procedural, reconcileIntervalMs: 25 },
+			},
+			embeddingConfig: emb,
+			fetchEmbedding: async () => {
+				calls++;
+				resolveFirstCall?.();
+				await embeddingGate;
+				return [0.1, 0.2, 0.3];
+			},
+			agentsDir: root,
+		};
+
+		const handle = startReconciler(deps);
+		try {
+			// Park the startup pass at the embedding boundary, then stop the
+			// reconciler mid-flight.
+			await firstCall;
+			handle.stop();
+
+			// The in-flight pass must complete exactly once.
+			releaseEmbedding?.();
+			await waitFor(() => calls === 1 && embeddingCount(skill) === 1);
+			expect(entityCount(skill)).toBe(1);
+
+			// No periodic tick after stop() may start new work.
+			const callsAfter = calls;
+			await new Promise((resolve) => setTimeout(resolve, 100));
+			expect(calls).toBe(callsAfter);
+
+			// A second stop() is safe.
+			handle.stop();
+		} finally {
+			handle.stop();
+		}
 	});
 });
