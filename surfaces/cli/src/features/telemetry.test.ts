@@ -25,6 +25,29 @@ function writeAgentYaml(telemetryEnabled?: boolean): void {
 	);
 }
 
+function createTelemetryQueue(): string {
+	const memoryDir = join(dir, "memory");
+	mkdirSync(memoryDir, { recursive: true });
+	const db = createDatabase(join(memoryDir, "memories.db"));
+	db.exec(`
+		CREATE TABLE telemetry_install (id TEXT PRIMARY KEY, created_at TEXT NOT NULL);
+		CREATE TABLE telemetry_events (
+			id TEXT PRIMARY KEY,
+			event TEXT NOT NULL,
+			timestamp TEXT NOT NULL,
+			properties TEXT NOT NULL,
+			sent_to_posthog INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL,
+			source TEXT NOT NULL DEFAULT 'daemon',
+			claim_token TEXT,
+			claimed_at TEXT
+		);
+		INSERT INTO telemetry_install (id, created_at) VALUES ('install-from-daemon', '2026-01-01T00:00:00.000Z');
+	`);
+	db.close();
+	return memoryDir;
+}
+
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "signet-cli-telemetry-"));
 });
@@ -35,7 +58,7 @@ afterEach(() => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
-describe("cli telemetry (issue #1206)", () => {
+describe("cli telemetry (issue #1280)", () => {
 	it("is enabled by default when agent.yaml has no telemetryEnabled", () => {
 		writeAgentYaml();
 		expect(cliTelemetryEnabled(dir)).toBe(true);
@@ -109,7 +132,42 @@ describe("cli telemetry (issue #1206)", () => {
 		expect(existsSync(cliTelemetryLogPath(dir))).toBe(false);
 	});
 
-	it("flushes queued events with the daemon's persisted install id", async () => {
+	it("preserves an explicitly empty API key as local-only telemetry", async () => {
+		writeFileSync(
+			join(dir, "agent.yaml"),
+			"version: 1\nschema: signet/v1\nmemory:\n  pipelineV2:\n    telemetryEnabled: true\n    telemetry:\n      posthogApiKey: ''\n",
+		);
+		let calls = 0;
+		const fetchMock = async (): Promise<Response> => {
+			calls++;
+			return new Response("unexpected", { status: 500 });
+		};
+		globalThis.fetch = fetchMock as typeof fetch;
+		createTelemetryQueue();
+		recordCommandInvoked(dir, "remember");
+		await flushCliTelemetry(dir, "0.176.8");
+		expect(existsSync(cliTelemetryLogPath(dir))).toBe(true);
+		expect(calls).toBe(0);
+	});
+
+	it("falls back to the default batch size for non-finite configuration", async () => {
+		writeFileSync(
+			join(dir, "agent.yaml"),
+			"version: 1\nschema: signet/v1\nmemory:\n  pipelineV2:\n    telemetryEnabled: true\n    telemetry:\n      flushBatchSize: .nan\n",
+		);
+		createTelemetryQueue();
+		const request: { current: { batch: unknown[] } | null } = { current: null };
+		globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+			const body = JSON.parse(String(init?.body ?? "{}")) as { batch?: unknown[] };
+			request.current = { batch: body.batch ?? [] };
+			return new Response("1", { status: 200 });
+		}) as typeof fetch;
+		recordCommandInvoked(dir, "remember");
+		await flushCliTelemetry(dir, "0.176.8");
+		expect(request.current?.batch).toHaveLength(1);
+	});
+
+	it("flushes bounded command names with the daemon's persisted install id", async () => {
 		writeAgentYaml(true);
 		const memoryDir = join(dir, "memory");
 		mkdirSync(memoryDir, { recursive: true });
@@ -132,13 +190,26 @@ describe("cli telemetry (issue #1206)", () => {
 		db.close();
 
 		recordCommandInvoked(dir, "remember");
-		const request: { current: { api_key: string; batch: Array<{ distinct_id: string; event: string }> } | null } = {
+		const request: {
+			current: {
+				api_key: string;
+				batch: Array<{
+					distinct_id: string;
+					event: string;
+					properties: Record<string, string>;
+				}>;
+			} | null;
+		} = {
 			current: null,
 		};
 		globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
 			request.current = JSON.parse(String(init?.body ?? "{}")) as {
 				api_key: string;
-				batch: Array<{ distinct_id: string; event: string }>;
+				batch: Array<{
+					distinct_id: string;
+					event: string;
+					properties: Record<string, string>;
+				}>;
 			};
 			return new Response("1", { status: 200 });
 		}) as typeof fetch;
@@ -149,10 +220,93 @@ describe("cli telemetry (issue #1206)", () => {
 		expect(request.current?.batch).toHaveLength(1);
 		expect(request.current?.batch[0]?.event).toBe("command.invoked");
 		expect(request.current?.batch[0]?.distinct_id).toBe("install-from-daemon");
+		expect(request.current?.batch[0]?.properties).toEqual({
+			command: "remember",
+			deploymentRole: "unknown",
+			installChannel: "unknown",
+			$lib: "signet-cli",
+			$lib_version: "0.176.8",
+		});
 
 		const check = createDatabase(join(memoryDir, "memories.db"), { readonly: true });
 		const row = check.prepare("SELECT sent_to_posthog FROM telemetry_events").get() as { sent_to_posthog: number };
 		expect(row.sent_to_posthog).toBe(1);
+		check.close();
+	});
+
+	it("does not remotely deliver command events when the config disables telemetry", async () => {
+		writeAgentYaml(false);
+		const memoryDir = join(dir, "memory");
+		mkdirSync(memoryDir, { recursive: true });
+		const db = createDatabase(join(memoryDir, "memories.db"));
+		db.exec(`
+				CREATE TABLE telemetry_install (id TEXT PRIMARY KEY, created_at TEXT NOT NULL);
+				CREATE TABLE telemetry_events (
+					id TEXT PRIMARY KEY,
+					event TEXT NOT NULL,
+					timestamp TEXT NOT NULL,
+					properties TEXT NOT NULL,
+					sent_to_posthog INTEGER NOT NULL DEFAULT 0,
+					created_at TEXT NOT NULL,
+					source TEXT NOT NULL DEFAULT 'daemon',
+					claim_token TEXT,
+					claimed_at TEXT
+				);
+			`);
+		db.close();
+
+		let calls = 0;
+		globalThis.fetch = (async () => {
+			calls++;
+			return new Response("1", { status: 200 });
+		}) as unknown as typeof fetch;
+
+		recordCommandInvoked(dir, "remember");
+		await flushCliTelemetry(dir, "0.176.8");
+
+		expect(calls).toBe(0);
+		const check = createDatabase(join(memoryDir, "memories.db"), { readonly: true });
+		expect(check.prepare("SELECT COUNT(*) AS count FROM telemetry_events").get()).toEqual({ count: 0 });
+		check.close();
+	});
+
+	it("does not remotely deliver command events when the runtime opt-out is set", async () => {
+		writeAgentYaml(true);
+		const memoryDir = join(dir, "memory");
+		mkdirSync(memoryDir, { recursive: true });
+		const db = createDatabase(join(memoryDir, "memories.db"));
+		db.exec(`
+				CREATE TABLE telemetry_install (id TEXT PRIMARY KEY, created_at TEXT NOT NULL);
+				CREATE TABLE telemetry_events (
+					id TEXT PRIMARY KEY,
+					event TEXT NOT NULL,
+					timestamp TEXT NOT NULL,
+					properties TEXT NOT NULL,
+					sent_to_posthog INTEGER NOT NULL DEFAULT 0,
+					created_at TEXT NOT NULL,
+					source TEXT NOT NULL DEFAULT 'daemon',
+					claim_token TEXT,
+					claimed_at TEXT
+				);
+				INSERT INTO telemetry_install (id, created_at) VALUES ('install-from-daemon', '2026-01-01T00:00:00.000Z');
+			`);
+		db.close();
+
+		recordCommandInvoked(dir, "remember");
+		let calls = 0;
+		globalThis.fetch = (async () => {
+			calls++;
+			return new Response("1", { status: 200 });
+		}) as unknown as typeof fetch;
+
+		await flushCliTelemetry(dir, "0.176.8", { SIGNET_TELEMETRY_OPTOUT: "1" });
+
+		expect(calls).toBe(0);
+		const check = createDatabase(join(memoryDir, "memories.db"), { readonly: true });
+		const row = check.prepare("SELECT sent_to_posthog FROM telemetry_events").get() as {
+			sent_to_posthog: number;
+		};
+		expect(row.sent_to_posthog).toBe(0);
 		check.close();
 	});
 

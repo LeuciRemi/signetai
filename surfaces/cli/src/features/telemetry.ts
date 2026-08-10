@@ -123,11 +123,11 @@ function readTelemetrySettings(agentsDir: string, env: NodeJS.ProcessEnv = proce
 		const telemetry = pipeline?.telemetry as Record<string, unknown> | undefined;
 		const posthogHost =
 			typeof telemetry?.posthogHost === "string" ? telemetry.posthogHost : DEFAULT_TELEMETRY_POSTHOG_HOST;
-		const configuredKey = typeof telemetry?.posthogApiKey === "string" ? telemetry.posthogApiKey : "";
-		const posthogApiKey = configuredKey || DEFAULT_TELEMETRY_POSTHOG_API_KEY;
+		const posthogApiKey =
+			typeof telemetry?.posthogApiKey === "string" ? telemetry.posthogApiKey : DEFAULT_TELEMETRY_POSTHOG_API_KEY;
 		const configuredBatchSize = telemetry?.flushBatchSize;
 		const flushBatchSize =
-			typeof configuredBatchSize === "number"
+			typeof configuredBatchSize === "number" && Number.isFinite(configuredBatchSize)
 				? Math.min(MAX_BATCH_SIZE, Math.max(MIN_BATCH_SIZE, Math.floor(configuredBatchSize)))
 				: DEFAULT_TELEMETRY_FLUSH_BATCH_SIZE;
 
@@ -285,10 +285,16 @@ export function recordCommandInvoked(
 /**
  * Flush queued CLI command events to PostHog. Callers should deliberately not
  * await this function from command hooks. The batch size and request timeout
- * bound the work, while SQLite preserves events when the request fails.
+ * bound the work, while a telemetry SQLite database preserves queued events
+ * when the request fails. Workspaces without that database remain local-only
+ * until it exists.
  */
-export async function flushCliTelemetry(agentsDir: string, cliVersion: string): Promise<void> {
-	const settings = readTelemetrySettings(agentsDir);
+export async function flushCliTelemetry(
+	agentsDir: string,
+	cliVersion: string,
+	env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+	const settings = readTelemetrySettings(agentsDir, env);
 	if (!settings || settings.posthogHost.length === 0 || settings.posthogApiKey.length === 0) return;
 
 	const dbPath = join(agentsDir, "memory", "memories.db");
