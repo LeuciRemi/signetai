@@ -385,6 +385,173 @@ printf 'never reached\\n'
 		}
 	});
 
+	it("single-flights concurrent runtime snapshot probes and cleans up failed flights (#1329)", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "signet-router-snapshot-flight-"));
+		try {
+			mkdirSync(join(dir, "memory"), { recursive: true });
+			writeFileSync(
+				join(dir, "agent.yaml"),
+				`inference:
+  defaultPolicy: local
+  targets:
+    local:
+      executor: openai-compatible
+      endpoint: http://127.0.0.1:1234/v1
+      models:
+        default:
+          model: local-model
+  policies:
+    local:
+      mode: automatic
+      defaultTargets:
+        - local/default
+  workloads:
+    interactive:
+      policy: local
+`,
+			);
+
+			let probeCount = 0;
+			let releaseProbe: ((response: Response) => void) | undefined;
+			let resolveProbeStarted: (() => void) | undefined;
+			const probeStarted = new Promise<void>((resolve) => {
+				resolveProbeStarted = resolve;
+			});
+			globalThis.fetch = mock((input: string | URL | Request) => {
+				if (String(input).endsWith("/models")) {
+					probeCount += 1;
+					resolveProbeStarted?.();
+					return new Promise<Response>((resolve) => {
+						releaseProbe = resolve;
+					});
+				}
+				return Promise.resolve(openAiSseResponse("unused"));
+			}) as unknown as typeof fetch;
+
+			const router = getOrCreateInferenceRouter(dir);
+			const first = router.status(true);
+			const second = router.status(true);
+			await probeStarted;
+			expect(probeCount).toBe(1);
+			if (!releaseProbe) throw new Error("runtime snapshot probe did not start");
+			releaseProbe(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+
+			const results = await Promise.all([first, second]);
+			expect(results[0]?.ok).toBe(true);
+			expect(results[1]?.ok).toBe(true);
+			if (!results[0]?.ok || !results[1]?.ok) return;
+			expect(results[0].value.runtimeSnapshot.targets["local/default"]?.available).toBe(true);
+			expect(results[1].value.runtimeSnapshot.targets["local/default"]?.available).toBe(true);
+
+			globalThis.fetch = mock((input: string | URL | Request) => {
+				if (String(input).endsWith("/models")) {
+					probeCount += 1;
+					return Promise.reject(new Error("probe timeout"));
+				}
+				return Promise.resolve(openAiSseResponse("unused"));
+			}) as unknown as typeof fetch;
+			const failed = await router.status(true);
+			expect(failed.ok).toBe(true);
+			if (!failed.ok) return;
+			expect(failed.value.runtimeSnapshot.targets["local/default"]?.available).toBe(false);
+
+			globalThis.fetch = mock((input: string | URL | Request) => {
+				if (String(input).endsWith("/models")) {
+					probeCount += 1;
+					return Promise.resolve(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+				}
+				return Promise.resolve(openAiSseResponse("unused"));
+			}) as unknown as typeof fetch;
+			const recovered = await router.status(true);
+			expect(recovered.ok).toBe(true);
+			if (!recovered.ok) return;
+			expect(recovered.value.runtimeSnapshot.targets["local/default"]?.available).toBe(true);
+			expect(probeCount).toBe(3);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("does not reuse or cache a stale snapshot across credential invalidation (#1329)", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "signet-router-invalidation-flight-"));
+		try {
+			mkdirSync(join(dir, "memory"), { recursive: true });
+			writeFileSync(
+				join(dir, "agent.yaml"),
+				`inference:
+  defaultPolicy: local
+  targets:
+    local:
+      executor: openai-compatible
+      endpoint: http://127.0.0.1:1234/v1
+      models:
+        default:
+          model: local-model
+  policies:
+    local:
+      mode: automatic
+      defaultTargets:
+        - local/default
+  workloads:
+    interactive:
+      policy: local
+`,
+			);
+
+			let probeCount = 0;
+			let releaseStaleProbe: ((response: Response) => void) | undefined;
+			let resolveStaleProbeStarted: (() => void) | undefined;
+			let resolveFreshProbeStarted: (() => void) | undefined;
+			const staleProbeStarted = new Promise<void>((resolve) => {
+				resolveStaleProbeStarted = resolve;
+			});
+			const freshProbeStarted = new Promise<void>((resolve) => {
+				resolveFreshProbeStarted = resolve;
+			});
+			globalThis.fetch = mock((input: string | URL | Request) => {
+				if (String(input).endsWith("/models")) {
+					probeCount += 1;
+					if (probeCount === 1) {
+						resolveStaleProbeStarted?.();
+						return new Promise<Response>((resolve) => {
+							releaseStaleProbe = resolve;
+						});
+					}
+					resolveFreshProbeStarted?.();
+					return Promise.reject(new Error("fresh probe failed"));
+				}
+				return Promise.resolve(openAiSseResponse("unused"));
+			}) as unknown as typeof fetch;
+
+			const router = getOrCreateInferenceRouter(dir);
+			const stale = router.status(true);
+			await staleProbeStarted;
+			router.invalidateCredentialState();
+			const fresh = router.status(true);
+			await freshProbeStarted;
+			expect(probeCount).toBe(2);
+
+			const freshResult = await fresh;
+			expect(freshResult.ok).toBe(true);
+			if (!freshResult.ok) return;
+			expect(freshResult.value.runtimeSnapshot.targets["local/default"]?.available).toBe(false);
+			if (!releaseStaleProbe) throw new Error("stale runtime snapshot probe did not start");
+			releaseStaleProbe(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+
+			const staleResult = await stale;
+			expect(staleResult.ok).toBe(true);
+			if (!staleResult.ok) return;
+			expect(staleResult.value.runtimeSnapshot.targets["local/default"]?.available).toBe(true);
+
+			const cachedResult = await router.status();
+			expect(cachedResult.ok).toBe(true);
+			if (!cachedResult.ok) return;
+			expect(cachedResult.value.runtimeSnapshot.targets["local/default"]?.available).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("requires an explicit inference workload instead of compiling legacy pipeline routing", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "signet-router-no-legacy-routing-"));
 		try {
