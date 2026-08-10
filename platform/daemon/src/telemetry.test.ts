@@ -49,6 +49,7 @@ interface CapturedBody {
 let dir = "";
 let logPath = "";
 let captured: Array<{ readonly url: string; readonly body: CapturedBody }> = [];
+let pendingFetch: { readonly gate: Promise<void>; readonly started: () => void } | null = null;
 const originalFetch = globalThis.fetch;
 
 function installFetchMock(): void {
@@ -58,6 +59,12 @@ function installFetchMock(): void {
 			url: String(input),
 			body: JSON.parse(String(init?.body ?? "{}")) as CapturedBody,
 		});
+		const blocked = pendingFetch;
+		pendingFetch = null;
+		if (blocked) {
+			blocked.started();
+			await blocked.gate;
+		}
 		return new Response("1", { status: 200 });
 	}) as typeof fetch;
 }
@@ -120,6 +127,7 @@ beforeAll(() => {
 
 beforeEach(() => {
 	captured = [];
+	pendingFetch = null;
 	logPath = defaultTelemetryLogPath(dir);
 	resetWorkspace();
 });
@@ -409,6 +417,40 @@ describe("telemetry collector", () => {
 					.all(),
 			),
 		).toEqual([]);
+	});
+
+	it("drains events recorded while a PostHog flush is in flight before shutdown", async () => {
+		// Regression: overlapping shutdown and timer/explicit flushes could let
+		// stop() return while an earlier PostHog request still owned a claimed
+		// batch. Events recorded during that request then escaped the final drain.
+		let releaseFetch: (() => void) | undefined;
+		let signalFetchStarted: (() => void) | undefined;
+		const fetchStarted = new Promise<void>((resolve) => {
+			signalFetchStarted = resolve;
+		});
+		const fetchGate = new Promise<void>((resolve) => {
+			releaseFetch = resolve;
+		});
+		pendingFetch = { gate: fetchGate, started: () => signalFetchStarted?.() };
+
+		const collector = makeCollector();
+		collector.record("daemon.heartbeat", { uptimeMs: 1 });
+		const firstFlush = collector.flush();
+		await fetchStarted;
+		collector.record("daemon.heartbeat", { uptimeMs: 2 });
+
+		let stopResolved = false;
+		const stop = collector.stop().then(() => {
+			stopResolved = true;
+		});
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		expect(stopResolved).toBe(false);
+
+		releaseFetch?.();
+		await Promise.all([firstFlush, stop]);
+		expect(captured).toHaveLength(2);
+		expect(captured.at(-1)?.body.batch.map((event) => event.event)).toEqual(["daemon.heartbeat"]);
+		expect(unsentCount()).toBe(0);
 	});
 
 	it("emits one config snapshot alongside install activation", async () => {
