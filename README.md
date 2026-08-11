@@ -1,16 +1,12 @@
 <div align="center">
 
-<a href="https://signetai.sh/"><img src="public/banner-typography.png" alt="Signet AI"></a>
-
-Sync and store memories, shared identity files (AGENTS.md, CLAUDE.md), session transcripts, institutional knowledge, and secrets between all of your favorite harnesses and models.
-
 <a href="https://github.com/Signet-AI/signetai/releases"><img src="https://img.shields.io/github/v/release/Signet-AI/signetai?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
 <a href="https://www.npmjs.com/package/signetai"><img src="https://img.shields.io/npm/v/signetai?style=for-the-badge" alt="npm"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge" alt="Apache-2.0 License"></a>
 <a href="https://docs.signetai.sh/benchmarking/#current-longmemeval-score"><img src="https://img.shields.io/badge/LongMemEval-97.6%25-black?style=for-the-badge" alt="LongMemEval 97.6% answer accuracy"></a>
+<a href="https://signetai.sh/"><img src="public/banner-typography.png" alt="Signet AI"></a>
 
-**97.6% average LongMemEval answer accuracy**<br />
-Local-first context · source-backed recall · repairable memory · portable across agents
+Sync and store memories, shared identity files (AGENTS.md, CLAUDE.md), session transcripts, institutional knowledge, and secrets between all of your favorite harnesses and models.
 
 [Quick start](#quick-start-about-5-minutes) · [Why Signet](#why-signet) · [Benchmarks](https://docs.signetai.sh/benchmarking/) · [Docs](https://docs.signetai.sh) · [Discord](https://discord.gg/Psdeg7sQm7)
 
