@@ -1,15 +1,16 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runMigrations } from "../../../core/src/migrations";
-import type { DbAccessor, ReadDb, WriteDb } from "../db-accessor";
+import type { DbAccessor, ReadDb, SqliteStatement, WriteDb } from "../db-accessor";
+import { vectorToBlob } from "../db-helpers";
 import { type RetentionConfig, startRetentionWorker } from "./retention-worker";
 
-function makeAccessor(db: Database): DbAccessor {
+function makeAccessor(db: Database, writeDb: WriteDb = db as unknown as WriteDb): DbAccessor {
 	return {
 		withWriteTx<T>(fn: (db: WriteDb) => T): T {
 			db.exec("BEGIN IMMEDIATE");
 			try {
-				const result = fn(db as unknown as WriteDb);
+				const result = fn(writeDb);
 				db.exec("COMMIT");
 				return result;
 			} catch (err) {
@@ -22,6 +23,34 @@ function makeAccessor(db: Database): DbAccessor {
 		},
 		close() {
 			db.close();
+		},
+	};
+}
+
+function failVectorDeleteOnce(db: Database): WriteDb {
+	let failed = false;
+	return {
+		exec(sql: string): void {
+			db.exec(sql);
+		},
+		prepare(sql: string): SqliteStatement {
+			const statement = db.prepare(sql) as unknown as SqliteStatement;
+			if (sql !== "DELETE FROM vec_embeddings WHERE id = ?") return statement;
+			return {
+				run(...params: unknown[]) {
+					if (!failed) {
+						failed = true;
+						throw new Error("simulated vec delete failure");
+					}
+					return statement.run(...params);
+				},
+				get(...params: unknown[]) {
+					return statement.get(...params);
+				},
+				all<Row = unknown>(...params: unknown[]) {
+					return statement.all<Row>(...params);
+				},
+			};
 		},
 	};
 }
@@ -265,6 +294,93 @@ describe("retention worker", () => {
 			mentions: number;
 		};
 		expect(survivor.mentions).toBe(2);
+	});
+
+	it("keeps tombstones and canonical embeddings when vec deletion fails, then retries atomically", () => {
+		const now = new Date().toISOString();
+		db.exec("CREATE TABLE vec_embeddings (id TEXT PRIMARY KEY, embedding BLOB NOT NULL)");
+		db.prepare(
+			`INSERT INTO memories
+				(id, content, content_hash, type, agent_id, is_deleted, deleted_at, created_at, updated_at, updated_by)
+			 VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+		).run("mem-expired", "expired", "hash-expired", "fact", "agent-a", daysAgo(35), now, now, "test");
+		db.prepare(
+			`INSERT INTO memories
+				(id, content, content_hash, type, agent_id, created_at, updated_at, updated_by)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run("mem-survivor", "survivor", "hash-survivor", "fact", "agent-b", now, now, "test");
+		db.prepare(
+			`INSERT INTO embeddings
+				(id, content_hash, vector, dimensions, source_type, source_id, chunk_text, created_at, agent_id)
+			 VALUES (?, ?, ?, ?, 'memory', ?, ?, ?, ?)`,
+		).run("emb-expired", "hash-expired", vectorToBlob([1, 2, 3]), 3, "mem-expired", "expired", now, "agent-a");
+		db.prepare(
+			`INSERT INTO embeddings
+				(id, content_hash, vector, dimensions, source_type, source_id, chunk_text, created_at, agent_id)
+			 VALUES (?, ?, ?, ?, 'memory', ?, ?, ?, ?)`,
+		).run("emb-survivor", "hash-survivor", vectorToBlob([4, 5, 6]), 3, "mem-survivor", "survivor", now, "agent-b");
+		db.prepare("INSERT INTO vec_embeddings (id, embedding) VALUES (?, ?)").run("emb-expired", vectorToBlob([1, 2, 3]));
+		db.prepare("INSERT INTO vec_embeddings (id, embedding) VALUES (?, ?)").run("emb-survivor", vectorToBlob([4, 5, 6]));
+		db.prepare(
+			`INSERT INTO entities (id, agent_id, name, canonical_name, entity_type, mentions, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
+		).run("entity-expired", "agent-a", "Expired", "expired", "concept", now, now);
+		db.prepare("INSERT INTO memory_entity_mentions (memory_id, entity_id) VALUES (?, ?)").run(
+			"mem-expired",
+			"entity-expired",
+		);
+
+		const failingAccessor = makeAccessor(db, failVectorDeleteOnce(db));
+		const failingHandle = startRetentionWorker(failingAccessor, testRetentionConfig());
+		expect(() => failingHandle.sweep()).toThrow("failed to reconcile vec_embeddings");
+		failingHandle.stop();
+
+		// The failed derived-index step rolls back graph/provenance cleanup,
+		// canonical deletion, tombstoning, and cold archival as one retryable unit.
+		expect(db.prepare("SELECT id FROM memories WHERE id = ?").get("mem-expired")).toBeTruthy();
+		expect(db.prepare("SELECT id FROM embeddings WHERE id = ?").get("emb-expired")).toBeTruthy();
+		expect(db.prepare("SELECT id FROM vec_embeddings WHERE id = ?").get("emb-expired")).toBeTruthy();
+		expect(
+			db.prepare("SELECT memory_id, entity_id FROM memory_entity_mentions WHERE memory_id = ?").get("mem-expired"),
+		).toEqual({
+			memory_id: "mem-expired",
+			entity_id: "entity-expired",
+		});
+		expect(db.prepare("SELECT id, mentions FROM entities WHERE id = ?").get("entity-expired")).toEqual({
+			id: "entity-expired",
+			mentions: 1,
+		});
+		expect(db.prepare("SELECT memory_id FROM memories_cold WHERE memory_id = ?").get("mem-expired")).toBeNull();
+
+		const retryHandle = startRetentionWorker(failingAccessor, testRetentionConfig());
+		const retry = retryHandle.sweep();
+		const repeat = retryHandle.sweep();
+		retryHandle.stop();
+
+		expect(retry.embeddingsPurged).toBe(1);
+		expect(retry.tombstonesPurged).toBe(1);
+		expect(repeat.embeddingsPurged).toBe(0);
+		expect(repeat.tombstonesPurged).toBe(0);
+		expect(db.prepare("SELECT id FROM memories WHERE id = ?").get("mem-expired")).toBeNull();
+		expect(db.prepare("SELECT id FROM embeddings WHERE id = ?").get("emb-expired")).toBeNull();
+		expect(db.prepare("SELECT id FROM vec_embeddings WHERE id = ?").get("emb-expired")).toBeNull();
+		expect(
+			db.prepare("SELECT memory_id FROM memory_entity_mentions WHERE memory_id = ?").get("mem-expired"),
+		).toBeNull();
+		expect(db.prepare("SELECT id FROM entities WHERE id = ?").get("entity-expired")).toBeNull();
+		expect(db.prepare("SELECT id, agent_id FROM memories WHERE id = ?").get("mem-survivor")).toEqual({
+			id: "mem-survivor",
+			agent_id: "agent-b",
+		});
+		expect(db.prepare("SELECT id, agent_id FROM embeddings WHERE id = ?").get("emb-survivor")).toEqual({
+			id: "emb-survivor",
+			agent_id: "agent-b",
+		});
+		expect(db.prepare("SELECT id FROM vec_embeddings WHERE id = ?").get("emb-survivor")).toBeTruthy();
+		const cold = db
+			.prepare("SELECT memory_id, agent_id, archived_reason FROM memories_cold WHERE memory_id = ?")
+			.get("mem-expired");
+		expect(cold).toMatchObject({ memory_id: "mem-expired", agent_id: "agent-a", archived_reason: "retention_decay" });
 	});
 
 	it("returns zero counts when nothing to purge", () => {
