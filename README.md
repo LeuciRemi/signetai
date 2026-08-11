@@ -2,7 +2,7 @@
 
 <a href="https://signetai.sh/"><img src="public/banner-typography.png" alt="Signet AI"></a>
 
-**Store, sync and share memories, identity files (AGENTS.md, CLAUDE.md), session transcripts, institutional knowledge, and secrets between all of your favorite harnesses and models.**
+**Store, sync and share memories, system prompts, transcripts, institutional knowledge, and secrets between all of your favorite harnesses and models.**
 
 <a href="https://github.com/Signet-AI/signetai/releases"><img src="https://img.shields.io/github/v/release/Signet-AI/signetai?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
 <a href="https://www.npmjs.com/package/signetai"><img src="https://img.shields.io/npm/v/signetai?style=for-the-badge" alt="npm"></a>
