@@ -8,7 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-08-11
 - Features: add bounded resource telemetry.
-- Bug fixes: bound filesystem reads by stat; async filesystem connector I/O; cap document ingest work; refresh queued ACPX deadline; back off ACPX sterile retries; reconcile failed vector writes; cache routing config loads; bound imported documents card.
+- Bug fixes: honor shared hint recall; scope prospective hints; bound filesystem reads by stat; async filesystem connector I/O; cap document ingest work; refresh queued ACPX deadline; back off ACPX sterile retries; reconcile failed vector writes; cache routing config loads; bound imported documents card.
 - Docs: add sources diagram asset; use typography banner as README header; rewrite pipeline storage; document Dreaming flow; refresh memory reference; add source import guide.
 
 ### 2026-08-10
@@ -43,6 +43,16 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: default requeue no longer starves summary jobs; reject cross-scope evidence; yield event loop in graph traversal; preserve full match counts; --max-batch is an aggregate cap across selected queues; bound dreaming evidence tools; estimate session-start token budgets; status and doctor surface dead-job backlog and unhealthy daemon health; dashboard no longer claims it started a healthy daemon; validate --tables enum list instead of silently dropping bad values; queue repair exits non-zero when the daemon request fails; reject invalid invocations; stop skill orphan loop; set safe Linux executable name; unblock compiled embedding runtime; alternate hygiene/content pass modes; unblock docker smoke build (dashboard tsconfig, native-bun 4.2.0 patch); persist disconnect config changes; register bundled OAuth flows; surface real daemon failures; aspect-first husk scan; assert native smoke on React dashboard assets; cap concurrent prompt-submit work with 503 backpressure; bound dreaming agent-scope discovery and halt after repeated failures; hoist entity-context hot paths; stop skill reconciler hot-loop; retire LLM enrichment, agent-scope entity names; synthesize a default policy when none is configured; never use the harness name as an agent scope; scan recent sources before narrowing — ingest steps list new evidence first; accept ids in get_evidence claim paths and derive citation kind/id from source_ref; accept redundant selectors that name the flagged entity in hygiene archives; stop surfacing the retired extraction pipeline in status output; let the agent cite and mint hygiene attention provenance.
 
 ## Release Ledger
+
+## [0.197.7] - 2026-08-11
+
+Release summary: 2 bug fixes.
+Tag range: `v0.197.6..v0.197.7`.
+
+### Bug Fixes
+
+- **daemon**: honor shared hint recall
+- **daemon**: scope prospective hints
 
 ## [0.197.6] - 2026-08-11
 
