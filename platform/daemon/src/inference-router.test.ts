@@ -3,7 +3,11 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerOAuthProviderForTests, resetOAuthStateForTests, storeOAuthCredentials } from "./inference-oauth";
-import { getOrCreateInferenceRouter, resetInferenceRouterForTests } from "./inference-router";
+import {
+	getOrCreateInferenceRouter,
+	isInferenceRouterConfigPath,
+	resetInferenceRouterForTests,
+} from "./inference-router";
 import { invalidateSecretsCache } from "./secrets";
 
 const originalFetch = globalThis.fetch;
@@ -81,6 +85,35 @@ printf 'dreaming agent completed\\n'
 	return { argsPath, mcpConfigPathPath, mcpConfigCopyPath };
 }
 
+function writeMinimalRoutingConfig(root: string, policy?: string): void {
+	mkdirSync(join(root, "memory"), { recursive: true });
+	writeFileSync(
+		join(root, "agent.yaml"),
+		policy
+			? `inference:
+  defaultPolicy: ${policy}
+  targets:
+    local:
+      executor: ollama
+      endpoint: http://127.0.0.1:11434
+      models:
+        default:
+          model: gemma4
+  policies:
+    ${policy}:
+      mode: strict
+      defaultTargets:
+        - local/default
+  workloads:
+    interactive:
+      policy: ${policy}
+`
+			: `inference:
+  enabled: false
+`,
+	);
+}
+
 afterEach(() => {
 	globalThis.fetch = originalFetch;
 	resetOAuthStateForTests();
@@ -98,6 +131,115 @@ afterEach(() => {
 		process.env.OPENAI_API_KEY = originalOpenAiApiKey;
 	}
 	resetInferenceRouterForTests();
+});
+
+describe("InferenceRouter config caching", () => {
+	it("does not invalidate on nested agents or unrelated root config changes (#1409)", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "signet-router-watcher-config-"));
+		try {
+			mkdirSync(join(dir, "agents", "worker"), { recursive: true });
+			writeFileSync(
+				join(dir, "agent.yaml"),
+				`inference:
+  defaultPolicy: local
+  targets:
+    local:
+      executor: openai-compatible
+      endpoint: http://127.0.0.1:1234/v1
+      models:
+        default:
+          model: local-model
+  policies:
+    local:
+      mode: automatic
+      defaultTargets:
+        - local/default
+  workloads:
+    interactive:
+      policy: local
+`,
+			);
+
+			let probeCount = 0;
+			globalThis.fetch = mock((input: string | URL | Request) => {
+				if (String(input).endsWith("/models")) probeCount += 1;
+				return Promise.resolve(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+			}) as unknown as typeof fetch;
+
+			const router = getOrCreateInferenceRouter(dir);
+			expect((await router.status()).ok).toBe(true);
+			expect(probeCount).toBe(1);
+
+			const nestedAgentConfig = join(dir, "agents", "worker", "agent.yaml");
+			const unrelatedRootConfig = join(dir, "config.yaml");
+			writeFileSync(nestedAgentConfig, "inference:\n  enabled: false\n");
+			writeFileSync(unrelatedRootConfig, "memory:\n  pipelineV2:\n    enabled: false\n");
+			for (const path of [nestedAgentConfig, unrelatedRootConfig]) {
+				expect(isInferenceRouterConfigPath(dir, path)).toBe(false);
+				if (isInferenceRouterConfigPath(dir, path)) router.invalidateConfig();
+				expect((await router.status()).ok).toBe(true);
+			}
+			expect(probeCount).toBe(1);
+
+			const routerConfig = join(dir, "agent.yaml");
+			writeFileSync(routerConfig, readFileSync(routerConfig, "utf-8").replace("local-model", "reloaded-model"));
+			expect(isInferenceRouterConfigPath(dir, routerConfig)).toBe(true);
+			if (isInferenceRouterConfigPath(dir, routerConfig)) router.invalidateConfig();
+			expect((await router.status()).ok).toBe(true);
+			expect(probeCount).toBe(2);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("reuses the cached config until explicit invalidation", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "signet-router-config-cache-"));
+		try {
+			writeMinimalRoutingConfig(dir, "first");
+			const router = getOrCreateInferenceRouter(dir);
+			expect(await router.hasWorkload("interactive")).toBe(true);
+
+			writeMinimalRoutingConfig(dir);
+			expect(await router.hasWorkload("interactive")).toBe(true);
+
+			router.invalidateConfig();
+			expect(await router.hasWorkload("interactive")).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("coalesces concurrent first loads", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "signet-router-config-concurrent-"));
+		try {
+			writeMinimalRoutingConfig(dir, "concurrent");
+			const router = getOrCreateInferenceRouter(dir);
+			const results = await Promise.all(Array.from({ length: 32 }, () => router.hasWorkload("interactive")));
+			expect(results).toEqual(Array.from({ length: 32 }, () => true));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("preserves structured malformed-config errors after invalidation", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "signet-router-config-invalid-"));
+		try {
+			writeMinimalRoutingConfig(dir, "valid");
+			const router = getOrCreateInferenceRouter(dir);
+			expect(await router.hasWorkload("interactive")).toBe(true);
+			writeFileSync(join(dir, "agent.yaml"), "inference: [\\n");
+			router.invalidateConfig();
+
+			const result = await router.execute(
+				{ operation: "interactive", promptPreview: "malformed config" },
+				"must not execute",
+			);
+			expect(result.ok).toBe(false);
+			if (!result.ok) expect(result.error.code).toBe("invalid-config");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("InferenceRouter legacy API credentials", () => {
@@ -385,7 +527,7 @@ printf 'never reached\\n'
 		}
 	});
 
-	it("single-flights concurrent runtime snapshot probes and cleans up failed flights (#1329)", async () => {
+	it("coalesces async config refreshes and cleans up runtime probe flights (#1327, #1329)", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "signet-router-snapshot-flight-"));
 		try {
 			mkdirSync(join(dir, "memory"), { recursive: true });
@@ -429,6 +571,9 @@ printf 'never reached\\n'
 			}) as unknown as typeof fetch;
 
 			const router = getOrCreateInferenceRouter(dir);
+			// Force refreshes must share the async config load as well as the
+			// runtime probe. Otherwise the second load clears the first snapshot
+			// flight and both callers wait on independent probes.
 			const first = router.status(true);
 			const second = router.status(true);
 			await probeStarted;
@@ -440,6 +585,7 @@ printf 'never reached\\n'
 			expect(results[0]?.ok).toBe(true);
 			expect(results[1]?.ok).toBe(true);
 			if (!results[0]?.ok || !results[1]?.ok) return;
+			expect(results[0].value.runtimeSnapshot).toBe(results[1].value.runtimeSnapshot);
 			expect(results[0].value.runtimeSnapshot.targets["local/default"]?.available).toBe(true);
 			expect(results[1].value.runtimeSnapshot.targets["local/default"]?.available).toBe(true);
 

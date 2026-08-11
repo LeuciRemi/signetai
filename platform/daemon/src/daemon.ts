@@ -59,7 +59,11 @@ import { initFeatureFlags } from "./feature-flags";
 import { writeFileIfChangedAsync } from "./file-sync";
 import { createSignetHttpServer } from "./http-server";
 import { syncAgentWorkspaces } from "./identity-sync";
-import { type InferenceStatusSummary, getOrCreateInferenceRouter } from "./inference-router.js";
+import {
+	type InferenceStatusSummary,
+	getOrCreateInferenceRouter,
+	isInferenceRouterConfigPath,
+} from "./inference-router.js";
 import { fetchInternal } from "./internal-fetch";
 import {
 	type DaemonLifecycle,
@@ -1128,6 +1132,11 @@ function stopAcpDeliveryReconciliation(): void {
 	acpDeliveryReconciliationTimer = null;
 }
 
+function invalidateInferenceConfigForPath(path: string): void {
+	if (!isInferenceRouterConfigPath(AGENTS_DIR, path)) return;
+	getOrCreateInferenceRouter(AGENTS_DIR).invalidateConfig();
+}
+
 function startFileWatcher() {
 	// Do NOT watch the memory/ directory directly — Bun's fs.watch()
 	// opens one O_RDONLY FD per file in a watched directory and never
@@ -1162,6 +1171,7 @@ function startFileWatcher() {
 
 	watcher.on("change", (path) => {
 		logger.info("watcher", "File changed", { path });
+		invalidateInferenceConfigForPath(path);
 		scheduleAutoCommit(path);
 
 		const base = basename(path);
@@ -1216,6 +1226,7 @@ function startFileWatcher() {
 
 	watcher.on("unlink", (path) => {
 		logger.info("watcher", "File removed", { path });
+		invalidateInferenceConfigForPath(path);
 		if (path.endsWith("SIGNET-ARCHITECTURE.md")) {
 			void ensureArchitectureDoc();
 		}
@@ -1224,6 +1235,7 @@ function startFileWatcher() {
 
 	watcher.on("add", (path) => {
 		logger.info("watcher", "File added", { path });
+		invalidateInferenceConfigForPath(path);
 		scheduleAutoCommit(path);
 
 		const normalizedAddPath = path.replace(/\\/g, "/");
