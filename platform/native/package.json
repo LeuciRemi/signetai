@@ -1,6 +1,6 @@
 {
   "name": "@signet/native",
-  "version": "0.197.7",
+  "version": "0.197.8",
   "private": true,
   "description": "Signet native accelerators",
   "main": "index.js",
