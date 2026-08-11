@@ -11,7 +11,7 @@
 
 **97.6% average LongMemEval answer accuracy**
 
-[Quick start](#quick-start-about-5-minutes) · [Why Signet](#why-signet) · [Benchmarks](https://docs.signetai.sh/benchmarking/) · [Docs](https://docs.signetai.sh) · [Discord](https://discord.gg/Psdeg7sQm7)
+[Quick start](https://docs.signetai.sh/quickstart/) · [Why Signet](#why-signet) · [Benchmarks](https://docs.signetai.sh/benchmarking/) · [Docs](https://docs.signetai.sh/quickstart/) · [Discord](https://discord.gg/Psdeg7sQm7)
 
 </div>
 
@@ -123,19 +123,6 @@ Supported formats for one-time import:
 - [Benchmarks](https://docs.signetai.sh/benchmarking/)
 - Roadmap
 - Repository Map
-
-## Research
-
-|Paper / Project|Relevance|
-|---|---|
-|[Lossless Context Management](https://papers.voltropy.com/LCM) (Voltropy, 2026)|Hierarchical summarization, guaranteed convergence. Related runtime notes live in lossless-working-memory-runtime.md.|
-|[Recursive Language Models](https://arxiv.org/abs/2512.24601) (Zhang et al., 2026)|Active context management. LCM builds on and departs from RLM's approach.|
-|[acpx](https://github.com/openclaw/acpx) (OpenClaw)|Agent Client Protocol. Structured agent coordination.|
-|[lossless-claw](https://github.com/Martian-Engineering/lossless-claw) (Martian Engineering)|LCM reference implementation as an OpenClaw plugin.|
-|[openclaw](https://github.com/openclaw/openclaw) (OpenClaw)|Agent runtime reference.|
-|[arscontexta](https://github.com/agenticnotetaking/arscontexta)|Agentic notetaking patterns.|
-|[ACAN](https://github.com/HongChuanYang/Training-by-LLM-Enhanced-Memory-Retrieval-for-Generative-Agents-via-ACAN) (Hong et al.)|LLM-enhanced memory retrieval for generative agents.|
-|[Kumiho](https://arxiv.org/abs/2603.17244) (Park et al., 2026)|Prospective indexing. Hypothetical query generation at write time. Reports 0.565 F1 on the official split and 97.5% on the adversarial subset.|
 
 ## Benchmarks
 
