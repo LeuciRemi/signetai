@@ -1,10 +1,6 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="public/Signet-Logo-White.png">
-  <source media="(prefers-color-scheme: light)" srcset="public/Signet-Logo-Black.png">
-  <img src="public/Signet-Logo-Black.png" alt="Signet" width="120">
-</picture>
+<img src="public/banner-typography.png" alt="Signet AI">
 
 # Signet AI
 
