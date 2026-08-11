@@ -8,9 +8,9 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-08-11
 - Features: bridge Hermes native memory; add bounded resource telemetry.
-- Bug fixes: preserve budget on aborted embedding repair; charge repair budget on persist; persist embedding repair budget; reconcile missing native artifacts; preserve upstream timeout fallback; normalize routed deadlines; bound routed ACPX labels; bound ACPX attribution; attribute ACPX locality; recover incomplete duplicates; make extraction outcome atomic; preserve extraction outcomes; surface extraction outcomes; revalidate proposal sources at apply time; reject invalid proposal sources; validate proposal sources; keep Dreaming cause causal; report readiness truthfully; extend marketplace proxy startup; cap marketplace MCP clients; preserve low-signal response shape; clarify telemetry data loss; show telemetry data loss; preserve Pi zero timeout; bound Pi concurrency; guard structural audit rollback; retire structural jobs; honor shared hint recall; scope prospective hints; bound filesystem reads by stat; async filesystem connector I/O; cap document ingest work; refresh queued ACPX deadline; back off ACPX sterile retries; reconcile failed vector writes; cache routing config loads; bound imported documents card.
+- Bug fixes: make root test contract installable; preserve rebase test contracts; restore plugin test contracts; guard optional tag capture; preserve budget on aborted embedding repair; charge repair budget on persist; persist embedding repair budget; reconcile missing native artifacts; preserve upstream timeout fallback; normalize routed deadlines; bound routed ACPX labels; bound ACPX attribution; attribute ACPX locality; recover incomplete duplicates; make extraction outcome atomic; preserve extraction outcomes; surface extraction outcomes; revalidate proposal sources at apply time; reject invalid proposal sources; validate proposal sources; keep Dreaming cause causal; report readiness truthfully; extend marketplace proxy startup; cap marketplace MCP clients; preserve low-signal response shape; clarify telemetry data loss; show telemetry data loss; preserve Pi zero timeout; bound Pi concurrency; guard structural audit rollback; retire structural jobs; honor shared hint recall; scope prospective hints; bound filesystem reads by stat; async filesystem connector I/O; cap document ingest work; refresh queued ACPX deadline; back off ACPX sterile retries; reconcile failed vector writes; cache routing config loads; bound imported documents card.
 - Performance: skip low-signal prompt recall.
-- Docs: document extraction outcomes; add sources diagram asset; use typography banner as README header; rewrite pipeline storage; document Dreaming flow; refresh memory reference; add source import guide.
+- Docs: sync root-derived guidance; document extraction outcomes; add sources diagram asset; use typography banner as README header; rewrite pipeline storage; document Dreaming flow; refresh memory reference; add source import guide.
 
 ### 2026-08-10
 - Features: persist contradiction state beside competing claims; evaluate surprisal-guided attention selection; expose authorized claim reasoning traces (#1318); unified dashboard source imports; attribute dreaming pass target; wire dreaming review suggestions; retry repaired evidence; add telemetry opt-out; expose collector delivery health; expose accounting provenance; add source lifecycle telemetry (#1276); add marketing PostHog events; record dreaming pass effects.
@@ -44,6 +44,22 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: default requeue no longer starves summary jobs; reject cross-scope evidence; yield event loop in graph traversal; preserve full match counts; --max-batch is an aggregate cap across selected queues; bound dreaming evidence tools; estimate session-start token budgets; status and doctor surface dead-job backlog and unhealthy daemon health; dashboard no longer claims it started a healthy daemon; validate --tables enum list instead of silently dropping bad values; queue repair exits non-zero when the daemon request fails; reject invalid invocations; stop skill orphan loop; set safe Linux executable name; unblock compiled embedding runtime; alternate hygiene/content pass modes; unblock docker smoke build (dashboard tsconfig, native-bun 4.2.0 patch); persist disconnect config changes; register bundled OAuth flows; surface real daemon failures; aspect-first husk scan; assert native smoke on React dashboard assets; cap concurrent prompt-submit work with 503 backpressure; bound dreaming agent-scope discovery and halt after repeated failures; hoist entity-context hot paths; stop skill reconciler hot-loop; retire LLM enrichment, agent-scope entity names; synthesize a default policy when none is configured; never use the harness name as an agent scope; scan recent sources before narrowing — ingest steps list new evidence first; accept ids in get_evidence claim paths and derive citation kind/id from source_ref; accept redundant selectors that name the flagged entity in hygiene archives; stop surfacing the retired extraction pipeline in status output; let the agent cite and mint hygiene attention provenance.
 
 ## Release Ledger
+
+## [0.198.2] - 2026-08-11
+
+Release summary: 4 bug fixes and 1 docs update.
+Tag range: `v0.198.1..v0.198.2`.
+
+### Bug Fixes
+
+- **test**: make root test contract installable
+- **test**: preserve rebase test contracts
+- **test**: restore plugin test contracts
+- **pi**: guard optional tag capture
+
+### Docs
+
+- sync root-derived guidance
 
 ## [0.198.1] - 2026-08-11
 
