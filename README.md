@@ -9,7 +9,7 @@
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge" alt="Apache-2.0 License"></a>
 <a href="https://docs.signetai.sh/benchmarking/#current-longmemeval-score"><img src="https://img.shields.io/badge/LongMemEval-97.6%25-black?style=for-the-badge" alt="LongMemEval 97.6% answer accuracy"></a>
 
-**97.6% average LongMemEval answer accuracy** Local-first context · source-backed recall · repairable memory · portable across agents
+**97.6% average LongMemEval answer accuracy**
 
 [Quick start](#quick-start-about-5-minutes) · [Why Signet](#why-signet) · [Benchmarks](https://docs.signetai.sh/benchmarking/) · [Docs](https://docs.signetai.sh) · [Discord](https://discord.gg/Psdeg7sQm7)
 
