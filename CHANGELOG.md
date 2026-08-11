@@ -8,6 +8,7 @@ Surface summary of the most recent release dates. See the release ledger below f
 
 ### 2026-08-11
 - Features: add bounded resource telemetry.
+- Bug fixes: bound imported documents card.
 
 ### 2026-08-10
 - Features: persist contradiction state beside competing claims; evaluate surprisal-guided attention selection; expose authorized claim reasoning traces (#1318); unified dashboard source imports; attribute dreaming pass target; wire dreaming review suggestions; retry repaired evidence; add telemetry opt-out; expose collector delivery health; expose accounting provenance; add source lifecycle telemetry (#1276); add marketing PostHog events; record dreaming pass effects.
@@ -41,6 +42,15 @@ Surface summary of the most recent release dates. See the release ledger below f
 - Bug fixes: default requeue no longer starves summary jobs; reject cross-scope evidence; yield event loop in graph traversal; preserve full match counts; --max-batch is an aggregate cap across selected queues; bound dreaming evidence tools; estimate session-start token budgets; status and doctor surface dead-job backlog and unhealthy daemon health; dashboard no longer claims it started a healthy daemon; validate --tables enum list instead of silently dropping bad values; queue repair exits non-zero when the daemon request fails; reject invalid invocations; stop skill orphan loop; set safe Linux executable name; unblock compiled embedding runtime; alternate hygiene/content pass modes; unblock docker smoke build (dashboard tsconfig, native-bun 4.2.0 patch); persist disconnect config changes; register bundled OAuth flows; surface real daemon failures; aspect-first husk scan; assert native smoke on React dashboard assets; cap concurrent prompt-submit work with 503 backpressure; bound dreaming agent-scope discovery and halt after repeated failures; hoist entity-context hot paths; stop skill reconciler hot-loop; retire LLM enrichment, agent-scope entity names; synthesize a default policy when none is configured; never use the harness name as an agent scope; scan recent sources before narrowing — ingest steps list new evidence first; accept ids in get_evidence claim paths and derive citation kind/id from source_ref; accept redundant selectors that name the flagged entity in hygiene archives; stop surfacing the retired extraction pipeline in status output; let the agent cite and mint hygiene attention provenance.
 
 ## Release Ledger
+
+## [0.197.1] - 2026-08-11
+
+Release summary: 1 bug fix.
+Tag range: `v0.197.0..v0.197.1`.
+
+### Bug Fixes
+
+- **dashboard**: bound imported documents card (#1425)
 
 ## [0.197.0] - 2026-08-11
 
