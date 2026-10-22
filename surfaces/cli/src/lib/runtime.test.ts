@@ -311,6 +311,7 @@ describe("buildSystemdDaemonStartArgs", () => {
 
 		const args = buildSystemdDaemonStartArgs(input);
 		const plist = buildLaunchdDaemonPlist(input);
+		const compactPlist = plist.replace(/>\s+</g, "><");
 
 		for (const [key, value] of [
 			["HOME", "/sandbox"],
@@ -320,7 +321,7 @@ describe("buildSystemdDaemonStartArgs", () => {
 			["KIMI_SHARE_DIR", "/sandbox/kimi"],
 		]) {
 			expect(args).toContain(`--setenv=${key}=${value}`);
-			expect(plist).toMatch(new RegExp(`<key>${key}</key>\\s*<string>${value}</string>`));
+			expect(compactPlist).toContain(`<key>${key}</key><string>${value}</string>`);
 		}
 		expect(args.some((arg) => arg.startsWith("--setenv=KIMI_CODE_HOME="))).toBe(false);
 		expect(plist).not.toContain("<key>KIMI_CODE_HOME</key>");
